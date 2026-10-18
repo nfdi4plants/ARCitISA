@@ -198,10 +198,6 @@ type FileTree =
                 |> Option.map PathHelpers.getFileName
             )
 
-        let isArcEntityDirectory (item: FileItem) =
-            item.IsDirectory
-            && item.Path |> Option.bind tryGetArcEntityWorkbookName |> Option.isSome
-
         let openPreview (item: FileItem) =
             promise {
                 match item.Path with
@@ -213,19 +209,14 @@ type FileTree =
                     let selectedPath = PathHelpers.normalizePath path
                     fileStateCtx.setSelection (ArcSelection.forTreePath (Some selectedPath))
 
-                    if isArcEntityDirectory item then
-                        match tryGetArcEntityWorkbookName selectedPath with
-                        | Some workbookName ->
-                            let! result = openView $"{selectedPath}/{workbookName}"
+                    match tryGetArcEntityWorkbookName selectedPath with
+                    | Some workbookName ->
+                        let! result = openView $"{selectedPath}/{workbookName}"
 
-                            result
-                            |> Result.map (
-                                withStartingView Swate.Components.Page.ArcFileEditor.Types.ActiveView.Metadata
-                            )
-                            |> applyPreviewResult item.Name
-                        | None -> pageStateCtx.setState None
-                    else
-                        pageStateCtx.setState None
+                        result
+                        |> Result.map (withStartingView Swate.Components.Page.ArcFileEditor.Types.ActiveView.Metadata)
+                        |> applyPreviewResult item.Name
+                    | None -> pageStateCtx.setState None
                 | Some path ->
                     let selectedPath = PathHelpers.normalizePath path
                     fileStateCtx.setSelection (ArcSelection.forTreePath (Some selectedPath))
@@ -609,7 +600,6 @@ type FileTree =
                         Swate.Components.Page.FileExplorer.FileExplorer.FileExplorer(
                             initialItems = visibleItems,
                             onItemClick = openPreview,
-                            directoryChevronToggleOnlyForItem = isArcEntityDirectory,
                             onDirectoryExpansionChange = handleExpansionChange,
                             onContextMenu = createContextMenuItems,
                             getItemIconClass = getItemIconClass,
