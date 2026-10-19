@@ -4,6 +4,7 @@ open ARCtrl
 open Swate.Components.Shared
 open Swate.Components.Composite.Template.Types
 open Swate.Components.Composite.Template.TemplateActions
+open Swate.Components.Tests.TableFiles
 open Vitest
 
 /// A template whose table is named like the template.
@@ -15,198 +16,34 @@ let private createTemplate (tableName: string) =
 let private asNewTable (template: Template) =
     template, TemplateImportAction.ImportAsNewTable
 
-let private namesOf (names: Map<System.Guid, NewTableName>) =
-    names |> Map.map (fun _ newTableName -> newTableName.Name) |> Map.toArray
-
-/// The templates whose name has an error, sorted.
-let private withError (names: Map<System.Guid, NewTableName>) =
-    names
-    |> Map.filter (fun _ newTableName -> newTableName.Error.IsSome)
-    |> Map.toSeq
-    |> Seq.map fst
-    |> Seq.sort
-    |> Array.ofSeq
-
+// The naming rules are tested with resolveNewTableNames in tests/Shared; this covers the template adapter.
 Vitest.test (
-    "new tables get the template table name, made unique against existing tables and each other",
+    "names are resolved for the templates imported as new tables, keyed by template, keeping entered names",
     fun () ->
-        let first = createTemplate "SugarExtraction"
-        let second = createTemplate "SugarExtraction"
+        let first = createTemplate "Sugar"
         let appended = createTemplate "Other"
+        let second = createTemplate "Sugar"
 
         let names =
             newTableNames
-                [ "SugarExtraction"; "New Table 0" ]
+                [ "Sugar" ]
                 [|
                     asNewTable first
-                    asNewTable second
                     appended, TemplateImportAction.AppendToActiveTable
-                |]
-                Map.empty
-
-        Vitest
-            .expect(namesOf names)
-            .toEqual (
-                Map.toArray (
-                    Map [
-                        first.Id, "SugarExtraction 1"
-                        second.Id, "SugarExtraction 2"
-                    ]
-                )
-            )
-
-        Vitest.expect(withError names).toEqual [||]
-)
-
-Vitest.test (
-    "a suggested name avoids names the user entered for other templates",
-    fun () ->
-        let first = createTemplate "Extraction"
-        let second = createTemplate "Other"
-
-        let names =
-            newTableNames [] [| asNewTable first; asNewTable second |] (Map [ second.Id, "Extraction" ])
-
-        Vitest.expect(namesOf names).toEqual (Map.toArray (Map [ first.Id, "Extraction 1"; second.Id, "Extraction" ]))
-)
-
-Vitest.test (
-    "a notice explains every suggested name that differs from the template table name",
-    fun () ->
-        let free = createTemplate "Free"
-        let first = createTemplate "SugarExtraction"
-        let second = createTemplate "SugarExtraction"
-        let entered = createTemplate "SugarExtraction"
-        let taken = createTemplate "Taken"
-
-        let names =
-            newTableNames
-                [ "taken" ]
-                [|
-                    asNewTable free
-                    asNewTable first
                     asNewTable second
-                    asNewTable entered
-                    asNewTable taken
                 |]
-                (Map [ entered.Id, "Own name" ])
-
-        let notices =
-            names
-            |> Map.toArray
-            |> Array.choose (fun (id, name) -> name.Notice |> Option.map (fun n -> id, n))
+                (Map [ second.Id, "Own name" ])
 
         Vitest
-            .expect(notices |> Array.sort)
-            .toEqual (
-                Array.sort [|
-                    second.Id, "Another imported table is named \"SugarExtraction\", so this one is renamed."
-                    taken.Id, "\"Taken\" already exists, so the new table is renamed."
-                |]
-            )
-
-        Vitest.expect(names.[taken.Id].Name).toBe "Taken 1"
+            .expect(names |> Map.map (fun _ newTableName -> newTableName.Name) |> Map.toArray)
+            .toEqual (Map.toArray (Map [ first.Id, "Sugar 1"; second.Id, "Own name" ]))
 )
-
-Vitest.test (
-    "entered names that cannot be saved, are taken ignoring case or are used twice get an error",
-    fun () ->
-        let blank = createTemplate "A"
-        let slash = createTemplate "B"
-        let tooLong = createTemplate "C"
-        let otherCase = createTemplate "D"
-        let twiceFirst = createTemplate "E"
-        let twiceSecond = createTemplate "F"
-        let parentheses = createTemplate "G"
-        let thirtyOne = createTemplate "H"
-        let leadingQuote = createTemplate "I"
-        let history = createTemplate "J"
-        let innerQuote = createTemplate "K"
-
-        let enteredNames =
-            Map [
-                blank.Id, "  "
-                slash.Id, "Sugar/day 2"
-                tooLong.Id, String.replicate 32 "a"
-                otherCase.Id, " sugarextraction "
-                twiceFirst.Id, "Same"
-                twiceSecond.Id, "same"
-                parentheses.Id, "Extraction (2)"
-                thirtyOne.Id, String.replicate 31 "b"
-                leadingQuote.Id, "'Sugar"
-                history.Id, "History"
-                innerQuote.Id, "Su'gar"
-            ]
-
-        let selected =
-            [|
-                blank
-                slash
-                tooLong
-                otherCase
-                twiceFirst
-                twiceSecond
-                parentheses
-                thirtyOne
-                leadingQuote
-                history
-                innerQuote
-            |]
-            |> Array.map asNewTable
-
-        let names = newTableNames [ "SugarExtraction" ] selected enteredNames
-
-        Vitest
-            .expect(withError names)
-            .toEqual (
-                Array.sort [|
-                    blank.Id
-                    slash.Id
-                    tooLong.Id
-                    otherCase.Id
-                    twiceFirst.Id
-                    twiceSecond.Id
-                    leadingQuote.Id
-                    history.Id
-                |]
-            )
-
-        Vitest.expect(names.[slash.Id].Error).toEqual (Some "A table name cannot contain * ? : \\ / [ ].")
-        Vitest.expect(names.[tooLong.Id].Error).toEqual (Some "A table name can have at most 31 characters.")
-        Vitest.expect(names.[otherCase.Id].Error).toEqual (Some "A table named \"sugarextraction\" already exists.")
-        Vitest.expect(names.[twiceFirst.Id].Error).toEqual (Some "Another imported table is also named \"Same\".")
-        Vitest.expect(names.[leadingQuote.Id].Error).toEqual (Some "A table name cannot start or end with '.")
-        Vitest.expect(names.[history.Id].Error).toEqual (Some "\"History\" is reserved and cannot be a table name.")
-        // Only this exact spelling is reserved.
-        Vitest.expect((tryTableNameError [] "history").IsNone).toBe true
-)
-
-Vitest.test (
-    "a numbered name is shortened to fit the 31 characters a table name can have",
-    fun () ->
-        let longName = String.replicate 30 "a"
-        let template = createTemplate longName
-
-        let names = newTableNames [ longName ] [| asNewTable template |] Map.empty
-
-        Vitest.expect(names.[template.Id].Name).toBe (String.replicate 29 "a" + " 1")
-        Vitest.expect(names.[template.Id].Error.IsNone).toBe true
-)
-
-/// The file types that can hold annotation tables.
-let private tableFileTypes: (string * (unit -> ArcFiles)) list = [
-    "assay", (fun () -> ArcFiles.Assay(ArcAssay.init "Assay"))
-    "study", (fun () -> ArcFiles.Study(ArcStudy.init "Study", []))
-    "run", (fun () -> ArcFiles.Run(ArcRun.init "Run"))
-]
 
 /// A file whose active (first) table has only an input column, next to a table named "Sugar".
 let private createFile (createEmptyFile: unit -> ArcFiles) =
     let activeTable = ArcTable.init "New Table 0"
     activeTable.AddColumn(CompositeHeader.Input IOType.Source)
-    let file = createEmptyFile ()
-    file.ArcTables().AddTables [ activeTable; ArcTable.init "Sugar" ]
-    file
+    withTables createEmptyFile [ activeTable; ArcTable.init "Sugar" ]
 
 let private appendAndImportAsNewTable (newTableName: string) =
     let appended = createTemplate "Appended"

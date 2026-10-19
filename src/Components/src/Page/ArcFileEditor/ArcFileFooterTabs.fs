@@ -166,13 +166,11 @@ type ArcFileFooterTabs =
             else
                 tryTableNameError otherTableNames localInput
 
-        let submit =
-            fun (newName: string) ->
-                let trimmed = newName.Trim()
+        let submit () =
+            let trimmed = localInput.Trim()
 
-                match error.IsSome || trimmed = currentName with
-                | true -> ()
-                | _ -> onNameChange trimmed
+            if error.IsNone && trimmed <> currentName then
+                onNameChange trimmed
 
         ArcFileFooterTabs.BaseTab(
             Html.div [
@@ -191,7 +189,7 @@ type ArcFileFooterTabs =
                             match e.code with
                             | kbdEventCode.enter ->
                                 e.preventDefault ()
-                                submit localInput
+                                submit ()
                             | kbdEventCode.escape ->
                                 e.preventDefault ()
                                 setLocalInput currentName
@@ -475,18 +473,8 @@ type ArcFileFooterTabs =
         let renameTable =
             React.useCallback (
                 (fun (tableIndex: int) (newName: string) ->
-
-                    let currentTables = arcFile.ArcTables()
-                    let newName = newName.Trim()
-
-                    match
-                        newName = currentTables.[tableIndex].Name
-                        || (tryTableNameError (otherTableNames tableIndex) newName).IsSome
-                    with
-                    | true -> ()
-                    | false ->
-                        updateArcFile (fun nextArcFile -> nextArcFile.ArcTables().RenameTableAt(tableIndex, newName))
-                        closeEditorMode ()
+                    updateArcFile (fun nextArcFile -> nextArcFile.ArcTables().RenameTableAt(tableIndex, newName))
+                    closeEditorMode ()
                 ),
                 [|
                     box arcFile

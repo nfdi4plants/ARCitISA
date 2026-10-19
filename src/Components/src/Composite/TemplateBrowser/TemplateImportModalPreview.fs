@@ -34,6 +34,18 @@ type TemplateImportModalPreview =
     static member private NewTableNameField
         (newTableName: Swate.Components.Shared.ARCtrlHelper.NewTableName, setName: string -> unit)
         =
+        let message (colorClass: string) (iconClass: string) (text: string) =
+            Html.span [
+                prop.className [
+                    "swt:flex swt:items-center swt:gap-1 swt:text-xs"
+                    colorClass
+                ]
+                prop.children [
+                    Html.i [ prop.className [ "swt:iconify"; iconClass ] ]
+                    Html.span text
+                ]
+            ]
+
         Html.div [
             prop.className "swt:flex swt:flex-col swt:gap-1"
             prop.children [
@@ -54,24 +66,8 @@ type TemplateImportModalPreview =
                     ]
                 ]
                 match newTableName.Error, newTableName.Notice with
-                | Some message, _ ->
-                    Html.span [
-                        prop.className "swt:flex swt:items-center swt:gap-1 swt:text-xs swt:text-error"
-                        prop.children [
-                            Html.i [
-                                prop.className "swt:iconify swt:fluent--warning-12-filled"
-                            ]
-                            Html.span message
-                        ]
-                    ]
-                | None, Some message ->
-                    Html.span [
-                        prop.className "swt:flex swt:items-center swt:gap-1 swt:text-xs swt:text-info"
-                        prop.children [
-                            Html.i [ prop.className "swt:iconify swt:fluent--info-12-regular" ]
-                            Html.span message
-                        ]
-                    ]
+                | Some error, _ -> message "swt:text-error" "swt:fluent--warning-12-filled" error
+                | None, Some notice -> message "swt:text-info" "swt:fluent--info-12-regular" notice
                 | None, None -> Html.none
             ]
         ]

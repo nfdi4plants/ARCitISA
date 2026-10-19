@@ -99,15 +99,16 @@ module ARCtrlHelper =
         let toPath (dmpi: DatamapParentInfo) =
             combineMany [| toFolderPath dmpi; DatamapFileName |]
 
-    let tableNameKey (name: string) = name.Trim().ToLowerInvariant()
+    let isTableNameTaken (usedNames: seq<string>) (name: string) =
+        let key = name.Trim().ToLowerInvariant()
+
+        usedNames |> Seq.exists (fun used -> used.Trim().ToLowerInvariant() = key)
 
     let private firstFreeTableName (usedNames: seq<string>) (candidate: int -> string) =
-        let usedKeys = usedNames |> Seq.map tableNameKey |> Set.ofSeq
-
         let rec loop index =
             let name = candidate index
 
-            if usedKeys.Contains(tableNameKey name) then
+            if isTableNameTaken usedNames name then
                 loop (index + 1)
             else
                 name
@@ -154,11 +155,11 @@ module ARCtrlHelper =
             Some "A table name cannot contain * ? : \\ / [ ]."
         elif name.StartsWith "'" || name.EndsWith "'" then
             Some "A table name cannot start or end with '."
-        elif name = "History" then
+        elif name.ToLowerInvariant() = "history" then
             Some "\"History\" is reserved and cannot be a table name."
         elif name.Length > MaxTableNameLength then
             Some $"A table name can have at most {MaxTableNameLength} characters."
-        elif otherNames |> Seq.exists (fun other -> tableNameKey other = tableNameKey name) then
+        elif isTableNameTaken otherNames name then
             Some $"A table named \"{name}\" already exists."
         else
             None
@@ -202,20 +203,14 @@ module ARCtrlHelper =
             let error =
                 match tryTableNameError existingTableNames name with
                 | Some error -> Some error
-                | None when
-                    otherNewNames
-                    |> Array.exists (fun other -> tableNameKey other = tableNameKey name)
-                    ->
+                | None when isTableNameTaken otherNewNames name ->
                     Some $"Another imported table is also named \"{name.Trim()}\"."
                 | None -> None
 
             let notice =
                 if enteredName.IsSome || preferredName = "" || name = preferredName then
                     None
-                elif
-                    existingTableNames
-                    |> Array.exists (fun existing -> tableNameKey existing = tableNameKey preferredName)
-                then
+                elif isTableNameTaken existingTableNames preferredName then
                     Some $"\"{preferredName}\" already exists, so the new table is renamed."
                 else
                     Some $"Another imported table is named \"{preferredName}\", so this one is renamed."

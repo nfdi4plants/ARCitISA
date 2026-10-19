@@ -15,6 +15,7 @@ let shared =
         LandingTests.tests
         PathHelpersTests.tests
         DatamapParentInfoTests.tests
+        TableNamesTests.tests
         GitLfsRulesTests.tests
         ProvenanceGroupingTests.tests
         ProvenanceGroupingARCtrlConverterTests.tests

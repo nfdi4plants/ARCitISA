@@ -2,24 +2,22 @@ module internal Swate.Components.Tests.JsonImport
 
 open ARCtrl
 open Swate.Components.Shared
+open Swate.Components.Tests.TableFiles
 open Vitest
 
-/// The file types that can hold annotation tables.
-let private tableFileTypes: (string * (unit -> ArcFiles)) list = [
-    "assay", (fun () -> ArcFiles.Assay(ArcAssay.init "Assay"))
-    "study", (fun () -> ArcFiles.Study(ArcStudy.init "Study", []))
-    "run", (fun () -> ArcFiles.Run(ArcRun.init "Run"))
-]
+/// A file with one table per name, each holding a cell that names its table.
+let private withNamedTables (createFile: unit -> ArcFiles) (names: string list) =
+    withTables createFile [
+        for name in names do
+            let table = ArcTable.init name
 
-let private withTables (createFile: unit -> ArcFiles) (names: string list) =
-    let file = createFile ()
+            table.AddColumn(
+                CompositeHeader.Input IOType.Source,
+                ResizeArray [ CompositeCell.FreeText $"{name} source" ]
+            )
 
-    for name in names do
-        let table = ArcTable.init name
-        table.AddColumn(CompositeHeader.Input IOType.Source, ResizeArray [ CompositeCell.FreeText $"{name} source" ])
-        file.ArcTables().AddTable table
-
-    file
+            table
+    ]
 
 let private tableNames (arcFile: ArcFiles) =
     arcFile.Tables() |> Seq.map _.Name |> Array.ofSeq
@@ -31,9 +29,9 @@ for fileType, createFile in tableFileTypes do
             Vitest.test (
                 "imported tables whose name is taken are renamed, ignoring case, and keep their content",
                 fun () ->
-                    let current = withTables createFile [ "Sugar" ]
+                    let current = withNamedTables createFile [ "Sugar" ]
 
-                    let imported = withTables createFile [ "Sugar"; "sugar"; "Extraction (2)" ]
+                    let imported = withNamedTables createFile [ "Sugar"; "sugar"; "Extraction (2)" ]
 
                     match Json.Import.applyToCurrentArcFile (current, imported) with
                     | Ok result ->
@@ -50,8 +48,8 @@ for fileType, createFile in tableFileTypes do
             Vitest.test (
                 "a taken name with characters ARCtrl identifiers do not allow is renamed",
                 fun () ->
-                    let current = withTables createFile [ "Extraction (2)" ]
-                    let imported = withTables createFile [ "B"; "Extraction (2)" ]
+                    let current = withNamedTables createFile [ "Extraction (2)" ]
+                    let imported = withNamedTables createFile [ "B"; "Extraction (2)" ]
 
                     match Json.Import.applyToCurrentArcFile (current, imported) with
                     | Ok result ->
@@ -62,8 +60,8 @@ for fileType, createFile in tableFileTypes do
             Vitest.test (
                 "an import with a table name that cannot be saved fails and leaves the open file unchanged",
                 fun () ->
-                    let current = withTables createFile [ "Sugar" ]
-                    let imported = withTables createFile [ "B"; "Sugar/day 2" ]
+                    let current = withNamedTables createFile [ "Sugar" ]
+                    let imported = withNamedTables createFile [ "B"; "Sugar/day 2" ]
 
                     match Json.Import.applyToCurrentArcFile (current, imported) with
                     | Ok result -> failwith $"Expected an error, got the tables %A{tableNames result}"

@@ -6,6 +6,7 @@
     <Compile Include="Landing.Tests.fs"/>
     <Compile Include="PathHelpers.Tests.fs"/>
     <Compile Include="DatamapParentInfo.Tests.fs"/>
+    <Compile Include="TableNames.Tests.fs"/>
     <Compile Include="GitLfsRules.Tests.fs"/>
     <Compile Include="ProvenanceGrouping.Tests.fs"/>
     <Compile Include="ProvenanceGrouping.ARCtrlConverter.Tests.fs"/>
