@@ -34,7 +34,6 @@ type TemplatePreviewCallbacks = {
     ToggleColumnSelection: System.Guid -> int -> unit
     SelectAllTemplateColumns: System.Guid -> unit
     UnselectAllTemplateColumns: Template -> unit
-    /// Some for templates imported as a new table.
     GetNewTableName: System.Guid -> NewTableName option
     SetNewTableName: System.Guid -> string -> unit
 }
