@@ -278,11 +278,9 @@ type FileExplorerItem =
             rowHighlightClass: string,
             selectedNameClass: string,
             isExpanded: bool,
-            directoryChevronToggleOnly: bool,
             canExpandDirectory: bool,
             getItemIconClass: FileItem -> string option,
             onDirectorySelect: Browser.Types.MouseEvent -> unit,
-            onDirectoryArrowToggle: Browser.Types.MouseEvent -> unit,
             ?onCreateItem: FileItem -> unit,
             ?canCreateItem: FileItem -> bool,
             ?itemActions: ContextMenuItem list,
@@ -313,9 +311,7 @@ type FileExplorerItem =
                     rowHighlightClass
                 ]
                 prop.style [ style.display.flex; style.width (length.percent 100) ]
-
-                if not directoryChevronToggleOnly then
-                    prop.onClick onDirectorySelect
+                prop.onClick onDirectorySelect
 
                 prop.children [
                     Html.div [
@@ -326,6 +322,10 @@ type FileExplorerItem =
                                 prop.className
                                     "swt:flex swt:min-w-0 swt:flex-1 swt:items-center swt:gap-2 swt:bg-transparent swt:border-0 swt:p-0 swt:text-left swt:cursor-default"
                                 prop.onClick onDirectorySelect
+
+                                if canExpandDirectory then
+                                    prop.ariaExpanded isExpanded
+
                                 prop.children [
                                     Html.i [
                                         prop.className (
@@ -368,22 +368,9 @@ type FileExplorerItem =
                                         if hasStatusControl then
                                             FileExplorerItem.StatusControl(item, statusAction)
 
+                                        // Shows the state only. A click lands on the row, which toggles the folder.
                                         if canExpandDirectory then
-                                            Html.button [
-                                                prop.type'.button
-                                                prop.className [
-                                                    "swt:flex swt:min-h-0 swt:h-5 swt:w-5 swt:shrink-0 swt:items-center swt:justify-center swt:rounded swt:border-0 swt:bg-transparent swt:p-0 swt:cursor-pointer"
-                                                    rowHighlightClass
-                                                ]
-                                                prop.ariaLabel (
-                                                    if isExpanded then
-                                                        $"Collapse {item.Name}"
-                                                    else
-                                                        $"Expand {item.Name}"
-                                                )
-                                                prop.onClick onDirectoryArrowToggle
-                                                prop.children [ Html.i [ prop.className directoryToggleIconClass ] ]
-                                            ]
+                                            Html.i [ prop.className directoryToggleIconClass ]
                                     ]
                                 ]
                         ]

@@ -119,10 +119,6 @@ type FileExplorer =
             ?selectedItemId: string option,
             ?onDirectoryExpansionChange: FileItem -> bool -> unit,
             ?onExpansionChange: FileItem -> bool -> unit,
-            ?onDirectoryArrowToggle: FileItem -> bool -> unit,
-            ?directoryInteractionMode: DirectoryInteractionMode,
-            ?directoryChevronToggleOnly: bool,
-            ?directoryChevronToggleOnlyForItem: FileItem -> bool,
             ?delegateHorizontalScrollToParent: bool,
             ?truncateOverflowingItemNames: bool,
             ?getItemIconClass: FileItem -> string option,
@@ -133,14 +129,6 @@ type FileExplorer =
         let reducer model msg = FileExplorerLogic.update msg model
 
         let initialModel = FileExplorerLogic.init (defaultArg initialItems [])
-
-        let directoryInteractionMode =
-            defaultArg directoryInteractionMode DirectoryInteractionMode.SingleClickToggle
-
-        let directoryChevronToggleOnly = defaultArg directoryChevronToggleOnly false
-
-        let directoryChevronToggleOnlyForItem =
-            defaultArg directoryChevronToggleOnlyForItem (fun _ -> directoryChevronToggleOnly)
 
         let delegateHorizontalScrollToParent =
             defaultArg delegateHorizontalScrollToParent false
@@ -156,16 +144,11 @@ type FileExplorer =
         let getItemStatusAction = defaultArg getItemStatusAction (fun (_: FileItem) -> None)
         let canDeleteItem = defaultArg canDeleteItem (fun (_: FileItem) -> false)
 
-        let includeSelectedDirectoryInVisiblePath =
-            directoryInteractionMode = DirectoryInteractionMode.SingleClickToggle
-
         let model, dispatch = React.useReducer (reducer, initialModel)
         let containerRef = React.useElementRef ()
 
         let onDirectoryExpansionChange =
-            onDirectoryExpansionChange
-            |> Option.orElse onExpansionChange
-            |> Option.orElse onDirectoryArrowToggle
+            onDirectoryExpansionChange |> Option.orElse onExpansionChange
 
         let scrollContainerClassName =
             if truncateOverflowingItemNames then
@@ -182,20 +165,8 @@ type FileExplorer =
                 "swt:w-full swt:min-w-max swt:list-none swt:m-0 swt:p-0"
 
         React.useEffect (
-            (fun () ->
-                dispatch (
-                    FileExplorerLogic.UpdateItems(
-                        defaultArg initialItems [],
-                        selectedItemId,
-                        includeSelectedDirectoryInVisiblePath
-                    )
-                )
-            ),
-            [|
-                box initialItems
-                box selectedItemId
-                box includeSelectedDirectoryInVisiblePath
-            |]
+            (fun () -> dispatch (FileExplorerLogic.UpdateItems(defaultArg initialItems [], selectedItemId))),
+            [| box initialItems; box selectedItemId |]
         )
 
         let setExpanded (item: FileItem) (willExpand: bool) =
@@ -206,18 +177,16 @@ type FileExplorer =
                 onDirectoryExpansionChange |> Option.iter (fun fn -> fn item willExpand)
 
         let selectItem (item: FileItem) =
-            dispatch (FileExplorerLogic.SelectItem item.Id)
+            if selectedItemId.IsNone then
+                dispatch (FileExplorerLogic.SelectItem item.Id)
+
             onItemClick |> Option.iter (fun fn -> fn item)
 
         let handleDirectorySelection (item: FileItem) (canExpand: bool) (ev: Browser.Types.MouseEvent) =
             ev.preventDefault ()
             ev.stopPropagation ()
 
-            if
-                directoryInteractionMode = DirectoryInteractionMode.SingleClickToggle
-                && canExpand
-                && not (directoryChevronToggleOnlyForItem item)
-            then
+            if canExpand then
                 setExpanded item (not (model.ExpandedIds.Contains item.Id))
 
             selectItem item
@@ -320,15 +289,9 @@ type FileExplorer =
                     rowHighlightClass,
                     selectedNameClass,
                     isExpanded,
-                    directoryChevronToggleOnlyForItem item,
                     canExpand,
                     getItemIconClass,
                     handleDirectorySelection item canExpand,
-                    (fun e ->
-                        e.preventDefault ()
-                        e.stopPropagation ()
-                        setExpanded item (not isExpanded)
-                    ),
                     ?onCreateItem = onCreateItem,
                     canCreateItem = canCreateItem,
                     itemActions = itemActions,

@@ -100,13 +100,6 @@ type FileItemConfig = {
     ItemType: string
 }
 
-[<RequireQualifiedAccess>]
-type DirectoryInteractionMode =
-    | SingleClickToggle
-    | OpenOnDoubleClickCloseOnSingleClick
-    | ToggleOnSingleClickSelectOnDoubleClick
-
-
 // ============================================================================
 // FILE TREE OPERATIONS
 // ============================================================================
@@ -328,19 +321,14 @@ module ContextMenuItem =
 
 module FileExplorerLogic =
 
-    let private expandedIdsFromPath includeSelectedItem itemId items =
+    let private expandedIdsFromPath itemId items =
         let pathItems =
             match FileTree.getPath itemId items [] with
             | Some pathItems -> pathItems
             | None -> []
 
-        let expandablePathItems =
-            if includeSelectedItem then
-                pathItems
-            else
-                pathItems |> List.take (max 0 (List.length pathItems - 1))
-
-        expandablePathItems
+        pathItems
+        |> List.take (max 0 (List.length pathItems - 1))
         |> List.choose (fun item -> if item.Children.IsSome then Some item.Id else None)
         |> Set.ofList
 
@@ -378,7 +366,7 @@ module FileExplorerLogic =
     type Msg =
         | SetExpanded of itemId: string * isExpanded: bool
         | SelectItem of string
-        | UpdateItems of FileItem list * selectedItemId: string option option * includeSelectedItem: bool
+        | UpdateItems of FileItem list * selectedItemId: string option option
 
     let init items = {
         Items = items
@@ -410,7 +398,7 @@ module FileExplorerLogic =
                     SelectedPath = path
             }
 
-        | UpdateItems(items, selectedItemId, includeSelectedItem) ->
+        | UpdateItems(items, selectedItemId) ->
             let validIds = collectIds Set.empty items
 
             let persistedExpanded =
@@ -436,7 +424,7 @@ module FileExplorerLogic =
             let expandedFromSelection =
                 if selectionChanged then
                     nextSelectedId
-                    |> Option.map (fun itemId -> expandedIdsFromPath includeSelectedItem itemId items)
+                    |> Option.map (fun itemId -> expandedIdsFromPath itemId items)
                     |> Option.defaultValue Set.empty
                 else
                     Set.empty

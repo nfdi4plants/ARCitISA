@@ -161,6 +161,25 @@ let canRenameFileItem (item: FileItem) =
     |> Option.map PathHelpers.normalizeCanonicalRelativePath
     |> Option.exists (ArcEntityPathRules.isItemRenamePathAllowed (not item.IsDirectory))
 
+let tryGetArcEntityWorkbookName (folderPath: string) =
+    ArcEntityPathRules.tryGetRenameEntityFolderTarget (PathHelpers.normalizePath folderPath)
+    |> Option.bind (fun (zone, identifier) ->
+        ArcEntityPathRules.buildCanonicalEntityPaths zone identifier
+        |> List.tryHead
+        |> Option.map PathHelpers.getFileName
+    )
+
+let isArcEntityFolderViewOpen
+    (pageState: Renderer.Types.PageState option)
+    (selectedTreePath: string option)
+    (folderPath: string)
+    =
+    match pageState, selectedTreePath, tryGetArcEntityWorkbookName folderPath with
+    | Some(Renderer.Types.PageState.ArcFilePage _), Some selectedPath, Some workbookName ->
+        PathHelpers.pathsEqual selectedPath folderPath
+        || PathHelpers.pathsEqual selectedPath $"{PathHelpers.normalizePath folderPath}/{workbookName}"
+    | _ -> false
+
 let createItem (node: FileTreeNode) : FileItem =
     let item =
         if node.isDirectory then

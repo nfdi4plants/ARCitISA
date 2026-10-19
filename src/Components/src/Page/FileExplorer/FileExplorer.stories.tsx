@@ -151,7 +151,7 @@ const LazyLoadDirectoryFileExplorer = () => {
     <div className="swt:p-4">
       <FileExplorer
         initialItems={items}
-        onDirectoryArrowToggle={(item, willExpand) => {
+        onDirectoryExpansionChange={(item, willExpand) => {
           if (item.Id === "lazy-folder" && willExpand) {
             setLazyFolderLoaded(true);
           }
@@ -172,6 +172,38 @@ const SelectedPathFileExplorer = () => {
   return (
     <div className="swt:p-4">
       <FileExplorer initialItems={items} selectedItemId="selected-file" />
+    </div>
+  );
+};
+
+const ControlledSelectionFileExplorer = () => {
+  const items = React.useMemo(
+    () =>
+      ofArray([
+        createStableFile("first.txt", "arc/first.txt", "first-file"),
+        createStableFile("second.txt", "arc/second.txt", "second-file"),
+        createStableFile("locked.txt", "arc/locked.txt", "locked-file"),
+        createStableFolder("Entity Folder", "arc/entity", "entity-folder", [
+          createStableFile("entity-child.txt", "arc/entity/entity-child.txt", "entity-child"),
+        ]),
+      ]),
+    [],
+  );
+
+  const [selectedId, setSelectedId] = React.useState("first-file");
+
+  return (
+    <div className="swt:p-4">
+      <FileExplorer
+        initialItems={items}
+        selectedItemId={selectedId}
+        onItemClick={(item) => {
+          // The parent owns the selection and ignores clicks on the locked file.
+          if (item.Id !== "locked-file") {
+            setSelectedId(item.Id);
+          }
+        }}
+      />
     </div>
   );
 };
@@ -550,13 +582,15 @@ export const DirectoryArrowsReflectLoadability: StoryObj<typeof LazyLoadDirector
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
 
-    await canvas.findByText("Empty Folder");
-    await expect(canvas.queryByRole("button", { name: "Expand Empty Folder" })).toBeNull();
+    // A folder row reports aria-expanded only when it can expand.
+    const emptyFolder = await canvas.findByRole("button", { name: "Empty Folder" });
+    await expect(emptyFolder).not.toHaveAttribute("aria-expanded");
 
-    const lazyFolderToggle = await canvas.findByRole("button", { name: "Expand Lazy Folder" });
+    const lazyFolder = await canvas.findByRole("button", { name: "Lazy Folder" });
+    await expect(lazyFolder).toHaveAttribute("aria-expanded", "false");
     await expect(canvas.queryByText("Lazy Child.txt")).toBeNull();
 
-    await userEvent.click(lazyFolderToggle);
+    await userEvent.click(lazyFolder);
 
     await waitFor(() => {
       expect(canvas.getByText("Lazy Child.txt")).toBeInTheDocument();
@@ -574,12 +608,12 @@ export const SelectingLazyDirectoryMaterializesChildren: StoryObj<typeof LazyLoa
     await userEvent.click(await canvas.findByText("Lazy Folder"));
 
     await waitFor(() => expect(canvas.getByText("Lazy Child.txt")).toBeInTheDocument());
-    await expect(canvas.getByRole("button", { name: "Collapse Lazy Folder" })).toBeInTheDocument();
+    await expect(canvas.getByRole("button", { name: "Lazy Folder" })).toHaveAttribute("aria-expanded", "true");
 
     await userEvent.click(await canvas.findByText("Lazy Folder"));
 
     await waitFor(() => expect(canvas.queryByText("Lazy Child.txt")).toBeNull());
-    await expect(canvas.getByRole("button", { name: "Expand Lazy Folder" })).toBeInTheDocument();
+    await expect(canvas.getByRole("button", { name: "Lazy Folder" })).toHaveAttribute("aria-expanded", "false");
   },
 };
 
@@ -611,7 +645,7 @@ export const InitialExpandedHintIsApplied: StoryObj<typeof InitiallyExpandedFile
     const canvas = within(canvasElement);
 
     await expect(await canvas.findByText("Initially Visible.txt")).toBeInTheDocument();
-    await expect(canvas.getByRole("button", { name: "Collapse Initially Expanded" })).toBeInTheDocument();
+    await expect(canvas.getByRole("button", { name: "Initially Expanded" })).toHaveAttribute("aria-expanded", "true");
   },
 };
 
@@ -625,19 +659,49 @@ export const SelectedFileHighlightPersistsAfterParentReopen: StoryObj<typeof Sel
     await expect(selectedFileLabel).toHaveClass(/swt:font-semibold/);
     await expect(selectedFileLabel).toHaveClass(/swt:text-primary/);
 
-    const collapseParent = await canvas.findByRole("button", { name: "Collapse Selected Parent" });
-    await expect(collapseParent).toHaveClass(/swt:bg-base-300/);
-    await userEvent.click(collapseParent);
+    // The parent row is highlighted as part of the selected path.
+    const parentFolder = await canvas.findByRole("button", { name: "Selected Parent" });
+    await expect(parentFolder).toHaveAttribute("aria-expanded", "true");
+    await expect(parentFolder.closest("[data-file-item-id]")).toHaveClass(/swt:bg-base-300/);
+    await userEvent.click(parentFolder);
 
     await waitFor(() => {
       expect(canvas.queryByText("selected-report.txt")).toBeNull();
     });
 
-    await userEvent.click(await canvas.findByRole("button", { name: "Expand Selected Parent" }));
+    await userEvent.click(await canvas.findByRole("button", { name: "Selected Parent" }));
 
     const selectedFileLabelAfterReopen = await canvas.findByText("selected-report.txt");
     await expect(selectedFileLabelAfterReopen).toHaveClass(/swt:font-semibold/);
     await expect(selectedFileLabelAfterReopen).toHaveClass(/swt:text-primary/);
+  },
+};
+
+export const ControlledSelectionFollowsTheParent: StoryObj<typeof ControlledSelectionFileExplorer> = {
+  render: () => <ControlledSelectionFileExplorer />,
+
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    await waitFor(() => expect(canvas.getByText("first.txt")).toHaveClass(/swt:text-primary/));
+
+    // A click the parent ignores leaves the highlight where it is.
+    await userEvent.click(canvas.getByText("locked.txt"));
+    await expect(canvas.getByText("locked.txt")).not.toHaveClass(/swt:text-primary/);
+    await expect(canvas.getByText("first.txt")).toHaveClass(/swt:text-primary/);
+
+    // A selection the parent passes back moves it.
+    await userEvent.click(canvas.getByText("second.txt"));
+    await waitFor(() => expect(canvas.getByText("second.txt")).toHaveClass(/swt:text-primary/));
+    await expect(canvas.getByText("first.txt")).not.toHaveClass(/swt:text-primary/);
+
+    // A click that collapses a folder and selects it keeps the folder collapsed.
+    await userEvent.click(canvas.getByText("Entity Folder"));
+    await waitFor(() => expect(canvas.getByText("entity-child.txt")).toBeInTheDocument());
+    await userEvent.click(canvas.getByText("second.txt"));
+    await userEvent.click(canvas.getByText("Entity Folder"));
+    await waitFor(() => expect(canvas.queryByText("entity-child.txt")).toBeNull());
+    await expect(canvas.getByText("Entity Folder")).toHaveClass(/swt:text-primary/);
   },
 };
 
@@ -647,14 +711,14 @@ export const CollapsedDirectoryStaysClosedAfterLazySiblingLoads: StoryObj<typeof
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
 
-    await userEvent.click(await canvas.findByRole("button", { name: "Collapse Selected Parent" }));
+    await userEvent.click(await canvas.findByRole("button", { name: "Selected Parent" }));
     await waitFor(() => expect(canvas.queryByText("selected-report.txt")).toBeNull());
 
-    await userEvent.click(await canvas.findByRole("button", { name: "Expand Lazy Folder" }));
+    await userEvent.click(await canvas.findByRole("button", { name: "Lazy Folder" }));
     await waitFor(() => expect(canvas.getByText("Lazy Child.txt")).toBeInTheDocument());
 
     await expect(canvas.queryByText("selected-report.txt")).toBeNull();
-    await expect(canvas.getByRole("button", { name: "Expand Selected Parent" })).toBeInTheDocument();
+    await expect(canvas.getByRole("button", { name: "Selected Parent" })).toHaveAttribute("aria-expanded", "false");
   },
 };
 
