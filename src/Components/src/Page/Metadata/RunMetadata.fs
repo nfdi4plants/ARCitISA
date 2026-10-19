@@ -15,7 +15,7 @@ type RunMetadata =
     [<ReactComponent(true)>]
     static member RunMetadata
         // 👀 If you rename these variables, ensure that the names are forwarded for lazy loading in `src\Components\src\Metadata\ArcFileMetadata.fs` as well!
-        (run: ArcRun, setRun: ArcRun -> unit) =
+        (run: ArcRun, setRun: ArcRun -> unit, ?onImportPersons: unit -> JS.Promise<Person[]>) =
         LayoutComponents.Section [
             LayoutComponents.BoxedField(
                 "Run Metadata",
@@ -76,7 +76,8 @@ type RunMetadata =
                             run.Performers <- persons
                             setRun run
                         ),
-                        label = "Performers"
+                        label = "Performers",
+                        ?onImportPersons = onImportPersons
                     )
                     CommentsInput.CommentsInput(
                         run.Comments,

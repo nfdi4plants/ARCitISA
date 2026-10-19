@@ -11,17 +11,6 @@ open Swate.Components.Primitive.LayoutComponents
 open Swate.Components.Page.Metadata.FormComponents
 open Swate.Components.Page.Metadata.FormComponents.PersonsInput.Types
 
-module private PersonsInputTypes =
-
-    [<RequireQualifiedAccess>]
-    type AsyncState<'T> =
-        | Idle
-        | Loading
-        | Ok of 'T
-        | Error of exn
-
-open PersonsInputTypes
-
 module private PersonsInputHelper =
 
     let toOptionalString (value: string) = if value = "" then None else Some value
@@ -220,61 +209,39 @@ type PersonsInput =
         (
             persons: ResizeArray<Person>,
             setter: ResizeArray<Person> -> unit,
-            ?isARCitect: bool,
             ?label: string,
             ?onImportPersons: unit -> JS.Promise<Person[]>
         ) =
-        let importState, setImportState = React.useState (AsyncState<Person[]>.Idle)
-        let showImportButton = defaultArg isARCitect false || onImportPersons.IsSome
-
-        let importPersons () =
-            match onImportPersons with
-            | None -> setImportState (AsyncState.Error(exn "No import callback configured."))
-            | Some load ->
-                promise {
-                    setImportState AsyncState.Loading
-                    let! imported = load ()
-
-                    persons.AddRange(imported)
-                    setter persons
-                    setImportState (AsyncState.Ok imported)
-                }
-                |> Promise.catch (fun err -> setImportState (AsyncState.Error err))
-                |> Promise.start
+        let importOpen, setImportOpen = React.useState false
 
         let extendedElements =
-            if showImportButton then
-                Some(
+            onImportPersons
+            |> Option.map (fun load ->
+                React.Fragment [
+                    if importOpen then
+                        PersonImportDialog.PersonImportDialog(
+                            persons,
+                            load,
+                            (fun imported ->
+                                let next = ResizeArray persons
+                                next.AddRange imported
+                                setter next
+                            ),
+                            (fun () -> setImportOpen false)
+                        )
                     Html.div [
-                        prop.className "swt:flex swt:flex-col swt:items-center swt:gap-2"
+                        prop.className "swt:flex swt:justify-center"
                         prop.children [
                             Html.button [
+                                prop.type'.button
                                 prop.className "swt:btn swt:btn-primary swt:btn-wide"
                                 prop.text "Import Persons"
-                                prop.disabled (onImportPersons.IsNone || importState = AsyncState.Loading)
-                                prop.onClick (fun _ -> importPersons ())
+                                prop.onClick (fun _ -> setImportOpen true)
                             ]
-                            match importState with
-                            | AsyncState.Loading ->
-                                Html.span [
-                                    prop.className "swt:loading swt:loading-spinner swt:loading-sm"
-                                ]
-                            | AsyncState.Error err ->
-                                Html.span [
-                                    prop.className "swt:text-error swt:text-sm"
-                                    prop.text err.Message
-                                ]
-                            | AsyncState.Ok loaded ->
-                                Html.span [
-                                    prop.className "swt:text-success swt:text-sm"
-                                    prop.text $"Imported {loaded.Length} persons."
-                                ]
-                            | AsyncState.Idle -> Html.none
                         ]
                     ]
-                )
-            else
-                None
+                ]
+            )
 
         InputSequence.InputSequence(
             persons,

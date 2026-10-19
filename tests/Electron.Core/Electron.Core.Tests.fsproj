@@ -20,6 +20,7 @@
     <Compile Include="FileTreeCreator.test.fs" />
     <Compile Include="ArcFileMutationHelper.test.fs" />
     <Compile Include="ArcVaultHelper.test.fs" />
+    <Compile Include="ArcPersonsReader.test.fs" />
     <Compile Include="ArcAddExtensions.test.fs" />
     <Compile Include="ArcDeleteHelper.test.fs" />
     <Compile Include="JsonDTOUnwrapper.test.fs" />

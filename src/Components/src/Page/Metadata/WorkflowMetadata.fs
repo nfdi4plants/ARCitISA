@@ -15,7 +15,7 @@ type WorkflowMetadata =
     [<ReactComponent(true)>]
     static member WorkflowMetadata
         // 👀 If you rename these variables, ensure that the names are forwarded for lazy loading in `src\Components\src\Metadata\ArcFileMetadata.fs` as well!
-        (workflow: ArcWorkflow, setWorkflow: ArcWorkflow -> unit) =
+        (workflow: ArcWorkflow, setWorkflow: ArcWorkflow -> unit, ?onImportPersons: unit -> JS.Promise<Person[]>) =
         LayoutComponents.Section [
             LayoutComponents.BoxedField(
                 "Workflow Metadata",
@@ -68,7 +68,8 @@ type WorkflowMetadata =
                             workflow.Contacts <- persons
                             setWorkflow workflow
                         ),
-                        label = "Contacts"
+                        label = "Contacts",
+                        ?onImportPersons = onImportPersons
                     )
                     CommentsInput.CommentsInput(
                         workflow.Comments,

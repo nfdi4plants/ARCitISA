@@ -86,8 +86,14 @@ type private LazyComponents =
         )
 
     [<ReactLazyComponent>]
-    static member LazyArcFileMetadata(arcFile: ArcFiles, setArcFile: ArcFiles -> unit) =
-        Swate.Components.Page.Metadata.ArcFileMetadata.ArcFileMetadata(arcFile = arcFile, setArcFile = setArcFile)
+    static member LazyArcFileMetadata
+        (arcFile: ArcFiles, setArcFile: ArcFiles -> unit, ?onImportPersons: unit -> JS.Promise<Person[]>)
+        =
+        Swate.Components.Page.Metadata.ArcFileMetadata.ArcFileMetadata(
+            arcFile = arcFile,
+            setArcFile = setArcFile,
+            ?onImportPersons = onImportPersons
+        )
 
 
 [<Erase; Mangle(false)>]
@@ -140,12 +146,16 @@ type Main =
 
     [<ReactComponent>]
     static member private ArcFileContentView
-        (activeView: ActiveView, arcFileState: ArcFiles, setArcFileState: ArcFiles -> unit)
-        =
+        (
+            activeView: ActiveView,
+            arcFileState: ArcFiles,
+            setArcFileState: ArcFiles -> unit,
+            onImportPersons: (unit -> JS.Promise<Person[]>) option
+        ) =
         match activeView with
         | ActiveView.Metadata ->
             Main.LazyLoaderWithMessage(
-                LazyComponents.LazyArcFileMetadata(arcFileState, setArcFileState),
+                LazyComponents.LazyArcFileMetadata(arcFileState, setArcFileState, ?onImportPersons = onImportPersons),
                 "Loading metadata..."
             )
         | ActiveView.Table index ->
@@ -302,7 +312,8 @@ type Main =
             ?trailingNavbarElements: ArcFileEditorHeaderProps -> ReactElement,
             ?startingActiveView: ActiveView,
             ?onImportJson: JsonImportRequest -> JS.Promise<Result<unit, exn>>,
-            ?onError: string -> unit
+            ?onError: string -> unit,
+            ?onImportPersons: unit -> JS.Promise<Person[]>
         ) =
 
         let onError =
@@ -407,7 +418,9 @@ type Main =
                     navbar
                     Html.div [
                         prop.className "swt:grow swt:flex swt:flex-col swt:overflow-hidden"
-                        prop.children [ Main.ArcFileContentView(activeView, arcFile, setArcFile) ]
+                        prop.children [
+                            Main.ArcFileContentView(activeView, arcFile, setArcFile, onImportPersons)
+                        ]
                     ]
                     Main.AddRowsFooter(activeView, arcFile, setArcFile)
                     ArcFileFooterTabs.Main(arcFile, activeView, setActiveView, setArcFile, onDeleteDataMap)

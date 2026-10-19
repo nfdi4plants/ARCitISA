@@ -16,7 +16,7 @@ type AssayMetadata =
     [<ReactComponent(true)>]
     static member AssayMetadata
         // 👀 If you rename these variables, ensure that the names are forwarded for lazy loading in `src\Components\src\Metadata\ArcFileMetadata.fs` as well!
-        (assay: ArcAssay, setAssay: ArcAssay -> unit) =
+        (assay: ArcAssay, setAssay: ArcAssay -> unit, ?onImportPersons: unit -> JS.Promise<Person[]>) =
         LayoutComponents.Section [
             LayoutComponents.BoxedField(
                 "Assay Metadata",
@@ -69,7 +69,8 @@ type AssayMetadata =
                             assay.Performers <- persons
                             setAssay assay
                         ),
-                        label = "Performers"
+                        label = "Performers",
+                        ?onImportPersons = onImportPersons
                     )
                     CommentsInput.CommentsInput(
                         assay.Comments,

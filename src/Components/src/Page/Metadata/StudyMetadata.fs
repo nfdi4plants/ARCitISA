@@ -16,7 +16,7 @@ type StudyMetadata =
     [<ReactComponent(true)>]
     static member StudyMetadata
         // 👀 If you rename these variables, ensure that the names are forwarded for lazy loading in `src\Components\src\Metadata\ArcFileMetadata.fs` as well!
-        (study: ArcStudy, setStudy: ArcStudy -> unit) =
+        (study: ArcStudy, setStudy: ArcStudy -> unit, ?onImportPersons: unit -> JS.Promise<Person[]>) =
         LayoutComponents.Section [
             LayoutComponents.BoxedField(
                 "Study Metadata",
@@ -45,7 +45,8 @@ type StudyMetadata =
                             study.Contacts <- persons
                             setStudy study
                         ),
-                        label = "Contacts"
+                        label = "Contacts",
+                        ?onImportPersons = onImportPersons
                     )
                     PublicationsInput.PublicationsInput(
                         study.Publications,

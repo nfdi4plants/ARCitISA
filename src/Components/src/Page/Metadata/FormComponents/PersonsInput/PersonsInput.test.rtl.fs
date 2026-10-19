@@ -534,7 +534,7 @@ Vitest.test (
 )
 
 Vitest.test (
-    "the existing import callback still appends imported persons",
+    "the import dialog appends selected persons only after confirmation",
     fun () -> promise {
         let mutable saved = ResizeArray<Person>()
 
@@ -548,7 +548,10 @@ Vitest.test (
         |> ignore
 
         Helpers.click "Import Persons"
-        let! _ = RTL.screen.findByText "Imported 1 persons."
+        let! candidate = RTL.screen.findByRole ("checkbox", ByRoleOptions(name = Text "Import Imported"))
+        Vitest.expect(saved.Count).toBe 0
+        RTL.fireEvent.click candidate
+        Helpers.click "Import selected"
         Vitest.expect(saved.Count).toBe 2
         Vitest.expect(saved.[0].FirstName).toEqual (Some "Existing")
         Vitest.expect(saved.[1].FirstName).toEqual (Some "Imported")

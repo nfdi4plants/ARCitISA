@@ -10,6 +10,8 @@ open Swate.Components
 open Swate.Components.Shared
 open Swate.Components.Primitive.ErrorModal.Context
 open Swate.Components.Primitive.ErrorModal.Types
+open ARCtrl
+open ARCtrl.Json
 
 [<ReactComponent>]
 let ArcFilePreviewTarget (arcFile: ArcFiles, requestedView: ActiveView option) =
@@ -57,6 +59,12 @@ let ArcFilePreviewTarget (arcFile: ArcFiles, requestedView: ActiveView option) =
             Api.ipcArcVaultApi.deletePath path
             |> runDataMapMutation "DataMap could not be deleted"
 
+    let importPersons () : Fable.Core.JS.Promise<Person[]> = promise {
+        match! Api.ipcArcVaultApi.getPersons () with
+        | Ok persons -> return persons |> Array.map Person.fromJsonString
+        | Error error -> return raise error
+    }
+
     let pickFilePaths =
         React.useCallback (
             (fun () -> promise {
@@ -98,6 +106,7 @@ let ArcFilePreviewTarget (arcFile: ArcFiles, requestedView: ActiveView option) =
                 deleteDataMap,
                 startingActiveView = (requestedView |> Option.defaultValue ActiveView.Metadata),
                 onImportJson = importJson,
+                onImportPersons = importPersons,
                 onError =
                     (fun message ->
                         errorModal.enqueue (

@@ -706,6 +706,16 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
             with e ->
                 return Error e
         }
+    getPersons =
+        fun () -> promise {
+            try
+                return!
+                    withLoadedArcVault
+                        event
+                        (fun vault -> promise { return Ok(Main.ArcPersonsReader.serialize vault.arc.Value) })
+            with error ->
+                return Error error
+        }
     listProvenanceTables =
         fun () -> promise {
             try

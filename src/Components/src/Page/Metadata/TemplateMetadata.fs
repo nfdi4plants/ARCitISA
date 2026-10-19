@@ -14,7 +14,7 @@ type TemplateMetadata =
     [<ReactComponent(true)>]
     static member TemplateMetadata
         // 👀 If you rename these variables, ensure that the names are forwarded for lazy loading in `src\Components\src\Metadata\ArcFileMetadata.fs` as well!
-        (template: ARCtrl.Template, setTemplate: ARCtrl.Template -> unit) =
+        (template: ARCtrl.Template, setTemplate: ARCtrl.Template -> unit, ?onImportPersons: unit -> JS.Promise<Person[]>) =
         LayoutComponents.Section [
             LayoutComponents.BoxedField(
                 "Template Metadata",
@@ -86,7 +86,8 @@ type TemplateMetadata =
                             template.Authors <- persons
                             setTemplate template
                         ),
-                        label = "Authors"
+                        label = "Authors",
+                        ?onImportPersons = onImportPersons
                     )
                 ]
             )

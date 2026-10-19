@@ -122,6 +122,8 @@ type IArcVaultsApi = {
     showPathInFileExplorer: string -> JS.Promise<Result<unit, exn>>
     openPathWithDefaultApplication: string -> JS.Promise<Result<unit, exn>>
     readNotes: unit -> JS.Promise<Result<NoteSearchDto[], exn>>
+    /// Returns serialized persons from every entity in the active vault's in-memory ARC.
+    getPersons: unit -> JS.Promise<Result<string[], exn>>
     listProvenanceTables: unit -> JS.Promise<Result<ProvenanceTableSelectionDto[], exn>>
     loadProvenanceTable: ProvenanceTableSelectionDto -> JS.Promise<Result<ProvenanceLoadResultDto, exn>>
     /// Builds the provenance graph data of the active vault's in-memory ARC.
