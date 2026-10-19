@@ -20,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Add "Import Person" functionality to all metadata sections. #1367 (by @Freymaurer)
 
-## 🔄 Changed
+### 🔄 Changed
 
 - Sidebar action buttons are now grouped by functionality. Added open and create ARC buttons. (by @Freymaurer)
 - Empty table view now switches to a term search or template search view, instead of opening a modal. #1417 (by @Freymaurer)

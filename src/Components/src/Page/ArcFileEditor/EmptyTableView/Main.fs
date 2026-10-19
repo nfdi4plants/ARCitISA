@@ -31,51 +31,109 @@ open MainTypes
 type Main =
 
     [<ReactComponent>]
-    static member private InputColumnImportPreview(column: CompositeColumn) =
+    static member private InputColumnImportController
+        (nodeOptions, selectedNode, setSelectedKey, importedColumn, canImport, importSelected)
+        =
 
-        let previewCells = Helper.previewCells column.Cells
-
-        Html.div [
-            prop.className "swt:overflow-auto swt:max-h-64"
-            prop.children [
-                Html.table [
-                    prop.className "swt:table swt:table-sm"
+        React.Fragment [
+            match selectedNode with
+            | None ->
+                Html.p [
+                    prop.className "swt:text-sm swt:opacity-70"
+                    prop.text "No existing table has an input or output column."
+                ]
+            | Some selectedNode ->
+                Html.div [
+                    prop.className "swt:flex swt:items-center swt:gap-2"
                     prop.children [
-                        Html.caption [
-                            prop.className "swt:text-lg swt:font-semibold swt:pb-2 swt:text-left swt:align-left"
-                            prop.text "Preview:"
-                        ]
-                        Html.thead [
-                            Html.tr [
-                                Html.th [
-                                    prop.className "swt:truncate swt:align-left"
-                                    prop.text (column.Header.ToString())
-                                    prop.title (column.Header.ToString())
+                        Html.label [
+                            prop.className "swt:select swt:min-w-0 swt:w-auto swt:grow"
+                            prop.children [
+                                Html.span [ prop.className "swt:label"; prop.text "Column:" ]
+                                Html.select [
+                                    prop.value selectedNode.Key
+                                    prop.onChange (fun (key: string) -> setSelectedKey (Some key))
+                                    prop.children [
+                                        for group, nodes in nodeOptions |> Array.groupBy _.Group do
+                                            Html.optgroup [
+                                                prop.key group
+                                                prop.label group
+                                                prop.children [
+                                                    for node in nodes do
+                                                        Html.option [
+                                                            prop.key node.Key
+                                                            prop.value node.Key
+                                                            prop.text $"{node.TableName} – {node.Column.Header}"
+                                                        ]
+                                                ]
+                                            ]
+                                    ]
                                 ]
                             ]
                         ]
-                        Html.tbody [
-                            if previewCells.Length = 0 then
-                                Html.tr [
-                                    Html.td [
-                                        prop.className "swt:opacity-70"
-                                        prop.text "No cells found, this will import an empty column."
-                                    ]
-                                ]
-                            else
-                                for cellText in previewCells do
-                                    Html.tr [
-                                        Html.td [
-                                            prop.className "swt:truncate swt:align-left"
-                                            prop.text cellText
-                                            prop.title cellText
-                                        ]
-                                    ]
+                        Html.button [
+                            prop.type'.button
+                            prop.className "swt:btn swt:btn-primary swt:ml-auto"
+                            prop.text "Import as input column"
+                            prop.disabled (not canImport)
+                            prop.onClick (fun _ -> importSelected ())
                         ]
                     ]
                 ]
-            ]
+
+            match importedColumn with
+            | Some column ->
+                let previewCells = Helper.previewCells column.Cells
+
+                Html.div [
+                    prop.className "swt:overflow-auto swt:max-h-64"
+                    prop.children [
+                        Html.table [
+                            prop.className "swt:table swt:table-sm"
+                            prop.children [
+                                Html.caption [
+                                    prop.className "swt:text-lg swt:font-semibold swt:pb-2 swt:text-left swt:align-left"
+                                    prop.text "Preview:"
+                                ]
+                                Html.thead [
+                                    Html.tr [
+                                        Html.th [
+                                            prop.className "swt:truncate swt:align-left"
+                                            prop.text (column.Header.ToString())
+                                            prop.title (column.Header.ToString())
+                                        ]
+                                    ]
+                                ]
+                                Html.tbody [
+                                    if previewCells.Length = 0 then
+                                        Html.tr [
+                                            Html.td [
+                                                prop.className "swt:opacity-70"
+                                                prop.text "No cells found, this will import an empty column."
+                                            ]
+                                        ]
+                                    else
+                                        for cellText in previewCells do
+                                            Html.tr [
+                                                Html.td [
+                                                    prop.className "swt:truncate swt:align-left"
+                                                    prop.text cellText
+                                                    prop.title cellText
+                                                ]
+                                            ]
+                                ]
+                            ]
+                        ]
+                    ]
+                ]
+            | None ->
+                Html.div [
+                    prop.className "swt:text-sm swt:text-error"
+                    prop.text "The selected column cannot be used as input column."
+                ]
         ]
+
+
 
     /// Lets the user pick an input or output column of a prior table as input column of the active table.
     /// Mount it only while it is open. It loads the ARC nodes once per mount.
@@ -161,82 +219,42 @@ type Main =
                     prop.className "swt:flex swt:flex-col swt:gap-2"
                     prop.children [
                         match arcNodesState with
-                        | ArcNodesState.Loading ->
+                        | ArcNodesState.Loading -> // during load do not show any controllers/preview
                             Swate.Components.Primitive.LoadingSpinner.LoadingSpinner.LoadingSpinner(
                                 "Loading ARC tables",
                                 size = Swate.Components.Primitive.Types.DaisyuiSize.XL
                             )
-                        | ArcNodesState.Failed message ->
-                            Html.div [
-                                prop.className "swt:flex swt:items-center swt:gap-2"
-                                prop.children [
-                                    Html.p [
-                                        prop.role "alert"
-                                        prop.className "swt:text-sm swt:text-error"
-                                        prop.text $"Could not load tables from the ARC: {message}"
-                                    ]
-                                    Html.button [
-                                        prop.type'.button
-                                        prop.className "swt:btn swt:btn-sm swt:btn-outline"
-                                        prop.onClick (fun _ -> loadArcNodes ())
-                                        prop.text "Retry"
-                                    ]
-                                ]
-                            ]
-                        | ArcNodesState.Loaded _ ->
-                            match selectedNode with
-                            | None ->
-                                Html.p [
-                                    prop.className "swt:text-sm swt:opacity-70"
-                                    prop.text "No existing table has an input or output column."
-                                ]
-                            | Some selectedNode ->
+                        | notLoading ->
+                            // When loading is done, always show main input controller
+                            // In case of error **still show local tables**, In case of loaded will show all.
+                            match notLoading with
+                            | ArcNodesState.Failed message ->
                                 Html.div [
                                     prop.className "swt:flex swt:items-center swt:gap-2"
                                     prop.children [
-                                        Html.label [
-                                            prop.className "swt:select swt:min-w-0 swt:w-auto swt:grow"
-                                            prop.children [
-                                                Html.span [ prop.className "swt:label"; prop.text "Column:" ]
-                                                Html.select [
-                                                    prop.value selectedNode.Key
-                                                    prop.onChange (fun (key: string) -> setSelectedKey (Some key))
-                                                    prop.children [
-                                                        for group, nodes in nodeOptions |> Array.groupBy _.Group do
-                                                            Html.optgroup [
-                                                                prop.key group
-                                                                prop.label group
-                                                                prop.children [
-                                                                    for node in nodes do
-                                                                        Html.option [
-                                                                            prop.key node.Key
-                                                                            prop.value node.Key
-                                                                            prop.text
-                                                                                $"{node.TableName} – {node.Column.Header}"
-                                                                        ]
-                                                                ]
-                                                            ]
-                                                    ]
-                                                ]
-                                            ]
+                                        Html.p [
+                                            prop.role "alert"
+                                            prop.className "swt:text-sm swt:text-error"
+                                            prop.text $"Could not load tables from the ARC: {message}"
                                         ]
                                         Html.button [
                                             prop.type'.button
-                                            prop.className "swt:btn swt:btn-primary swt:ml-auto"
-                                            prop.text "Import as input column"
-                                            prop.disabled (not canImport)
-                                            prop.onClick (fun _ -> importSelected ())
+                                            prop.className "swt:btn swt:btn-sm swt:btn-outline"
+                                            prop.onClick (fun _ -> loadArcNodes ())
+                                            prop.text "Retry"
                                         ]
                                     ]
                                 ]
+                            | _ -> Html.none
 
-                            match importedColumn with
-                            | Some column -> Main.InputColumnImportPreview column
-                            | None ->
-                                Html.div [
-                                    prop.className "swt:text-sm swt:text-error"
-                                    prop.text "The selected column cannot be used as input column."
-                                ]
+                            Main.InputColumnImportController(
+                                nodeOptions,
+                                selectedNode,
+                                setSelectedKey,
+                                importedColumn,
+                                canImport,
+                                importSelected
+                            )
                     ]
                 ]
             ]
