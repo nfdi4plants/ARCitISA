@@ -10,7 +10,7 @@ type LayoutComponents =
     [<ReactComponent>]
     static member FieldTitle(title: string) =
         Html.h5 [
-            prop.className "swt:text-primary swt:font-semibold swt:mt-6 swt:mb-2"
+            prop.className "swt:text-primary swt:font-semibold"
             prop.text title
         ]
 

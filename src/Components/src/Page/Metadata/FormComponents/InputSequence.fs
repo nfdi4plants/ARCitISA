@@ -29,7 +29,7 @@ type InputSequence =
             prop.id id
             for attribute in Object.keys sortable.attributes do
                 prop.custom (attribute, sortable.attributes.get attribute)
-            prop.className "swt:flex swt:flex-row swt:gap-2"
+            prop.className "swt:flex swt:flex-row"
             prop.custom ("style", style)
             prop.children [
                 Html.span [
