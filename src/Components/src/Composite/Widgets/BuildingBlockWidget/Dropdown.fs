@@ -107,6 +107,7 @@ type BuildingBlockDropdown =
         =
         Html.li [
             Html.button [
+                prop.testId $"building-block-header-{headerType}"
                 prop.type'.button
                 prop.onClick (fun _ -> onSelectHeaderType headerType)
                 prop.text (headerType.ToString())
@@ -126,8 +127,13 @@ type BuildingBlockDropdown =
         ]
 
     [<ReactComponent>]
-    static member private Submenu(title: string, children: ReactElement list) =
-        Html.li [ Html.details [ Html.summary title; Html.ul children ] ]
+    static member private Submenu(testId: string, title: string, children: ReactElement list) =
+        Html.li [
+            Html.details [
+                Html.summary [ prop.testId testId; prop.text title ]
+                Html.ul children
+            ]
+        ]
 
     [<ReactComponent>]
     static member private IOTypes
@@ -145,6 +151,7 @@ type BuildingBlockDropdown =
             )
 
         BuildingBlockDropdown.Submenu(
+            $"building-block-submenu-{headerType}",
             headerType.ToString(),
             [
                 for ioType in BuildingBlockDropdownHelper.IOTypeOptions do
@@ -196,6 +203,7 @@ type BuildingBlockDropdown =
                 React.Fragment [
                     Popover.TriggerRender(fun trigger ->
                         Html.button [
+                            prop.testId "building-block-header-select"
                             prop.type'.button
                             prop.custom ("ref", trigger.setReference)
                             prop.className
@@ -226,6 +234,7 @@ type BuildingBlockDropdown =
                                     for headerType in BuildingBlockDropdownHelper.MainHeaderTypes do
                                         BuildingBlockDropdown.HeaderDropdownItem(headerType, selectHeaderType)
                                     BuildingBlockDropdown.Submenu(
+                                        "building-block-submenu-more",
                                         "More",
                                         [
                                             for headerType in BuildingBlockDropdownHelper.MoreHeaderTypes do

@@ -59,6 +59,7 @@ type TemplatesDisplay =
             template.Id,
             [
                 Html.tr [
+                    prop.testId $"template-row-{template.Id}"
                     prop.role.button
                     prop.ariaRoleDescription "toggle template selection"
                     yield! sharedProps
@@ -73,6 +74,7 @@ type TemplatesDisplay =
                     prop.children [
                         Html.td [
                             Html.input [
+                                prop.testId $"template-selection-{template.Id}"
                                 prop.custom ("readOnly", true)
                                 prop.isChecked isSelected
                                 prop.type'.checkbox

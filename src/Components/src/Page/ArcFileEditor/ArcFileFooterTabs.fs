@@ -122,6 +122,7 @@ type ArcFileFooterTabs =
         ]
 
         let dndProps = [
+            prop.testId $"arc-file-editor-table-tab-{index}"
             prop.id (mkTableDragId index)
             prop.ref sortable.setNodeRef
             prop.style style

@@ -1,7 +1,7 @@
 import React from 'react';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, userEvent, waitFor, within } from 'storybook/test';
-import { Entry } from './Main.sample.fs.js';
+import { Entry, Fixtures_templates } from './Main.sample.fs.js';
 
 const meta = {
   title: 'Page Components/ArcFileEditor/Empty table setup',
@@ -11,6 +11,12 @@ const meta = {
 
 export default meta;
 type Story = StoryObj<typeof meta>;
+
+const [leafTemplate, rootTemplate, instrumentTemplate] = Fixtures_templates();
+const leafRowId = `template-row-${leafTemplate.Id}`;
+const rootRowId = `template-row-${rootTemplate.Id}`;
+const instrumentRowId = `template-row-${instrumentTemplate.Id}`;
+const leafSelectionId = `template-selection-${leafTemplate.Id}`;
 
 // Storybook's browser tests own the real viewport. A container width alone would
 // leave portaled menus unconstrained and miss the clipping regression.
@@ -44,23 +50,23 @@ function expectPointerTarget(element: HTMLElement) {
 async function buildingBlockFlow(canvasElement: HTMLElement) {
   const canvas = within(canvasElement);
   const portal = within(canvasElement.ownerDocument.body);
-  await userEvent.click(canvas.getByRole('button', { name: /Start from scratch!/ }));
-  const heading = canvas.getByRole('heading', { name: 'Select a building block' });
+  await userEvent.click(canvas.getByTestId('empty-table-start-scratch'));
+  expect(canvas.getByTestId('empty-table-building-block-page')).toBeInTheDocument();
+  const heading = canvas.getByTestId('empty-table-setup-heading');
   await waitFor(() => expect(heading).toHaveFocus());
-  expect(portal.queryByRole('dialog', { name: 'Select a building block' })).not.toBeInTheDocument();
+  expect(canvas.queryByTestId('empty-table-choices')).not.toBeInTheDocument();
 
-  await userEvent.click(canvas.getByRole('button', { name: 'Parameter', exact: true }));
-  const picker = await portal.findByRole('dialog', { name: 'Building block type' });
-  await userEvent.click(within(picker).getByText('More', { exact: true }));
-  const date = within(picker).getByRole('button', { name: 'Date', exact: true });
+  await userEvent.click(canvas.getByTestId('building-block-header-select'));
+  await userEvent.click(await portal.findByTestId('building-block-submenu-more'));
+  const date = portal.getByTestId('building-block-header-Date');
   date.scrollIntoView({ block: 'nearest' });
   await waitFor(() => expectPointerTarget(date));
   await userEvent.click(date);
-  expect(portal.queryByRole('dialog', { name: 'Building block type' })).not.toBeInTheDocument();
-  await userEvent.click(canvas.getByRole('button', { name: 'Add Column' }));
+  expect(portal.queryByTestId('building-block-header-Date')).not.toBeInTheDocument();
+  await userEvent.click(canvas.getByTestId('building-block-add-column'));
   await waitFor(() => {
-    expect(canvas.queryByRole('heading', { name: 'Select a building block' })).not.toBeInTheDocument();
-    expect(canvas.getByText('Date', { exact: true })).toBeInTheDocument();
+    expect(canvas.queryByTestId('empty-table-building-block-page')).not.toBeInTheDocument();
+    expect(canvasElement).toHaveTextContent('Date');
   });
 }
 
@@ -80,17 +86,18 @@ export const TermAutocomplete: Story = {
   play: async ({ canvasElement }) => withViewport(1280, 800, async () => {
     const canvas = within(canvasElement);
     const portal = within(canvasElement.ownerDocument.body);
-    await userEvent.click(canvas.getByRole('button', { name: /Start from scratch!/ }));
-    const input = canvas.getAllByRole('combobox')[0];
+    await userEvent.click(canvas.getByTestId('empty-table-start-scratch'));
+    const headerControls = within(canvas.getByTestId('building-block-header-controls'));
+    const input = headerControls.getByTestId('term-search-input');
     await userEvent.type(input, 'Temp');
-    const result = await portal.findByRole('option', { name: /Temperature/ });
+    const result = await portal.findByTestId('term-search-result-PATO:0000146');
     await waitFor(() => expectPointerTarget(result));
     await userEvent.click(result);
     expect(input).toHaveValue('Temperature');
-    await userEvent.click(canvas.getByRole('button', { name: 'Add Column' }));
+    await userEvent.click(canvas.getByTestId('building-block-add-column'));
     await waitFor(() => {
-      expect(canvas.queryByRole('heading', { name: 'Select a building block' })).not.toBeInTheDocument();
-      expect(canvas.getByText(/Temperature/)).toBeInTheDocument();
+      expect(canvas.queryByTestId('empty-table-building-block-page')).not.toBeInTheDocument();
+      expect(canvasElement).toHaveTextContent('Temperature');
     });
   }),
 };
@@ -99,37 +106,41 @@ export const TemplateFiltersAndCancel: Story = {
   play: async ({ canvasElement }) => withViewport(1280, 800, async () => {
     const canvas = within(canvasElement);
     const portal = within(canvasElement.ownerDocument.body);
-    await userEvent.click(canvas.getByRole('button', { name: /Start with template!/ }));
-    await waitFor(() => expect(canvas.getByRole('heading', { name: 'Select template(s)' })).toHaveFocus());
-    expect(canvas.getByText('Leaf template', { exact: true })).toBeInTheDocument();
-    expect(canvas.getByText('Root template', { exact: true })).toBeInTheDocument();
-    expect(canvas.queryByText('Instrument template', { exact: true })).not.toBeInTheDocument();
+    await userEvent.click(canvas.getByTestId('empty-table-start-template'));
+    await waitFor(() => expect(canvas.getByTestId('empty-table-setup-heading')).toHaveFocus());
+    expect(canvas.getByTestId(leafRowId)).toBeInTheDocument();
+    expect(canvas.getByTestId(rootRowId)).toBeInTheDocument();
+    expect(canvas.queryByTestId(instrumentRowId)).not.toBeInTheDocument();
 
-    const search = canvas.getByRole('combobox');
+    const search = canvas.getByTestId('template-filter-search');
     await userEvent.type(search, 'Leaf');
-    const leafFilter = await portal.findByRole('option', { name: /Leaf template/ });
+    const leafFilter = await portal.findByTestId('template-filter-option-nameLeaf template');
     await userEvent.click(leafFilter);
-    await waitFor(() => expect(canvas.queryByText('Root template', { exact: true })).not.toBeInTheDocument());
+    await waitFor(() => expect(canvas.queryByTestId(rootRowId)).not.toBeInTheDocument());
     await userEvent.click(search);
     await userEvent.keyboard('{Backspace}{Escape}');
-    await waitFor(() => expect(canvas.getByText('Root template', { exact: true })).toBeInTheDocument());
+    await waitFor(() => expect(canvas.getByTestId(rootRowId)).toBeInTheDocument());
 
     // Community filtering must change the rendered results, not only the count.
-    const communityIcon = canvas.getByTitle('Filter communities');
-    await userEvent.click(communityIcon.parentElement!);
+    const communityFilter = canvas.getByTestId('template-community-filter');
+    await userEvent.click(communityFilter.parentElement!);
     const communities = await portal.findByRole('listbox');
     await userEvent.click(within(communities).getByRole('option', { name: /Other Lab/ }));
     await userEvent.keyboard('{Escape}');
-    await waitFor(() => expect(canvas.getByText('Instrument template', { exact: true })).toBeInTheDocument());
+    await waitFor(() => expect(canvas.getByTestId(instrumentRowId)).toBeInTheDocument());
 
-    await userEvent.click(canvas.getByText('Leaf template', { exact: true }));
-    await userEvent.click(canvas.getByRole('button', { name: 'Import', exact: true }));
-    const review = await portal.findByRole('dialog', { name: 'Import templates' });
-    await userEvent.click(within(review).getByRole('button', { name: 'Cancel' }));
-    expect(canvas.getByText('1 selected')).toBeInTheDocument();
-    expect(canvas.getByRole('heading', { name: 'Select template(s)' })).toBeInTheDocument();
-    await userEvent.click(canvas.getByRole('button', { name: 'Back', exact: true }));
-    await waitFor(() => expect(canvas.getByRole('button', { name: /Start with template!/ })).toHaveFocus());
+    await userEvent.click(canvas.getByTestId(leafRowId));
+    await userEvent.click(canvas.getByTestId('template-browser-import'));
+    const review = await portal.findByTestId('modal_template-import');
+    await userEvent.click(within(review).getByTestId('template-import-cancel'));
+    expect(portal.queryByTestId('modal_template-import')).not.toBeInTheDocument();
+    expect(canvas.getByTestId(leafSelectionId)).toBeChecked();
+    expect(canvas.getByTestId('empty-table-templates-page')).toBeInTheDocument();
+    await userEvent.click(canvas.getByTestId('empty-table-setup-back'));
+    await waitFor(() => {
+      expect(canvas.getByTestId('empty-table-choices')).toBeInTheDocument();
+      expect(canvas.queryByTestId('empty-table-templates-page')).not.toBeInTheDocument();
+    });
   }),
 };
 
@@ -137,17 +148,17 @@ export const TemplateAppendReturnsToEditor: Story = {
   play: async ({ canvasElement }) => withViewport(1280, 800, async () => {
     const canvas = within(canvasElement);
     const portal = within(canvasElement.ownerDocument.body);
-    await userEvent.click(canvas.getByRole('button', { name: /Start with template!/ }));
-    await userEvent.click(canvas.getByText('Leaf template', { exact: true }));
-    await userEvent.click(canvas.getByRole('button', { name: 'Import', exact: true }));
-    const review = await portal.findByRole('dialog', { name: 'Import templates' });
-    await userEvent.click(within(review).getByRole('button', { name: 'Import', exact: true }));
+    await userEvent.click(canvas.getByTestId('empty-table-start-template'));
+    await userEvent.click(canvas.getByTestId(leafRowId));
+    await userEvent.click(canvas.getByTestId('template-browser-import'));
+    const review = await portal.findByTestId('modal_template-import');
+    await userEvent.click(within(review).getByTestId('template-import-confirm'));
     await waitFor(() => {
-      expect(canvas.queryByRole('heading', { name: 'Select template(s)' })).not.toBeInTheDocument();
-      expect(canvas.getByText(/Leaf temperature/)).toBeInTheDocument();
+      expect(canvas.queryByTestId('empty-table-templates-page')).not.toBeInTheDocument();
+      expect(canvasElement).toHaveTextContent('Leaf temperature');
     });
-    await userEvent.click(canvas.getByRole('button', { name: 'Empty two', exact: true }));
-    expect(canvas.getByRole('button', { name: /Start with template!/ })).toBeInTheDocument();
+    await userEvent.click(canvas.getByTestId('arc-file-editor-table-tab-1'));
+    expect(canvas.getByTestId('empty-table-choices')).toBeInTheDocument();
   }),
 };
 
@@ -155,17 +166,17 @@ export const PriorTablesFromArc: Story = {
   args: { withArcNodes: true },
   play: async ({ canvasElement }) => withViewport(1280, 800, async () => {
     const canvas = within(canvasElement);
-    const portal = within(canvasElement.ownerDocument.body);
-    await userEvent.click(canvas.getByRole('button', { name: /Utilize prior tables!/ }));
-    const dialog = await portal.findByRole('dialog', { name: 'Utilize prior tables' });
-    const select = await within(dialog).findByRole('combobox', { name: 'Column:' });
-    const input = await within(dialog).findByRole('option', { name: 'Harvest – Input [Source Name]' });
+    await userEvent.click(canvas.getByTestId('empty-table-use-existing-tables'));
+    expect(canvas.getByTestId('empty-table-existing-tables-page')).toBeInTheDocument();
+    await waitFor(() => expect(canvas.getByTestId('empty-table-setup-heading')).toHaveFocus());
+    const select = await canvas.findByTestId('empty-table-existing-column-select');
+    const input = canvas.getByTestId('empty-table-existing-column-Study Field trial-Harvest-Input');
     await userEvent.selectOptions(select, input);
-    expect(within(dialog).getByText('Plant 1', { exact: true })).toBeInTheDocument();
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Import as input column' }));
+    expect(canvas.getByTestId('empty-table-existing-column-preview')).toHaveTextContent('Plant 1');
+    await userEvent.click(canvas.getByTestId('empty-table-existing-column-import'));
     await waitFor(() => {
-      expect(portal.queryByRole('dialog', { name: 'Utilize prior tables' })).not.toBeInTheDocument();
-      expect(canvas.getByText('Plant 1', { exact: true })).toBeInTheDocument();
+      expect(canvas.queryByTestId('empty-table-existing-tables-page')).not.toBeInTheDocument();
+      expect(canvasElement).toHaveTextContent('Plant 1');
     });
   }),
 };

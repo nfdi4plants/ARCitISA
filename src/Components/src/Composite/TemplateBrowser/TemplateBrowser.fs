@@ -20,6 +20,7 @@ type TemplateBrowser =
     [<ReactComponent>]
     static member private TemplateImportButton(isDisabled: bool, submit: unit -> unit) =
         Html.button [
+            prop.testId "template-browser-import"
             prop.className [
                 "swt:btn swt:w-full swt:join-item"
                 "swt:btn-primary"

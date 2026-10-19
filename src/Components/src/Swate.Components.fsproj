@@ -323,10 +323,10 @@
     <Compile Include="Page\Metadata\FormComponents\PersonsInput\Lookup.fs" />
     <Compile Include="Page\Metadata\FormComponents\PersonsInput\Lookup.test.fs" />
     <Compile Include="Page\Metadata\FormComponents\PersonsInput\PersonSearchDialog.fs" />
-      <Compile Include="Page\Metadata\FormComponents\PersonsInput\PersonImportDialog.fs" />
+    <Compile Include="Page\Metadata\FormComponents\PersonsInput\PersonImportDialog.fs" />
     <Compile Include="Page\Metadata\FormComponents\PersonsInput\PersonsInput.fs" />
     <Compile Include="Page\Metadata\FormComponents\PersonsInput\PersonsInput.test.rtl.fs" />
-      <Compile Include="Page\Metadata\FormComponents\PersonsInput\PersonImportDialog.test.rtl.fs" />
+    <Compile Include="Page\Metadata\FormComponents\PersonsInput\PersonImportDialog.test.rtl.fs" />
     <Compile Include="Page\Metadata\FormComponents\PublicationsInput\Types.fs" />
     <Compile Include="Page\Metadata\FormComponents\PublicationsInput\Lookup.fs" />
     <Compile Include="Page\Metadata\FormComponents\PublicationsInput\Lookup.test.fs" />

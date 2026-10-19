@@ -21,8 +21,9 @@ module internal Fixtures =
         ArcFiles.Assay assay
 
     let templates () =
-        let make name organisation termName =
+        let make id name organisation termName =
             let template = Template.init name
+            template.Id <- System.Guid.Parse id
             template.Organisation <- organisation
             template.Version <- "1.0.0"
             template.Table.AddColumn(CompositeHeader.Input IOType.Source)
@@ -32,9 +33,13 @@ module internal Fixtures =
             template
 
         [|
-            make "Leaf template" Organisation.DataPLANT "Leaf temperature"
-            make "Root template" Organisation.DataPLANT "Root temperature"
-            make "Instrument template" (Organisation.Other "Other Lab") "Instrument model"
+            make "00000000-0000-0000-0000-000000000001" "Leaf template" Organisation.DataPLANT "Leaf temperature"
+            make "00000000-0000-0000-0000-000000000002" "Root template" Organisation.DataPLANT "Root temperature"
+            make
+                "00000000-0000-0000-0000-000000000003"
+                "Instrument template"
+                (Organisation.Other "Other Lab")
+                "Instrument model"
         |]
 
     /// Stands in for the tables an app loads from the rest of the ARC.

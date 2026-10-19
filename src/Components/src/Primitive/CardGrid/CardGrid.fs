@@ -7,10 +7,14 @@ open Feliz
 type CardGrid =
 
     [<ReactComponent>]
-    static member CardGridButton(icon: ReactElement, header: string, description: string, onclick, ?disabled: bool) =
+    static member CardGridButton
+        (icon: ReactElement, header: string, description: string, onclick, ?disabled: bool, ?testId: string)
+        =
         let disabled = defaultArg disabled false
 
         Html.div [
+            if testId.IsSome then
+                prop.testId testId.Value
             // prop.className "swt:transform"
             prop.className [
                 "swt:btn swt:text-left swt:transition-transform

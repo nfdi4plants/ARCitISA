@@ -198,6 +198,7 @@ type TermSearch =
             | _ -> None
 
         Html.li [
+            prop.testId $"term-search-result-{item.Term.id |> Option.defaultValue (string index)}"
             prop.key index
             prop.className [
                 "swt:list-row swt:rounded-none swt:p-1 swt:cursor-pointer"

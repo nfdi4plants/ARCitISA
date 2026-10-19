@@ -39,6 +39,7 @@ type Main =
             match selectedNode with
             | None ->
                 Html.p [
+                    prop.testId "empty-table-existing-tables-empty"
                     prop.className "swt:text-sm swt:opacity-70"
                     prop.text "No existing table has an input or output column."
                 ]
@@ -51,6 +52,7 @@ type Main =
                             prop.children [
                                 Html.span [ prop.className "swt:label"; prop.text "Column:" ]
                                 Html.select [
+                                    prop.testId "empty-table-existing-column-select"
                                     prop.value selectedNode.Key
                                     prop.onChange (fun (key: string) -> setSelectedKey (Some key))
                                     prop.children [
@@ -61,6 +63,8 @@ type Main =
                                                 prop.children [
                                                     for node in nodes do
                                                         Html.option [
+                                                            prop.testId
+                                                                $"empty-table-existing-column-{node.Group}-{node.TableName}-{node.Kind}"
                                                             prop.key node.Key
                                                             prop.value node.Key
                                                             prop.text $"{node.TableName} – {node.Column.Header}"
@@ -72,6 +76,7 @@ type Main =
                             ]
                         ]
                         Html.button [
+                            prop.testId "empty-table-existing-column-import"
                             prop.type'.button
                             prop.className "swt:btn swt:btn-primary swt:ml-auto"
                             prop.text "Import as input column"
@@ -89,6 +94,7 @@ type Main =
                     prop.className "swt:overflow-auto swt:max-h-64"
                     prop.children [
                         Html.table [
+                            prop.testId "empty-table-existing-column-preview"
                             prop.className "swt:table swt:table-sm"
                             prop.children [
                                 Html.caption [
@@ -233,11 +239,13 @@ type Main =
                                     prop.className "swt:flex swt:items-center swt:gap-2"
                                     prop.children [
                                         Html.p [
+                                            prop.testId "empty-table-existing-tables-error"
                                             prop.role "alert"
                                             prop.className "swt:text-sm swt:text-error"
                                             prop.text $"Could not load tables from the ARC: {message}"
                                         ]
                                         Html.button [
+                                            prop.testId "empty-table-existing-tables-retry"
                                             prop.type'.button
                                             prop.className "swt:btn swt:btn-sm swt:btn-outline"
                                             prop.onClick (fun _ -> loadArcNodes ())
@@ -277,6 +285,7 @@ type Main =
                 || not (Helper.localNodeOptions arcFile activeTableIndex |> Array.isEmpty))
 
         Html.div [
+            prop.testId "empty-table-choices"
             prop.className "swt:flex swt:flex-1 swt:min-h-0 swt:items-center swt:justify-center swt:overflow-auto"
             prop.children [
                 CardGrid.CardGrid(
@@ -286,6 +295,7 @@ type Main =
                             "Start with template!",
                             "Select a full template as a starting point.",
                             (fun _ -> openSetup SetupView.Templates),
+                            testId = "empty-table-start-template",
                             disabled = isDisabled
                         )
                         CardGrid.CardGridButton(
@@ -293,6 +303,7 @@ type Main =
                             "Start from scratch!",
                             "Select a building block as a starting point.",
                             (fun _ -> openSetup SetupView.BuildingBlock),
+                            testId = "empty-table-start-scratch",
                             disabled = isDisabled
                         )
                         CardGrid.CardGridButton(
@@ -310,6 +321,7 @@ type Main =
                              else
                                  "Reuse an input or output column of an existing table as new input column."),
                             (fun _ -> openSetup SetupView.UtilizeExistingTables),
+                            testId = "empty-table-use-existing-tables",
                             disabled = not canUsePriorTables
                         )
                     ]
@@ -319,18 +331,26 @@ type Main =
 
     [<ReactComponent>]
     static member private SetupPage
-        (title: string, description: ReactElement, back: unit -> unit, children: ReactElement, scrollBody: bool)
-        =
+        (
+            testId: string,
+            title: string,
+            description: ReactElement,
+            back: unit -> unit,
+            children: ReactElement,
+            scrollBody: bool
+        ) =
         let heading = React.useElementRef ()
         React.useLayoutEffectOnce (fun () -> heading.current |> Option.iter (fun element -> element.focus ()))
 
         Html.section [
+            prop.testId testId
             prop.className "swt:flex swt:flex-1 swt:min-h-0 swt:min-w-0 swt:flex-col swt:gap-3 swt:p-4"
             prop.children [
                 Html.div [
                     prop.className "swt:flex swt:shrink-0 swt:flex-wrap swt:items-center swt:gap-3"
                     prop.children [
                         Html.button [
+                            prop.testId "empty-table-setup-back"
                             prop.type'.button
                             prop.className "swt:btn swt:btn-ghost swt:btn-sm"
                             prop.onClick (fun _ -> back ())
@@ -342,6 +362,7 @@ type Main =
                             ]
                         ]
                         Html.h2 [
+                            prop.testId "empty-table-setup-heading"
                             prop.ref heading
                             prop.tabIndex -1
                             prop.className "swt:text-lg swt:font-semibold swt:outline-hidden"
@@ -386,6 +407,7 @@ type Main =
                     Main.Choices(arcFile, setArcFile, activeTableIndex, setView, fetchArcNodes.IsSome)
                 | SetupView.BuildingBlock ->
                     Main.SetupPage(
+                        "empty-table-building-block-page",
                         "Select a building block",
                         Html.text "Choose a building block to add to the new table.",
                         back,
@@ -394,6 +416,7 @@ type Main =
                     )
                 | SetupView.Templates ->
                     Main.SetupPage(
+                        "empty-table-templates-page",
                         "Select template(s)",
                         Html.text "Select one or more templates to apply to the new table.",
                         back,
@@ -402,8 +425,9 @@ type Main =
                     )
                 | SetupView.UtilizeExistingTables ->
                     Main.SetupPage(
+                        "empty-table-existing-tables-page",
                         "Utilize existing tables",
-                        Html.text "Reuse an input or output column of a existing table as the new input column.",
+                        Html.text "Reuse an input or output column of an existing table as the new input column.",
                         back,
                         Main.PriorTableSelect(
                             arcFile,
@@ -414,15 +438,6 @@ type Main =
                         ),
                         scrollBody = true
                     )
-
-            // if priorTablesOpen then
-            //     Modals.PriorTableSelect(
-            //         arcFile,
-            //         activeTableIndex,
-            //         setArcFile,
-            //         (fun () -> setPriorTablesOpen false),
-            //         ?fetchArcNodes = fetchArcNodes
-            //     )
             ]
         ]
 

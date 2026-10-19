@@ -60,7 +60,6 @@
     <Compile Include="Components\MainContent\PDFViewer.fs" />
     <Compile Include="Components\MainContent\UnknownPreviewTarget.fs" />
     <Compile Include="Components\MainContent\ErrorViewTarget.fs" />
-    <Compile Include="Components\MainContent\LandingDraftTarget.fs" />
     <Compile Include="Components\MainContent\NotesDraftTarget.fs" />
     <Compile Include="Components\MainContent\NotesSearchTarget.fs" />
     <Compile Include="Components\MainContent\GitDiffTarget.fs" />

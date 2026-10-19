@@ -20,6 +20,7 @@ type TemplateImportModalPreview =
             prop.className "swt:inline-flex swt:items-center swt:gap-2 swt:cursor-pointer"
             prop.children [
                 Html.input [
+                    prop.testId $"template-import-action-{id}-{action}"
                     prop.type'.radio
                     prop.name radioGroupName
                     prop.className "swt:radio swt:radio-xs"

@@ -127,6 +127,7 @@ type TemplateImportModal =
             }
 
         BaseModal.Modal(
+            debug = "template-import",
             isOpen = isOpen,
             setIsOpen = setIsOpen,
             header = Html.text "Import templates",
@@ -192,11 +193,13 @@ type TemplateImportModal =
                     prop.className "swt:flex swt:w-full swt:gap-2"
                     prop.children [
                         Html.button [
+                            prop.testId "template-import-cancel"
                             prop.className "swt:btn swt:btn-outline"
                             prop.text "Cancel"
                             prop.onClick (fun _ -> setIsOpen false)
                         ]
                         Html.button [
+                            prop.testId "template-import-confirm"
                             prop.className "swt:btn swt:btn-primary swt:ml-auto"
                             prop.disabled (not canConfirmImport)
                             prop.text "Import"

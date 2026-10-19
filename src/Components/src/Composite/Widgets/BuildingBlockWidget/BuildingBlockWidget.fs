@@ -160,6 +160,7 @@ type BuildingBlockWidget =
                 Html.none
 
         Html.div [
+            prop.testId "building-block-header-controls"
             prop.style [ style.position.relative ]
             prop.children [
                 Html.div [
@@ -365,6 +366,7 @@ type BuildingBlockWidget =
                             prop.className "swt:flex swt:justify-center"
                             prop.children [
                                 Html.button [
+                                    prop.testId "building-block-add-column"
                                     prop.type'.submit
                                     prop.className [
                                         "swt:btn swt:btn-wide"

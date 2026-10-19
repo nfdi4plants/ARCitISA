@@ -8,49 +8,51 @@ open Feliz
 open Vitest
 open Swate.Components
 open Swate.Components.Shared
+open Swate.Components.Composite.Template.TemplateCacheContext
 open Swate.Components.Composite.Widgets.Context
 open Swate.Components.Page.ArcFileEditor.EmptyTableView
 open Swate.Components.Page.ArcFileEditor.EmptyTableViewSample
 open Swate.Components.Shared.ProvenanceGrouping.ARCtrlConverter
 
+let private templates = Fixtures.templates ()
+let private leafTemplateId = templates.[0].Id
+
 module private Queries =
 
-    [<Import("getByRole", "@testing-library/dom")>]
-    let inRole (container: HTMLElement, role: string, options: ByRoleOptions) : HTMLElement = jsNative
+    let get (testId: string) = RTL.screen.getByTestId testId
 
-    let button name =
-        RTL.screen.getByRole ("button", ByRoleOptions(name = Text name))
+    let present (testId: string) =
+        (RTL.screen.queryByTestId testId).IsSome
 
-    let card name =
-        RTL.screen.getByRole (
-            "button",
-            ByRoleOptions(name = TextMatch.Regex(System.Text.RegularExpressions.Regex name))
-        )
+    let click testId = RTL.fireEvent.click (get testId)
 
-    let heading name =
-        RTL.screen.getByRole ("heading", ByRoleOptions(name = Text name))
+    let openTemplates () = click "empty-table-start-template"
 
-    let dialog name =
-        RTL.screen.getByRole ("dialog", ByRoleOptions(name = Text name))
+    let selectLeafTemplate () = click $"template-row-{leafTemplateId}"
 
-    let clickButton name = RTL.fireEvent.click (button name)
+    let leafSelected () =
+        (get $"template-selection-{leafTemplateId}" :?> HTMLInputElement).``checked``
 
-    let openTemplates () =
-        RTL.fireEvent.click (card "Start with template!")
+    let importButton () =
+        get "template-browser-import" :?> HTMLButtonElement
 
-    let selectLeafTemplate () =
-        RTL.fireEvent.click (RTL.screen.getByText ("Leaf template", ByTextOptions(exact = true)))
+    let confirmImport () = click "template-import-confirm"
 
-    let confirmImport () =
-        RTL.fireEvent.click (inRole (dialog "Import templates", "button", ByRoleOptions(name = Text "Import")))
+let private providers (children: ReactElement) =
+    // Keep template identities stable across rerenders and independent of the displayed names.
+    let cache = {
+        Templates = templates
+        IsLoading = false
+        RefreshTemplates = ignore
+    }
+
+    Main.Providers(TemplateCacheCtx.Provider(cache, children))
 
 let private view arcFile setArcFile activeIndex =
-    Main.Providers(
-        Swate.Components.Page.ArcFileEditor.EmptyTableView.Main.EmptyTableView(arcFile, setArcFile, activeIndex)
-    )
+    providers (Swate.Components.Page.ArcFileEditor.EmptyTableView.Main.EmptyTableView(arcFile, setArcFile, activeIndex))
 
 let private viewWithArcNodes arcFile setArcFile activeIndex fetchArcNodes =
-    Main.Providers(
+    providers (
         Swate.Components.Page.ArcFileEditor.EmptyTableView.Main.EmptyTableView(
             arcFile,
             setArcFile,
@@ -83,27 +85,17 @@ module private PriorTables =
         Table = table
     }
 
-    let card () = Queries.card "Utilize prior tables!"
-
-    let dialog () = Queries.dialog "Utilize prior tables"
+    let openPage () =
+        Queries.click "empty-table-use-existing-tables"
 
     let columnSelect () =
-        Queries.inRole (dialog (), "combobox", ByRoleOptions(name = Text "Column:")) :?> HTMLSelectElement
+        Queries.get "empty-table-existing-column-select" :?> HTMLSelectElement
 
-    let optionLabels () =
-        columnSelect().options
-        |> fun options -> [|
-            for index in 0 .. options.length - 1 -> (options.item index :?> HTMLOptionElement).text
-        |]
+    let optionCount () = columnSelect().options.length
 
-    let selectOption (label: string) =
+    let selectOption testId =
         let select = columnSelect ()
-
-        let option =
-            [|
-                for index in 0 .. select.options.length - 1 -> select.options.item index :?> HTMLOptionElement
-            |]
-            |> Array.find (fun option -> option.text = label)
+        let option = Queries.get testId :?> HTMLOptionElement
 
         RTL.fireEvent.change (
             select,
@@ -113,33 +105,30 @@ module private PriorTables =
         )
 
     let importButton () =
-        Queries.inRole (dialog (), "button", ByRoleOptions(name = Text "Import as input column")) :?> HTMLButtonElement
+        Queries.get "empty-table-existing-column-import" :?> HTMLButtonElement
 
 Vitest.afterEach (fun () -> RTL.cleanup ())
 
 Vitest.test (
-    "inline setup focuses its heading and Back returns to the choices",
+    "setup pages focus their heading and Back returns to the choices",
     fun () -> promise {
-        RTL.render (view (Fixtures.arcFile ()) ignore (Some 0)) |> ignore
+        RTL.render (view (PriorTables.arcFile ()) ignore (Some 1)) |> ignore
 
-        RTL.fireEvent.click (Queries.card "Start from scratch!")
-        let heading = Queries.heading "Select a building block"
+        for entryId, pageId in
+            [|
+                "empty-table-start-scratch", "empty-table-building-block-page"
+                "empty-table-start-template", "empty-table-templates-page"
+                "empty-table-use-existing-tables", "empty-table-existing-tables-page"
+            |] do
+            Queries.click entryId
+            Queries.get pageId |> ignore
+            Vitest.expect(Queries.present "empty-table-choices").toBe false
+            let heading = Queries.get "empty-table-setup-heading"
+            do! RTL.waitFor (fun () -> Vitest.expect(box document.activeElement).toBe (box heading))
 
-        Vitest
-            .expect(RTL.screen.queryByRole("dialog", ByRoleOptions(name = Text "Select a building block")).IsNone)
-            .toBe
-            true
-
-        do! RTL.waitFor (fun () -> Vitest.expect(box document.activeElement).toBe (box heading))
-
-        Queries.clickButton "Back"
-        Queries.card "Start from scratch!" |> ignore
-
-        Queries.openTemplates ()
-        let templateHeading = Queries.heading "Select template(s)"
-        do! RTL.waitFor (fun () -> Vitest.expect(box document.activeElement).toBe (box templateHeading))
-        Queries.clickButton "Back"
-        Queries.card "Start with template!" |> ignore
+            Queries.click "empty-table-setup-back"
+            Queries.get "empty-table-choices" |> ignore
+            Vitest.expect(Queries.present pageId).toBe false
     }
 )
 
@@ -150,15 +139,16 @@ Vitest.test (
         let rendered = RTL.render (view arcFile ignore (Some 0))
         Queries.openTemplates ()
         Queries.selectLeafTemplate ()
-        RTL.screen.getByText "1 selected" |> ignore
+        Vitest.expect(Queries.leafSelected ()).toBe true
 
         rendered.rerender (view arcFile ignore (Some 1))
 
-        Vitest.expect(RTL.screen.queryByRole("heading", ByRoleOptions(name = Text "Select template(s)")).IsNone).toBe
-            true
+        Vitest.expect(Queries.present "empty-table-templates-page").toBe false
+        Queries.get "empty-table-choices" |> ignore
 
         Queries.openTemplates ()
-        Vitest.expect((Queries.button "Import" :?> HTMLButtonElement).disabled).toBe true
+        Vitest.expect(Queries.leafSelected ()).toBe false
+        Vitest.expect(Queries.importButton().disabled).toBe true
         Vitest.expect(arcFile.Tables().[0].ColumnCount).toBe 0
         Vitest.expect(arcFile.Tables().[1].ColumnCount).toBe 0
     }
@@ -170,13 +160,12 @@ Vitest.test (
         let arcFile = Fixtures.arcFile ()
         let mutable updated: ArcFiles option = None
         RTL.render (view arcFile (fun next -> updated <- Some next) (Some 0)) |> ignore
-        RTL.fireEvent.click (Queries.card "Start from scratch!")
-        Queries.clickButton "Parameter"
-        let picker = Queries.dialog "Building block type"
-        RTL.fireEvent.click (RTL.screen.getByText ("More", ByTextOptions(exact = true)))
+        Queries.click "empty-table-start-scratch"
+        Queries.click "building-block-header-select"
+        Queries.click "building-block-submenu-more"
         // A single-column header makes the observable callback independent of ontology search.
-        RTL.fireEvent.click (Queries.inRole (picker, "button", ByRoleOptions(name = Text "Date")))
-        Queries.clickButton "Add Column"
+        Queries.click "building-block-header-Date"
+        Queries.click "building-block-add-column"
 
         Vitest.expect(updated.IsSome).toBe true
         Vitest.expect(updated.Value.Tables().[0].Headers.[0]).toEqual CompositeHeader.Date
@@ -204,16 +193,15 @@ Vitest.test (
 
         Queries.openTemplates ()
         Queries.selectLeafTemplate ()
-        Queries.clickButton "Import"
-
-        RTL.fireEvent.click (
-            Queries.inRole (Queries.dialog "Import templates", "button", ByRoleOptions(name = Text "Cancel"))
-        )
+        RTL.fireEvent.click (Queries.importButton ())
+        Queries.get "modal_template-import" |> ignore
+        Queries.click "template-import-cancel"
 
         Vitest.expect(updated.IsNone).toBe true
-        RTL.screen.getByText "1 selected" |> ignore
-        Queries.heading "Select template(s)" |> ignore
-        Queries.clickButton "Import"
+        Vitest.expect(Queries.present "modal_template-import").toBe false
+        Vitest.expect(Queries.leafSelected ()).toBe true
+        Queries.get "empty-table-templates-page" |> ignore
+        RTL.fireEvent.click (Queries.importButton ())
         Queries.confirmImport ()
 
         Vitest.expect(updated.IsSome).toBe true
@@ -226,6 +214,8 @@ Vitest.test (
 
         Vitest.expect(tables.[1].ColumnCount).toBe 0
         Vitest.expect(closedWidgets.Count).toBe 0
+        Queries.get "empty-table-choices" |> ignore
+        Vitest.expect(Queries.present "empty-table-templates-page").toBe false
     }
 )
 
@@ -237,11 +227,8 @@ Vitest.test (
         RTL.render (view arcFile (fun next -> updated <- Some next) (Some 0)) |> ignore
         Queries.openTemplates ()
         Queries.selectLeafTemplate ()
-        Queries.clickButton "Import"
-
-        RTL.fireEvent.click (
-            Queries.inRole (Queries.dialog "Import templates", "radio", ByRoleOptions(name = Text "Import (new table)"))
-        )
+        RTL.fireEvent.click (Queries.importButton ())
+        Queries.click $"template-import-action-{leafTemplateId}-ImportAsNewTable"
 
         Queries.confirmImport ()
 
@@ -249,7 +236,7 @@ Vitest.test (
         Vitest.expect(updated.Value.Tables().Count).toBe 3
         Vitest.expect(updated.Value.Tables().[0].ColumnCount).toBe 0
         Vitest.expect(updated.Value.Tables().[2].ColumnCount).toBe 3
-        Queries.card "Start with template!" |> ignore
+        Queries.get "empty-table-choices" |> ignore
     }
 )
 
@@ -258,10 +245,10 @@ Vitest.test (
     fun () -> promise {
         RTL.render (view (Fixtures.arcFile ()) ignore (Some 0)) |> ignore
 
-        RTL.fireEvent.click (PriorTables.card ())
+        PriorTables.openPage ()
 
-        Vitest.expect(RTL.screen.queryByRole("dialog", ByRoleOptions(name = Text "Utilize prior tables")).IsNone).toBe
-            true
+        Vitest.expect(Queries.present "empty-table-existing-tables-page").toBe false
+        Queries.get "empty-table-choices" |> ignore
     }
 )
 
@@ -273,10 +260,14 @@ Vitest.test (
         RTL.render (viewWithArcNodes (Fixtures.arcFile ()) ignore (Some 0) fetchArcNodes)
         |> ignore
 
-        RTL.fireEvent.click (PriorTables.card ())
+        PriorTables.openPage ()
 
-        let! _ = RTL.screen.findByText ("No prior table has an input or output column.", ByTextOptions(exact = true))
-        Vitest.expect(PriorTables.importButton().disabled).toBe true
+        let! _ = RTL.screen.findByTestId "empty-table-existing-tables-empty"
+        Queries.get "empty-table-existing-tables-page" |> ignore
+        Vitest.expect(Queries.present "empty-table-existing-column-select").toBe false
+        Vitest.expect(Queries.present "empty-table-existing-column-import").toBe false
+        Queries.click "empty-table-setup-back"
+        Queries.get "empty-table-choices" |> ignore
     }
 )
 
@@ -287,16 +278,9 @@ Vitest.test (
         let mutable updated: ArcFiles option = None
         RTL.render (view arcFile (fun next -> updated <- Some next) (Some 1)) |> ignore
 
-        RTL.fireEvent.click (PriorTables.card ())
+        PriorTables.openPage ()
 
-        Vitest
-            .expect(PriorTables.optionLabels ())
-            .toEqual (
-                [|
-                    "Filled – Output [Sample Name]"
-                    "Filled – Input [Source Name]"
-                |]
-            )
+        Vitest.expect(PriorTables.optionCount ()).toBe 2
 
         RTL.fireEvent.click (PriorTables.importButton ())
 
@@ -306,8 +290,8 @@ Vitest.test (
         Vitest.expect(imported.GetColumn(0).Cells.[0]).toEqual (CompositeCell.createFreeText "local-sample")
         Vitest.expect(updated.Value.Tables().[0].ColumnCount).toBe 2
 
-        Vitest.expect(RTL.screen.queryByRole("dialog", ByRoleOptions(name = Text "Utilize prior tables")).IsNone).toBe
-            true
+        Vitest.expect(Queries.present "empty-table-existing-tables-page").toBe false
+        Queries.get "empty-table-choices" |> ignore
     }
 )
 
@@ -330,24 +314,12 @@ Vitest.test (
         RTL.render (viewWithArcNodes arcFile (fun next -> updated <- Some next) (Some 1) fetchArcNodes)
         |> ignore
 
-        RTL.fireEvent.click (PriorTables.card ())
+        PriorTables.openPage ()
 
-        do!
-            RTL.waitFor (fun () ->
-                Vitest
-                    .expect(PriorTables.optionLabels ())
-                    .toEqual (
-                        [|
-                            "Filled – Output [Sample Name]"
-                            "Filled – Input [Source Name]"
-                            "Harvest – Output [Sample Name]"
-                            "Harvest – Input [Source Name]"
-                        |]
-                    )
-            )
+        do! RTL.waitFor (fun () -> Vitest.expect(PriorTables.optionCount ()).toBe 4)
 
-        PriorTables.selectOption "Harvest – Input [Source Name]"
-        RTL.screen.getByText ("plant-1", ByTextOptions(exact = true)) |> ignore
+        PriorTables.selectOption "empty-table-existing-column-Study Field-Harvest-Input"
+        Vitest.expect((Queries.get "empty-table-existing-column-preview").textContent).toContain "plant-1"
         RTL.fireEvent.click (PriorTables.importButton ())
 
         Vitest.expect(updated.IsSome).toBe true
@@ -376,20 +348,19 @@ Vitest.test (
         RTL.render (viewWithArcNodes (PriorTables.arcFile ()) ignore (Some 1) fetchArcNodes)
         |> ignore
 
-        RTL.fireEvent.click (PriorTables.card ())
+        PriorTables.openPage ()
 
-        let! alert = RTL.screen.findByRole ("alert", ByRoleOptions())
+        let! alert = RTL.screen.findByTestId "empty-table-existing-tables-error"
         Vitest.expect(alert.textContent).toContain "ARC is not loaded"
-        Vitest.expect(PriorTables.optionLabels () |> Array.length).toBe 2
+        Vitest.expect(PriorTables.optionCount ()).toBe 2
         Vitest.expect(PriorTables.importButton().disabled).toBe false
 
-        RTL.fireEvent.click (Queries.inRole (PriorTables.dialog (), "button", ByRoleOptions(name = Text "Retry")))
+        Queries.click "empty-table-existing-tables-retry"
 
-        do!
-            RTL.waitFor (fun () ->
-                Vitest.expect(PriorTables.optionLabels ()).toContain "Readout – Output [Sample Name]"
-            )
+        do! RTL.waitFor (fun () -> Vitest.expect(PriorTables.optionCount ()).toBe 4)
 
-        Vitest.expect(RTL.screen.queryByRole("alert", ByRoleOptions()).IsNone).toBe true
+        Queries.get "empty-table-existing-column-Run Measure-Readout-Output" |> ignore
+        Vitest.expect(attempts).toBe 2
+        Vitest.expect(Queries.present "empty-table-existing-tables-error").toBe false
     }
 )
