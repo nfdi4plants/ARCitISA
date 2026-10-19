@@ -4,10 +4,13 @@ open Elmish
 open Feliz
 open Feliz.UseElmish
 open Renderer.Components
+open Renderer.Components.Helper.ArcVaultHelper
 open Renderer.Types
 open Swate.Components
 open Swate.Components.Composite.Layout
+open Swate.Components.Primitive.BaseModal
 open Swate.Components.Primitive.ErrorModal
+open Swate.Components.Primitive.ErrorModal.Context
 open Swate.Electron.Shared
 open Swate.Electron.Shared.IPCTypes.MainToRendererIpc
 
@@ -140,6 +143,12 @@ let private LeftActionButtons (leftSidebarTarget: LeftSidebarPage) setLeftSideba
         Swate.Components.Composite.Layout.LeftSidebarContext.useLeftSidebarCtx ()
 
     let pageStateCtx = Renderer.Context.PageStateContext.usePageStateCtx ()
+    let appStateCtx = Renderer.Context.AppStateContext.useAppStateCtx ()
+    let errorCtx = useErrorModalCtx ()
+    let newArcModalIsOpen, setNewArcModalIsOpen = React.useState false
+
+    let onArcError =
+        createErrorModalCallback errorCtx.enqueue "ARC action failed" appStateCtx
 
     let toggleTarget target =
         if leftSidebarTarget = target then
@@ -164,6 +173,11 @@ let private LeftActionButtons (leftSidebarTarget: LeftSidebarPage) setLeftSideba
         | Some(PageState.ProvenanceGraphPage _) -> true
         | _ -> false
 
+    let datahubActive =
+        match pageStateCtx.state with
+        | Some PageState.DataHubBrowser -> true
+        | _ -> false
+
     // Every open gets a new request id, so the page mounts new and loads its data again.
     let toggleProvenanceGraph () =
         if provenanceGraphActive then
@@ -171,38 +185,67 @@ let private LeftActionButtons (leftSidebarTarget: LeftSidebarPage) setLeftSideba
         else
             pageStateCtx.setState (Some(PageState.ProvenanceGraphPage(System.Guid.NewGuid().ToString())))
 
+    let Divider =
+        Html.hr [
+            prop.className "swt:mx-1 swt:my-1 swt:border-base-content/20"
+        ]
+
     React.Fragment [
-        Layout.LayoutBtn(
-            iconClassName = "swt:fluent--home-24-regular",
-            tooltip = "File explorer",
-            isActive = (leftSidebarTarget = LeftSidebarPage.FileExplorer),
-            onClick = fun () -> toggleTarget LeftSidebarPage.FileExplorer
+        BaseModal.BaseModal(
+            newArcModalIsOpen,
+            setNewArcModalIsOpen,
+            InitState.CreateNewArcModalContent(fun () -> setNewArcModalIsOpen false)
         )
         Layout.LayoutBtn(
-            iconClassName = "swt:fluent--branch-fork-24-regular",
-            tooltip = "Git",
-            isActive = (leftSidebarTarget = LeftSidebarPage.Git),
-            onClick = fun () -> toggleTarget LeftSidebarPage.Git
+            iconClassName = "swt:fluent--folder-add-24-regular",
+            tooltip = "Create a new ARC",
+            onClick = fun () -> setNewArcModalIsOpen true
+        )
+        Layout.LayoutBtn(
+            iconClassName = "swt:fluent--folder-open-24-regular",
+            tooltip = "Open an existing ARC",
+            onClick = fun () -> openArc onArcError |> Promise.start
         )
         Layout.LayoutBtn(
             iconClassName = "swt:fluent--cloud-beaker-24-regular",
             tooltip = "Download ARC from DataHUB",
-            isActive = false,
+            isActive = datahubActive,
             onClick = fun () -> pageStateCtx.setState (Some PageState.DataHubBrowser)
         )
-        Layout.LayoutBtn(
-            iconClassName = "swt:fluent--clipboard-checkmark-24-regular",
-            tooltip = "Validation packages",
-            isActive = validationBrowserActive,
-            onClick = fun () -> toggleValidationBrowser ()
-        )
-        Layout.LayoutBtn(
-            iconClassName = "swt:fluent--flowchart-24-regular",
-            tooltip = "Provenance Graph",
-            isActive = provenanceGraphActive,
-            indicator = "new",
-            onClick = fun () -> toggleProvenanceGraph ()
-        )
+        if appStateCtx.IsSome then
+
+            Divider
+
+            Layout.LayoutBtn(
+                iconClassName = "swt:fluent--home-24-regular",
+                tooltip = "File explorer",
+                isActive = (leftSidebarTarget = LeftSidebarPage.FileExplorer),
+                onClick = fun () -> toggleTarget LeftSidebarPage.FileExplorer
+            )
+
+            Layout.LayoutBtn(
+                iconClassName = "swt:fluent--branch-fork-24-regular",
+                tooltip = "Git",
+                isActive = (leftSidebarTarget = LeftSidebarPage.Git),
+                onClick = fun () -> toggleTarget LeftSidebarPage.Git
+            )
+
+            Divider
+
+            Layout.LayoutBtn(
+                iconClassName = "swt:fluent--clipboard-checkmark-24-regular",
+                tooltip = "Validation packages",
+                isActive = validationBrowserActive,
+                onClick = fun () -> toggleValidationBrowser ()
+            )
+
+            Layout.LayoutBtn(
+                iconClassName = "swt:fluent--flowchart-24-regular",
+                tooltip = "Provenance Graph",
+                isActive = provenanceGraphActive,
+                indicator = "new",
+                onClick = fun () -> toggleProvenanceGraph ()
+            )
     ]
 
 [<ReactComponent>]
@@ -252,11 +295,7 @@ let Main () =
         else
             None
 
-    let leftActions =
-        if isInitializedArcVault then
-            LeftActionButtons model.LeftSidebarTarget setLeftSidebarTarget |> Some
-        else
-            None
+    let leftActions = LeftActionButtons model.LeftSidebarTarget setLeftSidebarTarget
 
     Swate.Components.Composite.ThemeSelector.ThemeProvider.ThemeProvider(
         Swate.Components.Composite.TermSearch.TermSearchConfigProvider.TIBQueryProvider(
@@ -292,7 +331,7 @@ let Main () =
                                                             |],
                                                         navbar = Renderer.Components.Navbar.Main(),
                                                         ?leftSidebar = leftSidebar,
-                                                        ?leftActions = leftActions
+                                                        leftActions = leftActions
                                                     )
                                                 )
                                         )

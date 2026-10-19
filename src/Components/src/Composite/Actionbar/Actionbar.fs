@@ -47,7 +47,7 @@ type Actionbar =
                 prop.className [
                     match buttonClassName with
                     | Some customClass -> customClass
-                    | None -> "swt:btn swt:btn-primary swt:btn-square swt:btn-ghost"
+                    | None -> "swt:btn swt:btn-ghost swt:btn-square"
                     btnSize
                 ]
                 if buttonTestId.IsSome then
