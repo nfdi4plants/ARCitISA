@@ -99,18 +99,133 @@ module ARCtrlHelper =
         let toPath (dmpi: DatamapParentInfo) =
             combineMany [| toFolderPath dmpi; DatamapFileName |]
 
-    let createNewTableName (tables: seq<ArcTable>) =
-        let existingNames = tables |> Seq.map _.Name |> Set.ofSeq
+    let tableNameKey (name: string) = name.Trim().ToLowerInvariant()
+
+    let private firstFreeTableName (usedNames: seq<string>) (candidate: int -> string) =
+        let usedKeys = usedNames |> Seq.map tableNameKey |> Set.ofSeq
 
         let rec loop index =
-            let name = $"New Table {index}"
+            let name = candidate index
 
-            if existingNames.Contains name then
+            if usedKeys.Contains(tableNameKey name) then
                 loop (index + 1)
             else
                 name
 
         loop 0
+
+    let createNewTableName (tables: seq<ArcTable>) =
+        firstFreeTableName (tables |> Seq.map _.Name) (fun index -> $"New Table {index}")
+
+    let private forbiddenTableNameCharacters = [| '*'; '?'; ':'; '\\'; '/'; '['; ']' |]
+
+    [<Literal>]
+    let private MaxTableNameLength = 31
+
+    let uniqueTableName (usedNames: seq<string>) (preferredName: string) =
+        let baseName =
+            if String.IsNullOrWhiteSpace preferredName then
+                "New Table"
+            else
+                preferredName.Trim()
+
+        firstFreeTableName
+            usedNames
+            (fun index ->
+                if index = 0 then
+                    baseName
+                else
+                    // Shorten the base so the numbered name still fits.
+                    let suffix = $" {index}"
+                    let maxBaseLength = MaxTableNameLength - suffix.Length
+
+                    if baseName.Length > maxBaseLength then
+                        baseName.Substring(0, maxBaseLength).TrimEnd() + suffix
+                    else
+                        baseName + suffix
+            )
+
+    let tryTableNameError (otherNames: seq<string>) (name: string) =
+        let name = name.Trim()
+
+        if name = "" then
+            Some "Enter a table name."
+        elif name |> Seq.exists (fun c -> Array.contains c forbiddenTableNameCharacters) then
+            Some "A table name cannot contain * ? : \\ / [ ]."
+        elif name.StartsWith "'" || name.EndsWith "'" then
+            Some "A table name cannot start or end with '."
+        elif name = "History" then
+            Some "\"History\" is reserved and cannot be a table name."
+        elif name.Length > MaxTableNameLength then
+            Some $"A table name can have at most {MaxTableNameLength} characters."
+        elif otherNames |> Seq.exists (fun other -> tableNameKey other = tableNameKey name) then
+            Some $"A table named \"{name}\" already exists."
+        else
+            None
+
+    type NewTableName = {
+        Name: string
+        Error: string option
+        Notice: string option
+    }
+
+    /// Names for tables added to a file, given as (preferred name, entered name). An entered name is kept; every other
+    /// table gets its preferred name, made unique against the existing tables and all names given before it.
+    let resolveNewTableNames (existingTableNames: seq<string>) (newTables: (string * string option)[]) =
+        let existingTableNames = Array.ofSeq existingTableNames
+        let enteredNames = newTables |> Array.choose snd
+
+        let names =
+            newTables
+            |> Array.mapFold
+                (fun usedNames (preferredName, enteredName) ->
+                    match enteredName with
+                    | Some name -> name, usedNames
+                    | None ->
+                        let name = uniqueTableName usedNames preferredName
+                        name, Array.append usedNames [| name |]
+                )
+                (Array.append existingTableNames enteredNames)
+            |> fst
+
+        names
+        |> Array.mapi (fun index name ->
+            let preferredName, enteredName = newTables.[index]
+            let preferredName = preferredName.Trim()
+
+            let otherNewNames =
+                names
+                |> Array.indexed
+                |> Array.filter (fun (other, _) -> other <> index)
+                |> Array.map snd
+
+            let error =
+                match tryTableNameError existingTableNames name with
+                | Some error -> Some error
+                | None when
+                    otherNewNames
+                    |> Array.exists (fun other -> tableNameKey other = tableNameKey name)
+                    ->
+                    Some $"Another imported table is also named \"{name.Trim()}\"."
+                | None -> None
+
+            let notice =
+                if enteredName.IsSome || preferredName = "" || name = preferredName then
+                    None
+                elif
+                    existingTableNames
+                    |> Array.exists (fun existing -> tableNameKey existing = tableNameKey preferredName)
+                then
+                    Some $"\"{preferredName}\" already exists, so the new table is renamed."
+                else
+                    Some $"Another imported table is named \"{preferredName}\", so this one is renamed."
+
+            {
+                Name = name
+                Error = error
+                Notice = notice
+            }
+        )
 
     type ArcFiles =
         | Template of Template

@@ -1,6 +1,7 @@
 module Swate.Components.Composite.Template.TemplateActions
 
 open ARCtrl
+open Swate.Components.Shared
 open Swate.Components.Composite.Template.Types
 
 /// Syncs the selected template IDs with the currently loaded templates, removing any IDs that no longer exist in the loaded templates.
@@ -94,6 +95,27 @@ let selectedTemplatesForImport
         | nextAction -> Some(template, nextAction)
     )
 
+let newTableNames
+    (existingTableNames: string seq)
+    (selectedTemplatesForImport: (Template * TemplateImportAction)[])
+    (enteredNames: Map<System.Guid, string>)
+    =
+    let newTableTemplates =
+        selectedTemplatesForImport
+        |> Array.choose (fun (template, action) ->
+            if action = TemplateImportAction.ImportAsNewTable then
+                Some template
+            else
+                None
+        )
+
+    newTableTemplates
+    |> Array.map (fun template -> template.Table.Name, enteredNames.TryFind template.Id)
+    |> resolveNewTableNames existingTableNames
+    |> Array.zip newTableTemplates
+    |> Array.map (fun (template, newTableName) -> template.Id, newTableName)
+    |> Map.ofArray
+
 let selectedTemplateIndexById (selectedTemplatesForImport: (Template * TemplateImportAction)[]) =
     selectedTemplatesForImport
     |> Array.mapi (fun tableIndex (template, _) -> template.Id, tableIndex)
@@ -111,12 +133,22 @@ let deselectedColumnsForImport
     )
     |> Set.ofSeq
 
-let importTablesConfig (selectedTemplatesForImport: (Template * TemplateImportAction)[]) =
+let importTablesConfig
+    (selectedTemplatesForImport: (Template * TemplateImportAction)[])
+    (newTableNames: Map<System.Guid, string>)
+    =
     selectedTemplatesForImport
-    |> Array.mapi (fun tableIndex (_, action) ->
+    |> Array.mapi (fun tableIndex (template, action) ->
+        let fullImport = action = TemplateImportAction.ImportAsNewTable
+
         ({
             Index = tableIndex
-            FullImport = (action = TemplateImportAction.ImportAsNewTable)
+            FullImport = fullImport
+            Name =
+                if fullImport then
+                    newTableNames.TryFind template.Id |> Option.map _.Trim()
+                else
+                    None
         }
         : ImportTable)
     )
@@ -134,3 +166,27 @@ let buildSelectiveImportConfig
             ImportTables = importTablesConfig
             DeselectedColumns = deselectedColumns
     }
+
+let importIntoCopy (arcFile: ArcFiles) (activeTableIndex: int option) (payload: ImportModalConfirmPayload) =
+    let importTables =
+        payload.SelectedTemplatesForImport
+        |> Array.map (fun (template, _) -> template.Table)
+        |> ResizeArray
+
+    let deselectedColumns =
+        deselectedColumnsForImport
+            payload.DeselectedTemplateColumns
+            (selectedTemplateIndexById payload.SelectedTemplatesForImport)
+
+    let importConfig =
+        buildSelectiveImportConfig
+            payload.ImportType
+            (importTablesConfig payload.SelectedTemplatesForImport payload.NewTableNames)
+            deselectedColumns
+
+    let nextArcFile = ArcFiles.refreshRef arcFile
+
+    Helper.updateTables importTables importConfig activeTableIndex (Some nextArcFile)
+    |> ignore
+
+    nextArcFile

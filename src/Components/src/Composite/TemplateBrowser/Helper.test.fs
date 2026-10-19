@@ -8,16 +8,18 @@ open Swate.Components.Composite.Template.Types
 open Swate.Components.Composite.Template.Helper
 open Vitest
 
-let private createBasicAssay () =
+let private createBasicFile (file: ArcFiles) =
     let table = ArcTable.init "New Table 0"
     table.AddColumn(CompositeHeader.Input IOType.Source)
     table.AddColumn CompositeHeader.ProtocolUri
     table.AddColumn(CompositeHeader.Output IOType.Sample)
     table.AddRowsEmpty 3
     table.SetCellAt(0, 0, CompositeCell.FreeText "source-1")
-    let assay = ArcAssay.init "TestAssay"
-    assay.AddTable table
-    ArcFiles.Assay assay
+    file.ArcTables().AddTable table
+    file
+
+let private createBasicAssay () =
+    createBasicFile (ArcFiles.Assay(ArcAssay.init "TestAssay"))
 
 let private createTemplate rowCount =
     let table = ArcTable.init "Template"
@@ -64,7 +66,13 @@ let private importTemplate importType fullImport deselected source target =
     let config = {
         SelectiveImportConfig.init () with
             ImportType = importType
-            ImportTables = [ { Index = 0; FullImport = fullImport } ]
+            ImportTables = [
+                {
+                    Index = 0
+                    FullImport = fullImport
+                    Name = None
+                }
+            ]
             DeselectedColumns = deselected
     }
 
@@ -158,6 +166,28 @@ Vitest.test (
         imported.AddRowsEmpty 3
         verifyReadableAndSerializable (ArcFiles.refreshRef updated)
 )
+
+for fileType, createEmptyFile in
+    [
+        "assay", (fun () -> ArcFiles.Assay(ArcAssay.init "TestAssay"))
+        "study", (fun () -> ArcFiles.Study(ArcStudy.init "TestStudy", []))
+        "run", (fun () -> ArcFiles.Run(ArcRun.init "TestRun"))
+    ] do
+    Vitest.test (
+        $"a new table whose name is taken is rejected before any table is added ({fileType})",
+        fun () ->
+            let source =
+                createTemplate 2 |> ARCtrl.IdentifierSetters.setArcTableName "New Table 0"
+
+            let target = createBasicFile (createEmptyFile ())
+
+            Vitest
+                .expect(fun () -> importTemplate TableJoinOptions.Headers true Set.empty source target |> ignore)
+                .toThrowError
+                "table names must be unique"
+
+            Vitest.expect(target.Tables() |> Seq.map _.Name |> Array.ofSeq).toEqual [| "New Table 0" |]
+    )
 
 for importType in [ TableJoinOptions.WithUnit; TableJoinOptions.WithValues ] do
     Vitest.test (

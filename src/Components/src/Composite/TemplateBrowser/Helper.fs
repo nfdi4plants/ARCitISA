@@ -98,7 +98,7 @@ let createUpdatedTables
                     getDeselectedTableColumnIndices deselectedColumns importTable.Index
 
                 let sourceTable = arcTables.[importTable.Index]
-                let appliedTable = ArcTable.init sourceTable.Name
+                let appliedTable = ArcTable.init (defaultArg importTable.Name sourceTable.Name)
 
                 let finalTable =
                     Table.selectiveTablePrepare appliedTable sourceTable deselectedColumnIndices
@@ -174,14 +174,17 @@ let updateTables
             |> Array.ofSeq
             |> Array.rev
 
-        selectedColumnTables
-        |> Seq.map (fun table ->
-            let nextTable = ArcTable.init table.Name
-            joinTemplateTable nextTable table importConfig.ImportType
-            nextTable
-        )
-        |> Seq.rev
-        |> Seq.iter existingTables.Add
+        let newTables =
+            selectedColumnTables
+            |> Seq.map (fun table ->
+                let nextTable = ArcTable.init table.Name
+                joinTemplateTable nextTable table importConfig.ImportType
+                nextTable
+            )
+            |> Seq.rev
+            |> ResizeArray
+
+        existing.ArcTables().AddTables newTables
 
         existing
     | None -> failwith "Error! Can only append information if metadata sheet exists!"

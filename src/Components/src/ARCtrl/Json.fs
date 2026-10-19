@@ -124,31 +124,6 @@ module Import =
 
     let private arcFileTypeLabel (fileType: ArcFilesDiscriminate) = fileType |> unbox<string>
 
-    let private uniqueTableName (usedNames: Set<string>) (preferredName: string) =
-        let baseName =
-            if String.IsNullOrWhiteSpace preferredName then
-                "New Table"
-            else
-                preferredName.Trim()
-
-        let rec loop index =
-            let candidate = if index = 0 then baseName else $"{baseName} {index}"
-
-            if usedNames.Contains candidate then
-                loop (index + 1)
-            else
-                candidate
-
-        loop 0
-
-    let private copyTableWithName (name: string) (table: ArcTable) =
-        let next = table.Copy()
-
-        if next.Name <> name then
-            ARCtrl.IdentifierSetters.setArcTableName name next
-        else
-            next
-
     let applyToCurrentArcFile (currentArcFile: ArcFiles, importedArcFile: ArcFiles) =
         let currentFileType = currentArcFile.RelatedArcFilesDiscriminate
         let importedFileType = importedArcFile.RelatedArcFilesDiscriminate
@@ -163,20 +138,42 @@ module Import =
             | ArcFiles.DataMap(currentParentInfo, _), ArcFiles.DataMap(_, importedDataMap) ->
                 Ok(ArcFiles.DataMap(currentParentInfo, importedDataMap))
             | _ when currentArcFile.CanCreateTables() ->
-                let importedTables = importedArcFile.Tables()
+                let importedTables = importedArcFile.Tables() |> Array.ofSeq
 
-                if importedTables.Count = 0 then
+                if importedTables.Length = 0 then
                     Error(exn $"Imported {arcFileTypeLabel importedFileType} JSON does not contain tables to append.")
                 else
-                    let targetTables = currentArcFile.ArcTables()
-                    let mutable usedNames = targetTables.TableNames |> Set.ofSeq
+                    let tablesWithNames =
+                        importedTables
+                        |> Array.map (fun table -> table.Name, None)
+                        |> resolveNewTableNames (currentArcFile.ArcTables().TableNames)
+                        |> Array.zip importedTables
 
-                    for sourceTable in importedTables do
-                        let nextName = uniqueTableName usedNames sourceTable.Name
-                        targetTables.AddTable(copyTableWithName nextName sourceTable)
-                        usedNames <- usedNames.Add nextName
+                    let errors =
+                        tablesWithNames
+                        |> Array.choose (fun (table, newTableName) ->
+                            newTableName.Error
+                            |> Option.map (fun error -> $"Table \"{table.Name}\": {error}")
+                        )
 
-                    Ok(ArcFiles.refreshRef currentArcFile)
+                    if errors.Length > 0 then
+                        Error(exn (String.concat " " errors))
+                    else
+                        // Tables are added to a copy, so the open file stays untouched.
+                        let nextArcFile = ArcFiles.refreshRef currentArcFile
+
+                        tablesWithNames
+                        |> Array.map (fun (table, newTableName) ->
+                            let copy = table.Copy()
+
+                            if newTableName.Name = copy.Name then
+                                copy
+                            else
+                                ArcTable.fromArcTableValues (newTableName.Name, copy.Headers, copy.Values)
+                        )
+                        |> nextArcFile.ArcTables().AddTables
+
+                        Ok nextArcFile
             | _ -> Ok importedArcFile
 
     let tryParseFromJsonString

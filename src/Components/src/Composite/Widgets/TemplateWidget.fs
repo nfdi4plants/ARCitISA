@@ -53,51 +53,33 @@ type TemplateWidget =
         let toggleTemplateSelection (templateId: System.Guid) =
             setSelectedTemplateIds (fun current -> TemplateActions.toggleTemplateSelection templateId current)
 
-        let importTemplates (payload: TemplateTypes.ImportModalConfirmPayload) =
-            match canAppend with
-            | false -> false
-            | true ->
-                if payload.SelectedTemplatesForImport.Length > 0 then
-                    let importTables =
-                        ResizeArray(
-                            payload.SelectedTemplatesForImport
-                            |> Seq.map (fun (template, _) -> template.Table)
-                        )
-
-                    let selectedTemplateIndexById =
-                        TemplateActions.selectedTemplateIndexById payload.SelectedTemplatesForImport
-
-                    let deselectedColumns =
-                        TemplateActions.deselectedColumnsForImport
-                            payload.DeselectedTemplateColumns
-                            selectedTemplateIndexById
-
-                    let importConfig =
-                        TemplateActions.buildSelectiveImportConfig
-                            payload.ImportType
-                            (TemplateActions.importTablesConfig payload.SelectedTemplatesForImport)
-                            deselectedColumns
-
-                    let nextArcFileState =
-                        Helper.updateTables importTables importConfig (tryGetActiveTableIndex arcFile) (Some arcFile)
-
-                    let nextArcFile = ArcFiles.refreshRef nextArcFileState
-                    setArcFile nextArcFile
-                    setSelectedTemplateIds (fun _ -> Set.empty<System.Guid>)
-                    true
-                else
-                    false
+        let importError, setImportError = React.useState (None: string option)
 
         let openImportDialog () =
             if not showImportDialog then
+                setImportError None
                 setShowImportDialog true
 
         let confirmImport (payload: TemplateTypes.ImportModalConfirmPayload) =
-            let didImport = importTemplates payload
-            setShowImportDialog false
+            let importResult =
+                if canAppend && payload.SelectedTemplatesForImport.Length > 0 then
+                    try
+                        Some(Ok(TemplateActions.importIntoCopy arcFile (tryGetActiveTableIndex arcFile) payload))
+                    with error ->
+                        Some(Error error.Message)
+                else
+                    None
 
-            if didImport then
+            match importResult with
+            | Some(Error message) -> setImportError (Some message)
+            | Some(Ok nextArcFile) ->
+                setArcFile nextArcFile
+                setSelectedTemplateIds (fun _ -> Set.empty<System.Guid>)
+                setShowImportDialog false
                 widgetCtx.closeWidget WidgetType.Template
+            | None -> setShowImportDialog false
+
+        let existingTableNames = arcFile.Tables() |> Seq.map _.Name |> Array.ofSeq
 
         let selectedTemplates =
             templates
@@ -108,9 +90,11 @@ type TemplateWidget =
                 isOpen = showImportDialog,
                 importType = importType,
                 selectedTemplates = selectedTemplates,
+                existingTableNames = existingTableNames,
                 setIsOpen = setShowImportDialog,
                 setImportType = setImportType,
-                submitImport = confirmImport
+                submitImport = confirmImport,
+                ?importError = importError
             )
             Html.div [
                 prop.className "swt:flex swt:flex-col swt:gap-2 swt:overflow-y-hidden swt:p-2"

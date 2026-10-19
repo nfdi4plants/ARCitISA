@@ -92,6 +92,7 @@
     <Compile Include="ARCtrl\ArcIO.fs" />
     <Compile Include="ARCtrl\EmptyColumnJson.fs" />
     <Compile Include="ARCtrl\Json.fs" />
+    <Compile Include="ARCtrl\Json.test.fs" />
     <Compile Include="ARCtrl\EmptyColumnJson.test.fs" />
     <Compile Include="ARCtrl\Types\CompositeCellDiscriminate.fs" />
     <Compile Include="ARCtrl\Types\CompositeHeaderDiscriminate.fs" />
@@ -229,9 +230,11 @@
     <Compile Include="Composite\TemplateBrowser\TemplateCacheContext.fs" />
     <Compile Include="Composite\TemplateBrowser\TemplateCacheProvider.fs" />
     <Compile Include="Composite\TemplateBrowser\TemplateActions.fs" />
+    <Compile Include="Composite\TemplateBrowser\TemplateActions.test.fs" />
     <Compile Include="Composite\TemplateBrowser\TemplateFilter.fs" />
     <Compile Include="Composite\TemplateBrowser\TemplateImportModalPreview.fs" />
     <Compile Include="Composite\TemplateBrowser\TemplateImportModal.fs" />
+    <Compile Include="Composite\TemplateBrowser\TemplateImportModal.test.rtl.fs" />
     <Compile Include="Composite\TemplateBrowser\TemplatesDisplay.fs" />
     <Compile Include="Composite\TemplateBrowser\TemplateBrowser.fs" />
     <Compile Include="Composite\Widgets\Types.fs" />
