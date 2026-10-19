@@ -1681,8 +1681,7 @@ type EditConfig =
                 prop.className "swt:flex swt:flex-col swt:gap-2"
                 prop.children [
                     Html.div [
-                        prop.className
-                            "swt:tabs swt:tabs-box swt:my-1 swt:w-fit swt:mx-auto swt:*:[--tab-bg:var(--color-secondary)] swt:*:[&.swt\:tab-active]:text-secondary-content"
+                        prop.className "swt:tabs swt:tabs-box swt:my-1 swt:w-fit swt:mx-auto"
                         prop.children [
                             Html.div [
                                 prop.className [
