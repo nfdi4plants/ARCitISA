@@ -218,6 +218,22 @@ module FloatingUI =
     [<Erase>]
     type IMiddleware = interface end
 
+    [<AllowNullLiteral>]
+    type SizeElements =
+        abstract reference: ReferenceElement
+        abstract floating: HTMLElement
+
+    [<AllowNullLiteral>]
+    type SizeApplyState =
+        abstract availableWidth: float
+        abstract availableHeight: float
+        abstract elements: SizeElements
+
+    [<AllowNullLiteral; Global>]
+    type SizeOptions [<ParamObject; Emit("$0")>] (?apply: SizeApplyState -> unit, ?padding: float) =
+        member val apply = apply
+        member val padding = padding
+
     [<Erase>]
     type Middleware =
         [<ImportMember("@floating-ui/react")>]
@@ -231,6 +247,9 @@ module FloatingUI =
 
         [<ImportMember("@floating-ui/react")>]
         static member size(?options: obj) : IMiddleware = jsNative
+
+        [<ImportMember("@floating-ui/react")>]
+        static member size(options: SizeOptions) : IMiddleware = jsNative
 
     [<StringEnum(CaseRules.LowerAll)>]
     type Status =

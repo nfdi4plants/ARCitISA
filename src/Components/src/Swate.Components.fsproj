@@ -393,6 +393,8 @@
     <Compile Include="Page\ArcFileEditor\ArcFileFooterTabs.fs" />
     <Compile Include="Page\ArcFileEditor\ArcFileEditor.fs" />
     <Compile Include="Page\ArcFileEditor\ArcFileEditor.test.rtl.fs" />
+    <Compile Include="Page\ArcFileEditor\EmptyTableView\Main.sample.fs" />
+    <Compile Include="Page\ArcFileEditor\EmptyTableView\Main.test.rtl.fs" />
 
     <Compile Include="Style.fs" />
   </ItemGroup>

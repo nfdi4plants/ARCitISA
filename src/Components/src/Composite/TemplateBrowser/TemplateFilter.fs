@@ -606,7 +606,7 @@ type TemplateFilter =
         )
 
         Html.div [
-            prop.className "swt:flex swt:flex-row swt:gap-2"
+            prop.className "swt:flex swt:shrink-0 swt:min-w-0 swt:flex-row swt:flex-wrap swt:gap-2"
             prop.children [
                 TemplateFilter.TemplateSearch(
                     availableTokens,

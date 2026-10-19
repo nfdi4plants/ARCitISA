@@ -19,7 +19,7 @@ type TemplateWidget =
     [<ReactComponent(true)>]
     static member TemplateWidget
         // 👀 If you rename these variables, ensure that the names are forwarded for lazy loading in `src\Components\src\ARCFileEditor\ArcFileEditor.fs` as well!
-        (arcFile: ArcFiles, activeTableIndex: int option, setArcFile: ArcFiles -> unit) =
+        (arcFile: ArcFiles, activeTableIndex: int option, setArcFile: ArcFiles -> unit, ?onImportCompleted: unit -> unit) =
 
         let templateCacheCtx = TemplateCacheContext.useTemplateCacheCtx ()
         let templates = templateCacheCtx.Templates
@@ -59,24 +59,13 @@ type TemplateWidget =
                 setShowImportDialog true
 
         let confirmImport (payload: TemplateTypes.ImportModalConfirmPayload) =
-            match tryGetActiveTableIndex arcFile with
-            | Some tableIndex when payload.SelectedTemplatesForImport.Length > 0 ->
-                let importResult =
-                    try
-                        Ok(TemplateActions.importIntoCopy arcFile (Some tableIndex) payload)
-                    with error ->
-                        Error error.Message
+            let didImport = importTemplates payload
+            setShowImportDialog false
 
-                match importResult with
-                | Error message -> setImportError (Some message)
-                | Ok nextArcFile ->
-                    setArcFile nextArcFile
-                    setSelectedTemplateIds (fun _ -> Set.empty<System.Guid>)
-                    setShowImportDialog false
-                    widgetCtx.closeWidget WidgetType.Template
-            | _ -> setShowImportDialog false
-
-        let existingTableNames = arcFile.Tables() |> Seq.map _.Name |> Array.ofSeq
+            if didImport then
+                match onImportCompleted with
+                | Some onCompleted -> onCompleted ()
+                | None -> widgetCtx.closeWidget WidgetType.Template
 
         let selectedTemplates =
             React.useMemo (
@@ -99,7 +88,8 @@ type TemplateWidget =
                 ?importError = importError
             )
             Html.div [
-                prop.className "swt:flex swt:flex-col swt:gap-2 swt:overflow-y-hidden swt:p-2"
+                prop.className
+                    "swt:flex swt:flex-1 swt:min-h-0 swt:min-w-0 swt:flex-col swt:gap-2 swt:overflow-hidden swt:p-2"
                 prop.children [
                     TemplateBrowser.TemplateBrowser(
                         templates,

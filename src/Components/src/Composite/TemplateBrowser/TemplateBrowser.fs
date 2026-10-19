@@ -61,7 +61,10 @@ type TemplateBrowser =
                 TemplateBrowser.TemplateImportButton(templateImportDisabled, openImportDialog)
                 TemplateBrowser.SelectedTemplatesLabel(selectedTemplateIds.Count)
 
-                TemplateFilter.TemplateFilter(templates, templateSearchClassName = "swt:grow")
+                TemplateFilter.TemplateFilter(
+                    templates,
+                    templateSearchClassName = "swt:grow swt:min-w-0 swt:max-w-full"
+                )
                 TemplateFilter.FilteredTemplateRenderer(fun filteredTemplates ->
                     Html.div [
                         prop.className "swt:flex-1 swt:min-h-0 swt:overflow-y-auto"

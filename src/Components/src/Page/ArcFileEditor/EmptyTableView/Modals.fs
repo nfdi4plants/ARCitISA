@@ -6,61 +6,9 @@ open ARCtrl
 open Swate.Components
 open Swate.Components.Shared
 open Swate.Components.Primitive.BaseModal
-open Swate.Components.Composite.Widgets
-open Swate.Components.Composite.Widgets.BuildingBlockWidget
-open Swate.Components.Page.ArcFileEditor.EmptyTableView
 
 [<Erase; Mangle(false)>]
 type Modals =
-
-    [<ReactComponent>]
-    static member BuildingBlock
-        (
-            arcFile: ArcFiles,
-            activeTableIndex: int option,
-            setArcFile: ArcFiles -> unit,
-            isOpen: bool,
-            setIsOpen: bool -> unit
-        ) =
-
-        let setArcFileAndClose nextArcFile =
-            setArcFile nextArcFile
-            setIsOpen false
-
-        BaseModal.Modal(
-            isOpen = isOpen,
-            setIsOpen = setIsOpen,
-            header = Html.text "Select a building block",
-            children = BuildingBlockWidget.Main(arcFile, activeTableIndex, setArcFileAndClose),
-            className = "swt:max-w-3xl"
-        )
-
-    [<ReactComponent>]
-    static member Templates
-        (
-            arcFile: ArcFiles,
-            activeTableIndex: int option,
-            setArcFile: ArcFiles -> unit,
-            isOpen: bool,
-            setIsOpen: bool -> unit
-        ) =
-
-        let setArcFileAndClose nextArcFile =
-            setArcFile nextArcFile
-            setIsOpen false
-
-        BaseModal.Modal(
-            isOpen = isOpen,
-            setIsOpen = setIsOpen,
-            header = Html.text "Select template(s)",
-            children =
-                Swate.Components.Composite.Widgets.TemplateWidget.TemplateWidget(
-                    arcFile,
-                    activeTableIndex,
-                    setArcFileAndClose
-                ),
-            className = "swt:flex swt:min-w-fit"
-        )
 
     [<ReactComponent>]
     static member PreviousTableSelect
