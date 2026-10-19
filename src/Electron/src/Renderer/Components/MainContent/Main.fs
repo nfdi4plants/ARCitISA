@@ -11,7 +11,6 @@ open Renderer.Components.MainContent.GitDiffTarget
 open Renderer.Components.MainContent.GitFileChoiceConflictTarget
 open Renderer.Components.MainContent.GitMergeConflictTarget
 open Renderer.Components.MainContent.GitUnsupportedTarget
-open Renderer.Components.MainContent.LandingDraftTarget
 open Renderer.Components.MainContent.NotesDraftTarget
 open Renderer.Components.MainContent.NotesSearchTarget
 open Renderer.Components.MainContent.ProvenanceGroupingTarget

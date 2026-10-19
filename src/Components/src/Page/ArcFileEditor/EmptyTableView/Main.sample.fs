@@ -21,7 +21,7 @@ module internal Fixtures =
         ArcFiles.Assay assay
 
     let templates () =
-        let make id name organisation termName =
+        let make (id: string) name organisation termName =
             let template = Template.init name
             template.Id <- System.Guid.Parse id
             template.Organisation <- organisation

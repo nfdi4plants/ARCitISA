@@ -115,7 +115,8 @@ type Main =
                                         Html.tr [
                                             Html.td [
                                                 prop.className "swt:opacity-70"
-                                                prop.text "No cells found, this will import an empty column."
+                                                prop.text
+                                                    "No cells found in the first 10 rows. Check if this column contains data."
                                             ]
                                         ]
                                     else
