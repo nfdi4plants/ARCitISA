@@ -12,6 +12,8 @@ open Swate.Components.Primitive.ErrorModal.Context
 open Swate.Components.Primitive.ErrorModal.Types
 open ARCtrl
 open ARCtrl.Json
+open Swate.Components.Page.ArcFileEditor.EmptyTableView.Types
+open Swate.Electron.Shared.DTOs.ArcNodesDto
 
 [<ReactComponent>]
 let ArcFilePreviewTarget (arcFile: ArcFiles, requestedView: ActiveView option) =
@@ -65,6 +67,12 @@ let ArcFilePreviewTarget (arcFile: ArcFiles, requestedView: ActiveView option) =
         | Error error -> return raise error
     }
 
+    let fetchArcNodes () : Fable.Core.JS.Promise<ArcNodeTable[]> = promise {
+        match! Api.ipcArcVaultApi.getArcNodes () with
+        | Ok tables -> return tables |> Array.map ArcNodeTableDto.toArcNodeTable
+        | Error error -> return raise error
+    }
+
     let pickFilePaths =
         React.useCallback (
             (fun () -> promise {
@@ -107,6 +115,7 @@ let ArcFilePreviewTarget (arcFile: ArcFiles, requestedView: ActiveView option) =
                 startingActiveView = (requestedView |> Option.defaultValue ActiveView.Metadata),
                 onImportJson = importJson,
                 onImportPersons = importPersons,
+                fetchArcNodes = fetchArcNodes,
                 onError =
                     (fun message ->
                         errorModal.enqueue (

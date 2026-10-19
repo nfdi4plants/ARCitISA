@@ -386,8 +386,8 @@
     <Compile Include="Page\ValidationPackageBrowser\ValidationPackageBrowser.sample.fs" />
     <Compile Include="Page\ArcFileEditor\Types.fs" />
     <Compile Include="Page\ArcFileEditor\Helper.fs" />
+    <Compile Include="Page\ArcFileEditor\EmptyTableView\Types.fs" />
     <Compile Include="Page\ArcFileEditor\EmptyTableView\Helper.fs" />
-    <Compile Include="Page\ArcFileEditor\EmptyTableView\Modals.fs" />
     <Compile Include="Page\ArcFileEditor\EmptyTableView\Main.fs" />
     <Compile Include="Page\ArcFileEditor\Widgets.fs" />
     <Compile Include="Page\ArcFileEditor\ArcFileFooterTabs.fs" />

@@ -9,6 +9,7 @@ open Swate.Components.Primitive.CardGrid
 open Swate.Components.Composite.Widgets
 open Swate.Components.Composite.Widgets.BuildingBlockWidget
 open Swate.Components.Shared
+open Swate.Components.Page.ArcFileEditor.EmptyTableView.Types
 
 module private MainTypes =
     [<RequireQualifiedAccess>]
@@ -16,11 +17,230 @@ module private MainTypes =
         | Choices
         | BuildingBlock
         | Templates
+        | UtilizeExistingTables
+
+    [<RequireQualifiedAccess>]
+    type ArcNodesState =
+        | Loading
+        | Loaded of ArcNodeOption[]
+        | Failed of string
 
 open MainTypes
 
 [<Erase; Mangle(false)>]
 type Main =
+
+    [<ReactComponent>]
+    static member private InputColumnImportPreview(column: CompositeColumn) =
+
+        let previewCells = Helper.previewCells column.Cells
+
+        Html.div [
+            prop.className "swt:overflow-auto swt:max-h-64"
+            prop.children [
+                Html.table [
+                    prop.className "swt:table swt:table-sm"
+                    prop.children [
+                        Html.caption [
+                            prop.className "swt:text-lg swt:font-semibold swt:pb-2 swt:text-left swt:align-left"
+                            prop.text "Preview:"
+                        ]
+                        Html.thead [
+                            Html.tr [
+                                Html.th [
+                                    prop.className "swt:truncate swt:align-left"
+                                    prop.text (column.Header.ToString())
+                                    prop.title (column.Header.ToString())
+                                ]
+                            ]
+                        ]
+                        Html.tbody [
+                            if previewCells.Length = 0 then
+                                Html.tr [
+                                    Html.td [
+                                        prop.className "swt:opacity-70"
+                                        prop.text "No cells found, this will import an empty column."
+                                    ]
+                                ]
+                            else
+                                for cellText in previewCells do
+                                    Html.tr [
+                                        Html.td [
+                                            prop.className "swt:truncate swt:align-left"
+                                            prop.text cellText
+                                            prop.title cellText
+                                        ]
+                                    ]
+                        ]
+                    ]
+                ]
+            ]
+        ]
+
+    /// Lets the user pick an input or output column of a prior table as input column of the active table.
+    /// Mount it only while it is open. It loads the ARC nodes once per mount.
+    [<ReactComponent>]
+    static member private PriorTableSelect
+        (
+            arcFile: ArcFiles,
+            activeTableIndex: int option,
+            setArcFile: ArcFiles -> unit,
+            back: unit -> unit,
+            ?fetchArcNodes: unit -> JS.Promise<ArcNodeTable[]>
+        ) =
+
+        let arcNodesState, setArcNodesState =
+            React.useState (
+                if fetchArcNodes.IsSome then
+                    ArcNodesState.Loading
+                else
+                    ArcNodesState.Loaded [||]
+            )
+
+        let selectedKey, setSelectedKey = React.useState (None: string option)
+        let requestVersion = React.useRef 0
+
+        let invalidate () =
+            requestVersion.current <- requestVersion.current + 1
+
+        let dismiss () =
+            invalidate ()
+            back ()
+
+        let loadArcNodes () =
+            match fetchArcNodes with
+            | None -> ()
+            | Some fetchArcNodes ->
+                invalidate ()
+                let version = requestVersion.current
+                setArcNodesState ArcNodesState.Loading
+
+                promise {
+                    try
+                        let! tables = fetchArcNodes ()
+
+                        if requestVersion.current = version then
+                            setArcNodesState (ArcNodesState.Loaded(Helper.arcNodeOptions arcFile tables))
+                    with error ->
+                        if requestVersion.current = version then
+                            setArcNodesState (ArcNodesState.Failed error.Message)
+                }
+                |> Promise.start
+
+        React.useEffectOnce (fun () ->
+            loadArcNodes ()
+            FsReact.createDisposable invalidate
+        )
+
+        let nodeOptions = [|
+            yield! Helper.localNodeOptions arcFile activeTableIndex
+            match arcNodesState with
+            | ArcNodesState.Loaded arcNodes -> yield! arcNodes
+            | ArcNodesState.Loading
+            | ArcNodesState.Failed _ -> ()
+        |]
+
+        let selectedNode =
+            selectedKey
+            |> Option.bind (fun key -> nodeOptions |> Array.tryFind (fun node -> node.Key = key))
+            |> Option.orElse (Array.tryHead nodeOptions)
+
+        let importedColumn = selectedNode |> Option.bind Helper.importedColumn
+
+        let canImport = activeTableIndex.IsSome && importedColumn.IsSome
+
+        let importSelected () =
+            match selectedNode with
+            | Some node when Helper.importNodeOption arcFile activeTableIndex node setArcFile -> dismiss ()
+            | _ -> ()
+
+        Html.div [
+            prop.className "swt:space-y-4"
+            prop.children [
+                Html.div [
+                    prop.className "swt:flex swt:flex-col swt:gap-2"
+                    prop.children [
+                        match arcNodesState with
+                        | ArcNodesState.Loading ->
+                            Swate.Components.Primitive.LoadingSpinner.LoadingSpinner.LoadingSpinner(
+                                "Loading ARC tables",
+                                size = Swate.Components.Primitive.Types.DaisyuiSize.XL
+                            )
+                        | ArcNodesState.Failed message ->
+                            Html.div [
+                                prop.className "swt:flex swt:items-center swt:gap-2"
+                                prop.children [
+                                    Html.p [
+                                        prop.role "alert"
+                                        prop.className "swt:text-sm swt:text-error"
+                                        prop.text $"Could not load tables from the ARC: {message}"
+                                    ]
+                                    Html.button [
+                                        prop.type'.button
+                                        prop.className "swt:btn swt:btn-sm swt:btn-outline"
+                                        prop.onClick (fun _ -> loadArcNodes ())
+                                        prop.text "Retry"
+                                    ]
+                                ]
+                            ]
+                        | ArcNodesState.Loaded _ ->
+                            match selectedNode with
+                            | None ->
+                                Html.p [
+                                    prop.className "swt:text-sm swt:opacity-70"
+                                    prop.text "No existing table has an input or output column."
+                                ]
+                            | Some selectedNode ->
+                                Html.div [
+                                    prop.className "swt:flex swt:items-center swt:gap-2"
+                                    prop.children [
+                                        Html.label [
+                                            prop.className "swt:select swt:min-w-0 swt:w-auto swt:grow"
+                                            prop.children [
+                                                Html.span [ prop.className "swt:label"; prop.text "Column:" ]
+                                                Html.select [
+                                                    prop.value selectedNode.Key
+                                                    prop.onChange (fun (key: string) -> setSelectedKey (Some key))
+                                                    prop.children [
+                                                        for group, nodes in nodeOptions |> Array.groupBy _.Group do
+                                                            Html.optgroup [
+                                                                prop.key group
+                                                                prop.label group
+                                                                prop.children [
+                                                                    for node in nodes do
+                                                                        Html.option [
+                                                                            prop.key node.Key
+                                                                            prop.value node.Key
+                                                                            prop.text
+                                                                                $"{node.TableName} – {node.Column.Header}"
+                                                                        ]
+                                                                ]
+                                                            ]
+                                                    ]
+                                                ]
+                                            ]
+                                        ]
+                                        Html.button [
+                                            prop.type'.button
+                                            prop.className "swt:btn swt:btn-primary swt:ml-auto"
+                                            prop.text "Import as input column"
+                                            prop.disabled (not canImport)
+                                            prop.onClick (fun _ -> importSelected ())
+                                        ]
+                                    ]
+                                ]
+
+                            match importedColumn with
+                            | Some column -> Main.InputColumnImportPreview column
+                            | None ->
+                                Html.div [
+                                    prop.className "swt:text-sm swt:text-error"
+                                    prop.text "The selected column cannot be used as input column."
+                                ]
+                    ]
+                ]
+            ]
+        ]
 
     [<ReactComponent>]
     static member private Choices
@@ -29,12 +249,14 @@ type Main =
             setArcFile: ArcFiles -> unit,
             activeTableIndex: int option,
             openSetup: SetupView -> unit,
-            openPreviousOutput: unit -> unit
+            canFetchArcNodes: bool
         ) =
         let isDisabled = Helper.tryGetActiveTable arcFile activeTableIndex |> Option.isNone
 
-        let canUsePreviousOutput =
-            not isDisabled && not (Helper.getOutputTables arcFile |> Array.isEmpty)
+        let canUsePriorTables =
+            not isDisabled
+            && (canFetchArcNodes
+                || not (Helper.localNodeOptions arcFile activeTableIndex |> Array.isEmpty))
 
         Html.div [
             prop.className "swt:flex swt:flex-1 swt:min-h-0 swt:items-center swt:justify-center swt:overflow-auto"
@@ -64,10 +286,13 @@ type Main =
                         )
                         CardGrid.CardGridButton(
                             Icons.OutputColumn(),
-                            "Utilize prior output!",
-                            "Select an output column of one table as new input column.",
-                            (fun _ -> openPreviousOutput ()),
-                            disabled = not canUsePreviousOutput
+                            "Utilize existing tables!",
+                            (if canFetchArcNodes then
+                                 "Reuse an input or output column of any table in your ARC as new input column."
+                             else
+                                 "Reuse an input or output column of an existing table as new input column."),
+                            (fun _ -> openSetup SetupView.UtilizeExistingTables),
+                            disabled = not canUsePriorTables
                         )
                     ]
                 )
@@ -75,7 +300,9 @@ type Main =
         ]
 
     [<ReactComponent>]
-    static member private SetupPage(title: string, back: unit -> unit, children: ReactElement, scrollBody: bool) =
+    static member private SetupPage
+        (title: string, description: ReactElement, back: unit -> unit, children: ReactElement, scrollBody: bool)
+        =
         let heading = React.useElementRef ()
         React.useLayoutEffectOnce (fun () -> heading.current |> Option.iter (fun element -> element.focus ()))
 
@@ -104,6 +331,10 @@ type Main =
                         ]
                     ]
                 ]
+                Html.p [
+                    prop.className "swt:text-sm swt:text-base-content/70"
+                    prop.children description
+                ]
                 Html.div [
                     prop.className [
                         "swt:flex swt:flex-1 swt:min-h-0 swt:min-w-0 swt:flex-col"
@@ -118,9 +349,14 @@ type Main =
         ]
 
     [<ReactComponent>]
-    static member private Session(arcFile: ArcFiles, setArcFile: ArcFiles -> unit, activeTableIndex: int option) =
+    static member private Session
+        (
+            arcFile: ArcFiles,
+            setArcFile: ArcFiles -> unit,
+            activeTableIndex: int option,
+            fetchArcNodes: (unit -> JS.Promise<ArcNodeTable[]>) option
+        ) =
         let view, setView = React.useState SetupView.Choices
-        let previousOutputOpen, setPreviousOutputOpen = React.useState false
 
         let back () = setView SetupView.Choices
 
@@ -129,10 +365,11 @@ type Main =
             prop.children [
                 match view with
                 | SetupView.Choices ->
-                    Main.Choices(arcFile, setArcFile, activeTableIndex, setView, (fun () -> setPreviousOutputOpen true))
+                    Main.Choices(arcFile, setArcFile, activeTableIndex, setView, fetchArcNodes.IsSome)
                 | SetupView.BuildingBlock ->
                     Main.SetupPage(
                         "Select a building block",
+                        Html.text "Choose a building block to add to the new table.",
                         back,
                         BuildingBlockWidget.Main(arcFile, activeTableIndex, setArcFile),
                         scrollBody = true
@@ -140,26 +377,57 @@ type Main =
                 | SetupView.Templates ->
                     Main.SetupPage(
                         "Select template(s)",
+                        Html.text "Select one or more templates to apply to the new table.",
                         back,
                         TemplateWidget.TemplateWidget(arcFile, activeTableIndex, setArcFile, onImportCompleted = back),
                         scrollBody = false
                     )
+                | SetupView.UtilizeExistingTables ->
+                    Main.SetupPage(
+                        "Utilize existing tables",
+                        Html.text "Reuse an input or output column of a existing table as the new input column.",
+                        back,
+                        Main.PriorTableSelect(
+                            arcFile,
+                            activeTableIndex,
+                            setArcFile,
+                            back,
+                            ?fetchArcNodes = fetchArcNodes
+                        ),
+                        scrollBody = true
+                    )
 
-                Modals.PreviousTableSelect(
-                    arcFile,
-                    activeTableIndex,
-                    setArcFile,
-                    previousOutputOpen,
-                    setPreviousOutputOpen
-                )
+            // if priorTablesOpen then
+            //     Modals.PriorTableSelect(
+            //         arcFile,
+            //         activeTableIndex,
+            //         setArcFile,
+            //         (fun () -> setPriorTablesOpen false),
+            //         ?fetchArcNodes = fetchArcNodes
+            //     )
             ]
         ]
 
+    /// <param name="fetchArcNodes">
+    /// Loads tables from the whole ARC. Their input and output columns can be reused as input column.
+    /// Without it, only the other tables of the open file are offered. Reject the promise to show an error.
+    /// </param>
     [<ReactComponent(true)>]
-    static member EmptyTableView(arcFile: ArcFiles, setArcFile: ArcFiles -> unit, activeTableIndex: int option) =
+    static member EmptyTableView
+        (
+            arcFile: ArcFiles,
+            setArcFile: ArcFiles -> unit,
+            activeTableIndex: int option,
+            ?fetchArcNodes: unit -> JS.Promise<ArcNodeTable[]>
+        ) =
         let tableKey =
             Helper.tryGetActiveTable arcFile activeTableIndex
             |> Option.map (fun (index, table) -> $"{index}:{table.Name}")
             |> Option.defaultValue "no-active-table"
 
-        React.KeyedFragment(tableKey, [ Main.Session(arcFile, setArcFile, activeTableIndex) ])
+        React.KeyedFragment(
+            tableKey,
+            [
+                Main.Session(arcFile, setArcFile, activeTableIndex, fetchArcNodes)
+            ]
+        )

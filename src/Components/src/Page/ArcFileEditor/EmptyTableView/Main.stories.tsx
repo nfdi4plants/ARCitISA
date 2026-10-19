@@ -150,3 +150,22 @@ export const TemplateAppendReturnsToEditor: Story = {
     expect(canvas.getByRole('button', { name: /Start with template!/ })).toBeInTheDocument();
   }),
 };
+
+export const PriorTablesFromArc: Story = {
+  args: { withArcNodes: true },
+  play: async ({ canvasElement }) => withViewport(1280, 800, async () => {
+    const canvas = within(canvasElement);
+    const portal = within(canvasElement.ownerDocument.body);
+    await userEvent.click(canvas.getByRole('button', { name: /Utilize prior tables!/ }));
+    const dialog = await portal.findByRole('dialog', { name: 'Utilize prior tables' });
+    const select = await within(dialog).findByRole('combobox', { name: 'Column:' });
+    const input = await within(dialog).findByRole('option', { name: 'Harvest – Input [Source Name]' });
+    await userEvent.selectOptions(select, input);
+    expect(within(dialog).getByText('Plant 1', { exact: true })).toBeInTheDocument();
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Import as input column' }));
+    await waitFor(() => {
+      expect(portal.queryByRole('dialog', { name: 'Utilize prior tables' })).not.toBeInTheDocument();
+      expect(canvas.getByText('Plant 1', { exact: true })).toBeInTheDocument();
+    });
+  }),
+};

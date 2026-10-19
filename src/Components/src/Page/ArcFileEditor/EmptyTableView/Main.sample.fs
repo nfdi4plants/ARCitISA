@@ -9,6 +9,8 @@ open Swate.Components.Composite.AnnotationTable
 open Swate.Components.Composite.Template.TemplateCacheContext
 open Swate.Components.Composite.TermSearch.Context
 open Swate.Components.Composite.TermSearch.Types
+open Swate.Components.Shared.ProvenanceGrouping.ARCtrlConverter
+open Swate.Components.Page.ArcFileEditor.EmptyTableView.Types
 
 module internal Fixtures =
 
@@ -34,6 +36,25 @@ module internal Fixtures =
             make "Root template" Organisation.DataPLANT "Root temperature"
             make "Instrument template" (Organisation.Other "Other Lab") "Instrument model"
         |]
+
+    /// Stands in for the tables an app loads from the rest of the ARC.
+    let arcNodes () = promise {
+        do! Promise.sleep 300
+        let harvest = ArcTable.init "Harvest"
+        harvest.AddColumn(CompositeHeader.Input IOType.Source, ResizeArray [ CompositeCell.createFreeText "Plant 1" ])
+        harvest.AddColumn(CompositeHeader.Output IOType.Sample, ResizeArray [ CompositeCell.createFreeText "Leaf 1" ])
+
+        return [|
+            {
+                Location = {
+                    Scope = ArcTableScope.Study
+                    ParentIdentifier = "Field trial"
+                    TableName = harvest.Name
+                }
+                Table = harvest
+            }
+        |]
+    }
 
     let termSearch (query: string) = promise {
         return
@@ -69,8 +90,14 @@ type internal Main =
         )
 
     [<ReactComponent(true)>]
-    static member Entry() =
+    static member Entry(?withArcNodes: bool) =
         let arcFile, setArcFile = React.useState (Fixtures.arcFile)
+
+        let fetchArcNodes =
+            if defaultArg withArcNodes false then
+                Some Fixtures.arcNodes
+            else
+                None
 
         Main.Providers(
             Html.div [
@@ -80,7 +107,8 @@ type internal Main =
                         arcFile,
                         setArcFile,
                         (fun () -> promise { return [||] }),
-                        startingActiveView = Swate.Components.Page.ArcFileEditor.Types.ActiveView.Table 0
+                        startingActiveView = Swate.Components.Page.ArcFileEditor.Types.ActiveView.Table 0,
+                        ?fetchArcNodes = fetchArcNodes
                     )
                 ]
             ]

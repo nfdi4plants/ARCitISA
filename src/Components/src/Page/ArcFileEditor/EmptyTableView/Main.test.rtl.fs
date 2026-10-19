@@ -11,6 +11,7 @@ open Swate.Components.Shared
 open Swate.Components.Composite.Widgets.Context
 open Swate.Components.Page.ArcFileEditor.EmptyTableView
 open Swate.Components.Page.ArcFileEditor.EmptyTableViewSample
+open Swate.Components.Shared.ProvenanceGrouping.ARCtrlConverter
 
 module private Queries =
 
@@ -47,6 +48,72 @@ let private view arcFile setArcFile activeIndex =
     Main.Providers(
         Swate.Components.Page.ArcFileEditor.EmptyTableView.Main.EmptyTableView(arcFile, setArcFile, activeIndex)
     )
+
+let private viewWithArcNodes arcFile setArcFile activeIndex fetchArcNodes =
+    Main.Providers(
+        Swate.Components.Page.ArcFileEditor.EmptyTableView.Main.EmptyTableView(
+            arcFile,
+            setArcFile,
+            activeIndex,
+            fetchArcNodes = fetchArcNodes
+        )
+    )
+
+module private PriorTables =
+
+    let ioTable (name: string) (input: string) (output: string) =
+        let table = ArcTable.init name
+        table.AddColumn(CompositeHeader.Input IOType.Source, ResizeArray [ CompositeCell.createFreeText input ])
+        table.AddColumn(CompositeHeader.Output IOType.Sample, ResizeArray [ CompositeCell.createFreeText output ])
+        table
+
+    /// The open assay holds one filled table and one empty table at index 1.
+    let arcFile () =
+        let assay = ArcAssay.init "Inline setup"
+        assay.AddTable(ioTable "Filled" "local-source" "local-sample")
+        assay.AddTable(ArcTable.init "Empty")
+        ArcFiles.Assay assay
+
+    let arcNode scope parentIdentifier (table: ArcTable) : Types.ArcNodeTable = {
+        Location = {
+            Scope = scope
+            ParentIdentifier = parentIdentifier
+            TableName = table.Name
+        }
+        Table = table
+    }
+
+    let card () = Queries.card "Utilize prior tables!"
+
+    let dialog () = Queries.dialog "Utilize prior tables"
+
+    let columnSelect () =
+        Queries.inRole (dialog (), "combobox", ByRoleOptions(name = Text "Column:")) :?> HTMLSelectElement
+
+    let optionLabels () =
+        columnSelect().options
+        |> fun options -> [|
+            for index in 0 .. options.length - 1 -> (options.item index :?> HTMLOptionElement).text
+        |]
+
+    let selectOption (label: string) =
+        let select = columnSelect ()
+
+        let option =
+            [|
+                for index in 0 .. select.options.length - 1 -> select.options.item index :?> HTMLOptionElement
+            |]
+            |> Array.find (fun option -> option.text = label)
+
+        RTL.fireEvent.change (
+            select,
+            {|
+                target = {| value = option.value |}
+            |}
+        )
+
+    let importButton () =
+        Queries.inRole (dialog (), "button", ByRoleOptions(name = Text "Import as input column")) :?> HTMLButtonElement
 
 Vitest.afterEach (fun () -> RTL.cleanup ())
 
@@ -183,5 +250,146 @@ Vitest.test (
         Vitest.expect(updated.Value.Tables().[0].ColumnCount).toBe 0
         Vitest.expect(updated.Value.Tables().[2].ColumnCount).toBe 3
         Queries.card "Start with template!" |> ignore
+    }
+)
+
+Vitest.test (
+    "prior tables are unavailable without other input or output columns or an ARC loader",
+    fun () -> promise {
+        RTL.render (view (Fixtures.arcFile ()) ignore (Some 0)) |> ignore
+
+        RTL.fireEvent.click (PriorTables.card ())
+
+        Vitest.expect(RTL.screen.queryByRole("dialog", ByRoleOptions(name = Text "Utilize prior tables")).IsNone).toBe
+            true
+    }
+)
+
+Vitest.test (
+    "with an ARC loader prior tables open even when the open file has no columns to offer",
+    fun () -> promise {
+        let fetchArcNodes () = promise { return ([||]: Types.ArcNodeTable[]) }
+
+        RTL.render (viewWithArcNodes (Fixtures.arcFile ()) ignore (Some 0) fetchArcNodes)
+        |> ignore
+
+        RTL.fireEvent.click (PriorTables.card ())
+
+        let! _ = RTL.screen.findByText ("No prior table has an input or output column.", ByTextOptions(exact = true))
+        Vitest.expect(PriorTables.importButton().disabled).toBe true
+    }
+)
+
+Vitest.test (
+    "without an ARC loader the output of a table in the open file becomes the new input column",
+    fun () -> promise {
+        let arcFile = PriorTables.arcFile ()
+        let mutable updated: ArcFiles option = None
+        RTL.render (view arcFile (fun next -> updated <- Some next) (Some 1)) |> ignore
+
+        RTL.fireEvent.click (PriorTables.card ())
+
+        Vitest
+            .expect(PriorTables.optionLabels ())
+            .toEqual (
+                [|
+                    "Filled – Output [Sample Name]"
+                    "Filled – Input [Source Name]"
+                |]
+            )
+
+        RTL.fireEvent.click (PriorTables.importButton ())
+
+        Vitest.expect(updated.IsSome).toBe true
+        let imported = updated.Value.Tables().[1]
+        Vitest.expect(imported.Headers |> Seq.toArray).toEqual ([| CompositeHeader.Input IOType.Sample |])
+        Vitest.expect(imported.GetColumn(0).Cells.[0]).toEqual (CompositeCell.createFreeText "local-sample")
+        Vitest.expect(updated.Value.Tables().[0].ColumnCount).toBe 2
+
+        Vitest.expect(RTL.screen.queryByRole("dialog", ByRoleOptions(name = Text "Utilize prior tables")).IsNone).toBe
+            true
+    }
+)
+
+Vitest.test (
+    "an input column of any ARC table can be imported, while the ARC copy of the open file is skipped",
+    fun () -> promise {
+        let arcFile = PriorTables.arcFile ()
+        let mutable updated: ArcFiles option = None
+
+        let fetchArcNodes () = promise {
+            return [|
+                PriorTables.arcNode ArcTableScope.Study "Field" (PriorTables.ioTable "Harvest" "plant-1" "leaf-1")
+                PriorTables.arcNode
+                    ArcTableScope.Assay
+                    "Inline setup"
+                    (PriorTables.ioTable "Filled" "stale-source" "stale-sample")
+            |]
+        }
+
+        RTL.render (viewWithArcNodes arcFile (fun next -> updated <- Some next) (Some 1) fetchArcNodes)
+        |> ignore
+
+        RTL.fireEvent.click (PriorTables.card ())
+
+        do!
+            RTL.waitFor (fun () ->
+                Vitest
+                    .expect(PriorTables.optionLabels ())
+                    .toEqual (
+                        [|
+                            "Filled – Output [Sample Name]"
+                            "Filled – Input [Source Name]"
+                            "Harvest – Output [Sample Name]"
+                            "Harvest – Input [Source Name]"
+                        |]
+                    )
+            )
+
+        PriorTables.selectOption "Harvest – Input [Source Name]"
+        RTL.screen.getByText ("plant-1", ByTextOptions(exact = true)) |> ignore
+        RTL.fireEvent.click (PriorTables.importButton ())
+
+        Vitest.expect(updated.IsSome).toBe true
+        let imported = updated.Value.Tables().[1]
+        Vitest.expect(imported.Headers |> Seq.toArray).toEqual ([| CompositeHeader.Input IOType.Source |])
+        Vitest.expect(imported.GetColumn(0).Cells.[0]).toEqual (CompositeCell.createFreeText "plant-1")
+    }
+)
+
+Vitest.test (
+    "a failed ARC load keeps the open file's columns usable and can be retried",
+    fun () -> promise {
+        let mutable attempts = 0
+
+        let fetchArcNodes () = promise {
+            attempts <- attempts + 1
+
+            if attempts = 1 then
+                return failwith "ARC is not loaded"
+            else
+                return [|
+                    PriorTables.arcNode ArcTableScope.Run "Measure" (PriorTables.ioTable "Readout" "in" "out")
+                |]
+        }
+
+        RTL.render (viewWithArcNodes (PriorTables.arcFile ()) ignore (Some 1) fetchArcNodes)
+        |> ignore
+
+        RTL.fireEvent.click (PriorTables.card ())
+
+        let! alert = RTL.screen.findByRole ("alert", ByRoleOptions())
+        Vitest.expect(alert.textContent).toContain "ARC is not loaded"
+        Vitest.expect(PriorTables.optionLabels () |> Array.length).toBe 2
+        Vitest.expect(PriorTables.importButton().disabled).toBe false
+
+        RTL.fireEvent.click (Queries.inRole (PriorTables.dialog (), "button", ByRoleOptions(name = Text "Retry")))
+
+        do!
+            RTL.waitFor (fun () ->
+                Vitest.expect(PriorTables.optionLabels ()).toContain "Readout – Output [Sample Name]"
+            )
+
+        Vitest.expect(RTL.screen.queryByRole("alert", ByRoleOptions()).IsNone).toBe true
     }
 )

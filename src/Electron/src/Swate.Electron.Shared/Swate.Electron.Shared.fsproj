@@ -8,6 +8,7 @@
   <ItemGroup>
     <Compile Include="DTOs\NoteSearchDto.fs" />
     <Compile Include="DTOs\ProvenanceGroupingDto.fs" />
+    <Compile Include="DTOs\ArcNodesDto.fs" />
     <Compile Include="ARCtrlJsonObject.fs" />
     <Compile Include="VersionControlTypes.fs" />
     <Compile Include="FileIOTypes.fs" />

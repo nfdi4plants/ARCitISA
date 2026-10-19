@@ -15,6 +15,7 @@ open Swate.Components.Shared
 open Swate.Components.Page.ArcFileEditor.Types
 open Swate.Components.Composite.AnnotationTable
 open Swate.Components.Composite.Widgets.DataAnnotator.Types
+open Swate.Components.Page.ArcFileEditor.EmptyTableView.Types
 
 type private LazyComponents =
 
@@ -150,7 +151,8 @@ type Main =
             activeView: ActiveView,
             arcFileState: ArcFiles,
             setArcFileState: ArcFiles -> unit,
-            onImportPersons: (unit -> JS.Promise<Person[]>) option
+            onImportPersons: (unit -> JS.Promise<Person[]>) option,
+            fetchArcNodes: (unit -> JS.Promise<ArcNodeTable[]>) option
         ) =
         match activeView with
         | ActiveView.Metadata ->
@@ -174,7 +176,13 @@ type Main =
                     setArcFileState (ArcFiles.refreshRef arcFileState)
 
                 match table.ColumnCount with
-                | 0 -> EmptyTableView.Main.EmptyTableView(arcFileState, setArcFileState, Some index)
+                | 0 ->
+                    EmptyTableView.Main.EmptyTableView(
+                        arcFileState,
+                        setArcFileState,
+                        Some index,
+                        ?fetchArcNodes = fetchArcNodes
+                    )
                 | _ -> AnnotationTable.AnnotationTable(table, setTable)
             | None ->
                 Html.div [
@@ -301,6 +309,10 @@ type Main =
     /// The initial active view. This value is read only when the component mounts; to apply a later value,
     /// the caller must remount the editor by changing the React key.
     /// </param>
+    /// <param name="fetchArcNodes">
+    /// Loads tables from the whole ARC so an empty table can reuse their input and output columns.
+    /// Without it, only the other tables of the open file are offered.
+    /// </param>
     [<ReactComponent>]
     static member ArcFileEditor
         (
@@ -313,7 +325,8 @@ type Main =
             ?startingActiveView: ActiveView,
             ?onImportJson: JsonImportRequest -> JS.Promise<Result<unit, exn>>,
             ?onError: string -> unit,
-            ?onImportPersons: unit -> JS.Promise<Person[]>
+            ?onImportPersons: unit -> JS.Promise<Person[]>,
+            ?fetchArcNodes: unit -> JS.Promise<ArcNodeTable[]>
         ) =
 
         let onError =
@@ -419,7 +432,7 @@ type Main =
                     Html.div [
                         prop.className "swt:grow swt:flex swt:flex-col swt:overflow-hidden"
                         prop.children [
-                            Main.ArcFileContentView(activeView, arcFile, setArcFile, onImportPersons)
+                            Main.ArcFileContentView(activeView, arcFile, setArcFile, onImportPersons, fetchArcNodes)
                         ]
                     ]
                     Main.AddRowsFooter(activeView, arcFile, setArcFile)

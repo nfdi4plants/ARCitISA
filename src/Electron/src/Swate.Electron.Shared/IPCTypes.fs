@@ -10,6 +10,7 @@ open Swate.Components.Shared
 open Swate.Components.Shared.ProvenanceGraph.Types
 open Swate.Electron.Shared.DTOs.NoteSearchDto
 open Swate.Electron.Shared.DTOs.ProvenanceGroupingDto
+open Swate.Electron.Shared.DTOs.ArcNodesDto
 open AuthTypes
 open FileIOTypes
 open VersionControlTypes
@@ -124,6 +125,8 @@ type IArcVaultsApi = {
     readNotes: unit -> JS.Promise<Result<NoteSearchDto[], exn>>
     /// Returns serialized persons from every entity in the active vault's in-memory ARC.
     getPersons: unit -> JS.Promise<Result<string[], exn>>
+    /// Returns the input and output columns of every study, assay and run table in the active vault's in-memory ARC.
+    getArcNodes: unit -> JS.Promise<Result<ArcNodeTableDto[], exn>>
     listProvenanceTables: unit -> JS.Promise<Result<ProvenanceTableSelectionDto[], exn>>
     loadProvenanceTable: ProvenanceTableSelectionDto -> JS.Promise<Result<ProvenanceLoadResultDto, exn>>
     /// Builds the provenance graph data of the active vault's in-memory ARC.
