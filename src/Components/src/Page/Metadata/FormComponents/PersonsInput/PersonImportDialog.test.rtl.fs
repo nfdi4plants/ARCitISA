@@ -34,6 +34,132 @@ module private Helpers =
 Vitest.afterEach (fun () -> RTL.cleanup ())
 
 Vitest.test (
+    "more info shows every person field without changing the import selection",
+    fun () -> promise {
+        let person =
+            Person(
+                firstName = "Ada",
+                lastName = "Lovelace",
+                midInitials = "A",
+                orcid = "0000-0002-1825-0097",
+                address = "12 Example Street\nLondon",
+                affiliation = "Research Institute",
+                email = "ada@example.org",
+                phone = "+44 123",
+                fax = "+44 456",
+                roles =
+                    ResizeArray [
+                        OntologyAnnotation(
+                            "Investigator",
+                            tsr = "CREDIT",
+                            tan = "CREDIT:0000001",
+                            comments = ResizeArray [ Comment("Role note", "Primary role") ]
+                        )
+                    ],
+                comments =
+                    ResizeArray [
+                        Comment("Contribution", "Study design")
+                        Comment("Note", "Full details")
+                    ]
+            )
+
+        let mutable saves = 0
+
+        RTL.render (
+            PersonsInput.PersonsInput(
+                ResizeArray(),
+                (fun _ -> saves <- saves + 1),
+                onImportPersons = (fun () -> promise { return [| person |] })
+            )
+        )
+        |> ignore
+
+        Helpers.click "Import Persons"
+        let! moreInfo = RTL.screen.findByTitle "More info about Ada A Lovelace"
+        RTL.fireEvent.click moreInfo
+        let! details = RTL.screen.findByRole ("dialog", ByRoleOptions(name = Text "Person details"))
+
+        for text in
+            [
+                "First name"
+                "Last name"
+                "Mid initials"
+                "ORCID"
+                "Address"
+                "Affiliation"
+                "Email"
+                "Phone"
+                "Fax"
+                "Roles"
+                "Comments"
+                "Ada"
+                "Lovelace"
+                "0000-0002-1825-0097"
+                "12 Example Street\nLondon"
+                "Research Institute"
+                "ada@example.org"
+                "+44 123"
+                "+44 456"
+                "Investigator"
+                "CREDIT"
+                "CREDIT:0000001"
+                "Role note"
+                "Primary role"
+                "Contribution"
+                "Study design"
+                "Note"
+                "Full details"
+            ] do
+            Vitest.expect(details.textContent).toContain text
+
+        Vitest.expect((Helpers.checkbox "Ada A Lovelace" :?> HTMLInputElement).``checked``).toBe false
+        Vitest.expect((Helpers.button "Import selected" :?> HTMLButtonElement).disabled).toBe true
+        RTL.fireEvent.click (details.querySelector "button" :?> HTMLElement)
+
+        do!
+            RTL.waitFor (fun () ->
+                Vitest
+                    .expect(RTL.screen.queryByRole("dialog", ByRoleOptions(name = Text "Person details")).IsNone)
+                    .toBe
+                    true
+            )
+
+        RTL.screen.getByRole ("dialog", ByRoleOptions(name = Text "Import persons"))
+        |> ignore
+
+        Vitest.expect(saves).toBe 0
+    }
+)
+
+Vitest.test (
+    "already-added persons still have details and empty fields show a placeholder",
+    fun () -> promise {
+        let person = Person(firstName = "Existing")
+
+        RTL.render (
+            PersonsInput.PersonsInput(
+                ResizeArray [ person ],
+                ignore,
+                onImportPersons = (fun () -> promise { return [| person.Copy() |] })
+            )
+        )
+        |> ignore
+
+        Helpers.click "Import Persons"
+        let! moreInfo = RTL.screen.findByTitle "More info about Existing"
+        Vitest.expect((Helpers.checkbox "Existing" :?> HTMLInputElement).disabled).toBe true
+        Vitest.expect((moreInfo :?> HTMLButtonElement).disabled).toBe false
+        RTL.fireEvent.click moreInfo
+        let! details = RTL.screen.findByRole ("dialog", ByRoleOptions(name = Text "Person details"))
+        Vitest.expect(details.textContent).toContain "Existing"
+        Vitest.expect(details.textContent).toContain "—"
+        Vitest.expect(details.textContent).toContain "Roles"
+        Vitest.expect(details.textContent).toContain "Comments"
+        Vitest.expect(details.textContent.Contains "undefined").toBe false
+    }
+)
+
+Vitest.test (
     "import is hidden without a callback",
     fun () ->
         RTL.render (PersonsInput.PersonsInput(ResizeArray(), ignore)) |> ignore
