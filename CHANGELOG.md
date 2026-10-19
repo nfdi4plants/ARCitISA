@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 🔄 Changed
+
+- Clicking a study, assay, workflow or run folder in the file tree expands or collapses it, like any other folder, and still opens its metadata. (by @Etschbeijer)
+
 ## 3.0.0 - 2026-10-16
 
 ### ✨ Added
