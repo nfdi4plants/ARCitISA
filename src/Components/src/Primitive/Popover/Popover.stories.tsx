@@ -236,8 +236,12 @@ export const ModalFocus: Story = {
     expect(dialog.contains(document.activeElement)).toBe(true);
 
     await userEvent.tab();
-    expect(dialog.contains(document.activeElement)).toBe(true);
-    expect(document.activeElement === firstAction || document.activeElement === closeButton).toBe(true);
+    // Tabbing past the last element first lands on a floating-ui focus guard. The focus manager
+    // moves focus back into the dialog in the next animation frame, so the test waits for it.
+    await waitFor(() => {
+      expect(dialog.contains(document.activeElement)).toBe(true);
+      expect(document.activeElement === firstAction || document.activeElement === closeButton).toBe(true);
+    });
     expect(afterTarget).not.toHaveFocus();
 
     await userEvent.click(closeButton);
