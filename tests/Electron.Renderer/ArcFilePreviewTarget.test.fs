@@ -174,7 +174,9 @@ Vitest.describe (
 
                     Vitest.expect(publishedAssay.Tables |> Seq.map _.Name |> Seq.toArray).toEqual (expectedNames)
                     Vitest.expect(inMemoryAssay.Tables |> Seq.map _.Name |> Seq.toArray).toEqual (expectedNames)
-                    Vitest.expect(currentAssay.Tables |> Seq.map _.Name |> Seq.toArray)
+
+                    Vitest
+                        .expect(currentAssay.Tables |> Seq.map _.Name |> Seq.toArray)
                         .toEqual ([| "Existing"; "Duplicate"; "Duplicate 1" |])
                 | _ -> failwith "Expected imported Assay to be published and sent to in-memory update."
             }
