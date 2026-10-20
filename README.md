@@ -10,13 +10,14 @@ The easiest way to get started is the ARCitISA desktop app. Download the latest 
 
 -   **Windows**: `.exe` installer
 -   **macOS**: `.dmg` (available for Intel `x64` and Apple Silicon `arm64`)
--   **Linux**: `.deb`, `.rpm`, or `.zip`
+-   **Linux**: `.deb`, `.rpm`, `.pkg.tar.zst` (Arch), `.AppImage`, or `.zip`
 
     -   Debian and Ubuntu: `sudo apt install ./swate_<version>_amd64.deb`
     -   Fedora: `sudo dnf install ./swate-<version>-1.x86_64.rpm`
-    -   Other distributions: unpack `ARCitISA-linux-x64-<version>.zip` and start `swate` in the unpacked folder
+    -   Arch Linux and distributions based on it: `sudo pacman -U arcitisa-<version>-1-x86_64.pkg.tar.zst`
+    -   Other distributions: make `ARCitISA-<version>-x64.AppImage` executable with `chmod +x` and run it, or unpack `ARCitISA-linux-x64-<version>.zip` and start `swate` in the unpacked folder
 
-    If the zip stops with a sandbox error, start it with `--no-sandbox`, or run `sudo chown root:root chrome-sandbox` and `sudo chmod 4755 chrome-sandbox` in the unpacked folder.
+    If the AppImage or the zip stops with a sandbox error, start it with `--no-sandbox`. For the zip you can instead run `sudo chown root:root chrome-sandbox` and `sudo chmod 4755 chrome-sandbox` in the unpacked folder.
 
 ### 📖 Storybook Preview
 

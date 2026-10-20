@@ -182,7 +182,7 @@ let private electronMakeExtensions (os: string) : string list =
     match os with
     | "Windows" -> [ ".exe"; ".nupkg" ]
     | "macOS" -> [ ".zip"; ".dmg" ]
-    | "Linux" -> [ ".deb"; ".rpm"; ".zip" ]
+    | "Linux" -> [ ".deb"; ".rpm"; ".zip"; ".AppImage" ]
     | other -> failwithf "Unknown runner OS: %s" other
 
 let private currentRunnerOs () : string =
@@ -196,7 +196,7 @@ let private currentRunnerOs () : string =
         failwith "Unsupported operating system for electron binaries."
 
 let private hasExtension (ext: string) (file: string) =
-    String.Equals(Path.GetExtension file, ext, StringComparison.OrdinalIgnoreCase)
+    file.EndsWith(ext, StringComparison.OrdinalIgnoreCase)
 
 let private verifyElectronMakeOutput (builtAfterUtc: DateTime) =
 
@@ -250,14 +250,16 @@ let electronBinaries (arch: string) =
 
 let verifyReleaseAssets (dir: string) =
 
-    // Must match the artifact names uploaded by the electron-web target of the release job and by
-    // the release_electron_binaries matrix in .github/workflows/release-pipeline.yml.
+    // Must match the artifact names uploaded by the electron-web target of the release job, by
+    // the release_electron_binaries matrix and by the release_pacman_package job in
+    // .github/workflows/release-pipeline.yml.
     let expectedArtifacts = [
         "release-assets-client", [ ".zip" ]
         "release-assets-electron-Windows-x64", electronMakeExtensions "Windows"
         "release-assets-electron-macOS-x64", electronMakeExtensions "macOS"
         "release-assets-electron-macOS-arm64", electronMakeExtensions "macOS"
         "release-assets-electron-Linux-x64", electronMakeExtensions "Linux"
+        "release-assets-electron-Linux-x64-pacman", [ ".pkg.tar.zst" ]
     ]
 
     let problems =

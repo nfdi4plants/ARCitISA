@@ -1,0 +1,29 @@
+pkgname=arcitisa
+pkgver=${ARCITISA_PKGVER:?ARCITISA_PKGVER must be set}
+pkgrel=1
+pkgdesc='Annotate and manage ARCs (Annotated Research Contexts)'
+arch=('x86_64')
+url='https://github.com/nfdi4plants/ARCitISA'
+license=('MIT')
+depends=('gtk3' 'nss' 'alsa-lib' 'libnotify' 'xdg-utils' 'mesa' 'libdrm' 'git')
+optdepends=('git-lfs: large files in ARCs')
+options=('!strip' '!debug')
+
+package() {
+  # No -a here. Under fakeroot it would record the builder user as the owner of every file.
+  mkdir -p "$pkgdir/usr/lib/arcitisa"
+  cp -dr --no-preserve=ownership "$startdir/ARCitISA-linux-x64/." "$pkgdir/usr/lib/arcitisa/"
+  chmod 4755 "$pkgdir/usr/lib/arcitisa/chrome-sandbox"
+
+  install -d "$pkgdir/usr/bin"
+  ln -s /usr/lib/arcitisa/swate "$pkgdir/usr/bin/arcitisa"
+
+  install -Dm644 "$startdir/arcitisa.desktop" "$pkgdir/usr/share/applications/arcitisa.desktop"
+
+  for size in 16 24 32 48 64 128 256 512; do
+    install -Dm644 "$startdir/icons/${size}x${size}.png" \
+      "$pkgdir/usr/share/icons/hicolor/${size}x${size}/apps/arcitisa.png"
+  done
+
+  install -Dm644 "$startdir/LICENSE" "$pkgdir/usr/share/licenses/arcitisa/LICENSE"
+}

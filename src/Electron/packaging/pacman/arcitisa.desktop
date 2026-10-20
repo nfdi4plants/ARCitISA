@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=ARCitISA
+Comment=Annotate and manage ARCs (Annotated Research Contexts)
+Exec=arcitisa %U
+Icon=arcitisa
+Terminal=false
+Categories=Science;
+StartupWMClass=ARCitISA

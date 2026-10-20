@@ -164,7 +164,8 @@ jobs:
       fail-fast: false
       matrix:
         # Release.verifyReleaseAssets in build/Actions/Release.fs lists the artifact of every entry
-        # here. Update that list when this matrix changes.
+        # here and the pacman artifact of release_pacman_package. Update that list when this matrix
+        # changes.
         include:
           - os: windows-latest
             arch: x64
@@ -212,6 +213,10 @@ jobs:
       - name: Install root dependencies
         run: npm i
 
+      - name: Install AppImage build tools
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y squashfs-tools
+
       - name: Build Electron binaries
         env:
           # The macOS runners have 7 GB of RAM, so Node picks a smaller default heap there than on
@@ -231,9 +236,37 @@ jobs:
             src/Electron/out/make/**/*.dmg
             src/Electron/out/make/**/*.deb
             src/Electron/out/make/**/*.rpm
+            src/Electron/out/make/**/*.AppImage
+
+  # Runs in an Arch container so the package is built with Arch's current makepkg and its defaults.
+  release_pacman_package:
+    needs: [verify_release, release_electron_binaries]
+    if: ${{ needs.verify_release.outputs.should_skip != 'true' }}
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-assets-electron-Linux-x64
+          path: linux-assets
+
+      - name: Build pacman package
+        shell: bash
+        run: |
+          zip=$(find linux-assets -name 'ARCitISA-linux-x64-*.zip' -print -quit)
+          bash src/Electron/packaging/pacman/build-package.sh "$zip" "${{ needs.verify_release.outputs.version }}" pacman-out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-assets-electron-Linux-x64-pacman
+          if-no-files-found: error
+          path: pacman-out/*.pkg.tar.zst
 
   post_release:
-    needs: [release, release_electron_binaries, verify_release]
+    needs: [release, release_electron_binaries, release_pacman_package, verify_release]
     runs-on: ubuntu-latest
     if: ${{ needs.verify_release.outputs.should_skip != 'true' }}
 
