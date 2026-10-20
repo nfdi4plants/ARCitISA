@@ -143,37 +143,26 @@ module Import =
                 if importedTables.Length = 0 then
                     Error(exn $"Imported {arcFileTypeLabel importedFileType} JSON does not contain tables to append.")
                 else
-                    let tablesWithNames =
+                    let newTableNames =
                         importedTables
                         |> Array.map (fun table -> table.Name, None)
                         |> resolveNewTableNames (currentArcFile.ArcTables().TableNames)
-                        |> Array.zip importedTables
 
-                    let errors =
-                        tablesWithNames
-                        |> Array.choose (fun (table, newTableName) ->
-                            newTableName.Error
-                            |> Option.map (fun error -> $"Table \"{table.Name}\": {error}")
-                        )
+                    // Tables are added to a copy, so the open file stays untouched.
+                    let nextArcFile = ArcFiles.refreshRef currentArcFile
 
-                    if errors.Length > 0 then
-                        Error(exn (String.concat " " errors))
-                    else
-                        // Tables are added to a copy, so the open file stays untouched.
-                        let nextArcFile = ArcFiles.refreshRef currentArcFile
+                    Array.zip importedTables newTableNames
+                    |> Array.map (fun (table, newTableName) ->
+                        let copy = table.Copy()
 
-                        tablesWithNames
-                        |> Array.map (fun (table, newTableName) ->
-                            let copy = table.Copy()
+                        if newTableName.Name = copy.Name then
+                            copy
+                        else
+                            ArcTable.fromArcTableValues (newTableName.Name, copy.Headers, copy.Values)
+                    )
+                    |> nextArcFile.ArcTables().AddTables
 
-                            if newTableName.Name = copy.Name then
-                                copy
-                            else
-                                ArcTable.fromArcTableValues (newTableName.Name, copy.Headers, copy.Values)
-                        )
-                        |> nextArcFile.ArcTables().AddTables
-
-                        Ok nextArcFile
+                    Ok nextArcFile
             | _ -> Ok importedArcFile
 
     let tryParseFromJsonString

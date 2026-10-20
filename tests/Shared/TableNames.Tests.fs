@@ -93,6 +93,65 @@ let tests =
             Expect.equal result.[0].Name (String.replicate 29 "a" + " 1") "name"
             Expect.isNone result.[0].Error "no error"
 
+        testCase "a suggested name that cannot be saved as a spreadsheet sheet is changed so it can, with a notice"
+        <| fun _ ->
+            let result =
+                resolveNewTableNames [] [|
+                    "Sugar extraction protocol, day two", None
+                    " 'Sugar' ", None
+                    "history", None
+                    "Sugar/day [2]", None
+                    "''", None
+                |]
+
+            Expect.equal
+                (names result)
+                [|
+                    "Sugar extraction protocol, day"
+                    "Sugar"
+                    "history 1"
+                    "Sugar_day _2_"
+                    "New Table"
+                |]
+                "names"
+
+            Expect.isTrue (result |> Array.forall _.Error.IsNone) "no errors"
+
+            Expect.equal
+                (result |> Array.map _.Notice)
+                [|
+                    Some "A table name can have at most 31 characters. The new table is renamed."
+                    Some "A table name cannot start or end with '. The new table is renamed."
+                    Some "\"History\" is reserved and cannot be a table name. The new table is renamed."
+                    Some "A table name cannot contain * ? : \\ / [ ]. The new table is renamed."
+                    Some "A table name cannot start or end with '. The new table is renamed."
+                |]
+                "notices"
+
+        testCase "a shortened suggested name is numbered when its shortened form is taken"
+        <| fun _ ->
+            let result =
+                resolveNewTableNames [ "Sugar extraction protocol, day" ] [|
+                    "Sugar extraction protocol, day two", None
+                |]
+
+            Expect.equal (names result) [| "Sugar extraction protocol, da 1" |] "names"
+            Expect.isNone result.[0].Error "no error"
+
+        testCase "the first table of a new file gets a name that can be saved, however long the identifier is"
+        <| fun _ ->
+            let tableName identifier =
+                (ARCtrlHelper.ArcFileDefaults.createDefaultArcFile ArcFilesDiscriminate.Assay identifier)
+                    .Tables()
+                    .[0].Name
+
+            Expect.equal (tableName "Sugar") "Sugar Table" "short identifier"
+
+            Expect.equal
+                (tableName "Sugar_extraction_protocol_day_2")
+                "Sugar_extraction_protocol_day_2"
+                "long identifier"
+
         testCase "a new default table name skips names taken ignoring case"
         <| fun _ -> Expect.equal (createNewTableName [ ArcTable.init "new table 0" ]) "New Table 1" "name"
     ]

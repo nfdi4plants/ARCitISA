@@ -24,8 +24,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### 🐛 Fixed
 
 - Importing a template as a new table no longer fails silently or adds a broken table when a table with that name already exists. The import dialog renames the new table to a free name, tells you why, lets you change the name, and warns you while the name is already taken. (by @Etschbeijer)
-- Importing tables from a JSON file no longer leaves part of the import in the open file when it fails. A table whose name is already taken is renamed to a free name, and an import with a table name that cannot be saved is rejected with a message. (by @Etschbeijer)
+- Importing tables from a JSON file no longer leaves part of the import in the open file when it fails. A table whose name is already taken is renamed to a free name, and a table name that cannot be saved is changed so it can: it is shortened to 31 characters, loses apostrophes at its start and end, gets _ in place of * ? : \ / [ ], and "History" gets a number. (by @Etschbeijer)
 - Renaming a table shows why a name cannot be used, and no longer accepts names that cannot be saved: names that differ from another table's name only in case, contain * ? : \ / [ ], start or end with an apostrophe, are "History" in any spelling, or are longer than 31 characters. (by @Etschbeijer)
+- A new study, assay or run with a long name no longer gets a first table whose name changes when the file is saved. The table name is shortened to 31 characters when the file is created. (by @Etschbeijer)
 
 ## 3.0.0 - 2026-10-16
 

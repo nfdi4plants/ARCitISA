@@ -58,16 +58,27 @@ for fileType, createFile in tableFileTypes do
             )
 
             Vitest.test (
-                "an import with a table name that cannot be saved fails and leaves the open file unchanged",
+                "imported table names that cannot be saved are changed so they can, and keep their content",
                 fun () ->
                     let current = withNamedTables createFile [ "Sugar" ]
-                    let imported = withNamedTables createFile [ "B"; "Sugar/day 2" ]
+
+                    let imported =
+                        withNamedTables createFile [ "Sugar/day 2"; "History"; "'B'"; String.replicate 40 "a" ]
 
                     match Json.Import.applyToCurrentArcFile (current, imported) with
-                    | Ok result -> failwith $"Expected an error, got the tables %A{tableNames result}"
-                    | Error error ->
-                        Vitest.expect(error.Message).toBe
-                            "Table \"Sugar/day 2\": A table name cannot contain * ? : \\ / [ ]."
+                    | Ok result ->
+                        Vitest.expect(tableNames result).toEqual [|
+                            "Sugar"
+                            "Sugar_day 2"
+                            "History 1"
+                            "B"
+                            String.replicate 31 "a"
+                        |]
+
+                        Vitest
+                            .expect(result.Tables().[1].GetCellAt(0, 0))
+                            .toEqual (CompositeCell.FreeText "Sugar/day 2 source")
+                    | Error error -> failwith error.Message
 
                     Vitest.expect(tableNames current).toEqual [| "Sugar" |]
             )
