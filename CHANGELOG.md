@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### ✨ Added
+
+- Linux releases include a `.zip` with the unpacked app, for distributions such as Arch Linux that cannot install the `.deb` or `.rpm`. Unpack it and start the `swate` file inside the folder. #1433 (by @caroott)
+
 ### 🔄 Changed
 
 - Clicking a folder or its arrow in the file tree expands or collapses it. A study, assay, workflow or run folder also opens its metadata, while other folders keep the current view open. (by @Etschbeijer)

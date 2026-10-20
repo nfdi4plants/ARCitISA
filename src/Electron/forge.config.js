@@ -68,7 +68,8 @@ module.exports = {
     },
     {
       name: '@electron-forge/maker-zip',
-      platforms: ['darwin'],
+      // On Linux the zip holds the unpacked app for distributions that cannot install the deb or rpm (#1433).
+      platforms: ['darwin', 'linux'],
     },
     {
       name: '@electron-forge/maker-deb',

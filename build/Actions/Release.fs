@@ -182,7 +182,7 @@ let private electronMakeExtensions (os: string) : string list =
     match os with
     | "Windows" -> [ ".exe"; ".nupkg" ]
     | "macOS" -> [ ".zip"; ".dmg" ]
-    | "Linux" -> [ ".deb"; ".rpm" ]
+    | "Linux" -> [ ".deb"; ".rpm"; ".zip" ]
     | other -> failwithf "Unknown runner OS: %s" other
 
 let private currentRunnerOs () : string =
