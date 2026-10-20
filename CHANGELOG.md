@@ -18,8 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### ✨ Added
 
-- Linux releases include an Arch Linux package (`.pkg.tar.zst`), an `.AppImage` and a `.zip` of the unpacked app, for distributions that cannot install the `.deb` or `.rpm`. #1433 (by @caroott)
-- Linux releases also include a `.deb`, an `.rpm` and a `.zip` for `arm64`. #1433 (by @caroott)
+- Linux releases include an Arch Linux package (`.pkg.tar.zst`), an `.AppImage` and a `.zip` of the unpacked app, for distributions that cannot install the `.deb` or `.rpm`. The `.deb`, `.rpm` and `.zip` packages are now also provided for `arm64`. #1433 (by @caroott)
 
 ### 🔄 Changed
 
