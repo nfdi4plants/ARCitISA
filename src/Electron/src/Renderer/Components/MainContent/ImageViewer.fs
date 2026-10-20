@@ -16,3 +16,4 @@ let Main (filetype: string, base64Content: string) =
             ]
         ]
     ]
+ 

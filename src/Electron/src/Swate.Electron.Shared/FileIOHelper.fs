@@ -207,6 +207,9 @@ module FileContentType =
         | FileContentType.CLI -> Some DTOType.CLI
         | FileContentType.Markdown -> None
         | FileContentType.PDF -> None
+        | FileContentType.PNGImage -> None
+        | FileContentType.JPGImage -> None
+        | FileContentType.SVGImage -> None
         | FileContentType.NoPreview -> None
         | FileContentType.PNGImage -> None
         | FileContentType.JPGImage -> None

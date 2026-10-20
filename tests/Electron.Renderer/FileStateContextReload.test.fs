@@ -310,7 +310,7 @@ Vitest.describe (
                         )
                     )
                     .toBe (true)
-
+                
 
                 Vitest
                     .expect(
@@ -521,11 +521,11 @@ Vitest.describe (
                 let pageState = RendererPageState.fromFileContentDTO dto
 
                 match pageState with
-                | RendererPageState.SVGImage svgContent -> Vitest.expect(svgContent).toBe ("SVG content")
+                | RendererPageState.SVGImage svgContent -> Vitest.expect(svgContent).toBe ("<svg>SVG content</svg>")
                 | _ -> failwith "Expected SVGImage for SVG file content DTO."
         )
 
-
+        
 
         Vitest.test (
             "fromFileContentDTO opens an ARC workbook without tables on Metadata",
