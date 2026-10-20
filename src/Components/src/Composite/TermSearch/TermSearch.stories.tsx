@@ -9,6 +9,9 @@ import {
   type Term,
 } from './Types.fs.js';
 
+// These stories call the live term search APIs. A slow response gets more time.
+const LIVE_API_TIMEOUT = 15_000;
+
 const TERMSEARCH_INPUT_TESTID = 'term-search-input'
 
 const TERMSEARCH_DETAILSMODAL_TESTID = 'modal_termsearch_details_modal'
@@ -96,7 +99,7 @@ export const ParentSearch: Story = {
       expect(directedOutput).toBeInTheDocument();
       const expectedIcons = screen.getAllByTitle("Directed Search");
       expect(expectedIcons.length).toBeGreaterThan(0);
-    }, { timeout: 5000 });
+    }, { timeout: LIVE_API_TIMEOUT });
   }
 }
 
@@ -159,7 +162,7 @@ export const DefaultAdvancedSearch: Story = {
     await waitFor(() => {
       const results = screen.getByText(/Results: \d+/);
       expect(results).toBeInTheDocument();
-    });
+    }, { timeout: LIVE_API_TIMEOUT });
   }
 }
 
@@ -208,7 +211,7 @@ export const TIBSearch: Story = {
       expect(directedOutput).toBeInTheDocument();
       const expectedIcons = screen.getAllByTitle("Directed Search");
       expect(expectedIcons.length).toBeGreaterThan(0);
-    }, { timeout: 3000 });
+    }, { timeout: LIVE_API_TIMEOUT });
 
     await userEvent.clear(input);
 
@@ -221,7 +224,7 @@ export const TIBSearch: Story = {
     await waitFor(() => { // await api call response
       const debugValue = input.getAttribute("data-debugresultcount")
       expect(debugValue ? parseInt(debugValue, 10) : 0).toBeGreaterThan(0);
-    }, { timeout: 5000 });
+    }, { timeout: LIVE_API_TIMEOUT });
   }
 }
 

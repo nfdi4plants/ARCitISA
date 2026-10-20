@@ -13,6 +13,9 @@ import { TIBApi } from "../Util/Api.fs.js";
 import React, { act } from "react";
 import MockTable from "./MockTable.js";
 
+// These stories call the live term search APIs. A slow response gets more time.
+const LIVE_API_TIMEOUT = 15_000;
+
 type TableOptionalProps = Omit<
   React.ComponentProps<typeof Table>,
   "arcTable" | "setArcTable"
@@ -150,7 +153,7 @@ export const EditTermCellRaw: Story = {
         const debugValue = activeCell.getAttribute("data-debugresultcount");
         expect(debugValue ? parseInt(debugValue, 10) : 0).toBeGreaterThan(0);
       },
-      { timeout: 5000 },
+      { timeout: LIVE_API_TIMEOUT },
     );
 
     await userEvent.keyboard("{Enter}");
@@ -188,7 +191,7 @@ export const EditTermCellKbd: Story = {
         const debugValue = activeCell.getAttribute("data-debugresultcount");
         expect(debugValue ? parseInt(debugValue, 10) : 0).toBeGreaterThan(0);
       },
-      { timeout: 5000 },
+      { timeout: LIVE_API_TIMEOUT },
     );
 
     await waitFor(
@@ -196,7 +199,7 @@ export const EditTermCellKbd: Story = {
         const termSearchResult = await screen.findByText("MS:1001800");
         expect(termSearchResult).toBeVisible();
       },
-      { timeout: 5000 },
+      { timeout: LIVE_API_TIMEOUT },
     );
 
     await userEvent.keyboard("[ArrowDown][Enter]");
@@ -235,9 +238,9 @@ export const EditTermCellMouseclick: Story = {
     await waitFor(async () => {
       const debugValue = activeCell.getAttribute("data-debugresultcount");
       expect(debugValue ? parseInt(debugValue, 10) : 0).toBeGreaterThan(0);
-    });
+    }, { timeout: LIVE_API_TIMEOUT });
 
-    const instrumentModelItem = await screen.findByText("MS:1001800");
+    const instrumentModelItem = await screen.findByText("MS:1001800", {}, { timeout: LIVE_API_TIMEOUT });
     expect(instrumentModelItem).toBeVisible();
 
     await userEvent.click(instrumentModelItem);
@@ -596,7 +599,7 @@ export const ActivateTermSearchContainer: Story = {
         const termTemperature = screen.getByText("Temperature");
         expect(termTemperature).toBeVisible();
       },
-      { timeout: 5000 },
+      { timeout: LIVE_API_TIMEOUT },
     );
   },
 };
