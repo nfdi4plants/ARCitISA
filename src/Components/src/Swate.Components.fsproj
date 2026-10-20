@@ -256,6 +256,7 @@
     <Compile Include="Composite\Widgets\DataAnnotator\DataAnnotator.fs" />
     <Compile Include="Composite\Widgets\DataAnnotator\DataAnnotator.test.rtl.fs" />
     <Compile Include="Composite\Widgets\TemplateWidget.fs" />
+    <Compile Include="Composite\Widgets\TemplateWidget.test.rtl.fs" />
     <Compile Include="Composite\Widgets\Widgets.fs" />
     <Compile Include="Composite\Workspace\Types.fs" />
     <Compile Include="Composite\Workspace\WorkspaceModel.fs" />
