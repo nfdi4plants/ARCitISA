@@ -233,7 +233,11 @@ type PersonsInput =
                         prop.className "swt:flex swt:justify-center"
                         prop.children [
                             Html.button [
+                                prop.testId "import-persons-button"
                                 prop.type'.button
+                                prop.role.button
+                                prop.ariaLabel "Import Persons"
+                                prop.ariaRoleDescription "button"
                                 prop.className "swt:btn swt:btn-primary swt:btn-wide"
                                 prop.text "Import Persons"
                                 prop.onClick (fun _ -> setImportOpen true)

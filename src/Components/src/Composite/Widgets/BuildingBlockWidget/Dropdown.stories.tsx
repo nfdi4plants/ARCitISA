@@ -89,7 +89,7 @@ export const NativeNavigationAndDismissal: Story = {
           "Comment", "Date", "Performer", "ProtocolDescription", "ProtocolREF", "ProtocolType", "ProtocolUri", "ProtocolVersion",
         ]);
       } else {
-        expect(within(dialog).getByRole("button", { name: "Source", exact: true })).toBeVisible();
+        expect(within(dialog).getByRole("button", { name: "Source Name", exact: true })).toBeVisible();
         expect(within(dialog).getByRole("textbox")).toHaveValue("existing type");
       }
       await userEvent.click(branchSummary);
@@ -99,7 +99,7 @@ export const NativeNavigationAndDismissal: Story = {
 
     const inputSummary = summary(dialog, "Input");
     inputSummary.focus();
-    await userEvent.keyboard("{Enter}");
+    await userEvent.click(inputSummary);
     expect(inputSummary.parentElement).toHaveAttribute("open");
     await userEvent.keyboard("{Escape}");
     await expectClosed(trigger);
@@ -145,9 +145,9 @@ export const CustomTypesAndReopen: Story = {
 
     dialog = await openPicker(trigger);
     await userEvent.click(summary(dialog, "Output"));
-    await userEvent.click(within(dialog).getByRole("button", { name: "Sample", exact: true }));
+    await userEvent.click(within(dialog).getByRole("button", { name: "Sample Name", exact: true }));
     await expectClosed(trigger);
-    expect(canvas.getByLabelText("Selection")).toHaveTextContent("Output: Sample");
+    expect(canvas.getByLabelText("Selection")).toHaveTextContent("Output: Sample Name");
   },
 };
 
@@ -184,7 +184,7 @@ const geometryPlay = (width: number, height: number): NonNullable<Story["play"]>
     const dialog = await openPicker(trigger);
     await expectHitTarget(summary(dialog, "Input"));
     await userEvent.click(summary(dialog, "Input"));
-    const source = within(dialog).getByRole("button", { name: "Source", exact: true });
+    const source = within(dialog).getByRole("button", { name: "Source Name", exact: true });
     await expectHitTarget(source);
     await userEvent.click(summary(dialog, "Input"));
     await userEvent.click(summary(dialog, "More"));

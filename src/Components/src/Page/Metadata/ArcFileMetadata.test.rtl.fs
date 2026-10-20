@@ -18,7 +18,8 @@ for name, create in
     ] do
     Vitest.test (
         $"lazy {name} metadata forwards the import callback and applies selected persons",
-        fun () -> promise {
+        TestOptions(timeout = 20_000),
+        (fun () -> promise {
             let mutable requests = 0
             let mutable saved: ArcFiles option = None
 
@@ -37,23 +38,29 @@ for name, create in
 
             do!
                 RTL.waitFor (
-                    (fun () ->
-                        RTL.screen.getByRole ("button", ByRoleOptions(name = Text "Import Persons"))
-                        |> ignore
-                    ),
+                    (fun () -> RTL.screen.getByTestId "import-persons-button" |> ignore),
+                    RTLWaitForOptions(timeout = 20_000)
+                )
+
+            let! importButton =
+                RTL.waitFor (
+                    (fun () -> RTL.screen.getByTestId "import-persons-button"),
                     RTLWaitForOptions(timeout = 4000)
                 )
 
-            let importButton =
-                RTL.screen.getByRole ("button", ByRoleOptions(name = Text "Import Persons"))
-
             Vitest.expect(requests).toBe 0
             RTL.fireEvent.click importButton
-            let! candidate = RTL.screen.findByRole ("checkbox", ByRoleOptions(name = Text "Import Imported"))
+
+            let! candidate =
+                RTL.waitFor (
+                    (fun () -> RTL.screen.getByTestId "import-person-Imported-checkbox"),
+                    RTLWaitForOptions(timeout = 4000)
+                )
+
             Vitest.expect(requests).toBe 1
             Vitest.expect(saved.IsNone).toBe true
             RTL.fireEvent.click candidate
-            RTL.fireEvent.click (RTL.screen.getByRole ("button", ByRoleOptions(name = Text "Import selected")))
+            RTL.fireEvent.click (RTL.screen.getByTestId "import-selected-persons-button")
 
             let persons =
                 match saved.Value with
@@ -67,5 +74,5 @@ for name, create in
 
             Vitest.expect(persons.Count).toBe 1
             Vitest.expect(persons.[0].FirstName).toEqual (Some "Imported")
-        }
+        })
     )

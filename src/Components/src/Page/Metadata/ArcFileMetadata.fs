@@ -71,85 +71,6 @@ type ArcFileMetadata =
             prop.text text
         ]
 
-    [<ReactComponent>]
-    static member private LazyInvestigationMetadata
-        (
-            investigation: ArcInvestigation,
-            setInvestigation: ArcInvestigation -> unit,
-            ?onImportPersons: unit -> JS.Promise<Person[]>
-        ) =
-        React.Suspense(
-            [
-                LazyComponents.LazyInvestigationMetadata(
-                    investigation,
-                    setInvestigation,
-                    ?onImportPersons = onImportPersons
-                )
-            ],
-            fallback = ArcFileMetadata.LazyFallback("Loading investigation metadata...")
-        )
-
-    [<ReactComponent>]
-    static member private LazyStudyMetadata
-        (study: ArcStudy, setStudy: ArcStudy -> unit, ?onImportPersons: unit -> JS.Promise<Person[]>)
-        =
-        React.Suspense(
-            [
-                LazyComponents.LazyStudyMetadata(study, setStudy, ?onImportPersons = onImportPersons)
-            ],
-            fallback = ArcFileMetadata.LazyFallback("Loading study metadata...")
-        )
-
-    [<ReactComponent>]
-    static member private LazyAssayMetadata
-        (assay: ArcAssay, setAssay: ArcAssay -> unit, ?onImportPersons: unit -> JS.Promise<Person[]>)
-        =
-        React.Suspense(
-            [
-                LazyComponents.LazyAssayMetadata(assay, setAssay, ?onImportPersons = onImportPersons)
-            ],
-            fallback = ArcFileMetadata.LazyFallback("Loading assay metadata...")
-        )
-
-    [<ReactComponent>]
-    static member private LazyRunMetadata
-        (run: ArcRun, setRun: ArcRun -> unit, ?onImportPersons: unit -> JS.Promise<Person[]>)
-        =
-        React.Suspense(
-            [
-                LazyComponents.LazyRunMetadata(run, setRun, ?onImportPersons = onImportPersons)
-            ],
-            fallback = ArcFileMetadata.LazyFallback("Loading run metadata...")
-        )
-
-    [<ReactComponent>]
-    static member private LazyWorkflowMetadata
-        (workflow: ArcWorkflow, setWorkflow: ArcWorkflow -> unit, ?onImportPersons: unit -> JS.Promise<Person[]>)
-        =
-        React.Suspense(
-            [
-                LazyComponents.LazyWorkflowMetadata(workflow, setWorkflow, ?onImportPersons = onImportPersons)
-            ],
-            fallback = ArcFileMetadata.LazyFallback("Loading workflow metadata...")
-        )
-
-    [<ReactComponent>]
-    static member private LazyDataMapMetadata(datamap: DataMap) =
-        React.Suspense(
-            [ LazyComponents.LazyDataMapMetadata(datamap) ],
-            fallback = ArcFileMetadata.LazyFallback("Loading datamap metadata...")
-        )
-
-    [<ReactComponent>]
-    static member private LazyTemplateMetadata
-        (template: ARCtrl.Template, setTemplate: ARCtrl.Template -> unit, ?onImportPersons: unit -> JS.Promise<Person[]>) =
-        React.Suspense(
-            [
-                LazyComponents.LazyTemplateMetadata(template, setTemplate, ?onImportPersons = onImportPersons)
-            ],
-            fallback = ArcFileMetadata.LazyFallback("Loading template metadata...")
-        )
-
     [<ReactComponent(true)>]
     static member ArcFileMetadata
         // 👀 If you rename these variables, ensure that the names are forwarded for lazy loading in `src\Components\src\ARCFileEditor\ArcFileEditor.fs` as well!
@@ -157,39 +78,74 @@ type ArcFileMetadata =
 
         match arcFile with
         | ArcFiles.Investigation investigation ->
-            ArcFileMetadata.LazyInvestigationMetadata(
-                investigation,
-                (fun updated -> setArcFile (ArcFiles.Investigation updated)),
-                ?onImportPersons = onImportPersons
+            React.Suspense(
+                [
+                    LazyComponents.LazyInvestigationMetadata(
+                        investigation,
+                        (fun updated -> setArcFile (ArcFiles.Investigation updated)),
+                        ?onImportPersons = onImportPersons
+                    )
+                ],
+                fallback = ArcFileMetadata.LazyFallback("Loading investigation metadata...")
             )
         | ArcFiles.Study(study, assays) ->
-            ArcFileMetadata.LazyStudyMetadata(
-                study,
-                (fun updated -> setArcFile (ArcFiles.Study(updated, assays))),
-                ?onImportPersons = onImportPersons
+            React.Suspense(
+                [
+                    LazyComponents.LazyStudyMetadata(
+                        study,
+                        (fun updated -> setArcFile (ArcFiles.Study(updated, assays))),
+                        ?onImportPersons = onImportPersons
+                    )
+                ],
+                fallback = ArcFileMetadata.LazyFallback("Loading study metadata...")
             )
         | ArcFiles.Assay assay ->
-            ArcFileMetadata.LazyAssayMetadata(
-                assay,
-                (fun updated -> setArcFile (ArcFiles.Assay updated)),
-                ?onImportPersons = onImportPersons
+            React.Suspense(
+                [
+                    LazyComponents.LazyAssayMetadata(
+                        assay,
+                        (fun updated -> setArcFile (ArcFiles.Assay updated)),
+                        ?onImportPersons = onImportPersons
+                    )
+                ],
+                fallback = ArcFileMetadata.LazyFallback("Loading assay metadata...")
             )
         | ArcFiles.Run run ->
-            ArcFileMetadata.LazyRunMetadata(
-                run,
-                (fun updated -> setArcFile (ArcFiles.Run updated)),
-                ?onImportPersons = onImportPersons
+            React.Suspense(
+                [
+                    LazyComponents.LazyRunMetadata(
+                        run,
+                        (fun updated -> setArcFile (ArcFiles.Run updated)),
+                        ?onImportPersons = onImportPersons
+                    )
+                ],
+                fallback = ArcFileMetadata.LazyFallback("Loading run metadata...")
             )
         | ArcFiles.Workflow workflow ->
-            ArcFileMetadata.LazyWorkflowMetadata(
-                workflow,
-                (fun updated -> setArcFile (ArcFiles.Workflow updated)),
-                ?onImportPersons = onImportPersons
+            React.Suspense(
+                [
+                    LazyComponents.LazyWorkflowMetadata(
+                        workflow,
+                        (fun updated -> setArcFile (ArcFiles.Workflow updated)),
+                        ?onImportPersons = onImportPersons
+                    )
+                ],
+                fallback = ArcFileMetadata.LazyFallback("Loading workflow metadata...")
             )
-        | ArcFiles.DataMap(_, datamap) -> ArcFileMetadata.LazyDataMapMetadata(datamap)
+
+        | ArcFiles.DataMap(_, datamap) ->
+            React.Suspense(
+                [ LazyComponents.LazyDataMapMetadata(datamap) ],
+                fallback = ArcFileMetadata.LazyFallback("Loading datamap metadata...")
+            )
         | ArcFiles.Template template ->
-            ArcFileMetadata.LazyTemplateMetadata(
-                template,
-                (fun updated -> setArcFile (ArcFiles.Template updated)),
-                ?onImportPersons = onImportPersons
+            React.Suspense(
+                [
+                    LazyComponents.LazyTemplateMetadata(
+                        template,
+                        (fun updated -> setArcFile (ArcFiles.Template updated)),
+                        ?onImportPersons = onImportPersons
+                    )
+                ],
+                fallback = ArcFileMetadata.LazyFallback("Loading template metadata...")
             )

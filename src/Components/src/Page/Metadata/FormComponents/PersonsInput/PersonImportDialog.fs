@@ -236,6 +236,7 @@ type PersonImportDialog =
                                         prop.children [
                                             Html.input [
                                                 prop.type'.checkbox
+                                                prop.testId $"import-person-{name}-checkbox"
                                                 prop.className "swt:checkbox"
                                                 prop.ariaLabel $"Import {name}"
                                                 prop.disabled alreadyAdded
@@ -303,6 +304,7 @@ type PersonImportDialog =
                         ]
                         Html.button [
                             prop.type'.button
+                            prop.testId "import-selected-persons-button"
                             prop.className "swt:btn swt:btn-primary"
                             prop.text "Import selected"
                             prop.disabled selected.IsEmpty

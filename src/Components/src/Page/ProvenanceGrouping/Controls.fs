@@ -52,13 +52,14 @@ type Controls =
             draggable.setNodeRef node
             droppable.setNodeRef node
 
-        Html.span [
+        let referenceProps = [
             match key with
             | Some key -> prop.key key
             | None -> ()
             prop.ref setNodeRef
-            yield! prop.spread (!!draggable.attributes)
-            yield! prop.spread (!!draggable.listeners)
+        ]
+
+        let interactionProps = [
             prop.role.button
             prop.tabIndex 0
             prop.ariaLabel (label |> Option.defaultValue "Connect")
@@ -90,9 +91,20 @@ type Controls =
                 | Some className -> className
                 | None -> ()
             ]
-            if defaultArg debug false then
-                prop.testId $"provenance-connection-handle-{handle.Side}-{handle.Kind}"
         ]
+
+        // Keep fixed properties out of Fable's nested sequence callbacks so React
+        // Compiler can process the drag listeners without expanding the whole list.
+        Html.span (
+            referenceProps
+            @ (prop.spread (!!draggable.attributes) |> Array.toList)
+            @ (prop.spread (!!draggable.listeners) |> Array.toList)
+            @ interactionProps
+            @ [
+                if defaultArg debug false then
+                    prop.testId $"provenance-connection-handle-{handle.Side}-{handle.Kind}"
+            ]
+        )
 
     /// Measurement-only connector endpoint: the overlay reads its position, but it is
     /// never draggable or droppable and never receives pointer events.
@@ -1462,16 +1474,22 @@ type Controls =
                 )
             )
 
-        Html.div [
+        let identityProps = [
             match key with
             | Some key -> prop.key key
             | None -> ()
             prop.role.button
             prop.tabIndex 0
+        ]
+
+        let dragProps = [
             if canDrag then
                 prop.ref drag.setNodeRef
                 yield! prop.spread (!!drag.attributes)
                 yield! prop.spread (!!drag.listeners)
+        ]
+
+        let appearanceProps = [
             prop.className [
                 "swt:group swt:relative"
                 yield! Styles.propertyValueButtonClasses density drag.isDragging
@@ -1483,11 +1501,17 @@ type Controls =
                     "swt:border-dashed"
             ]
             prop.custom ("data-provenance-resize-node", "true")
+        ]
+
+        let debugProps = [
             if unassigned then
                 prop.custom ("data-provenance-unassigned", "true")
             if defaultArg debug false then
                 prop.testId $"provenance-value-{propertyValue.Id}"
             prop.ariaLabel $"Drag {propertyValue.Header.Category.Name} value"
+        ]
+
+        let titleProps = [
             if unassigned then
                 prop.title "Not assigned to any entity yet — drag onto a group card to apply."
             else
@@ -1507,6 +1531,9 @@ type Controls =
                     if not parts.IsEmpty then
                         prop.title (System.String.Join("; ", parts))
                 | _ -> ()
+        ]
+
+        let content =
             prop.children [
                 match valueAnchor with
                 | Some anchor -> anchor
@@ -1551,7 +1578,17 @@ type Controls =
                     ]
                 | None -> Html.none
             ]
-        ]
+
+        Html.div (
+            List.concat [
+                identityProps
+                dragProps
+                appearanceProps
+                debugProps
+                titleProps
+                [ content ]
+            ]
+        )
 
     [<ReactComponent>]
     static member ValueDragPreview

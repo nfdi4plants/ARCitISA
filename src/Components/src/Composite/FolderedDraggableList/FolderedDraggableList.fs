@@ -174,16 +174,22 @@ type FolderedDraggableList =
             [| box draggable.isDragging |]
         )
 
-        Html.button [
+        let identityProps = [
             match key with
             | Some key -> prop.key key
             | None -> ()
             prop.type'.button
             prop.disabled item.Disabled
+        ]
+
+        let dragProps = [
             if not item.Disabled then
                 prop.ref draggable.setNodeRef
                 yield! prop.spread (!!draggable.attributes)
                 yield! prop.spread (!!draggable.listeners)
+        ]
+
+        let appearanceProps = [
             prop.className [
                 yield! FolderedDraggableListHelper.itemShellClass item.Disabled draggable.isDragging
                 match item.Tooltip with
@@ -194,6 +200,9 @@ type FolderedDraggableList =
             // Stable hook for hosts (e.g. tutorials) that must find an item
             // without coupling to the aria-label copy.
             prop.custom ("data-foldered-item-label", item.Label)
+        ]
+
+        let stateProps = [
             if draggable.isDragging then
                 prop.tabIndex -1
             match item.Tooltip with
@@ -203,8 +212,17 @@ type FolderedDraggableList =
             | _ -> ()
             if defaultArg debug false && not draggable.isDragging then
                 prop.testId $"foldered-draggable-item-{item.Id}"
-            prop.children [ renderItemContent renderProps ]
         ]
+
+        Html.button (
+            List.concat [
+                identityProps
+                dragProps
+                appearanceProps
+                stateProps
+                [ prop.children [ renderItemContent renderProps ] ]
+            ]
+        )
 
     [<ReactComponent>]
     static member private FolderColorButton<'payload>
@@ -427,15 +445,7 @@ type FolderedDraggableList =
             |}
         )
 
-        Html.section [
-            prop.className [
-                "swt:flex swt:min-w-0 swt:flex-col"
-                match className with
-                | Some className -> className
-                | None -> ()
-            ]
-            if debug then
-                prop.testId "foldered-draggable-list"
+        let content =
             prop.children [
                 // The tab strip overlaps the card's top border so the active
                 // tab reads as part of the card, index-card style. It must be
@@ -470,12 +480,7 @@ type FolderedDraggableList =
                         folder.Items
                         |> List.filter (FolderedDraggableListHelper.matchesSearch searchQuery)
 
-                    Html.div [
-                        prop.className
-                            "swt:flex swt:min-w-0 swt:flex-col swt:gap-2 swt:rounded-lg swt:border swt:border-base-300 swt:bg-base-100 swt:p-3"
-                        prop.custom ("role", "tabpanel")
-                        if debug then
-                            prop.testId "foldered-draggable-card"
+                    let cardContent =
                         prop.children [
                             Html.div [
                                 prop.className "swt:flex swt:min-w-0 swt:items-center swt:gap-2"
@@ -527,17 +532,7 @@ type FolderedDraggableList =
                                     | None -> Html.none
                                 ]
                             ]
-                            Html.div [
-                                prop.ref shelfDroppable.setNodeRef
-                                prop.className [
-                                    "swt:min-h-16 swt:min-w-0 swt:rounded-lg swt:border swt:border-dashed swt:p-2 swt:transition-colors"
-                                    if canAcceptExternalDrop && shelfDroppable.isOver then
-                                        "swt:border-primary swt:bg-primary/10"
-                                    else
-                                        "swt:border-base-300 swt:bg-base-200/40"
-                                ]
-                                if debug then
-                                    prop.testId "foldered-draggable-item-shelf"
+                            let shelfContent =
                                 prop.children [
                                     Html.div [
                                         prop.className
@@ -564,8 +559,29 @@ type FolderedDraggableList =
                                         ]
                                     ]
                                 ]
+
+                            Html.div [
+                                prop.ref shelfDroppable.setNodeRef
+                                prop.className [
+                                    "swt:min-h-16 swt:min-w-0 swt:rounded-lg swt:border swt:border-dashed swt:p-2 swt:transition-colors"
+                                    if canAcceptExternalDrop && shelfDroppable.isOver then
+                                        "swt:border-primary swt:bg-primary/10"
+                                    else
+                                        "swt:border-base-300 swt:bg-base-200/40"
+                                ]
+                                if debug then
+                                    prop.testId "foldered-draggable-item-shelf"
+                                shelfContent
                             ]
                         ]
+
+                    Html.div [
+                        prop.className
+                            "swt:flex swt:min-w-0 swt:flex-col swt:gap-2 swt:rounded-lg swt:border swt:border-base-300 swt:bg-base-100 swt:p-3"
+                        prop.custom ("role", "tabpanel")
+                        if debug then
+                            prop.testId "foldered-draggable-card"
+                        cardContent
                     ]
                 | None -> Html.none
                 DndKit.DragOverlay(
@@ -585,4 +601,15 @@ type FolderedDraggableList =
                         | None -> Html.none
                 )
             ]
+
+        Html.section [
+            prop.className [
+                "swt:flex swt:min-w-0 swt:flex-col"
+                match className with
+                | Some className -> className
+                | None -> ()
+            ]
+            if debug then
+                prop.testId "foldered-draggable-list"
+            content
         ]
