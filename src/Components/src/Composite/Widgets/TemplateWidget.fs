@@ -67,6 +67,8 @@ type TemplateWidget =
                 | Some onCompleted -> onCompleted ()
                 | None -> widgetCtx.closeWidget WidgetType.Template
 
+        let existingTableNames = arcFile.Tables() |> Seq.map _.Name |> Array.ofSeq
+
         let selectedTemplates =
             React.useMemo (
                 (fun () ->
