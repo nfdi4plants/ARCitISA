@@ -17,10 +17,10 @@ open Swate.Components.Shared.ProvenanceGrouping.ARCtrlConverter
 let private templates = Fixtures.templates ()
 let private leafTemplateId = templates.[0].Id
 
-let private longTest = TestOptions(timeout = 120_000)
+let private longTest = TestOptions(timeout = 10_000)
 
 let private waitFor (check: unit -> 'T) =
-    RTL.waitFor (check, RTLWaitForOptions(timeout = 60_000))
+    RTL.waitFor (check, RTLWaitForOptions(timeout = 5_000))
 
 module private Queries =
 
@@ -425,6 +425,51 @@ Vitest.test (
                 Vitest.expect(PriorTables.optionCount ()).toBe 2
                 Vitest.expect(attempts).toBe 2
                 Vitest.expect(Queries.present "empty-table-existing-tables-error").toBe false
+                Vitest.expect(Queries.present "empty-table-existing-tables-empty").toBe false
+            )
+    }
+)
+
+Vitest.test (
+    "FetchArcNodesFailed: local nodes exist and failing fetch still shows preview",
+    longTest,
+    fun () -> promise {
+        let mutable reject = ignore
+        let pending = Promise.create (fun _ rejectFetch -> reject <- rejectFetch)
+
+        RTL.render (viewWithArcNodes (PriorTables.arcFile ()) ignore (Some 1) (fun () -> pending))
+        |> ignore
+
+        PriorTables.openPage ()
+
+        let optionId =
+            "empty-table-existing-column-Assay Inline setup (this file)-Filled-Output"
+
+        PriorTables.selectOption optionId
+
+        do!
+            waitFor (fun () ->
+                Vitest.expect((Queries.get "empty-table-existing-column-preview").textContent).toContain "local-sample"
+                Queries.get "empty-table-existing-column-loading" |> ignore
+            )
+
+        do! RTL.act (fun () -> promise { reject (exn "Failed to fetch ARC nodes") })
+
+        do!
+            waitFor (fun () ->
+                let alert = Queries.get "empty-table-existing-tables-error"
+                Vitest.expect(alert.getAttribute "role").toBe "alert"
+                Vitest.expect(alert.textContent).toContain "Failed to fetch ARC nodes"
+                Vitest.expect(PriorTables.columnSelect().disabled).toBe false
+                Vitest.expect(PriorTables.optionCount ()).toBe 2
+
+                Vitest
+                    .expect(PriorTables.columnSelect().value)
+                    .toBe ((Queries.get optionId :?> HTMLOptionElement).value)
+
+                Vitest.expect((Queries.get "empty-table-existing-column-preview").textContent).toContain "local-sample"
+                Vitest.expect(PriorTables.importButton().disabled).toBe false
+                Vitest.expect(Queries.present "empty-table-existing-column-loading").toBe false
                 Vitest.expect(Queries.present "empty-table-existing-tables-empty").toBe false
             )
     }

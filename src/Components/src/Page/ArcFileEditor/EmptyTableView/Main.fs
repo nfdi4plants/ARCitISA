@@ -35,11 +35,16 @@ type Main =
         (
             nodesFetchState: ArcNodesState,
             nodeOptions: ArcNodeOption[],
-            selectedNode: ArcNodeOption option,
-            setSelectedKey,
             activeTable: bool,
-            importSelected
+            importSelected: ArcNodeOption option -> unit
         ) =
+
+        let selectedKey, setSelectedKey = React.useState (None: string option)
+
+        let selectedNode =
+            selectedKey
+            |> Option.bind (fun key -> nodeOptions |> Array.tryFind (fun node -> node.Key = key))
+            |> Option.orElse (Array.tryHead nodeOptions)
 
         let importedColumn = selectedNode |> Option.bind Helper.importedColumn
 
@@ -55,7 +60,7 @@ type Main =
                             Html.span [ prop.className "swt:label"; prop.text "Column:" ]
                             Html.select [
                                 prop.testId "empty-table-existing-column-select"
-                                prop.value (selectedNode |> Option.map (fun n -> n.Key) |> Option.defaultValue "")
+                                prop.value (selectedKey |> Option.defaultValue "")
                                 prop.onChange (fun (key: string) -> setSelectedKey (Some key))
                                 prop.disabled (nodeOptions.Length = 0)
                                 prop.children [
@@ -98,21 +103,29 @@ type Main =
                         prop.className "swt:btn swt:btn-primary swt:ml-auto"
                         prop.text "Import as input column"
                         prop.disabled (not canImport)
-                        prop.onClick (fun _ -> importSelected ())
+                        prop.onClick (fun _ -> importSelected selectedNode)
                     ]
                 ]
             ]
 
-            match nodesFetchState with
-            | ArcNodesState.Failed _
-            | ArcNodesState.Loaded _ when nodeOptions.Length = 0 ->
-                Blankslate.Blankslate.Blankslate(
-                    "These aren't the nodes you're looking for.",
-                    "Unable to find existing input or output columns in all available tables.",
-                    "swt:iconify swt:fluent--search-info-24-regular",
-                    testId = "empty-table-existing-tables-empty"
-                )
-            | ArcNodesState.Loaded _ when importedColumn.IsSome ->
+
+            match nodeOptions with
+            // as long as nodeOptions are 0 we do not want to show preview
+            | [||] ->
+                match nodesFetchState with
+                // don't show anything while loading and no local nodes exist
+                | ArcNodesState.Loading -> Html.none
+                // if loading is done and no nodes exist show blankslate
+                | ArcNodesState.Failed _
+                | ArcNodesState.Loaded _ ->
+                    Blankslate.Blankslate.Blankslate(
+                        "These aren't the nodes you're looking for.",
+                        "Unable to find existing input or output columns in all available tables.",
+                        "swt:iconify swt:fluent--search-info-24-regular",
+                        testId = "empty-table-existing-tables-empty"
+                    )
+            // in any case in which we have nodes to show we want to display the preview
+            | _ ->
                 let column = importedColumn.Value
                 let previewCells = Helper.previewCells column.Cells
 
@@ -159,7 +172,6 @@ type Main =
                         ]
                     ]
                 ]
-            | _ -> Html.none
         ]
 
 
@@ -184,7 +196,6 @@ type Main =
                     ArcNodesState.Loaded [||]
             )
 
-        let selectedKey, setSelectedKey = React.useState (None: string option)
         let requestVersion = React.useRef 0
 
         let invalidate () =
@@ -227,15 +238,11 @@ type Main =
             | ArcNodesState.Failed _ -> ()
         |]
 
-        let selectedNode =
-            selectedKey
-            |> Option.bind (fun key -> nodeOptions |> Array.tryFind (fun node -> node.Key = key))
-            |> Option.orElse (Array.tryHead nodeOptions)
-
-        let importSelected () =
-            match selectedNode with
-            | Some node when Helper.importNodeOption arcFile activeTableIndex node setArcFile -> dismiss ()
-            | _ -> ()
+        let importSelected =
+            fun (selectedNode: ArcNodeOption option) ->
+                match selectedNode with
+                | Some node when Helper.importNodeOption arcFile activeTableIndex node setArcFile -> dismiss ()
+                | _ -> ()
 
         Html.div [
             prop.className "swt:space-y-4"
@@ -271,8 +278,6 @@ type Main =
                         Main.InputColumnImportController(
                             arcNodesState,
                             nodeOptions,
-                            selectedNode,
-                            setSelectedKey,
                             activeTableIndex.IsSome,
                             importSelected
                         )
