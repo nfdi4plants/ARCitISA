@@ -194,7 +194,7 @@ module Run =
             ProjectPaths.electronRendererTestsPath
 
     let components =
-        runAsync "components" "npm" [ "run"; "test:run" ] ProjectPaths.componentTestsPath
+        runAsync "components" "npm" [ "run"; "test:ci" ] ProjectPaths.componentTestsPath
 
     let All () =
         async {
