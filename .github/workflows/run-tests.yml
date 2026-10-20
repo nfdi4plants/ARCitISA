@@ -5,14 +5,9 @@ on:
   workflow_dispatch: # Allows manual runs from the Actions tab
 
 jobs:
-  test:
-    strategy:
-      fail-fast: false
-      matrix:
-        # os: [ubuntu-latest, windows-latest, macos-latest]
-        os: [ubuntu-latest]
-
-    runs-on: ${{ matrix.os }}
+  components:
+    name: components
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
@@ -49,15 +44,46 @@ jobs:
         working-directory: src/Components
         run: npx playwright install --with-deps chromium
 
-      - name: .NET tool Restore
-        run: dotnet restore ./Swate.sln
-
-      - name: Test Build
-        run: dotnet build ./Swate.sln
-
       - name: Test Build JavaScript Components project
         working-directory: src/Components
         run: npm run build
+
+      - name: Run Components tests
+        run: dotnet run --project ./build/Build.fsproj -- test run components
+
+  electron:
+    name: electron
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      # Set up .NET
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.x
+
+      # Restore .NET tools
+      - name: Restore .NET dependencies
+        run: dotnet tool restore
+
+      # Install Node.js
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: "npm"
+
+      # Trusted publishing with npm requires at least npm version 11.5.1, BUT node v22 comes with npm v10.x.
+      # https://docs.npmjs.com/trusted-publishers
+      - name: Update npm version to at least 11.5.1
+        run: npm install -g npm@11.5.1
+
+      # Install npm dependencies
+      - name: Install root npm dependencies
+        run: npm i
 
       # No other step bundles the Electron main process with Vite and Rollup, so Fable output
       # that breaks only there (a fable-library member the pinned Fable lacks) would pass.
@@ -69,5 +95,77 @@ jobs:
           npm run fable
           npx electron-forge package
 
-      - name: Run Tests
-        run: dotnet run --project ./build/Build.fsproj -- test
+      - name: Run Electron core tests
+        run: dotnet run --project ./build/Build.fsproj -- test run electron-core
+
+      - name: Run Electron renderer tests
+        run: dotnet run --project ./build/Build.fsproj -- test run electron-renderer
+
+  dotnet:
+    name: .NET and client
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      # Set up .NET
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.x
+
+      # Restore .NET tools
+      - name: Restore .NET dependencies
+        run: dotnet tool restore
+
+      # Install Node.js
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: "npm"
+
+      # Trusted publishing with npm requires at least npm version 11.5.1, BUT node v22 comes with npm v10.x.
+      # https://docs.npmjs.com/trusted-publishers
+      - name: Update npm version to at least 11.5.1
+        run: npm install -g npm@11.5.1
+
+      # Install npm dependencies
+      - name: Install root npm dependencies
+        run: npm i
+
+      - name: .NET tool Restore
+        run: dotnet restore ./Swate.sln
+
+      - name: Test Build
+        run: dotnet build ./Swate.sln
+
+      - name: Run server tests
+        run: dotnet run --project ./build/Build.fsproj -- test run server
+
+      - name: Run client tests
+        run: dotnet run --project ./build/Build.fsproj -- test run client
+
+  # Aggregates the jobs above under the old check name "test (ubuntu-latest)".
+  test:
+    needs: [components, electron, dotnet]
+    if: always()
+    strategy:
+      fail-fast: false
+      matrix:
+        # os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [ubuntu-latest]
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Require all test jobs to pass
+        shell: bash
+        run: |
+          echo "components: ${{ needs.components.result }}"
+          echo "electron: ${{ needs.electron.result }}"
+          echo "dotnet: ${{ needs.dotnet.result }}"
+          if [ "${{ needs.components.result }}" != "success" ] || [ "${{ needs.electron.result }}" != "success" ] || [ "${{ needs.dotnet.result }}" != "success" ]; then
+            exit 1
+          fi
