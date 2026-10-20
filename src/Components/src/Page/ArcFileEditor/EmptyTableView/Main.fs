@@ -32,62 +32,82 @@ type Main =
 
     [<ReactComponent>]
     static member private InputColumnImportController
-        (nodeOptions, selectedNode, setSelectedKey, importedColumn, canImport, importSelected)
-        =
+        (
+            nodesFetchState: ArcNodesState,
+            nodeOptions: ArcNodeOption[],
+            selectedNode: ArcNodeOption option,
+            setSelectedKey,
+            activeTable: bool,
+            importSelected
+        ) =
+
+        let importedColumn = selectedNode |> Option.bind Helper.importedColumn
+
+        let canImport = activeTable && importedColumn.IsSome
 
         React.Fragment [
-            match selectedNode with
-            | None ->
-                Html.p [
-                    prop.testId "empty-table-existing-tables-empty"
-                    prop.className "swt:text-sm swt:opacity-70"
-                    prop.text "No existing table has an input or output column."
-                ]
-            | Some selectedNode ->
-                Html.div [
-                    prop.className "swt:flex swt:items-center swt:gap-2"
-                    prop.children [
-                        Html.label [
-                            prop.className "swt:select swt:min-w-0 swt:w-auto swt:grow"
-                            prop.children [
-                                Html.span [ prop.className "swt:label"; prop.text "Column:" ]
-                                Html.select [
-                                    prop.testId "empty-table-existing-column-select"
-                                    prop.value selectedNode.Key
-                                    prop.onChange (fun (key: string) -> setSelectedKey (Some key))
-                                    prop.children [
-                                        for group, nodes in nodeOptions |> Array.groupBy _.Group do
-                                            Html.optgroup [
-                                                prop.key group
-                                                prop.label group
-                                                prop.children [
-                                                    for node in nodes do
-                                                        Html.option [
-                                                            prop.testId
-                                                                $"empty-table-existing-column-{node.Group}-{node.TableName}-{node.Kind}"
-                                                            prop.key node.Key
-                                                            prop.value node.Key
-                                                            prop.text $"{node.TableName} – {node.Column.Header}"
-                                                        ]
-                                                ]
+            Html.div [
+                prop.className "swt:flex swt:items-center swt:gap-2"
+                prop.children [
+                    Html.label [
+                        prop.className "swt:select swt:min-w-0 swt:w-auto swt:grow"
+                        prop.children [
+                            Html.span [ prop.className "swt:label"; prop.text "Column:" ]
+                            Html.select [
+                                prop.testId "empty-table-existing-column-select"
+                                prop.value (selectedNode |> Option.map (fun n -> n.Key) |> Option.defaultValue "")
+                                prop.onChange (fun (key: string) -> setSelectedKey (Some key))
+                                prop.disabled (nodeOptions.Length = 0)
+                                prop.children [
+                                    for group, nodes in nodeOptions |> Array.groupBy _.Group do
+                                        Html.optgroup [
+                                            prop.key group
+                                            prop.label group
+                                            prop.children [
+                                                for node in nodes do
+                                                    Html.option [
+                                                        prop.testId
+                                                            $"empty-table-existing-column-{node.Group}-{node.TableName}-{node.Kind}"
+                                                        prop.key node.Key
+                                                        prop.value node.Key
+                                                        prop.text $"{node.TableName} – {node.Column.Header}"
+                                                    ]
                                             ]
-                                    ]
+                                        ]
+                                    if nodesFetchState.IsLoading then
+                                        Html.option [ prop.text "Loading..."; prop.disabled true ]
+                                ]
+                            ]
+                            Html.span [
+                                prop.className [
+                                    if not nodesFetchState.IsLoading then
+                                        "swt:hidden"
+                                    "swt:loading swt:loading-spinner"
                                 ]
                             ]
                         ]
-                        Html.button [
-                            prop.testId "empty-table-existing-column-import"
-                            prop.type'.button
-                            prop.className "swt:btn swt:btn-primary swt:ml-auto"
-                            prop.text "Import as input column"
-                            prop.disabled (not canImport)
-                            prop.onClick (fun _ -> importSelected ())
-                        ]
+                    ]
+                    Html.button [
+                        prop.testId "empty-table-existing-column-import"
+                        prop.type'.button
+                        prop.className "swt:btn swt:btn-primary swt:ml-auto"
+                        prop.text "Import as input column"
+                        prop.disabled (not canImport)
+                        prop.onClick (fun _ -> importSelected ())
                     ]
                 ]
+            ]
 
-            match importedColumn with
-            | Some column ->
+            match nodesFetchState with
+            | ArcNodesState.Failed _
+            | ArcNodesState.Loaded _ when nodeOptions.Length = 0 ->
+                Blankslate.Blankslate.Blankslate(
+                    "These aren't the nodes you're looking for.",
+                    "Unable to find existing input or output columns in all available tables.",
+                    "swt:iconify swt:fluent--search-info-24-regular"
+                )
+            | ArcNodesState.Loaded _ when importedColumn.IsSome ->
+                let column = importedColumn.Value
                 let previewCells = Helper.previewCells column.Cells
 
                 Html.div [
@@ -98,13 +118,13 @@ type Main =
                             prop.className "swt:table swt:table-sm"
                             prop.children [
                                 Html.caption [
-                                    prop.className "swt:text-lg swt:font-semibold swt:pb-2 swt:text-left swt:align-left"
+                                    prop.className "swt:text-lg swt:font-semibold swt:pb-2 swt:text-left"
                                     prop.text "Preview:"
                                 ]
                                 Html.thead [
                                     Html.tr [
                                         Html.th [
-                                            prop.className "swt:truncate swt:align-left"
+                                            prop.className "swt:truncate"
                                             prop.text (column.Header.ToString())
                                             prop.title (column.Header.ToString())
                                         ]
@@ -123,7 +143,7 @@ type Main =
                                         for cellText in previewCells do
                                             Html.tr [
                                                 Html.td [
-                                                    prop.className "swt:truncate swt:align-left"
+                                                    prop.className "swt:truncate"
                                                     prop.text cellText
                                                     prop.title cellText
                                                 ]
@@ -133,11 +153,7 @@ type Main =
                         ]
                     ]
                 ]
-            | None ->
-                Html.div [
-                    prop.className "swt:text-sm swt:text-error"
-                    prop.text "The selected column cannot be used as input column."
-                ]
+            | _ -> Html.none
         ]
 
 
@@ -210,10 +226,6 @@ type Main =
             |> Option.bind (fun key -> nodeOptions |> Array.tryFind (fun node -> node.Key = key))
             |> Option.orElse (Array.tryHead nodeOptions)
 
-        let importedColumn = selectedNode |> Option.bind Helper.importedColumn
-
-        let canImport = activeTableIndex.IsSome && importedColumn.IsSome
-
         let importSelected () =
             match selectedNode with
             | Some node when Helper.importNodeOption arcFile activeTableIndex node setArcFile -> dismiss ()
@@ -226,44 +238,38 @@ type Main =
                     prop.className "swt:flex swt:flex-col swt:gap-2"
                     prop.children [
                         match arcNodesState with
-                        | ArcNodesState.Loading -> // during load do not show any controllers/preview
-                            Swate.Components.Primitive.LoadingSpinner.LoadingSpinner.LoadingSpinner(
-                                "Loading ARC tables",
-                                size = Swate.Components.Primitive.Types.DaisyuiSize.XL
-                            )
-                        | notLoading ->
-                            // When loading is done, always show main input controller
-                            // In case of error **still show local tables**, In case of loaded will show all.
-                            match notLoading with
-                            | ArcNodesState.Failed message ->
-                                Html.div [
-                                    prop.className "swt:flex swt:items-center swt:gap-2"
-                                    prop.children [
-                                        Html.p [
-                                            prop.testId "empty-table-existing-tables-error"
-                                            prop.role "alert"
-                                            prop.className "swt:text-sm swt:text-error"
-                                            prop.text $"Could not load tables from the ARC: {message}"
-                                        ]
+                        | ArcNodesState.Failed message ->
+                            Html.div [
+                                prop.role.alert
+                                prop.className "swt:alert swt:alert-error"
+                                prop.children [
+                                    Html.div [] // Required to make buttons below align right via daisyui styling
+                                    Html.span [
+                                        prop.testId "empty-table-existing-tables-error"
+                                        prop.text $"Could not load tables from the ARC: {message}"
+                                    ]
+                                    Html.div [
                                         Html.button [
                                             prop.testId "empty-table-existing-tables-retry"
                                             prop.type'.button
-                                            prop.className "swt:btn swt:btn-sm swt:btn-outline"
+                                            prop.className "swt:btn swt:btn-sm"
                                             prop.onClick (fun _ -> loadArcNodes ())
                                             prop.text "Retry"
                                         ]
                                     ]
-                                ]
-                            | _ -> Html.none
 
-                            Main.InputColumnImportController(
-                                nodeOptions,
-                                selectedNode,
-                                setSelectedKey,
-                                importedColumn,
-                                canImport,
-                                importSelected
-                            )
+                                ]
+                            ]
+                        | _ -> Html.none
+
+                        Main.InputColumnImportController(
+                            arcNodesState,
+                            nodeOptions,
+                            selectedNode,
+                            setSelectedKey,
+                            activeTableIndex.IsSome,
+                            importSelected
+                        )
                     ]
                 ]
             ]

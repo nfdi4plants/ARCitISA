@@ -163,7 +163,7 @@ export const TemplateAppendReturnsToEditor: Story = {
 };
 
 export const PriorTablesFromArc: Story = {
-  args: { withArcNodes: true },
+  args: { withArcNodes: "fetchArcNodes" },
   play: async ({ canvasElement }) => withViewport(1280, 800, async () => {
     const canvas = within(canvasElement);
     await userEvent.click(canvas.getByTestId('empty-table-use-existing-tables'));
@@ -180,3 +180,4 @@ export const PriorTablesFromArc: Story = {
     });
   }),
 };
+

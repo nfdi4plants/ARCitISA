@@ -106,12 +106,12 @@ type Blankslate =
                         "swt:rounded-box swt:border swt:border-base-content/10 swt:bg-base-100 swt:p-4 swt:flex swt:flex-col swt:items-center swt:text-center swt:gap-4"
                     prop.children [
                         Html.div [
-                            prop.className "swt:flex swt:items-start swt:gap-2"
+                            prop.className "swt:flex swt:items-center swt:gap-2 swt:font-semibold"
                             prop.children [
                                 match iconClassName with
                                 | Some iconClass ->
                                     Html.span [
-                                        prop.className $"swt:iconify {iconClass} {iconSizeClassName} swt:mt-0.5"
+                                        prop.className $"swt:iconify {iconClass} {iconSizeClassName}"
                                     ]
                                 | None -> Html.none
                                 Html.h2 [ prop.className titleClassName; prop.text title ]

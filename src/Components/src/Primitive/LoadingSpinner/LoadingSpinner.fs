@@ -8,7 +8,9 @@ open Swate.Components.Primitive
 type LoadingSpinner =
 
     [<ReactComponent(true)>]
-    static member LoadingSpinner(?text: string, ?size: DaisyuiSize, ?color: DaisyuiColors) =
+    static member LoadingSpinner
+        (?text: string, ?size: DaisyuiSize, ?color: DaisyuiColors, ?props: IReactProperty list)
+        =
         Html.span [
             prop.className "swt:flex swt:flex-col swt:items-center swt:gap-2 swt:py-10"
             prop.children [
@@ -37,4 +39,7 @@ type LoadingSpinner =
                 | Some t -> Html.span [ prop.text t ]
                 | None -> Html.none
             ]
+            match props with
+            | Some p -> yield! p
+            | None -> ()
         ]

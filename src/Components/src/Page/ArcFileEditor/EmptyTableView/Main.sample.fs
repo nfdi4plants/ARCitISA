@@ -12,6 +12,14 @@ open Swate.Components.Composite.TermSearch.Types
 open Swate.Components.Shared.ProvenanceGrouping.ARCtrlConverter
 open Swate.Components.Page.ArcFileEditor.EmptyTableView.Types
 
+[<StringEnum>]
+type WithArcNodes =
+    | OnlyLocal
+    | FetchArcNodes
+    | FetchArcNodesEmpty
+    | FetchArcNodesFailed
+    | FetchArcNodesLongLoading
+
 module internal Fixtures =
 
     let arcFile () =
@@ -61,6 +69,21 @@ module internal Fixtures =
         |]
     }
 
+    let arcNodesEmpty () = promise {
+        do! Promise.sleep 300
+        return [||]
+    }
+
+    let arcNodesFailed () = promise {
+        do! Promise.sleep 300
+        return failwith "Failed to fetch ARC nodes"
+    }
+
+    let arcNodesLongLoading () = promise {
+        do! Promise.sleep 10000
+        return! arcNodes ()
+    }
+
     let termSearch (query: string) = promise {
         return
             ResizeArray [
@@ -95,14 +118,16 @@ type internal Main =
         )
 
     [<ReactComponent(true)>]
-    static member Entry(?withArcNodes: bool) =
+    static member Entry(?withArcNodes: WithArcNodes) =
         let arcFile, setArcFile = React.useState (Fixtures.arcFile)
 
         let fetchArcNodes =
-            if defaultArg withArcNodes false then
-                Some Fixtures.arcNodes
-            else
-                None
+            match defaultArg withArcNodes OnlyLocal with
+            | OnlyLocal -> None
+            | FetchArcNodes -> Some Fixtures.arcNodes
+            | FetchArcNodesEmpty -> Some Fixtures.arcNodesEmpty
+            | FetchArcNodesFailed -> Some Fixtures.arcNodesFailed
+            | FetchArcNodesLongLoading -> Some Fixtures.arcNodesLongLoading
 
         Main.Providers(
             Html.div [
