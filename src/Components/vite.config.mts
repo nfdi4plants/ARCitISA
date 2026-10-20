@@ -9,14 +9,15 @@ export default defineConfig({
         react({
             include: /\.(js|jsx|ts|tsx)$/,
             babel: {
-                // The React Compiler needs minutes for these two outdated components. Fable turns
-                // their long Feliz lists into deeply nested closures, and the compiler slows down
-                // about 2x per nesting level. FolderedDraggableList's main component fails to
-                // compile anyway, so skipping both costs little.
-                plugins: [['babel-plugin-react-compiler', {
-                    sources: (filename: string) =>
-                        !/(ProvenanceGrouping[\\/]Controls|FolderedDraggableList)\.fs\.ts$/.test(filename),
-                }]],
+                // In test runs the React Compiler skips two outdated components. Fable turns their
+                // long Feliz lists into deeply nested closures, and the compiler needs minutes for
+                // them. The library build still compiles them as before.
+                plugins: [process.env.VITEST
+                    ? ['babel-plugin-react-compiler', {
+                        sources: (filename: string) =>
+                            !/(ProvenanceGrouping[\\/]Controls|FolderedDraggableList)\.fs\.ts$/.test(filename),
+                    }]
+                    : 'babel-plugin-react-compiler'],
             },
         }),
         tailwindcss(),
