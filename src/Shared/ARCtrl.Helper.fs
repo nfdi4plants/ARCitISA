@@ -109,11 +109,26 @@ module ARCtrlHelper =
     [<Literal>]
     let private MaxTableNameLength = 31
 
-    [<Literal>]
-    let private ReservedTableName = "History"
+    /// "History" is reserved by spreadsheet programs. The others are the sheets ARCtrl saves next to the table sheets,
+    /// so a table with one of these names cannot be saved.
+    let private reservedTableNames = [|
+        "History"
+        ARCtrl.Spreadsheet.ArcInvestigation.metadataSheetName
+        ARCtrl.Spreadsheet.ArcStudy.metadataSheetName
+        ARCtrl.Spreadsheet.ArcAssay.metadataSheetName
+        ARCtrl.Spreadsheet.ArcRun.metadataSheetName
+        ARCtrl.Spreadsheet.ArcWorkflow.metadataSheetName
+        ARCtrl.Spreadsheet.Template.metadataSheetName
+        "isa_datamap"
+    |]
 
-    let private isReservedTableName (name: string) =
-        name.Trim().ToLowerInvariant() = ReservedTableName.ToLowerInvariant()
+    let private tryReservedTableName (name: string) =
+        let key = name.Trim().ToLowerInvariant()
+
+        reservedTableNames
+        |> Array.tryFind (fun reserved -> reserved.ToLowerInvariant() = key)
+
+    let private isReservedTableName (name: string) = (tryReservedTableName name).IsSome
 
     let private firstFreeTableName (usedNames: seq<string>) (candidate: int -> string) =
         let rec loop index =
@@ -176,6 +191,7 @@ module ARCtrlHelper =
 
     let tryTableNameError (otherNames: seq<string>) (name: string) =
         let name = name.Trim()
+        let reservedName = tryReservedTableName name
 
         if name = "" then
             Some "Enter a table name."
@@ -183,8 +199,8 @@ module ARCtrlHelper =
             Some "A table name cannot contain * ? : \\ / [ ]."
         elif name.StartsWith "'" || name.EndsWith "'" then
             Some "A table name cannot start or end with '."
-        elif isReservedTableName name then
-            Some $"\"{ReservedTableName}\" is reserved and cannot be a table name."
+        elif reservedName.IsSome then
+            Some $"\"{reservedName.Value}\" is reserved and cannot be a table name."
         elif name.Length > MaxTableNameLength then
             Some $"A table name can have at most {MaxTableNameLength} characters."
         elif isTableNameTaken otherNames name then

@@ -7,6 +7,7 @@ open Expecto
 #endif
 
 open ARCtrl
+open ARCtrl.Spreadsheet
 open Swate.Components.Shared
 
 let private names (newTableNames: NewTableName[]) = newTableNames |> Array.map _.Name
@@ -67,6 +68,9 @@ let tests =
                 "Extraction (2)", None
                 "Su'gar", None
                 "history", Some "\"History\" is reserved and cannot be a table name."
+                "isa_assay", Some "\"isa_assay\" is reserved and cannot be a table name."
+                "ISA_Datamap", Some "\"isa_datamap\" is reserved and cannot be a table name."
+                "Assay", None
                 String.replicate 31 "b", None
             ]
             |> List.iter (fun (name, expected) ->
@@ -127,6 +131,31 @@ let tests =
                     Some "A table name cannot start or end with '. The new table is renamed."
                 |]
                 "notices"
+
+        testCase "a suggested name does not clash with the sheets saved next to the tables"
+        <| fun _ ->
+            let assay = ArcAssay.init "Assay"
+            assay.DataMap <- Some(DataMap.init ())
+
+            let result =
+                resolveNewTableNames [] [| ArcAssay.metadataSheetName, None; "isa_datamap", None |]
+
+            for newTableName in result do
+                let table = ArcTable.init newTableName.Name
+                table.AddColumn(CompositeHeader.Input IOType.Source)
+                assay.AddTable table
+
+            let savedAssay = assay |> ArcAssay.toFsWorkbook |> ArcAssay.fromFsWorkbook
+
+            Expect.equal
+                (savedAssay.Tables |> Seq.map _.Name |> Array.ofSeq)
+                [| "isa_assay 1"; "isa_datamap 1" |]
+                "names"
+
+            Expect.equal
+                result.[0].Notice
+                (Some "\"isa_assay\" is reserved and cannot be a table name. The new table is renamed.")
+                "notice"
 
         testCase "a shortened suggested name is numbered when its shortened form is taken"
         <| fun _ ->
