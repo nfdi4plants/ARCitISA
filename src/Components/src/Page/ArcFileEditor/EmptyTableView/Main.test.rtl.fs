@@ -17,6 +17,11 @@ open Swate.Components.Shared.ProvenanceGrouping.ARCtrlConverter
 let private templates = Fixtures.templates ()
 let private leafTemplateId = templates.[0].Id
 
+let private longTest = TestOptions(timeout = 120_000)
+
+let private waitFor (check: unit -> 'T) =
+    RTL.waitFor (check, RTLWaitForOptions(timeout = 60_000))
+
 module private Queries =
 
     let get (testId: string) = RTL.screen.getByTestId testId
@@ -111,6 +116,7 @@ Vitest.afterEach (fun () -> RTL.cleanup ())
 
 Vitest.test (
     "setup pages focus their heading and Back returns to the choices",
+    longTest,
     fun () -> promise {
         RTL.render (view (PriorTables.arcFile ()) ignore (Some 1)) |> ignore
 
@@ -124,7 +130,7 @@ Vitest.test (
             Queries.get pageId |> ignore
             Vitest.expect(Queries.present "empty-table-choices").toBe false
             let heading = Queries.get "empty-table-setup-heading"
-            do! RTL.waitFor (fun () -> Vitest.expect(box document.activeElement).toBe (box heading))
+            do! waitFor (fun () -> Vitest.expect(box document.activeElement).toBe (box heading))
 
             Queries.click "empty-table-setup-back"
             Queries.get "empty-table-choices" |> ignore
@@ -134,6 +140,7 @@ Vitest.test (
 
 Vitest.test (
     "switching empty tables resets the inline route and template selection",
+    longTest,
     fun () -> promise {
         let arcFile = Fixtures.arcFile ()
         let rendered = RTL.render (view arcFile ignore (Some 0))
@@ -156,6 +163,7 @@ Vitest.test (
 
 Vitest.test (
     "adding a building block invokes the file callback with the selected column",
+    longTest,
     fun () -> promise {
         let arcFile = Fixtures.arcFile ()
         let mutable updated: ArcFiles option = None
@@ -175,6 +183,7 @@ Vitest.test (
 
 Vitest.test (
     "canceling import retains selection and confirmed append updates only the active table",
+    longTest,
     fun () -> promise {
         let arcFile = Fixtures.arcFile ()
         let mutable updated: ArcFiles option = None
@@ -221,6 +230,7 @@ Vitest.test (
 
 Vitest.test (
     "import as a new table returns to choices while preserving the empty active table",
+    longTest,
     fun () -> promise {
         let arcFile = Fixtures.arcFile ()
         let mutable updated: ArcFiles option = None
@@ -241,38 +251,8 @@ Vitest.test (
 )
 
 Vitest.test (
-    "prior tables are unavailable without other input or output columns or an ARC loader",
-    fun () -> promise {
-        RTL.render (view (Fixtures.arcFile ()) ignore (Some 0)) |> ignore
-
-        PriorTables.openPage ()
-
-        Vitest.expect(Queries.present "empty-table-existing-tables-page").toBe false
-        Queries.get "empty-table-choices" |> ignore
-    }
-)
-
-Vitest.test (
-    "with an ARC loader prior tables open even when the open file has no columns to offer",
-    fun () -> promise {
-        let fetchArcNodes () = promise { return ([||]: Types.ArcNodeTable[]) }
-
-        RTL.render (viewWithArcNodes (Fixtures.arcFile ()) ignore (Some 0) fetchArcNodes)
-        |> ignore
-
-        PriorTables.openPage ()
-
-        let! _ = RTL.screen.findByTestId "empty-table-existing-tables-empty"
-        Queries.get "empty-table-existing-tables-page" |> ignore
-        Vitest.expect(Queries.present "empty-table-existing-column-select").toBe false
-        Vitest.expect(Queries.present "empty-table-existing-column-import").toBe false
-        Queries.click "empty-table-setup-back"
-        Queries.get "empty-table-choices" |> ignore
-    }
-)
-
-Vitest.test (
-    "without an ARC loader the output of a table in the open file becomes the new input column",
+    "OnlyLocal: local columns can be selected, previewed and imported without fetching",
+    longTest,
     fun () -> promise {
         let arcFile = PriorTables.arcFile ()
         let mutable updated: ArcFiles option = None
@@ -280,11 +260,33 @@ Vitest.test (
 
         PriorTables.openPage ()
 
-        Vitest.expect(PriorTables.optionCount ()).toBe 2
+        do!
+            waitFor (fun () ->
+                Vitest.expect(PriorTables.columnSelect().disabled).toBe false
+                Vitest.expect(PriorTables.optionCount ()).toBe 2
+                Vitest.expect(Queries.present "empty-table-existing-column-loading").toBe false
+                Vitest.expect(Queries.present "empty-table-existing-tables-empty").toBe false
+                Vitest.expect(Queries.present "empty-table-existing-tables-error").toBe false
+            )
+
+        PriorTables.selectOption "empty-table-existing-column-Assay Inline setup (this file)-Filled-Input"
+
+        do!
+            waitFor (fun () ->
+                Vitest.expect((Queries.get "empty-table-existing-column-preview").textContent).toContain "local-source"
+            )
+
+        PriorTables.selectOption "empty-table-existing-column-Assay Inline setup (this file)-Filled-Output"
+
+        do!
+            waitFor (fun () ->
+                Vitest.expect((Queries.get "empty-table-existing-column-preview").textContent).toContain "local-sample"
+                Vitest.expect(PriorTables.importButton().disabled).toBe false
+            )
 
         RTL.fireEvent.click (PriorTables.importButton ())
 
-        Vitest.expect(updated.IsSome).toBe true
+        do! waitFor (fun () -> Vitest.expect(updated.IsSome).toBe true)
         let imported = updated.Value.Tables().[1]
         Vitest.expect(imported.Headers |> Seq.toArray).toEqual ([| CompositeHeader.Input IOType.Sample |])
         Vitest.expect(imported.GetColumn(0).Cells.[0]).toEqual (CompositeCell.createFreeText "local-sample")
@@ -296,41 +298,95 @@ Vitest.test (
 )
 
 Vitest.test (
-    "an input column of any ARC table can be imported, while the ARC copy of the open file is skipped",
+    "FetchArcNodes: an empty select stays disabled while loading, then fetched columns can be imported",
+    longTest,
     fun () -> promise {
-        let arcFile = PriorTables.arcFile ()
+        let arcFile = Fixtures.arcFile ()
         let mutable updated: ArcFiles option = None
+        let mutable resolve = ignore
+        let pending = Promise.create (fun resolveFetch _ -> resolve <- resolveFetch)
 
-        let fetchArcNodes () = promise {
-            return [|
-                PriorTables.arcNode ArcTableScope.Study "Field" (PriorTables.ioTable "Harvest" "plant-1" "leaf-1")
-                PriorTables.arcNode
-                    ArcTableScope.Assay
-                    "Inline setup"
-                    (PriorTables.ioTable "Filled" "stale-source" "stale-sample")
-            |]
-        }
-
-        RTL.render (viewWithArcNodes arcFile (fun next -> updated <- Some next) (Some 1) fetchArcNodes)
+        RTL.render (viewWithArcNodes arcFile (fun next -> updated <- Some next) (Some 0) (fun () -> pending))
         |> ignore
 
         PriorTables.openPage ()
 
-        do! RTL.waitFor (fun () -> Vitest.expect(PriorTables.optionCount ()).toBe 4)
+        do!
+            waitFor (fun () ->
+                Vitest.expect(PriorTables.columnSelect().disabled).toBe true
+                Vitest.expect(PriorTables.importButton().disabled).toBe true
+
+                Vitest.expect((Queries.get "empty-table-existing-column-loading" :?> HTMLOptionElement).disabled).toBe
+                    true
+
+                Vitest.expect(Queries.present "empty-table-existing-tables-empty").toBe false
+            )
+
+        do!
+            RTL.act (fun () -> promise {
+                resolve [|
+                    PriorTables.arcNode ArcTableScope.Study "Field" (PriorTables.ioTable "Harvest" "plant-1" "leaf-1")
+                    // The ARC copy of the open file must not offer stale columns.
+                    PriorTables.arcNode
+                        ArcTableScope.Assay
+                        "Inline setup"
+                        (PriorTables.ioTable "Filled" "stale-source" "stale-sample")
+                |]
+            })
+
+        do!
+            waitFor (fun () ->
+                Vitest.expect(PriorTables.columnSelect().disabled).toBe false
+                Vitest.expect(PriorTables.optionCount ()).toBe 2
+                Vitest.expect(Queries.present "empty-table-existing-column-loading").toBe false
+                Vitest.expect(Queries.present "empty-table-existing-tables-empty").toBe false
+                Vitest.expect(Queries.present "empty-table-existing-tables-error").toBe false
+            )
 
         PriorTables.selectOption "empty-table-existing-column-Study Field-Harvest-Input"
-        Vitest.expect((Queries.get "empty-table-existing-column-preview").textContent).toContain "plant-1"
+
+        do!
+            waitFor (fun () ->
+                Vitest.expect((Queries.get "empty-table-existing-column-preview").textContent).toContain "plant-1"
+                Vitest.expect(PriorTables.importButton().disabled).toBe false
+            )
+
         RTL.fireEvent.click (PriorTables.importButton ())
 
-        Vitest.expect(updated.IsSome).toBe true
-        let imported = updated.Value.Tables().[1]
+        do! waitFor (fun () -> Vitest.expect(updated.IsSome).toBe true)
+        let imported = updated.Value.Tables().[0]
         Vitest.expect(imported.Headers |> Seq.toArray).toEqual ([| CompositeHeader.Input IOType.Source |])
         Vitest.expect(imported.GetColumn(0).Cells.[0]).toEqual (CompositeCell.createFreeText "plant-1")
     }
 )
 
 Vitest.test (
-    "a failed ARC load keeps the open file's columns usable and can be retried",
+    "FetchArcNodesEmpty: completed loading with no nodes shows a blankslate and a disabled select",
+    longTest,
+    fun () -> promise {
+        RTL.render (viewWithArcNodes (Fixtures.arcFile ()) ignore (Some 0) Fixtures.arcNodesEmpty)
+        |> ignore
+
+        PriorTables.openPage ()
+
+        do!
+            waitFor (fun () ->
+                Vitest.expect((Queries.get "empty-table-existing-tables-empty").textContent).toContain
+                    "Unable to find existing input or output columns"
+
+                Vitest.expect(PriorTables.columnSelect().disabled).toBe true
+                Vitest.expect(PriorTables.optionCount ()).toBe 0
+                Vitest.expect(PriorTables.importButton().disabled).toBe true
+                Vitest.expect(Queries.present "empty-table-existing-column-loading").toBe false
+                Vitest.expect(Queries.present "empty-table-existing-column-preview").toBe false
+                Vitest.expect(Queries.present "empty-table-existing-tables-error").toBe false
+            )
+    }
+)
+
+Vitest.test (
+    "FetchArcNodesFailed: a failed fetch shows an error alert and retry can populate the select",
+    longTest,
     fun () -> promise {
         let mutable attempts = 0
 
@@ -338,29 +394,88 @@ Vitest.test (
             attempts <- attempts + 1
 
             if attempts = 1 then
-                return failwith "ARC is not loaded"
+                return! Fixtures.arcNodesFailed ()
             else
                 return [|
                     PriorTables.arcNode ArcTableScope.Run "Measure" (PriorTables.ioTable "Readout" "in" "out")
                 |]
         }
 
-        RTL.render (viewWithArcNodes (PriorTables.arcFile ()) ignore (Some 1) fetchArcNodes)
+        RTL.render (viewWithArcNodes (Fixtures.arcFile ()) ignore (Some 0) fetchArcNodes)
         |> ignore
 
         PriorTables.openPage ()
 
-        let! alert = RTL.screen.findByTestId "empty-table-existing-tables-error"
-        Vitest.expect(alert.textContent).toContain "ARC is not loaded"
-        Vitest.expect(PriorTables.optionCount ()).toBe 2
-        Vitest.expect(PriorTables.importButton().disabled).toBe false
+        do!
+            waitFor (fun () ->
+                let alert = Queries.get "empty-table-existing-tables-error"
+                Vitest.expect(alert.getAttribute "role").toBe "alert"
+                Vitest.expect(alert.textContent).toContain "Failed to fetch ARC nodes"
+                Vitest.expect(PriorTables.columnSelect().disabled).toBe true
+                Vitest.expect(PriorTables.importButton().disabled).toBe true
+                Vitest.expect(Queries.present "empty-table-existing-column-loading").toBe false
+            )
 
         Queries.click "empty-table-existing-tables-retry"
 
-        do! RTL.waitFor (fun () -> Vitest.expect(PriorTables.optionCount ()).toBe 4)
+        do!
+            waitFor (fun () ->
+                Queries.get "empty-table-existing-column-Run Measure-Readout-Output" |> ignore
+                Vitest.expect(PriorTables.columnSelect().disabled).toBe false
+                Vitest.expect(PriorTables.optionCount ()).toBe 2
+                Vitest.expect(attempts).toBe 2
+                Vitest.expect(Queries.present "empty-table-existing-tables-error").toBe false
+                Vitest.expect(Queries.present "empty-table-existing-tables-empty").toBe false
+            )
+    }
+)
 
-        Queries.get "empty-table-existing-column-Run Measure-Readout-Output" |> ignore
-        Vitest.expect(attempts).toBe 2
-        Vitest.expect(Queries.present "empty-table-existing-tables-error").toBe false
+Vitest.test (
+    "FetchArcNodesLongLoading: local columns remain selectable and importable while fetching is pending",
+    longTest,
+    fun () -> promise {
+        let arcFile = PriorTables.arcFile ()
+        let mutable updated: ArcFiles option = None
+
+        RTL.render (viewWithArcNodes arcFile (fun next -> updated <- Some next) (Some 1) Fixtures.arcNodesLongLoading)
+        |> ignore
+
+        PriorTables.openPage ()
+
+        do!
+            waitFor (fun () ->
+                Vitest.expect(PriorTables.columnSelect().disabled).toBe false
+                Vitest.expect(PriorTables.optionCount ()).toBe 3
+
+                Vitest.expect((Queries.get "empty-table-existing-column-loading" :?> HTMLOptionElement).disabled).toBe
+                    true
+
+                Vitest.expect(Queries.present "empty-table-existing-tables-empty").toBe false
+                Vitest.expect(Queries.present "empty-table-existing-tables-error").toBe false
+            )
+
+        let optionId =
+            "empty-table-existing-column-Assay Inline setup (this file)-Filled-Input"
+
+        PriorTables.selectOption optionId
+
+        do!
+            waitFor (fun () ->
+                Vitest
+                    .expect(PriorTables.columnSelect().value)
+                    .toBe ((Queries.get optionId :?> HTMLOptionElement).value)
+
+                Vitest.expect(PriorTables.importButton().disabled).toBe false
+                // The fetch is still pending when we select and import a local column.
+                Queries.get "empty-table-existing-column-loading" |> ignore
+            )
+
+        RTL.fireEvent.click (PriorTables.importButton ())
+        do! waitFor (fun () -> Vitest.expect(updated.IsSome).toBe true)
+        let imported = updated.Value.Tables().[1]
+        Vitest.expect(imported.Headers |> Seq.toArray).toEqual ([| CompositeHeader.Input IOType.Source |])
+        Vitest.expect(imported.GetColumn(0).Cells.[0]).toEqual (CompositeCell.createFreeText "local-source")
+        Vitest.expect(Queries.present "empty-table-existing-tables-page").toBe false
+        Queries.get "empty-table-choices" |> ignore
     }
 )

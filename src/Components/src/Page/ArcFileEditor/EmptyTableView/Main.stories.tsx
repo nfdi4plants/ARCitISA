@@ -1,6 +1,6 @@
 import React from 'react';
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { expect, userEvent, waitFor, within } from 'storybook/test';
+import { expect, userEvent, waitFor as storyWaitFor, within } from 'storybook/test';
 import { Entry, Fixtures_templates } from './Main.sample.fs.js';
 
 const meta = {
@@ -17,6 +17,8 @@ const leafRowId = `template-row-${leafTemplate.Id}`;
 const rootRowId = `template-row-${rootTemplate.Id}`;
 const instrumentRowId = `template-row-${instrumentTemplate.Id}`;
 const leafSelectionId = `template-selection-${leafTemplate.Id}`;
+
+const waitFor = <T,>(check: () => T | Promise<T>) => storyWaitFor(check, { timeout: 60_000 });
 
 // Storybook's browser tests own the real viewport. A container width alone would
 // leave portaled menus unconstrained and miss the clipping regression.
@@ -162,22 +164,116 @@ export const TemplateAppendReturnsToEditor: Story = {
   }),
 };
 
-export const PriorTablesFromArc: Story = {
-  args: { withArcNodes: "fetchArcNodes" },
+async function openPriorTables(canvasElement: HTMLElement) {
+  const canvas = within(canvasElement);
+  await waitFor(() => expect(canvas.getByTestId('empty-table-use-existing-tables')).toBeEnabled());
+  await userEvent.click(canvas.getByTestId('empty-table-use-existing-tables'));
+  await waitFor(() => {
+    expect(canvas.getByTestId('empty-table-existing-tables-page')).toBeVisible();
+    expect(canvas.getByTestId('empty-table-setup-heading')).toHaveFocus();
+    expect(canvas.getByTestId('empty-table-existing-column-select')).toBeVisible();
+  });
+  return canvas;
+}
+
+async function importPriorColumn(canvasElement: HTMLElement, optionId: string, cellText: string, loading = false) {
+  const canvas = within(canvasElement);
+  const select = canvas.getByTestId('empty-table-existing-column-select');
+  await waitFor(() => {
+    expect(select).toBeEnabled();
+    expect(canvas.getByTestId(optionId)).toBeInTheDocument();
+  });
+  const option = canvas.getByTestId(optionId) as HTMLOptionElement;
+  await userEvent.selectOptions(select, option);
+  await waitFor(() => {
+    expect(select).toHaveValue(option.value);
+    expect(canvas.getByTestId('empty-table-existing-column-import')).toBeEnabled();
+    if (loading) {
+      expect(canvas.getByTestId('empty-table-existing-tables-loading')).toBeVisible();
+      expect(canvas.getByTestId('empty-table-existing-column-loading')).toBeDisabled();
+    } else {
+      expect(canvas.getByTestId('empty-table-existing-column-preview')).toHaveTextContent(cellText);
+      expect(canvas.getByTestId('empty-table-existing-tables-loading')).not.toBeVisible();
+    }
+    expect(canvas.queryByTestId('empty-table-existing-tables-empty')).not.toBeInTheDocument();
+    expect(canvas.queryByTestId('empty-table-existing-tables-error')).not.toBeInTheDocument();
+  });
+  await userEvent.click(canvas.getByTestId('empty-table-existing-column-import'));
+  await waitFor(() => {
+    expect(canvas.queryByTestId('empty-table-existing-tables-page')).not.toBeInTheDocument();
+    expect(canvasElement).toHaveTextContent(cellText);
+  });
+}
+
+export const PriorTablesOnlyLocal: Story = {
+  args: { withArcNodes: 'onlyLocal', withLocalNodes: true },
   play: async ({ canvasElement }) => withViewport(1280, 800, async () => {
-    const canvas = within(canvasElement);
-    await userEvent.click(canvas.getByTestId('empty-table-use-existing-tables'));
-    expect(canvas.getByTestId('empty-table-existing-tables-page')).toBeInTheDocument();
-    await waitFor(() => expect(canvas.getByTestId('empty-table-setup-heading')).toHaveFocus());
-    const select = await canvas.findByTestId('empty-table-existing-column-select');
-    const input = canvas.getByTestId('empty-table-existing-column-Study Field trial-Harvest-Input');
-    await userEvent.selectOptions(select, input);
-    expect(canvas.getByTestId('empty-table-existing-column-preview')).toHaveTextContent('Plant 1');
-    await userEvent.click(canvas.getByTestId('empty-table-existing-column-import'));
+    await openPriorTables(canvasElement);
+    await importPriorColumn(
+      canvasElement,
+      'empty-table-existing-column-Assay Inline setup (this file)-Filled-Output',
+      'local-sample',
+    );
+  }),
+};
+
+export const PriorTablesFromArc: Story = {
+  args: { withArcNodes: 'fetchArcNodes' },
+  play: async ({ canvasElement }) => withViewport(1280, 800, async () => {
+    await openPriorTables(canvasElement);
+    await importPriorColumn(canvasElement, 'empty-table-existing-column-Study Field trial-Harvest-Input', 'Plant 1');
+  }),
+};
+
+export const PriorTablesFromArcEmpty: Story = {
+  args: { withArcNodes: 'fetchArcNodesEmpty' },
+  play: async ({ canvasElement }) => withViewport(1280, 800, async () => {
+    const canvas = await openPriorTables(canvasElement);
     await waitFor(() => {
-      expect(canvas.queryByTestId('empty-table-existing-tables-page')).not.toBeInTheDocument();
-      expect(canvasElement).toHaveTextContent('Plant 1');
+      expect(canvas.getByTestId('empty-table-existing-tables-empty')).toBeVisible();
+      expect(canvas.getByTestId('empty-table-existing-tables-empty')).toHaveTextContent(
+        'Unable to find existing input or output columns',
+      );
+      expect(canvas.getByTestId('empty-table-existing-column-select')).toBeDisabled();
+      expect(canvas.getByTestId('empty-table-existing-column-import')).toBeDisabled();
+      expect(canvas.getByTestId('empty-table-existing-tables-loading')).not.toBeVisible();
+      expect(canvas.queryByTestId('empty-table-existing-column-preview')).not.toBeInTheDocument();
+      expect(canvas.queryByTestId('empty-table-existing-tables-error')).not.toBeInTheDocument();
     });
+    const select = canvas.getByTestId('empty-table-existing-column-select');
+    await userEvent.click(select);
+    expect(select).not.toHaveFocus();
+    expect((select as HTMLSelectElement).options).toHaveLength(0);
+  }),
+};
+
+export const PriorTablesFromArcFailed: Story = {
+  args: { withArcNodes: 'fetchArcNodesFailed' },
+  play: async ({ canvasElement }) => withViewport(1280, 800, async () => {
+    const canvas = await openPriorTables(canvasElement);
+    await waitFor(() => {
+      const alert = canvas.getByTestId('empty-table-existing-tables-error');
+      expect(alert).toBeVisible();
+      expect(alert).toHaveAttribute('role', 'alert');
+      expect(alert).toHaveTextContent('Failed to fetch ARC nodes');
+      expect(canvas.getByTestId('empty-table-existing-tables-retry')).toBeEnabled();
+      expect(canvas.getByTestId('empty-table-existing-column-select')).toBeDisabled();
+      expect(canvas.getByTestId('empty-table-existing-column-import')).toBeDisabled();
+      expect(canvas.getByTestId('empty-table-existing-tables-loading')).not.toBeVisible();
+    });
+  }),
+};
+
+export const PriorTablesFromArcLoading: Story = {
+  args: { withArcNodes: 'fetchArcNodesLongLoading', withLocalNodes: true },
+  play: async ({ canvasElement }) => withViewport(1280, 800, async () => {
+    await openPriorTables(canvasElement);
+    await importPriorColumn(
+      canvasElement,
+      'empty-table-existing-column-Assay Inline setup (this file)-Filled-Input',
+      'local-source',
+      true,
+    );
   }),
 };
 

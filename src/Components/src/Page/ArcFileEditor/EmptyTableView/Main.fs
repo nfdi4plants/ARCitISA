@@ -75,10 +75,15 @@ type Main =
                                             ]
                                         ]
                                     if nodesFetchState.IsLoading then
-                                        Html.option [ prop.text "Loading..."; prop.disabled true ]
+                                        Html.option [
+                                            prop.testId "empty-table-existing-column-loading"
+                                            prop.text "Loading..."
+                                            prop.disabled true
+                                        ]
                                 ]
                             ]
                             Html.span [
+                                prop.testId "empty-table-existing-tables-loading"
                                 prop.className [
                                     if not nodesFetchState.IsLoading then
                                         "swt:hidden"
@@ -104,7 +109,8 @@ type Main =
                 Blankslate.Blankslate.Blankslate(
                     "These aren't the nodes you're looking for.",
                     "Unable to find existing input or output columns in all available tables.",
-                    "swt:iconify swt:fluent--search-info-24-regular"
+                    "swt:iconify swt:fluent--search-info-24-regular",
+                    testId = "empty-table-existing-tables-empty"
                 )
             | ArcNodesState.Loaded _ when importedColumn.IsSome ->
                 let column = importedColumn.Value
@@ -240,12 +246,12 @@ type Main =
                         match arcNodesState with
                         | ArcNodesState.Failed message ->
                             Html.div [
+                                prop.testId "empty-table-existing-tables-error"
                                 prop.role.alert
                                 prop.className "swt:alert swt:alert-error"
                                 prop.children [
                                     Html.div [] // Required to make buttons below align right via daisyui styling
                                     Html.span [
-                                        prop.testId "empty-table-existing-tables-error"
                                         prop.text $"Could not load tables from the ARC: {message}"
                                     ]
                                     Html.div [

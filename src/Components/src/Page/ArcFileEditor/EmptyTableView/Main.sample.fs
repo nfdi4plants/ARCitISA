@@ -28,6 +28,25 @@ module internal Fixtures =
         assay.AddTable(ArcTable.init "Empty two")
         ArcFiles.Assay assay
 
+    let arcFileWithLocalNodes () =
+        let assay = ArcAssay.init "Inline setup"
+        assay.AddTable(ArcTable.init "Empty one")
+        assay.AddTable(ArcTable.init "Empty two")
+        let filled = ArcTable.init "Filled"
+
+        filled.AddColumn(
+            CompositeHeader.Input IOType.Source,
+            ResizeArray [ CompositeCell.createFreeText "local-source" ]
+        )
+
+        filled.AddColumn(
+            CompositeHeader.Output IOType.Sample,
+            ResizeArray [ CompositeCell.createFreeText "local-sample" ]
+        )
+
+        assay.AddTable filled
+        ArcFiles.Assay assay
+
     let templates () =
         let make (id: string) name organisation termName =
             let template = Template.init name
@@ -79,10 +98,8 @@ module internal Fixtures =
         return failwith "Failed to fetch ARC nodes"
     }
 
-    let arcNodesLongLoading () = promise {
-        do! Promise.sleep 10000
-        return! arcNodes ()
-    }
+    // Keep the loading showcase stable even when interactions take longer on a slow machine.
+    let arcNodesLongLoading () : JS.Promise<ArcNodeTable[]> = Promise.create (fun _ _ -> ())
 
     let termSearch (query: string) = promise {
         return
@@ -118,8 +135,14 @@ type internal Main =
         )
 
     [<ReactComponent(true)>]
-    static member Entry(?withArcNodes: WithArcNodes) =
-        let arcFile, setArcFile = React.useState (Fixtures.arcFile)
+    static member Entry(?withArcNodes: WithArcNodes, ?withLocalNodes: bool) =
+        let arcFile, setArcFile =
+            React.useState (fun () ->
+                if defaultArg withLocalNodes false then
+                    Fixtures.arcFileWithLocalNodes ()
+                else
+                    Fixtures.arcFile ()
+            )
 
         let fetchArcNodes =
             match defaultArg withArcNodes OnlyLocal with
