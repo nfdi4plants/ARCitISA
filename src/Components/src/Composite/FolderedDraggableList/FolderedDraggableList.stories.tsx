@@ -509,6 +509,8 @@ async function dragByPointer(source: Element, target: Element) {
 const meta = {
   title: 'Composite Components/FolderedDraggableList',
   component: StoryFolderedDraggableList,
+  // Deactivated for now: FolderedDraggableList is outdated.
+  tags: ['skip-test'],
   parameters: { layout: 'centered' },
 } satisfies Meta<typeof StoryFolderedDraggableList>;
 

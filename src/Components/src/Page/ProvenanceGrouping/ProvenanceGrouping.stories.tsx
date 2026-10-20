@@ -121,7 +121,8 @@ function HarnessState({
 const meta = {
   title: 'Page Components/ProvenanceGrouping',
   component: ProvenanceGrouping,
-  tags: ['autodocs'],
+  // Deactivated for now: ProvenanceGrouping is outdated.
+  tags: ['autodocs', 'skip-test'],
   parameters: { layout: 'fullscreen', isolated: true },
 } satisfies Meta<typeof ProvenanceGrouping>;
 

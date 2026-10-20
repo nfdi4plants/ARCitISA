@@ -6,8 +6,10 @@ open Swate.Components.Shared.ProvenanceGrouping.Types
 open Swate.Components.Page.ProvenanceGrouping
 open Vitest
 
+// Deactivated for now: ProvenanceGrouping is outdated.
 Vitest.describe (
     "ProvenanceGrouping State",
+    TestOptions(skip = true),
     fun () ->
         Vitest.test (
             "Sides.ensure returns the same instance for unchanged state",

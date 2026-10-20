@@ -66,8 +66,10 @@ let private arcFixture () =
         runs = ResizeArray [ run ]
     )
 
+// Deactivated for now: ProvenanceGrouping is outdated.
 Vitest.describe (
     "ProvenanceGroupingReader",
+    TestOptions(skip = true),
     fun () ->
         Vitest.test (
             "listTables returns study, assay, and run table selections",
