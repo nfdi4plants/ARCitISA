@@ -177,9 +177,24 @@ let tests =
             Expect.equal (tableName "Sugar") "Sugar Table" "short identifier"
 
             Expect.equal
+                (tableName "Sugar_extraction_protocol")
+                "Sugar_extraction_protocol Table"
+                "identifier that fits with the suffix"
+
+            Expect.equal
+                (tableName "Sugar_extraction_protocol_d2")
+                "Sugar_extraction_protocol_d2"
+                "identifier that fits only without the suffix"
+
+            Expect.equal
                 (tableName "Sugar_extraction_protocol_day_2")
                 "Sugar_extraction_protocol_day_2"
-                "long identifier"
+                "identifier as long as a table name may be"
+
+            Expect.equal
+                (tableName "Sugar_extraction_protocol_day_2_replicate_3")
+                "Sugar_extraction_protocol_day_2"
+                "identifier longer than a table name may be"
 
         testCase "a new default table name skips names taken ignoring case"
         <| fun _ -> Expect.equal (createNewTableName [ ArcTable.init "new table 0" ]) "New Table 1" "name"

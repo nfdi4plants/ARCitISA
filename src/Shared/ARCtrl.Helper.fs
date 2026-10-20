@@ -458,8 +458,15 @@ module ARCtrlHelper =
             table
 
         let private withInitialTable (identifier: string) (arcFile: ArcFiles) =
-            // An identifier can be longer than a table name may be, so the name is shortened to one that can be saved.
-            let tableName = uniqueTableName [] $"{identifier} Table"
+            let withSuffix = $"{identifier} Table"
+
+            let preferredName =
+                if withSuffix.Length <= MaxTableNameLength then
+                    withSuffix
+                else
+                    identifier
+
+            let tableName = uniqueTableName [] preferredName
             arcFile.ArcTables().AddTable(createBasicAnnotationTable tableName)
             arcFile
 

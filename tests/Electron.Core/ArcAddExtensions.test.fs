@@ -72,6 +72,39 @@ Vitest.describe (
         )
 
         Vitest.test (
+            "a first table named after a long identifier, without the Table suffix, is found again after reloading",
+            fun () ->
+                withTempArc
+                    ignore
+                    (fun arcPath -> promise {
+                        // " Table" does not fit after these identifiers, so each first table is named after the
+                        // identifier alone; the last one is also longer than a table name may be.
+                        let assayId = "Sugar_extraction_assay_day_2"
+                        let studyId = "Sugar_extraction_study_day_2"
+                        let runId = "Sugar_extraction_run_day_2_r1"
+                        let longAssayId = "Sugar_extraction_assay_day_2_replicate_3"
+
+                        let createDefaultArcFile =
+                            Swate.Components.Shared.ARCtrlHelper.ArcFileDefaults.createDefaultArcFile
+
+                        let! arc = loadArcAsync arcPath
+                        do! arc.AddArcFileAsync(arcPath, createDefaultArcFile ArcFilesDiscriminate.Assay assayId)
+                        do! arc.AddArcFileAsync(arcPath, createDefaultArcFile ArcFilesDiscriminate.Study studyId)
+                        do! arc.AddArcFileAsync(arcPath, createDefaultArcFile ArcFilesDiscriminate.Run runId)
+                        do! arc.AddArcFileAsync(arcPath, createDefaultArcFile ArcFilesDiscriminate.Assay longAssayId)
+
+                        let! reloadedArc = loadArcAsync arcPath
+                        expectBasicAnnotationTable (reloadedArc.GetAssay assayId).Tables assayId
+                        expectBasicAnnotationTable (reloadedArc.GetStudy studyId).Tables studyId
+                        expectBasicAnnotationTable (reloadedArc.GetRun runId).Tables runId
+
+                        expectBasicAnnotationTable
+                            (reloadedArc.GetAssay longAssayId).Tables
+                            "Sugar_extraction_assay_day_2_re"
+                    })
+        )
+
+        Vitest.test (
             "adds a tableless assay without synthesizing a table",
             fun () ->
                 withTempArc

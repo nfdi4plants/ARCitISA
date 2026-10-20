@@ -30,7 +30,7 @@ Vitest.test (
 
         let template = Template.init "Sugar extraction"
         template.Table.AddColumn(CompositeHeader.Input IOType.Source)
-        // The template browser shows DataPLANT templates first.
+        // By default the template browser only shows DataPLANT templates.
         template.Organisation <- Organisation.DataPLANT
 
         let savedFiles = ResizeArray<ArcFiles>()
