@@ -13,7 +13,7 @@ import { TIBApi } from "../Util/Api.fs.js";
 import React, { act } from "react";
 import MockTable from "./MockTable.js";
 
-// These stories call the live term search APIs. A slow response gets more time.
+// Waits for a live term search response get more time, because the API can be slow.
 const LIVE_API_TIMEOUT = 15_000;
 
 type TableOptionalProps = Omit<
@@ -199,7 +199,7 @@ export const EditTermCellKbd: Story = {
         const termSearchResult = await screen.findByText("MS:1001800");
         expect(termSearchResult).toBeVisible();
       },
-      { timeout: LIVE_API_TIMEOUT },
+      { timeout: 5000 },
     );
 
     await userEvent.keyboard("[ArrowDown][Enter]");
@@ -240,7 +240,7 @@ export const EditTermCellMouseclick: Story = {
       expect(debugValue ? parseInt(debugValue, 10) : 0).toBeGreaterThan(0);
     }, { timeout: LIVE_API_TIMEOUT });
 
-    const instrumentModelItem = await screen.findByText("MS:1001800", {}, { timeout: LIVE_API_TIMEOUT });
+    const instrumentModelItem = await screen.findByText("MS:1001800");
     expect(instrumentModelItem).toBeVisible();
 
     await userEvent.click(instrumentModelItem);

@@ -9,7 +9,7 @@ import {
   type Term,
 } from './Types.fs.js';
 
-// These stories call the live term search APIs. A slow response gets more time.
+// Waits for a live term search response get more time, because the API can be slow.
 const LIVE_API_TIMEOUT = 15_000;
 
 const TERMSEARCH_INPUT_TESTID = 'term-search-input'
