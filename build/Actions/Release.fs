@@ -177,13 +177,38 @@ let electron () =
 
     ()
 
-/// File extensions electron-forge make produces per GitHub runner.os name.
-let private electronMakeExtensions (os: string) : string list =
-    match os with
-    | "Windows" -> [ ".exe"; ".nupkg" ]
-    | "macOS" -> [ ".zip"; ".dmg" ]
-    | "Linux" -> [ ".deb"; ".rpm"; ".zip"; ".AppImage"; ".pkg.tar.zst" ]
-    | other -> failwithf "Unknown runner OS: %s" other
+/// What one release_electron_binaries matrix entry builds. Makers is None when electron-forge
+/// runs every maker for the platform. Extensions are the files the release must contain.
+type private ElectronTarget = {
+    Makers: string list option
+    Extensions: string list
+}
+
+let private electronTarget (os: string) (arch: string) : ElectronTarget =
+    match os, arch with
+    | "Windows", "x64" -> {
+        Makers = None
+        Extensions = [ ".exe"; ".nupkg" ]
+      }
+    | "macOS", ("x64" | "arm64") -> {
+        Makers = None
+        Extensions = [ ".zip"; ".dmg" ]
+      }
+    | "Linux", "x64" -> {
+        Makers = None
+        Extensions = [ ".deb"; ".rpm"; ".zip"; ".AppImage"; ".pkg.tar.zst" ]
+      }
+    // The pinned AppImage runtime and the pacman package are x64 only.
+    | "Linux", "arm64" -> {
+        Makers =
+            Some [
+                "@electron-forge/maker-zip"
+                "@electron-forge/maker-deb"
+                "@electron-forge/maker-rpm"
+            ]
+        Extensions = [ ".deb"; ".rpm"; ".zip" ]
+      }
+    | _ -> failwithf "No electron release target for %s %s" os arch
 
 let private currentRunnerOs () : string =
     if OperatingSystem.IsWindows() then
@@ -198,7 +223,7 @@ let private currentRunnerOs () : string =
 let private hasExtension (ext: string) (file: string) =
     file.EndsWith(ext, StringComparison.OrdinalIgnoreCase)
 
-let private verifyElectronMakeOutput (builtAfterUtc: DateTime) =
+let private verifyElectronMakeOutput (arch: string) (builtAfterUtc: DateTime) =
 
     let makeDir = Path.Combine(ProjectPaths.electronPath, "out", "make")
 
@@ -206,7 +231,7 @@ let private verifyElectronMakeOutput (builtAfterUtc: DateTime) =
         failwithf "electron-forge make produced no output in %s" makeDir
 
     let os = currentRunnerOs ()
-    let expected = electronMakeExtensions os
+    let expected = (electronTarget os arch).Extensions
 
     let freshFiles =
         Directory.GetFiles(makeDir, "*", SearchOption.AllDirectories)
@@ -224,8 +249,9 @@ let private verifyElectronMakeOutput (builtAfterUtc: DateTime) =
                 String.Join(", ", freshFiles)
 
         failwithf
-            "electron-forge make on %s is missing fresh files with extension %s in %s. Fresh files found: %s"
+            "electron-forge make on %s %s is missing fresh files with extension %s in %s. Fresh files found: %s"
             os
+            arch
             (String.Join(", ", missing))
             makeDir
             found
@@ -303,30 +329,46 @@ let private pacmanPackage (version: Changelog.Version) (arch: string) =
 let electronBinaries (version: Changelog.Version) (arch: string) =
 
     let builtAfterUtc = DateTime.UtcNow.AddSeconds(-2.0)
+    let target = electronTarget (currentRunnerOs ()) arch
 
     run "npm" [ "run"; "fable" ] ProjectPaths.electronPath
 
-    run "node" [ "scripts/forge-make.cjs"; sprintf "--arch=%s" arch ] ProjectPaths.electronPath
+    let makeArgs = [
+        "scripts/forge-make.cjs"
+        sprintf "--arch=%s" arch
+        match target.Makers with
+        | Some makers -> sprintf "--targets=%s" (String.Join(",", makers))
+        | None -> ()
+    ]
 
-    if currentRunnerOs () = "Linux" then
+    run "node" makeArgs ProjectPaths.electronPath
+
+    if target.Extensions |> List.contains ".pkg.tar.zst" then
         pacmanPackage version arch
 
     // forge-make.cjs turns a killed make into a failure. A make run can also exit 0 without writing
     // every installer, so verifyElectronMakeOutput looks in out/make for each expected extension (#1421).
-    verifyElectronMakeOutput builtAfterUtc
+    verifyElectronMakeOutput arch builtAfterUtc
 
     ()
 
 let verifyReleaseAssets (dir: string) =
 
-    // Must match the artifact names uploaded by the electron-web target of the release job, by
+    // Must match the artifact names uploaded by the electron-web target of the release job and by
     // the release_electron_binaries matrix in .github/workflows/release-pipeline.yml.
+    let electronMatrix = [
+        "Windows", "x64"
+        "macOS", "x64"
+        "macOS", "arm64"
+        "Linux", "x64"
+        "Linux", "arm64"
+    ]
+
     let expectedArtifacts = [
         "release-assets-client", [ ".zip" ]
-        "release-assets-electron-Windows-x64", electronMakeExtensions "Windows"
-        "release-assets-electron-macOS-x64", electronMakeExtensions "macOS"
-        "release-assets-electron-macOS-arm64", electronMakeExtensions "macOS"
-        "release-assets-electron-Linux-x64", electronMakeExtensions "Linux"
+        yield!
+            electronMatrix
+            |> List.map (fun (os, arch) -> $"release-assets-electron-{os}-{arch}", (electronTarget os arch).Extensions)
     ]
 
     let problems =

@@ -79,7 +79,8 @@ module.exports = {
           icon: 'assets/icons/png/512x512.png',
           categories: ['Science'],
           // The maker downloads the runtime from the moving "continuous" tag by default. A tagged
-          // release keeps the runtime fixed. Only x64 is built for Linux.
+          // release keeps the runtime fixed. The AppImage is built for Linux x64 only (see
+          // electronTarget in build/Actions/Release.fs).
           runtime: 'https://github.com/AppImage/type2-runtime/releases/download/20251108/runtime-x86_64',
         },
       },

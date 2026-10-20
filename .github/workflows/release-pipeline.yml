@@ -163,8 +163,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Release.verifyReleaseAssets in build/Actions/Release.fs lists the artifact of every entry
-        # here. Update that list when this matrix changes.
+        # Release.verifyReleaseAssets and Release.electronTarget in build/Actions/Release.fs list
+        # every entry here. Update them when this matrix changes.
         include:
           - os: windows-latest
             arch: x64
@@ -180,6 +180,9 @@ jobs:
 
           - os: ubuntu-latest
             arch: x64
+
+          - os: ubuntu-latest
+            arch: arm64
 
     runs-on: ${{ matrix.os }}
     steps:
