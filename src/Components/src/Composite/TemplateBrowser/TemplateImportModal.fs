@@ -87,6 +87,19 @@ type TemplateImportModal =
         let newTableNames =
             TemplateActions.newTableNames existingTableNames selectedTemplatesForImport enteredNewTableNames
 
+        let importInputs =
+            importType,
+            selectedTemplatesForImport
+            |> Array.map (fun (template, action) -> template.Id, action),
+            deselectedTemplateColumns,
+            enteredNewTableNames
+
+        let submittedImportInputs, setSubmittedImportInputs = React.useState None
+
+        let importError =
+            importError
+            |> Option.filter (fun _ -> submittedImportInputs = Some importInputs)
+
         let canConfirmImport =
             selectedTemplatesForImport.Length > 0
             && newTableNames |> Map.forall (fun _ newTableName -> newTableName.Error.IsNone)
@@ -104,6 +117,8 @@ type TemplateImportModal =
         }
 
         let confirmImport () =
+            setSubmittedImportInputs (Some importInputs)
+
             submitImport {
                 ImportType = importType
                 SelectedTemplatesForImport = selectedTemplatesForImport

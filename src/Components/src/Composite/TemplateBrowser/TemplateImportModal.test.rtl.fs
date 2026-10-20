@@ -63,6 +63,38 @@ Vitest.test (
 )
 
 Vitest.test (
+    "an import error is shown for the submitted inputs and hidden once the user changes them",
+    fun () ->
+        let template = Template.init "SugarExtraction"
+
+        let modalWithError importError =
+            TemplateImportModal.TemplateImportModal(
+                isOpen = true,
+                importType = TableJoinOptions.Headers,
+                selectedTemplates = [| template |],
+                existingTableNames = [||],
+                setIsOpen = ignore,
+                setImportType = ignore,
+                submitImport = ignore,
+                ?importError = importError
+            )
+
+        let rendered = RTL.render (modalWithError None)
+        let error = "Import failed: table names must be unique"
+
+        RTL.fireEvent.click (RTL.screen.getByLabelText "Import (new table)")
+        RTL.fireEvent.click (importButton ())
+        rendered.rerender (modalWithError (Some "table names must be unique"))
+        RTL.screen.getByText error |> ignore
+
+        setNewTableName "Sugar extraction day 2"
+        Vitest.expect(RTL.screen.queryByText(error).IsNone).toBe true
+
+        RTL.fireEvent.click (importButton ())
+        RTL.screen.getByText error |> ignore
+)
+
+Vitest.test (
     "a typed name is dropped with its template, so selecting the template again suggests a free name",
     fun () ->
         let template = Template.init "SugarExtraction"
