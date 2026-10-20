@@ -90,15 +90,19 @@ jobs:
       # Packaging does not load the bundle. A namespace import that crashes at load time is
       # caught by the library's package-consumer check, for the library's own code only.
       - name: Bundle the Electron app
+        id: bundle
         working-directory: src/Electron
         run: |
           npm run fable
           npx electron-forge package
 
+      # Both suites run even if the other one fails, so CI reports both results.
       - name: Run Electron core tests
+        if: ${{ !cancelled() && steps.bundle.outcome == 'success' }}
         run: dotnet run --project ./build/Build.fsproj -- test run electron-core
 
       - name: Run Electron renderer tests
+        if: ${{ !cancelled() && steps.bundle.outcome == 'success' }}
         run: dotnet run --project ./build/Build.fsproj -- test run electron-renderer
 
   dotnet:
@@ -139,12 +143,16 @@ jobs:
         run: dotnet restore ./Swate.sln
 
       - name: Test Build
+        id: build
         run: dotnet build ./Swate.sln
 
+      # Both suites run even if the other one fails, so CI reports both results.
       - name: Run server tests
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: dotnet run --project ./build/Build.fsproj -- test run server
 
       - name: Run client tests
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: dotnet run --project ./build/Build.fsproj -- test run client
 
   # Aggregates the jobs above under the old check name "test (ubuntu-latest)".
