@@ -184,6 +184,7 @@
     <Compile Include="Composite\AnnotationTable\ContextMenu.fs" />
     <Compile Include="Composite\AnnotationTable\Modals.fs" />
     <Compile Include="Composite\AnnotationTable\AnnotationTable.fs" />
+    <Compile Include="Composite\TermSearch\TermSearch.test.rtl.fs" />
     <Compile Include="Composite\AnnotationTable\ResetTableConfirmationModal.fs" />
     <Compile Include="Composite\DataMapTable\Types.fs" />
     <Compile Include="Composite\DataMapTable\ClipboardTarget.fs" />

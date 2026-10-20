@@ -76,7 +76,9 @@ export const Default: Story = {
   }
 }
 
+// Calls the live term search API, so test runs skip it. TermSearch.test.rtl.fs covers the behavior with mocked responses.
 export const ParentSearch: Story = {
+  tags: ['skip-test'],
   render: renderTermSearch,
   parameters: {isolated: true},
   args: {
@@ -166,7 +168,9 @@ export const DefaultAdvancedSearch: Story = {
   }
 }
 
+// Calls the live term search API, so test runs skip it. TermSearch.test.rtl.fs covers the behavior with mocked responses.
 export const TIBSearch: Story = {
+  tags: ['skip-test'],
   render: renderTermSearch,
   args: {
     term: undefined,

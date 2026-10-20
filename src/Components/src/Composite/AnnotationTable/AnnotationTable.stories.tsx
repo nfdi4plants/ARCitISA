@@ -126,7 +126,9 @@ export const EditCell: Story = {
   },
 };
 
+// Calls the live term search API, so test runs skip it. TermSearch.test.rtl.fs covers the behavior with mocked responses.
 export const EditTermCellRaw: Story = {
+  tags: ["skip-test"],
   render: renderTable,
   args: {
     height: 600,
@@ -165,7 +167,9 @@ export const EditTermCellRaw: Story = {
   },
 };
 
+// Calls the live term search API, so test runs skip it. TermSearch.test.rtl.fs covers the behavior with mocked responses.
 export const EditTermCellKbd: Story = {
+  tags: ["skip-test"],
   render: renderTable,
   args: {
     height: 600,
@@ -214,7 +218,9 @@ export const EditTermCellKbd: Story = {
   },
 };
 
+// Calls the live term search API, so test runs skip it. TermSearch.test.rtl.fs covers the behavior with mocked responses.
 export const EditTermCellMouseclick: Story = {
+  tags: ["skip-test"],
   render: renderTable,
   args: {
     height: 600,
@@ -574,7 +580,9 @@ export const DeleteRow: Story = {
   },
 };
 
+// Calls the live term search API, so test runs skip it. TermSearch.test.rtl.fs covers the behavior with mocked responses.
 export const ActivateTermSearchContainer: Story = {
+  tags: ["skip-test"],
   render: renderTable,
   args: {
     height: 600,
