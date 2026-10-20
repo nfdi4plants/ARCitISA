@@ -193,8 +193,41 @@ module Run =
             ]
             ProjectPaths.electronRendererTestsPath
 
-    let components =
-        runAsync "components" "npm" [ "run"; "test:ci" ] ProjectPaths.componentTestsPath
+    // Storybook runs as its own command because a single combined run with parallel Storybook was flaky.
+    // Both vitest runs always execute so CI reports both results.
+    let components = async {
+        let dir = ProjectPaths.componentTestsPath
+        let! cleanResult = runAsync "components" "npm" [ "run"; "clean" ] dir
+
+        match cleanResult with
+        | Error _ -> return cleanResult
+        | Ok() ->
+            let! fableResult = runAsync "components" "npm" [ "run"; "fable"; "--"; "--noCache" ] dir
+
+            match fableResult with
+            | Error _ -> return fableResult
+            | Ok() ->
+                let! unitRtlResult =
+                    runAsync "components" "npx" [ "vitest"; "run"; "--project=unit"; "--project=rtl" ] dir
+
+                let! storybookResult =
+                    runAsync
+                        "components"
+                        "npx"
+                        [
+                            "vitest"
+                            "run"
+                            "--project=storybook"
+                            "--fileParallelism"
+                            "--maxWorkers=3"
+                        ]
+                        dir
+
+                match unitRtlResult, storybookResult with
+                | Ok(), Ok() -> return Ok()
+                | Error e, _
+                | _, Error e -> return Error e
+    }
 
     let All () =
         async {

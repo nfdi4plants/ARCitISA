@@ -24,7 +24,6 @@
     "dev": "npm run start",
     "test": "npm run clean && npm run fable -- --noCache && npx vitest run",
     "test:run": "npm run test",
-    "test:ci": "npm run clean && npm run fable -- --noCache && npx vitest run --project=unit --project=rtl && npx vitest run --project=storybook --fileParallelism --maxWorkers=3",
     "test:watch": "npm run clean && npm run fable -- --watch --run npx vitest",
     "test:rtl": "npm run clean && npm run fable -- --noCache && npx vitest run --project=rtl",
     "test:unit": "npm run clean && npm run fable -- --noCache && npx vitest run --project=unit",

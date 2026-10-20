@@ -148,13 +148,13 @@ jobs:
         run: dotnet run --project ./build/Build.fsproj -- test run client
 
   # Aggregates the jobs above under the old check name "test (ubuntu-latest)".
+  # The matrix only keeps that check name. The jobs above all run on ubuntu-latest.
   test:
     needs: [components, electron, dotnet]
     if: always()
     strategy:
       fail-fast: false
       matrix:
-        # os: [ubuntu-latest, windows-latest, macos-latest]
         os: [ubuntu-latest]
 
     runs-on: ${{ matrix.os }}
