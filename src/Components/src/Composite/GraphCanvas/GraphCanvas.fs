@@ -684,7 +684,13 @@ type GraphCanvas =
     /// not render the canvas. The image shows the whole layout, whatever the zoom and the scroll position.
     [<ReactComponent>]
     static member private ExportControls
-        (drawn: GraphLayout, svgRef: IRefValue<Element option>, rootRef: IRefValue<HTMLElement option>, fileName: string) =
+        (
+            drawn: GraphLayout,
+            svgRef: IRefValue<Element option>,
+            rootRef: IRefValue<HTMLElement option>,
+            fileName: string,
+            boxWidth: float
+        ) =
         let busy, setBusy = React.useState false
         let notice, setNotice = React.useState<string option> None
         let timer = React.useRef None
@@ -737,13 +743,17 @@ type GraphCanvas =
                 | Some text -> showNotice text
                 | None -> ()
 
-        let width = drawn.LayoutWidth
-        let height = drawn.LayoutHeight
+        // The layout of the latest render. The export reads it after the frame, together with the elements.
+        let latest = React.useRef drawn
+        React.useLayoutEffect (fun () -> latest.current <- drawn)
 
-        // The heavy work waits for the next frame, so the busy state is painted first. The elements are read after
-        // the wait, because the canvas may have changed in the meantime.
+        // The heavy work waits for the next frame, so the busy state is painted first. The elements and the layout
+        // are read after the wait, because the canvas may have changed in the meantime.
         let render () : JS.Promise<Blob> = promise {
             do! ImageExport.nextFrame ()
+
+            let width = latest.current.LayoutWidth
+            let height = latest.current.LayoutHeight
 
             match svgRef.current, rootRef.current with
             | Some svg, Some root ->
@@ -841,17 +851,27 @@ type GraphCanvas =
         // Keys and Html.none keep every conditional element in its slot, so no button of the zoom group is remounted.
         // The status element stays in the DOM while it is empty, because screen readers announce a change in a live
         // region but often miss a region that appears with its text already in it.
+        //
+        // The visible notice is positioned outside the toolbar row, left of the toolbar, so it does not widen the
+        // toolbar. The toolbar is about 250 px wide at 12 px from the right edge of the box and the minimap is at most
+        // 222 px wide at the same edge, so the notice never covers the minimap. Its width is limited to the room that
+        // is left in the box. A box with less room than a short text needs keeps the notice for screen readers only.
+        let room = max 0.0 (boxWidth - 300.0)
+        let noticeShown = notice.IsSome && room >= 96.0
+
         let noticeElement =
             Html.span [
                 prop.key "notice"
+                prop.testId "graph-image-notice"
                 prop.role.status
                 prop.custom ("aria-live", "polite")
                 prop.className (
-                    if notice.IsSome then
-                        "swt:max-w-48 swt:px-1 swt:text-xs swt:whitespace-normal"
+                    if noticeShown then
+                        "swt:absolute swt:right-full swt:bottom-0 swt:mr-2 swt:w-max swt:overflow-hidden swt:rounded-md swt:border swt:border-(color:--graph-border) swt:bg-base-100 swt:px-2 swt:py-1 swt:text-xs swt:whitespace-normal swt:shadow-md"
                     else
                         "swt:sr-only"
                 )
+                css [ "maxWidth", (if noticeShown then pxOf room else "none") ]
                 prop.text (defaultArg notice "")
             ]
 
@@ -1443,7 +1463,8 @@ type GraphCanvas =
                             ]
                             zoomButton "graph-zoom-in" "Zoom in" "+" (zoom >= maxZoom) (min maxZoom (zoom + zoomStep))
                             match imageFileName, drawn with
-                            | Some fileName, Some drawn -> GraphCanvas.ExportControls(drawn, svgRef, rootRef, fileName)
+                            | Some fileName, Some drawn ->
+                                GraphCanvas.ExportControls(drawn, svgRef, rootRef, fileName, boxWidth)
                             | _ -> Html.none
                         ]
                     ]

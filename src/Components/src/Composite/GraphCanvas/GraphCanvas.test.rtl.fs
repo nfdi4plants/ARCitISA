@@ -1416,7 +1416,7 @@ Vitest.describe (
         )
 )
 
-// Image export. jsdom has no canvas, so the tests do not click the buttons.
+// Image export. jsdom has no canvas, so a click on a button ends with the notice of a failed export.
 
 Vitest.describe (
     "GraphCanvas image export",
@@ -1446,6 +1446,76 @@ Vitest.describe (
                 do! drawn ()
 
                 Vitest.expect((RTL.screen.queryByTestId "graph-image-download").IsSome).toBe true
+            }
+        )
+
+        // jsdom cannot draw the image, so an export fails there and ends with a notice. The tests use that notice.
+        let failedNotice (width: float) : JS.Promise<HTMLElement> = promise {
+            silenceConsoleError ()
+            stubBox width 400.0 width 400.0
+            setScrollSize width 400.0
+
+            render {
+                defaults with
+                    ImageFileName = Some "graph.png"
+            }
+            |> ignore
+
+            do! drawn ()
+            click (RTL.screen.getByTestId "graph-image-download")
+
+            do!
+                eventually (fun () ->
+                    Vitest.expect((RTL.screen.getByTestId "graph-image-notice").textContent).not.toBe ""
+                )
+
+            return RTL.screen.getByTestId "graph-image-notice"
+        }
+
+        Vitest.test (
+            "shows the notice outside the toolbar row, so the toolbar keeps its size",
+            fun () -> promise {
+                silenceConsoleError ()
+                stubBox 600.0 400.0 600.0 400.0
+                setScrollSize 600.0 400.0
+
+                render {
+                    defaults with
+                        ImageFileName = Some "graph.png"
+                }
+                |> ignore
+
+                do! drawn ()
+                let toolbar = (RTL.screen.getByTestId "graph-image-download").parentElement
+                let childrenBefore = toolbar.children.length
+
+                Vitest.expect(((RTL.screen.getByTestId "graph-image-notice").className).Contains "swt:sr-only").toBe
+                    true
+
+                click (RTL.screen.getByTestId "graph-image-download")
+
+                do!
+                    eventually (fun () ->
+                        Vitest
+                            .expect(((RTL.screen.getByTestId "graph-image-notice").className).Contains "swt:absolute")
+                            .toBe
+                            true
+                    )
+
+                let notice = RTL.screen.getByTestId "graph-image-notice"
+                Vitest.expect(toolbar.children.length).toBe childrenBefore
+                // The room is the box width minus the toolbar and its margins.
+                Vitest.expect(styleOf notice "max-width").toBe "300px"
+            }
+        )
+
+        Vitest.test (
+            "keeps the notice for screen readers in a box without room for it",
+            fun () -> promise {
+                let! notice = failedNotice 350.0
+
+                Vitest.expect(notice.className.Contains "swt:sr-only").toBe true
+                Vitest.expect(notice.className.Contains "swt:absolute").toBe false
             }
         )
 )
