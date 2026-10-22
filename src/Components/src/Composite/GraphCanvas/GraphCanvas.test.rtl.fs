@@ -683,6 +683,34 @@ Vitest.describe (
         )
 
         Vitest.test (
+            "leaves the focus on a control outside the canvas when the canvas mounts anew with focusOnMount",
+            fun () -> promise {
+                let page (showCanvas: bool) : ReactElement =
+                    Html.div [
+                        Html.button [ prop.testId "outside-button"; prop.text "Outside" ]
+
+                        if showCanvas then
+                            canvas {
+                                defaults with
+                                    FocusOnMount = Some true
+                            }
+                        else
+                            Html.none
+                    ]
+
+                let result = RTL.render (page false)
+                let outside = RTL.screen.getByTestId "outside-button"
+                outside.focus ()
+
+                result.rerender (page true)
+                do! drawn ()
+                do! settle ()
+
+                Vitest.expect(focused ()).toBe (box outside)
+            }
+        )
+
+        Vitest.test (
             "moves focus to the container after the first layout when focusOnMount is set",
             fun () -> promise {
                 render {

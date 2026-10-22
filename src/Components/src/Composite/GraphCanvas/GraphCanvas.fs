@@ -206,7 +206,8 @@ open GraphCanvasHelper
 /// list of the hidden pills opens next to its toggle. A portrait box gets the compact top to bottom layout.
 /// A graph that does not fit a box of at least 260 by 220 px shows a minimap of the whole drawing, with the
 /// visible part marked. Passing imageFileName shows the Download image and Copy image buttons, and the name is
-/// the file name of the downloaded image.
+/// the file name of the downloaded image. Copy image appears only where the clipboard can take images, which needs a
+/// secure context with navigator.clipboard.write and ClipboardItem.
 [<Erase; Mangle(false)>]
 type GraphCanvas =
 
@@ -1142,10 +1143,8 @@ type GraphCanvas =
                 |> Array.tryFind (fun laid -> laid.Edge.Id = open'.MenuEdgeId)
             | _ -> None
 
-        // After a navigation the container takes focus, because the focused node is gone. The focus stays where it
-        // is when it sits on a control outside the canvas that survives the navigation, such as an up button of the
-        // page. The controls of the canvas count as inside, and so does the body, where a removed node leaves the
-        // focus. The first mount leaves focus alone unless focusOnMount is set.
+        // After a navigation the container takes focus, because the focused node is gone. The first mount leaves
+        // focus alone unless focusOnMount is set. The draw effect below decides whether the focus may move.
         let lastEpoch = React.useRef epoch
         let focusOnDraw = React.useRef (defaultArg focusOnMount false)
 
@@ -1153,23 +1152,25 @@ type GraphCanvas =
             (fun () ->
                 if lastEpoch.current <> epoch then
                     lastEpoch.current <- epoch
-
-                    let active = Browser.Dom.document.activeElement
-
-                    let insideCanvas =
-                        match wrapperRef.current with
-                        | Some wrapper -> wrapper.contains (active :> Node)
-                        | None -> false
-
-                    if
-                        isNull (box active)
-                        || obj.ReferenceEquals(active, Browser.Dom.document.body)
-                        || insideCanvas
-                    then
-                        focusOnDraw.current <- true
+                    focusOnDraw.current <- true
             ),
             [| box epoch |]
         )
+
+        // The focus may move to the container when nothing holds it: it sits on the body, where a removed node
+        // leaves it, or inside the canvas. A control outside the canvas that survives the navigation, such as an
+        // up button of the page, keeps the focus, also when the canvas mounts anew with focusOnMount set.
+        let focusMayMove () : bool =
+            let active = Browser.Dom.document.activeElement
+
+            let insideCanvas =
+                match wrapperRef.current with
+                | Some wrapper -> wrapper.contains (active :> Node)
+                | None -> false
+
+            isNull (box active)
+            || obj.ReferenceEquals(active, Browser.Dom.document.body)
+            || insideCanvas
 
         // A new view starts at the top left, or on centerNodeId. Expanding an edge keeps the scroll position.
         // A failed layout takes the focus too, because the container then shows the alert.
@@ -1179,7 +1180,9 @@ type GraphCanvas =
                 | Some root when (drawn.IsSome || failed) && scrolledIn.current <> Some epoch ->
                     if focusOnDraw.current then
                         focusOnDraw.current <- false
-                        Dom.focusWithoutScroll root
+
+                        if focusMayMove () then
+                            Dom.focusWithoutScroll root
 
                     match drawn with
                     | None -> ()
