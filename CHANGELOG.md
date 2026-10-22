@@ -18,6 +18,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### ✨ Added
 
+- The provenance graph has an up button that takes you one level back and names that level. (by @caroott)
+- An overview above the provenance graph shows the levels above the current view, marks where you are, and lets you jump to a neighboring dataset, process, group or node. (by @caroott)
+- A minimap in the corner of the provenance graph shows the whole graph and the visible part, and a click or drag on it moves the view. (by @caroott)
+- The provenance graph can be saved as a PNG image or copied to paste into Slack or Teams, always showing the whole graph. (by @caroott)
+
+### ✨ Added
+
 - "Refresh folder" in the file tree's right-click menu reads a folder from disk again. (by @caroott)
 
 ### 🔄 Changed
