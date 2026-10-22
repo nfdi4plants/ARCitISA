@@ -1412,3 +1412,146 @@ Vitest.describe (
             }
         )
 )
+
+// Minimap. The box shows 300x200 px of a scroll area of 5000x3000 px, so the graph overflows it.
+
+// The root sits at the origin and the drawing 30px to the right of it and 20px below. The svg of the minimap sits at (100, 200).
+[<Emit("""(() => {
+    const original = Element.prototype.getBoundingClientRect;
+    const rect = (top, left, width, height) => ({ top, left, bottom: top + height, right: left + width, x: left, y: top, width, height, toJSON() {} });
+    Element.prototype.getBoundingClientRect = function () {
+        if (this.getAttribute('data-testid') === 'graph-canvas-content') return rect(20, 30, 0, 0);
+        if (this.parentElement?.getAttribute('data-testid') === 'graph-minimap') return rect(200, 100, Number(this.getAttribute('width')), Number(this.getAttribute('height')));
+        return rect(0, 0, 0, 0);
+    };
+    globalThis.__graphRestoreRect = () => { Element.prototype.getBoundingClientRect = original };
+})()""")>]
+let private stubMinimapRects () : unit = jsNative
+
+Vitest.describe (
+    "GraphCanvas minimap",
+    fun () ->
+        let overflowBox () =
+            stubBox 300.0 200.0 300.0 200.0
+            setScrollSize 5000.0 3000.0
+
+        let minimapEl () : HTMLElement option =
+            RTL.screen.queryByTestId "graph-minimap"
+
+        let toggleButton () : HTMLElement =
+            RTL.screen.getByTestId "graph-minimap-toggle"
+
+        let minimapShown () : JS.Promise<unit> =
+            eventually (fun () -> Vitest.expect(minimapEl().IsSome).toBe true)
+
+        Vitest.test (
+            "draws a rect for every node and the visible part when the graph overflows the box",
+            fun () -> promise {
+                overflowBox ()
+                render defaults |> ignore
+                do! minimapShown ()
+                do! eventually (fun () -> RTL.screen.getByTestId "graph-minimap-viewport" |> ignore)
+
+                Vitest.expect(((minimapEl ()).Value).querySelectorAll("rect").length).toBe (nodes.Length + 1)
+                Vitest.expect((RTL.screen.queryByTestId "graph-minimap-toggle").IsSome).toBe true
+            }
+        )
+
+        Vitest.test (
+            "shows neither the minimap nor its toggle when the graph fits the box",
+            fun () -> promise {
+                render defaults |> ignore
+                do! drawn ()
+                do! settle ()
+
+                Vitest.expect(minimapEl().IsNone).toBe true
+                Vitest.expect((RTL.screen.queryByTestId "graph-minimap-toggle").IsNone).toBe true
+            }
+        )
+
+        Vitest.test (
+            "hides and shows the minimap with the toggle, which reports its state",
+            fun () -> promise {
+                overflowBox ()
+                render defaults |> ignore
+                do! minimapShown ()
+                Vitest.expect((toggleButton ()).getAttribute "aria-pressed").toBe "true"
+
+                click (toggleButton ())
+                Vitest.expect(minimapEl().IsNone).toBe true
+                Vitest.expect((toggleButton ()).getAttribute "aria-pressed").toBe "false"
+
+                click (toggleButton ())
+                Vitest.expect(minimapEl().IsSome).toBe true
+                Vitest.expect((toggleButton ()).getAttribute "aria-pressed").toBe "true"
+            }
+        )
+
+        Vitest.test (
+            "keeps the focus on the zoom button when its click makes the graph overflow",
+            fun () -> promise {
+                stubBox 300.0 200.0 300.0 200.0
+                setScrollSize 300.0 200.0
+                render defaults |> ignore
+                do! drawn ()
+                Vitest.expect((RTL.screen.queryByTestId "graph-minimap-toggle").IsNone).toBe true
+
+                let zoomIn = RTL.screen.getByTestId "graph-zoom-in"
+                zoomIn.focus ()
+                setScrollSize 5000.0 3000.0
+                click zoomIn
+
+                do! minimapShown ()
+                Vitest.expect(RTL.screen.getByTestId ("graph-zoom-in")).toBe zoomIn
+                Vitest.expect(focused ()).toBe (box zoomIn)
+            }
+        )
+
+        Vitest.test (
+            "scrolls the canvas so that the pressed point of the minimap is in the middle",
+            fun () -> promise {
+                overflowBox ()
+                stubMinimapRects ()
+                let! laid = realLayout nodes edges unlimited
+                render defaults |> ignore
+                do! minimapShown ()
+
+                let k = Minimap.scale laid.LayoutWidth laid.LayoutHeight
+                let x = 0.75 * laid.LayoutWidth
+                let y = 0.75 * laid.LayoutHeight
+
+                let geometry: ScrollGeometry = {
+                    ScrollLeft = 0.0
+                    ScrollTop = 0.0
+                    ClientWidth = 300.0
+                    ClientHeight = 200.0
+                    ScrollWidth = 5000.0
+                    ScrollHeight = 3000.0
+                    OffsetX = 30.0
+                    OffsetY = 20.0
+                    Zoom = 1.0
+                }
+
+                let expectedLeft, expectedTop = Minimap.centerOn geometry x y
+                // The point is far enough from the origin that clamping does not hide a wrong conversion.
+                Vitest.expect(expectedLeft).toBeGreaterThan 0.0
+
+                RTL.fireEvent.custom (
+                    "pointerDown",
+                    unbox<HTMLElement> (((minimapEl ()).Value).querySelector "svg"),
+                    {|
+                        clientX = 100.0 + k * x
+                        clientY = 200.0 + k * y
+                        button = 0
+                        buttons = 1
+                        pointerId = 1
+                        isPrimary = true
+                        pointerType = "mouse"
+                    |}
+                )
+
+                Vitest.expect(scrollLeftOf (region ())).toBeCloseTo expectedLeft
+                Vitest.expect(scrollTopOf (region ())).toBeCloseTo expectedTop
+            }
+        )
+)

@@ -149,3 +149,59 @@ export const Compact: Story = {
     });
   },
 };
+
+// Six rows of five nodes. The graph is larger than the 480 by 320 px box in both directions, so the minimap appears.
+const gridNodes: CanvasNode[] = [];
+const gridEdges: CanvasEdge[] = [];
+
+for (let row = 0; row < 6; row++) {
+  for (let col = 0; col < 5; col++) {
+    gridNodes.push(node(`n-${row}-${col}`, `Step ${row + 1}.${col + 1}`, col === 0 ? 'study' : col === 4 ? 'run' : 'assay'));
+    if (col > 0) {
+      gridEdges.push(
+        edge(`e-${row}-${col}`, `n-${row}-${col - 1}`, `n-${row}-${col}`, 'neutral', [pill({ key: 'count', kind: 'count', value: String(col) })]),
+      );
+    }
+  }
+}
+
+export const Minimap: Story = {
+  args: {
+    nodes: gridNodes,
+    edges: gridEdges,
+    resetKey: 'minimap',
+  },
+  decorators: [
+    (Story) => (
+      <div style={{ width: 480, height: 320 }}>
+        <Story />
+      </div>
+    ),
+  ],
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    const minimap = await canvas.findByTestId('graph-minimap', {}, { timeout: 10000 });
+    // One rect per node and one for the visible part.
+    await waitFor(() => expect(minimap.querySelectorAll('rect')).toHaveLength(gridNodes.length + 1));
+
+    const root = canvas.getByTestId('graph-canvas');
+    const svg = minimap.querySelector('svg')!;
+    const area = svg.getBoundingClientRect();
+    svg.dispatchEvent(
+      new PointerEvent('pointerdown', {
+        bubbles: true,
+        cancelable: true,
+        pointerId: 1,
+        pointerType: 'mouse',
+        isPrimary: true,
+        button: 0,
+        buttons: 1,
+        clientX: area.left + area.width * 0.9,
+        clientY: area.top + area.height * 0.9,
+      }),
+    );
+
+    await waitFor(() => expect(root.scrollLeft > 0 || root.scrollTop > 0).toBe(true));
+  },
+};

@@ -138,6 +138,66 @@ module private GraphCanvasHelper =
 
     let pxOf (value: float) : string = $"{value}px"
 
+    /// What the minimap needs from the DOM. The drawing starts at the origin of the content in the scroll
+    /// coordinates of the root, which depends on the margin that centers a small drawing.
+    let readGeometry (root: HTMLElement) (content: HTMLElement) (zoom: float) : ScrollGeometry =
+        let rootRect = root.getBoundingClientRect ()
+        let contentRect = content.getBoundingClientRect ()
+
+        {
+            ScrollLeft = root.scrollLeft
+            ScrollTop = root.scrollTop
+            ClientWidth = root.clientWidth
+            ClientHeight = root.clientHeight
+            ScrollWidth = root.scrollWidth
+            ScrollHeight = root.scrollHeight
+            OffsetX = contentRect.left - rootRect.left - root.clientLeft + root.scrollLeft
+            OffsetY = contentRect.top - rootRect.top - root.clientTop + root.scrollTop
+            Zoom = zoom
+        }
+
+    let minimapNode (laid: LaidOutNode) : ReactElement =
+        React.KeyedFragment(
+            laid.Node.Id,
+            [
+                Svg.rect [
+                    svg.x laid.X
+                    svg.y laid.Y
+                    svg.width laid.Width
+                    svg.height laid.Height
+                    svg.rx nodeRadius
+                    svgStyle [
+                        "fill", nodeBorderColor laid.Node.Color
+                        "fillOpacity", "0.55"
+                    ]
+                ]
+            ]
+        )
+
+    /// The marker for the visible part. The stroke keeps its width when the minimap scales the drawing down.
+    let minimapViewport (visible: Rect) : ReactElement =
+        Svg.rect [
+            svgTestId "graph-minimap-viewport"
+            svg.x visible.Left
+            svg.y visible.Top
+            svg.width (visible.Right - visible.Left)
+            svg.height (visible.Bottom - visible.Top)
+            svgStyle [
+                "fill", "color-mix(in oklch, var(--color-primary) 15%, transparent)"
+                "stroke", accentColor
+                "strokeWidth", "1.5"
+                "vectorEffect", "non-scaling-stroke"
+            ]
+        ]
+
+    // A pointer that is not active, such as the synthetic pointer of a test, cannot be captured.
+    // The drag then follows the pointer while it stays over the minimap.
+    let tryCapturePointer (target: Element) (pointerId: float) : unit =
+        try
+            target.setPointerCapture pointerId
+        with _ ->
+            ()
+
 open GraphCanvasTypes
 open GraphCanvasHelper
 
@@ -494,6 +554,119 @@ type GraphCanvas =
             ]
         ]
 
+    /// The whole drawing scaled down, with the visible part marked. Pressing or dragging on it scrolls the root
+    /// so that the pointer's point is in the middle. It sits beside the scroll root, so it cannot change the
+    /// scroll size. Keyboard and screen reader users scroll the region itself, so the minimap is hidden from them.
+    /// The visible part is state of this component, so scrolling does not render the canvas.
+    [<ReactComponent>]
+    static member private Minimap
+        (
+            drawn: GraphLayout,
+            zoom: float,
+            rootRef: IRefValue<HTMLElement option>,
+            contentRef: IRefValue<HTMLElement option>,
+            boxWidth: float,
+            boxHeight: float
+        ) =
+        let k = Minimap.scale drawn.LayoutWidth drawn.LayoutHeight
+        let visible, setVisible = React.useState<Rect option> None
+        let lastVisible = React.useRef<Rect option> None
+        let dragging = React.useRef false
+
+        let nodeRects =
+            React.useMemo ((fun () -> [ for laid in drawn.LaidOutNodes -> minimapNode laid ]), [| box drawn |])
+
+        // One frame at most reads the DOM, however many scroll events arrive. boxWidth and boxHeight are
+        // dependencies only, so the marker follows a resize of the box.
+        ReactHooks.useLayoutEffectWithCleanup (
+            (fun () ->
+                match rootRef.current, contentRef.current with
+                | Some root, Some content ->
+                    let pending: float option ref = ref None
+
+                    let read () =
+                        pending.Value <- None
+
+                        let next =
+                            Minimap.viewport (readGeometry root content zoom) drawn.LayoutWidth drawn.LayoutHeight
+
+                        if next <> lastVisible.current then
+                            lastVisible.current <- next
+                            setVisible next
+
+                    let schedule () =
+                        if pending.Value.IsNone then
+                            pending.Value <- Some(Browser.Dom.window.requestAnimationFrame (fun _ -> read ()))
+
+                    let onScroll (_: Event) = schedule ()
+                    let passive = jsOptions<AddEventListenerOptions> (fun o -> o.passive <- true)
+
+                    root.addEventListener ("scroll", onScroll, passive)
+                    schedule ()
+
+                    box (fun () ->
+                        root.removeEventListener ("scroll", onScroll)
+
+                        match pending.Value with
+                        | Some frame -> Browser.Dom.window.cancelAnimationFrame frame
+                        | None -> ()
+                    )
+                | _ -> box (fun () -> ())
+            ),
+            [| box drawn; box zoom; box boxWidth; box boxHeight |]
+        )
+
+        let centerAt (event: PointerEvent) =
+            match rootRef.current, contentRef.current with
+            | Some root, Some content when k > 0.0 ->
+                let area = (event.currentTarget :?> Element).getBoundingClientRect ()
+                let x = (event.clientX - area.left) / k
+                let y = (event.clientY - area.top) / k
+                let left, top = Minimap.centerOn (readGeometry root content zoom) x y
+                root.scrollLeft <- left
+                root.scrollTop <- top
+            | _ -> ()
+
+        let stopDragging (_: PointerEvent) = dragging.current <- false
+
+        Html.div [
+            prop.testId "graph-minimap"
+            prop.className
+                "swt:absolute swt:right-3 swt:bottom-16 swt:z-20 swt:rounded-lg swt:border swt:border-(color:--graph-border) swt:bg-base-100 swt:p-1 swt:shadow-md"
+            prop.ariaHidden true
+            css [ "touchAction", "none"; "cursor", "pointer" ]
+            prop.children [
+                Svg.svg [
+                    svg.xmlns "http://www.w3.org/2000/svg"
+                    svg.className "swt:block"
+                    svg.width (k * drawn.LayoutWidth)
+                    svg.height (k * drawn.LayoutHeight)
+                    svg.custom ("viewBox", $"0 0 {drawn.LayoutWidth} {drawn.LayoutHeight}")
+                    svg.onPointerDown (fun (event: PointerEvent) ->
+                        event.preventDefault ()
+                        dragging.current <- true
+                        centerAt event
+                        tryCapturePointer (event.currentTarget :?> Element) event.pointerId
+                    )
+                    svg.onPointerMove (fun (event: PointerEvent) ->
+                        if dragging.current then
+                            centerAt event
+                    )
+                    svg.onPointerUp stopDragging
+                    svg.onPointerCancel stopDragging
+                    svg.onLostPointerCapture stopDragging
+                    svg.children (
+                        nodeRects
+                        @ (
+                            match visible with
+                            | Some visible -> [ minimapViewport visible ]
+                            | None -> []
+                        )
+                    )
+                ]
+            ]
+        ]
+
     [<ReactComponent>]
     static member GraphCanvas
         (
@@ -507,7 +680,11 @@ type GraphCanvas =
             ?layout: CanvasNode[] -> CanvasEdge[] -> string[] -> MeasureText -> LayoutOptions -> JS.Promise<GraphLayout>
         ) =
         let rootRef = React.useRef<HTMLElement option> None
+        let contentRef = React.useRef<HTMLElement option> None
         let zoom, setZoom = React.useState 1.0
+        // True when the graph does not fit the box. The minimap and its toggle only appear then.
+        let overflowing, setOverflowing = React.useState false
+        let minimapOpen, setMinimapOpen = React.useState true
         let scrolledIn = React.useRef<int option> None
         let markerPrefix = (React.useId ()).Replace(":", "")
 
@@ -790,6 +967,19 @@ type GraphCanvas =
             |]
         )
 
+        React.useLayoutEffect (
+            (fun () ->
+                let next =
+                    match drawn, rootRef.current, contentRef.current with
+                    | Some _, Some root, Some content -> Minimap.overflows (readGeometry root content zoom)
+                    | _ -> false
+
+                if next <> overflowing then
+                    setOverflowing next
+            ),
+            [| box drawn; box zoom; box boxWidth; box boxHeight |]
+        )
+
         let edgeGroup (drawn: GraphLayout) (laid: LaidOutEdge) : ReactElement =
             let owner = ownerOf laid
             // The list takes over the "+N" toggle when the expanded edge would not fit the box, and in compact mode.
@@ -880,6 +1070,7 @@ type GraphCanvas =
 
         let canvas (drawn: GraphLayout) =
             Html.div [
+                prop.ref contentRef
                 prop.testId "graph-canvas-content"
                 prop.custom ("data-compact", drawn.Compact)
                 prop.className (
@@ -955,6 +1146,25 @@ type GraphCanvas =
                 prop.text glyph
             ]
 
+        let minimapToggle () =
+            let label = if minimapOpen then "Hide minimap" else "Show minimap"
+
+            Html.button [
+                prop.type'.button
+                prop.testId "graph-minimap-toggle"
+                prop.className "swt:btn swt:btn-ghost swt:btn-square swt:btn-sm"
+                prop.ariaPressed minimapOpen
+                prop.ariaLabel label
+                prop.title label
+                prop.onClick (fun _ -> setMinimapOpen (not minimapOpen))
+                prop.children [
+                    Html.i [
+                        prop.className "swt:iconify swt:fluent--map-24-regular swt:size-5"
+                        prop.ariaHidden true
+                    ]
+                ]
+            ]
+
         Html.div [
             prop.className "swt:relative swt:size-full swt:min-h-0"
             prop.style [
@@ -1005,6 +1215,8 @@ type GraphCanvas =
                         prop.role.group
                         prop.ariaLabel "Graph zoom"
                         prop.children [
+                            // The toggle keeps its slot while it is absent, so the buttons after it are not remounted and keep their focus.
+                            if overflowing then minimapToggle () else Html.none
                             zoomButton "graph-zoom-out" "Zoom out" "−" (zoom <= minZoom) (max minZoom (zoom - zoomStep))
                             Html.span [
                                 prop.className "swt:min-w-10 swt:text-center"
@@ -1015,5 +1227,9 @@ type GraphCanvas =
                             zoomButton "graph-zoom-in" "Zoom in" "+" (zoom >= maxZoom) (min maxZoom (zoom + zoomStep))
                         ]
                     ]
+                match drawn with
+                | Some drawn when overflowing && minimapOpen ->
+                    GraphCanvas.Minimap(drawn, zoom, rootRef, contentRef, boxWidth, boxHeight)
+                | _ -> Html.none
             ]
         ]
