@@ -225,6 +225,7 @@ type private Props = {
     OnNodeClick: (string -> unit) option
     CenterNodeId: string option
     FocusOnMount: bool option
+    ImageFileName: string option
     LayoutSeam: LayoutFn option
 }
 
@@ -235,6 +236,7 @@ let private defaults: Props = {
     OnNodeClick = Some ignore
     CenterNodeId = None
     FocusOnMount = None
+    ImageFileName = None
     LayoutSeam = None
 }
 
@@ -247,6 +249,7 @@ let private canvas (props: Props) : ReactElement =
         ?onNodeClick = props.OnNodeClick,
         ?centerNodeId = props.CenterNodeId,
         ?focusOnMount = props.FocusOnMount,
+        ?imageFileName = props.ImageFileName,
         ?layout = props.LayoutSeam
     )
 
@@ -1409,6 +1412,40 @@ Vitest.describe (
                 do! eventually (fun () -> Vitest.expect(focused ()).toBe (box (region ())))
 
                 Vitest.expect(svgWidth ()).toBe (original * 1.25)
+            }
+        )
+)
+
+// Image export. jsdom has no canvas, so the tests do not click the buttons.
+
+Vitest.describe (
+    "GraphCanvas image export",
+    fun () ->
+        Vitest.test (
+            "has no export buttons without an image file name",
+            fun () -> promise {
+                render defaults |> ignore
+                do! drawn ()
+
+                Vitest.expect((RTL.screen.queryByTestId "graph-image-download").IsNone).toBe true
+                Vitest.expect((RTL.screen.queryByTestId "graph-image-copy").IsNone).toBe true
+            }
+        )
+
+        Vitest.test (
+            "has the download button once a layout is drawn when it gets an image file name",
+            fun () -> promise {
+                render {
+                    defaults with
+                        ImageFileName = Some "graph.png"
+                }
+                |> ignore
+
+                Vitest.expect((RTL.screen.queryByTestId "graph-image-download").IsNone).toBe true
+
+                do! drawn ()
+
+                Vitest.expect((RTL.screen.queryByTestId "graph-image-download").IsSome).toBe true
             }
         )
 )

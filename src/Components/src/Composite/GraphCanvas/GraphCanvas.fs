@@ -667,6 +667,158 @@ type GraphCanvas =
             ]
         ]
 
+    /// The buttons that save the whole graph as a PNG file or copy it to the clipboard, and the notice about the
+    /// result. They render in the zoom group. The state of an export belongs here, so a running export does
+    /// not render the canvas. The image has the size of the layout, whatever the zoom and the scroll position are.
+    [<ReactComponent>]
+    static member private ExportControls
+        (drawn: GraphLayout, svgRef: IRefValue<Element option>, rootRef: IRefValue<HTMLElement option>, fileName: string) =
+        let busy, setBusy = React.useState false
+        let notice, setNotice = React.useState<string option> None
+        let timer = React.useRef None
+
+        let clearTimer () =
+            match timer.current with
+            | Some id ->
+                Browser.Dom.window.clearTimeout id
+                timer.current <- None
+            | None -> ()
+
+        React.useEffect ((fun () -> FsReact.createDisposable clearTimer), [||])
+
+        let showNotice (text: string) =
+            clearTimer ()
+            setNotice (Some text)
+
+            timer.current <-
+                Some(
+                    Browser.Dom.window.setTimeout (
+                        (fun () ->
+                            timer.current <- None
+                            setNotice None
+                        ),
+                        3000
+                    )
+                )
+
+        let width = drawn.LayoutWidth
+        let height = drawn.LayoutHeight
+
+        let fail (message: string) (error: obj) =
+            Browser.Dom.console.error (message, error)
+            setBusy false
+            showNotice message
+
+        let download () =
+            match svgRef.current, rootRef.current with
+            | Some svg, Some root ->
+                setBusy true
+
+                try
+                    let markup = ImageExport.svgMarkup svg root width height
+
+                    (ImageExport.renderPng markup width height)
+                        .``then`` (
+                            (fun blob ->
+                                ImageExport.downloadBlob blob fileName
+                                setBusy false
+                            ),
+                            (fun error -> fail "Could not create the image." error)
+                        )
+                    |> ignore
+                with error ->
+                    fail "Could not create the image." error
+            | _ -> ()
+
+        // The markup is built before the PNG, and write is called before the PNG exists: the clipboard
+        // accepts the click as the user action only when write runs synchronously in the handler.
+        let copy () =
+            match svgRef.current, rootRef.current with
+            | Some svg, Some root ->
+                setBusy true
+
+                try
+                    let markup = ImageExport.svgMarkup svg root width height
+                    let png = ImageExport.renderPng markup width height
+
+                    (ImageExport.copyPng png)
+                        .``then`` (
+                            (fun () ->
+                                setBusy false
+                                showNotice "Image copied."
+                            ),
+                            (fun error ->
+                                let message =
+                                    if Dom.errorName error = "NotAllowedError" then
+                                        "Could not copy the image. Click the graph window and try again."
+                                    else
+                                        "Could not copy the image."
+
+                                Browser.Dom.console.error ("Could not copy the image", error)
+                                setBusy false
+                                showNotice message
+                            )
+                        )
+                    |> ignore
+                with error ->
+                    fail "Could not copy the image." error
+            | _ -> ()
+
+        let exportButton (testId: string) (label: string) (icon: string) (onClick: unit -> unit) =
+            Html.button [
+                prop.type'.button
+                prop.testId testId
+                prop.key testId
+                prop.className "swt:btn swt:btn-ghost swt:btn-square swt:btn-sm"
+                prop.ariaLabel label
+                prop.title label
+                prop.disabled busy
+                prop.onClick (fun _ -> onClick ())
+                prop.children [ Html.i [ prop.className icon; prop.ariaHidden true ] ]
+            ]
+
+        // Keys and Html.none keep every conditional element in its slot, so no button of the zoom group is remounted.
+        // The status element stays in the DOM while it is empty, because screen readers announce a change in a live
+        // region but often miss a region that appears with its text already in it.
+        let noticeElement =
+            Html.span [
+                prop.key "notice"
+                prop.role.status
+                prop.custom ("aria-live", "polite")
+                prop.className (
+                    if notice.IsSome then
+                        "swt:px-1 swt:text-xs swt:whitespace-nowrap"
+                    else
+                        "swt:sr-only"
+                )
+                prop.text (defaultArg notice "")
+            ]
+
+        let copyButton =
+            if ImageExport.canCopy () then
+                exportButton
+                    "graph-image-copy"
+                    "Copy image"
+                    "swt:iconify swt:fluent--image-copy-24-regular swt:size-5"
+                    copy
+            else
+                Html.none
+
+        React.Fragment [
+            noticeElement
+            Html.span [
+                prop.key "divider"
+                prop.className "swt:mx-0.5 swt:h-5 swt:w-px swt:bg-base-300"
+                prop.ariaHidden true
+            ]
+            exportButton
+                "graph-image-download"
+                "Download image"
+                "swt:iconify swt:fluent--arrow-download-24-regular swt:size-5"
+                download
+            copyButton
+        ]
+
     [<ReactComponent>]
     static member GraphCanvas
         (
@@ -677,10 +829,12 @@ type GraphCanvas =
             ?onNodeClick: string -> unit,
             ?centerNodeId: string,
             ?focusOnMount: bool,
+            ?imageFileName: string,
             ?layout: CanvasNode[] -> CanvasEdge[] -> string[] -> MeasureText -> LayoutOptions -> JS.Promise<GraphLayout>
         ) =
         let rootRef = React.useRef<HTMLElement option> None
         let contentRef = React.useRef<HTMLElement option> None
+        let svgRef = React.useRef<Element option> None
         let zoom, setZoom = React.useState 1.0
         // True when the graph does not fit the box. The minimap and its toggle only appear then.
         let overflowing, setOverflowing = React.useState false
@@ -1081,6 +1235,7 @@ type GraphCanvas =
                 )
                 prop.children [
                     Svg.svg [
+                        svg.custom ("ref", svgRef)
                         svg.xmlns "http://www.w3.org/2000/svg"
                         svg.className "swt:block swt:max-w-none"
                         svg.width (drawn.LayoutWidth * zoom)
@@ -1225,6 +1380,9 @@ type GraphCanvas =
                                 prop.text (string (floor (zoom * 100.0 + 0.5)) + "%")
                             ]
                             zoomButton "graph-zoom-in" "Zoom in" "+" (zoom >= maxZoom) (min maxZoom (zoom + zoomStep))
+                            match imageFileName, drawn with
+                            | Some fileName, Some drawn -> GraphCanvas.ExportControls(drawn, svgRef, rootRef, fileName)
+                            | _ -> Html.none
                         ]
                     ]
                 match drawn with

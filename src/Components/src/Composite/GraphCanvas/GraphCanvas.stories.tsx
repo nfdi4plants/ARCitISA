@@ -205,3 +205,78 @@ export const Minimap: Story = {
     await waitFor(() => expect(root.scrollLeft > 0 || root.scrollTop > 0).toBe(true));
   },
 };
+
+// The image holds the whole graph, also the nodes that are scrolled out of the 480 by 320 px box.
+export const ImageExport: Story = {
+  args: {
+    nodes: gridNodes,
+    edges: gridEdges,
+    resetKey: 'image-export',
+    imageFileName: 'graph.png',
+  },
+  decorators: [
+    (Story) => (
+      <div style={{ width: 480, height: 320 }}>
+        <Story />
+      </div>
+    ),
+  ],
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    const download = await canvas.findByTestId('graph-image-download', {}, { timeout: 10000 });
+
+    // The layout size is the viewBox of the main svg. The scale is 2 unless the size limits of the export apply.
+    const viewBox = canvas.getByTestId('graph-canvas-content').querySelector('svg')!.getAttribute('viewBox')!.split(' ').map(Number);
+    const [layoutWidth, layoutHeight] = [viewBox[2], viewBox[3]];
+    const factor = Math.min(2, 8192 / layoutWidth, 8192 / layoutHeight, Math.sqrt(16777216 / (layoutWidth * layoutHeight)));
+
+    // The click on the anchor is captured, so the story does not navigate or open a save dialog.
+    const originalClick = HTMLAnchorElement.prototype.click;
+    let saved: { download: string; href: string } | undefined;
+    HTMLAnchorElement.prototype.click = function (this: HTMLAnchorElement) {
+      saved = { download: this.download, href: this.href };
+    };
+
+    try {
+      await userEvent.click(download);
+      await waitFor(() => expect(saved).toBeDefined(), { timeout: 10000 });
+    } finally {
+      HTMLAnchorElement.prototype.click = originalClick;
+    }
+
+    expect(saved!.download).toBe('graph.png');
+    const png = await (await fetch(saved!.href)).blob();
+    expect(png.type).toBe('image/png');
+    const bitmap = await createImageBitmap(png);
+    expect(bitmap.width).toBe(Math.floor(layoutWidth * factor));
+    expect(bitmap.height).toBe(Math.floor(layoutHeight * factor));
+    bitmap.close();
+
+    // The copy button needs a secure context and ClipboardItem. A browser without them shows no button.
+    const copy = canvas.queryByTestId('graph-image-copy');
+    if (!copy) {
+      return;
+    }
+
+    let item: ClipboardItem | undefined;
+    Object.defineProperty(navigator.clipboard, 'write', {
+      configurable: true,
+      value: async (items: ClipboardItem[]) => {
+        item = items[0];
+      },
+    });
+
+    try {
+      await userEvent.click(copy);
+      await waitFor(() => expect(item).toBeDefined(), { timeout: 10000 });
+    } finally {
+      // The stub is an own property of the instance, so deleting it brings back the method of the prototype.
+      delete (navigator.clipboard as { write?: unknown }).write;
+    }
+
+    const copied = await item!.getType('image/png');
+    expect(copied.type).toBe('image/png');
+    expect(copied.size).toBeGreaterThan(0);
+  },
+};

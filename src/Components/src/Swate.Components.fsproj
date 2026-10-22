@@ -278,6 +278,8 @@
     <Compile Include="Composite\GraphCanvas\Layout.test.fs" />
     <Compile Include="Composite\GraphCanvas\Minimap.fs" />
     <Compile Include="Composite\GraphCanvas\Minimap.test.fs" />
+    <Compile Include="Composite\GraphCanvas\ImageExport.fs" />
+    <Compile Include="Composite\GraphCanvas\ImageExport.test.fs" />
     <Compile Include="Composite\GraphCanvas\GraphCanvas.fs" />
     <Compile Include="Composite\GraphCanvas\GraphCanvas.test.rtl.fs" />
     <Compile Include="Page\ProvenanceGrouping\Types.fs" />
