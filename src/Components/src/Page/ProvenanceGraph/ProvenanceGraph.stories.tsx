@@ -162,7 +162,7 @@ export const VeryNarrowHeaderWithMenu: Story = {
 };
 
 // A header between 16rem and 28rem wide shows the arrow of the up button without its label. The name stays in the
-// aria label and the title, and the crumbs, the button and the overview toggle fit.
+// aria label and the title. The crumbs and both header buttons fit.
 export const NarrowHeaderUpIcon: Story = {
   decorators: [box(360, 480)],
   play: async ({ canvasElement }) => {
