@@ -63,7 +63,7 @@ let private withDescendants (root: Element) : Element[] =
 
     Array.append [| root |] [| for i in 0 .. found.length - 1 -> found.[i] |]
 
-// Classes, focus and accessibility attributes mean nothing in an image. Ids, transforms, geometry and marker
+// An image has no use for the attributes that serve the interactive page. Ids, transforms, geometry and marker
 // attributes stay, because the drawing needs them.
 let private dropInteractionAttributes (el: Element) : unit =
     for name in Dom.attributeNames el do

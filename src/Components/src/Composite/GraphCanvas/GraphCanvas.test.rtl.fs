@@ -653,6 +653,36 @@ Vitest.describe (
         )
 
         Vitest.test (
+            "leaves the focus on a control outside the canvas when the view changes",
+            fun () -> promise {
+                let page (props: Props) : ReactElement =
+                    Html.div [
+                        Html.button [ prop.testId "outside-button"; prop.text "Outside" ]
+                        canvas props
+                    ]
+
+                let result = RTL.render (page defaults)
+                do! drawn ()
+                let outside = RTL.screen.getByTestId "outside-button"
+                outside.focus ()
+
+                result.rerender (
+                    page {
+                        defaults with
+                            Nodes = [| plainNode "New" |]
+                            Edges = [||]
+                            ResetKey = "two"
+                    }
+                )
+
+                do! eventually (fun () -> nodeEl "New" |> ignore)
+                do! settle ()
+
+                Vitest.expect(focused ()).toBe (box outside)
+            }
+        )
+
+        Vitest.test (
             "moves focus to the container after the first layout when focusOnMount is set",
             fun () -> promise {
                 render {
@@ -1640,6 +1670,24 @@ Vitest.describe (
                 click (toggleButton ())
                 Vitest.expect(minimapEl().IsSome).toBe true
                 Vitest.expect((toggleButton ()).getAttribute "aria-pressed").toBe "true"
+            }
+        )
+
+        Vitest.test (
+            "hides the minimap while a pill list is open",
+            fun () -> promise {
+                overflowBox ()
+                render defaults |> ignore
+                do! minimapShown ()
+
+                // The box is too narrow for the pills to expand inline, so the toggle opens a list.
+                click (toggleEl "ab")
+                do! eventually (fun () -> Vitest.expect(menuEl().IsSome).toBe true)
+                Vitest.expect(minimapEl().IsNone).toBe true
+
+                press document.body "Escape"
+                do! eventually (fun () -> Vitest.expect(menuEl().IsNone).toBe true)
+                do! minimapShown ()
             }
         )
 

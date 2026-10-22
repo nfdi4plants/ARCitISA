@@ -204,6 +204,9 @@ open GraphCanvasHelper
 /// Draws nodes, edges and pills of a graph as SVG. The layout comes from ELK and is computed
 /// asynchronously. An expanded edge wraps its pills into rows when the box is wide enough, otherwise a
 /// list of the hidden pills opens next to its toggle. A portrait box gets the compact top to bottom layout.
+/// A graph that does not fit a box of at least 260 by 220 px shows a minimap of the whole drawing, with the
+/// visible part marked. Passing imageFileName shows the Download image and Copy image buttons, and the name is
+/// the file name of the downloaded image.
 [<Erase; Mangle(false)>]
 type GraphCanvas =
 
@@ -914,6 +917,7 @@ type GraphCanvas =
             ?layout: CanvasNode[] -> CanvasEdge[] -> string[] -> MeasureText -> LayoutOptions -> JS.Promise<GraphLayout>
         ) =
         let rootRef = React.useRef<HTMLElement option> None
+        let wrapperRef = React.useRef<HTMLElement option> None
         let contentRef = React.useRef<HTMLElement option> None
         let svgRef = React.useRef<Element option> None
         let zoom, setZoom = React.useState 1.0
@@ -1138,8 +1142,10 @@ type GraphCanvas =
                 |> Array.tryFind (fun laid -> laid.Edge.Id = open'.MenuEdgeId)
             | _ -> None
 
-        // After a navigation the container takes focus, because the focused node is gone. The first
-        // mount leaves focus alone unless focusOnMount is set.
+        // After a navigation the container takes focus, because the focused node is gone. The focus stays where it
+        // is when it sits on a control outside the canvas that survives the navigation, such as an up button of the
+        // page. The controls of the canvas count as inside, and so does the body, where a removed node leaves the
+        // focus. The first mount leaves focus alone unless focusOnMount is set.
         let lastEpoch = React.useRef epoch
         let focusOnDraw = React.useRef (defaultArg focusOnMount false)
 
@@ -1147,7 +1153,20 @@ type GraphCanvas =
             (fun () ->
                 if lastEpoch.current <> epoch then
                     lastEpoch.current <- epoch
-                    focusOnDraw.current <- true
+
+                    let active = Browser.Dom.document.activeElement
+
+                    let insideCanvas =
+                        match wrapperRef.current with
+                        | Some wrapper -> wrapper.contains (active :> Node)
+                        | None -> false
+
+                    if
+                        isNull (box active)
+                        || obj.ReferenceEquals(active, Browser.Dom.document.body)
+                        || insideCanvas
+                    then
+                        focusOnDraw.current <- true
             ),
             [| box epoch |]
         )
@@ -1382,7 +1401,7 @@ type GraphCanvas =
                 prop.text glyph
             ]
 
-        // The minimap needs a graph that does not fit and a box with room for it.
+        // A minimap in a small box would hide too much of the graph.
         let minimapAvailable = overflowing && Minimap.fitsBox boxWidth boxHeight
 
         let minimapToggle () =
@@ -1403,6 +1422,7 @@ type GraphCanvas =
             ]
 
         Html.div [
+            prop.ref wrapperRef
             prop.className "swt:relative swt:size-full swt:min-h-0"
             prop.style [
                 for name, value in rootColors -> style.custom (name, value)
@@ -1469,7 +1489,7 @@ type GraphCanvas =
                         ]
                     ]
                 match drawn with
-                | Some drawn when minimapAvailable && minimapOpen ->
+                | Some drawn when minimapAvailable && minimapOpen && openMenu.IsNone ->
                     GraphCanvas.Minimap(drawn, zoom, rootRef, contentRef, boxWidth, boxHeight)
                 | _ -> Html.none
             ]

@@ -200,8 +200,8 @@ type Rect = {
     Bottom: float
 }
 
-/// What the scrolling root reports (scroll position, client size and scroll size), plus the origin of the
-/// drawing in scroll coordinates and the zoom. The minimap computes with these numbers only.
+/// What the scrolling root reports about its scroll position and its sizes, plus the origin of the drawing in
+/// scroll coordinates and the zoom. The minimap computes with these numbers only.
 type ScrollGeometry = {
     ScrollLeft: float
     ScrollTop: float

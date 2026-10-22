@@ -266,7 +266,7 @@ export const ImageExport: Story = {
     });
     expect(hidden).toBeDefined();
 
-    // The markup is a standalone copy of the drawing: computed colors only, nothing interactive, the background first.
+    // The markup is a standalone copy of the drawing. It holds computed colors and nothing interactive, and the background comes first.
     const background = base100Of(root);
     const markup = svgMarkup(mainSvg, root, layoutWidth, layoutHeight);
     for (const forbidden of ['var(', 'color-mix(', ' class=', ' tabindex=', ' role=', ' aria-', ' data-testid=', '<title']) {
