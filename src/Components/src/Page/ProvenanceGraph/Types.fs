@@ -1,5 +1,6 @@
 module Swate.Components.Page.ProvenanceGraph.Types
 
+open System.Text.RegularExpressions
 open Swate.Components.Shared.ProvenanceGraph.Types
 open Swate.Components.Composite.GraphCanvas.Types
 
@@ -190,3 +191,21 @@ module ProvenanceView =
             groupCrumb datasetId processKey groupId
             { Label = nodeId; Target = view }
           |]
+
+    /// The file name of the image of a view. The name says which view the image shows, because it lists the labels of
+    /// the crumbs after the root. It is safe on Windows, macOS and Linux. Every character outside letters, digits,
+    /// dot, underscore and hyphen becomes an underscore, and at most 100 characters of the labels remain. The datasets
+    /// level has no label of its own, so it is named "datasets".
+    let imageFileName (crumbs: Crumb[]) : string =
+        let joined =
+            crumbs
+            |> Array.skip 1
+            |> Array.map (fun crumb -> crumb.Label)
+            |> String.concat "-"
+
+        let safe =
+            Regex.Replace(Regex.Replace(joined, "[^A-Za-z0-9._-]", "_"), "_+", "_").Trim([| '_'; '-' |])
+
+        let cut = if safe.Length > 100 then safe.Substring(0, 100) else safe
+        let part = if cut = "" then "datasets" else cut
+        $"provenance-{part}.png"

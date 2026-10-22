@@ -927,6 +927,7 @@ type ProvenanceGraph =
                                     onNodeClick = (fun id -> navigate (ProvenanceView.next index view id)),
                                     ?centerNodeId = shown.CenterNodeId,
                                     focusOnMount = navigated,
+                                    imageFileName = ProvenanceView.imageFileName crumbs,
                                     ?layout = layout
                                 )
                             ]

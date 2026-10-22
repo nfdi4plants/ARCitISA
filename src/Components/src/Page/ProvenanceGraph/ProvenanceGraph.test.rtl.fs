@@ -580,6 +580,20 @@ Vitest.describe (
         )
 
         Vitest.test (
+            "offers the image download inside the page once the layout is drawn",
+            longTest,
+            fun () -> promise {
+                render Sample.index |> ignore
+                do! waitNode extraction
+                do! open' extraction extractionProcess
+
+                do! eventually (fun () -> byTestId "graph-image-download" |> ignore)
+
+                Vitest.expect((byTestId "provenance-graph").contains (byTestId "graph-image-download")).toBe true
+            }
+        )
+
+        Vitest.test (
             "switches to the dataset of an external process when it is clicked",
             longTest,
             fun () -> promise {
