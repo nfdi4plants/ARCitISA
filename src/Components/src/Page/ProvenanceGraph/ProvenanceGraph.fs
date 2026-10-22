@@ -282,15 +282,119 @@ type ProvenanceGraph =
             ]
         ]
 
+    /// The levels above the current view, one row per level, with the item that leads to the view marked. The
+    /// overview is for reading only. Nothing in it takes focus or a click.
+    [<ReactComponent>]
+    static member private Overview(rows: OverviewRow[], id: string) =
+        let countText (count: int) : ReactElement =
+            Html.span [
+                prop.className "swt:flex-none swt:text-base-content/80"
+                prop.ariaLabel $"{count} more"
+                prop.text $"+{count}"
+            ]
+
+        let chip (isDeepest: bool) (item: OverviewItem) : ReactElement =
+            let chipStyle =
+                if item.Selected then
+                    [
+                        style.custom ("borderColor", accentColor)
+                        style.custom ("backgroundColor", "color-mix(in oklch, var(--color-primary) 12%, transparent)")
+                    ]
+                else
+                    [ style.custom ("borderColor", neutralBorder) ]
+
+            let className =
+                if item.Selected then
+                    "swt:max-w-40 swt:min-w-0 swt:flex-none swt:truncate swt:rounded-full swt:border swt:px-2 swt:py-px swt:font-semibold"
+                else
+                    "swt:max-w-40 swt:min-w-0 swt:truncate swt:rounded-full swt:border swt:px-2 swt:py-px swt:text-base-content/80"
+
+            Html.span [
+                prop.key item.Id
+                prop.testId "provenance-overview-item"
+                prop.custom ("data-selected", item.Selected)
+                prop.title item.Label
+                prop.className className
+                prop.style chipStyle
+                if item.Selected then
+                    prop.custom ("aria-current", "true")
+                prop.children [
+                    if item.Selected && isDeepest then
+                        Html.i [
+                            prop.ariaHidden true
+                            prop.className "swt:iconify swt:fluent--location-16-filled swt:size-3 swt:align-[-2px]"
+                        ]
+
+                    Html.text item.Label
+                ]
+            ]
+
+        let rowItem (depth: int) (row: OverviewRow) : ReactElement =
+            let isDeepest = depth = rows.Length - 1
+
+            Html.li [
+                prop.key depth
+                prop.testId $"provenance-overview-row-{depth}"
+                prop.style [ style.marginLeft (depth * 14) ]
+                prop.className
+                    "swt:flex swt:min-w-0 swt:items-center swt:gap-1.5 swt:overflow-hidden swt:whitespace-nowrap"
+                prop.children [
+                    if depth > 0 then
+                        Html.i [
+                            prop.ariaHidden true
+                            prop.className
+                                "swt:iconify swt:fluent--arrow-turn-down-right-20-regular swt:size-3.5 swt:flex-none swt:opacity-60"
+                        ]
+
+                    Html.span [
+                        prop.className "swt:flex-none swt:text-base-content/80"
+                        prop.text $"{row.Heading}:"
+                    ]
+
+                    if row.Before > 0 then
+                        countText row.Before
+
+                    for item in row.Items do
+                        chip isDeepest item
+
+                    if row.After > 0 then
+                        countText row.After
+                ]
+            ]
+
+        Html.div [
+            prop.id id
+            prop.testId "provenance-overview"
+            prop.role.group
+            prop.ariaLabel "Location in the ARC"
+            prop.className
+                "swt:flex-none swt:border-b swt:border-base-300 swt:bg-base-100 swt:px-3.5 swt:py-2 swt:text-xs"
+            prop.children [
+                Html.ol [
+                    prop.className "swt:m-0 swt:flex swt:list-none swt:flex-col swt:gap-1 swt:p-0"
+                    prop.children [
+                        for depth, row in Array.indexed rows -> rowItem depth row
+                    ]
+                ]
+            ]
+        ]
+
     /// The breadcrumbs and the invisible copy of them that decides between the full and the narrow layout.
     /// The layout switches when the full crumbs do not fit on one line. A ResizeObserver reports two widths:
-    /// the space next to the up button (the box) and the natural width of the full crumbs (the ruler). Both are
-    /// independent of the layout on screen, because the header is as wide as the page and the ruler always
-    /// holds all crumbs. The up button has the same width in either layout. The answer is therefore the same
-    /// in either layout, so the header cannot flip back and forth. The observed elements keep their size in
-    /// both layouts, so a layout switch does not fire the observer again.
+    /// the space between the up button and the overview toggle (the box) and the natural width of the full
+    /// crumbs (the ruler). Both are independent of the layout on screen, because the header is as wide as the
+    /// page and the ruler always holds all crumbs. The two buttons have the same width in either layout. The
+    /// answer is therefore the same in either layout, so the header cannot flip back and forth. The observed
+    /// elements keep their size in both layouts, so a layout switch does not fire the observer again.
     [<ReactComponent>]
-    static member private Header(crumbs: Crumb[], onNavigate: ProvenanceView -> unit) =
+    static member private Header
+        (
+            crumbs: Crumb[],
+            onNavigate: ProvenanceView -> unit,
+            overviewOpen: bool,
+            onToggleOverview: (unit -> unit) option,
+            overviewId: string
+        ) =
         let boxRef = React.useRef<HTMLElement option> None
         let fullRef = React.useRef<HTMLElement option> None
         let narrow, setNarrow = React.useState false
@@ -442,12 +546,40 @@ type ProvenanceGraph =
                 ]
             ]
 
+        // The toggle shows or hides the overview. The overview is a panel below the header with the id `overviewId`.
+        let overviewToggle (onToggle: unit -> unit) : ReactElement =
+            let label =
+                if overviewOpen then
+                    "Hide location overview"
+                else
+                    "Show location overview"
+
+            Html.button [
+                prop.type'.button
+                prop.testId "provenance-overview-toggle"
+                prop.className "swt:btn swt:btn-ghost swt:btn-sm swt:btn-square swt:flex-none"
+                prop.ariaLabel label
+                prop.title label
+                prop.custom ("aria-expanded", overviewOpen)
+                prop.custom ("aria-controls", overviewId)
+                prop.onClick (fun _ -> onToggle ())
+                prop.children [
+                    Html.i [
+                        prop.ariaHidden true
+                        prop.className "swt:iconify swt:fluent--text-bullet-list-tree-24-regular swt:size-5"
+                    ]
+                ]
+            ]
+
         Html.header [
             prop.className
                 "swt:relative swt:flex swt:flex-none swt:items-center swt:justify-between swt:gap-x-3.5 swt:border-b swt:border-base-300 swt:bg-base-200 swt:px-3.5 swt:py-2.5"
             prop.children [
+                // The empty slot keeps the following elements mounted, because React matches children by position.
                 if crumbs.Length > 1 then
                     upButton crumbs.[crumbs.Length - 2]
+                else
+                    Html.none
 
                 Html.div [
                     prop.className "swt:relative swt:flex swt:min-w-0 swt:flex-1 swt:items-center"
@@ -474,9 +606,9 @@ type ProvenanceGraph =
                                 ]
                             ]
                         ]
-                        // The ruler is the invisible copy of all crumbs. Its box has the width of the space next to
-                        // the up button and no height. The ruler inside has its natural width and draws its text with
-                        // CSS content, so assistive technology reads each label once.
+                        // The ruler is the invisible copy of all crumbs. Its box has the width of the space between
+                        // the up button and the overview toggle, and no height. The ruler inside has its natural
+                        // width and draws its text with CSS content, so assistive technology reads each label once.
                         Html.div [
                             prop.ref boxRef
                             prop.ariaHidden true
@@ -513,6 +645,11 @@ type ProvenanceGraph =
                         ]
                     ]
                 ]
+
+                // The empty slot keeps the position of the elements around it, like the one before the crumbs.
+                match onToggleOverview with
+                | Some onToggle -> overviewToggle onToggle
+                | None -> Html.none
             ]
         ]
 
@@ -527,6 +664,9 @@ type ProvenanceGraph =
         // After the first navigation, whatever replaces the view takes focus, because the clicked node
         // or crumb is gone.
         let navigated, setNavigated = React.useState false
+        // The location overview is open until the user hides it, and it stays as chosen while the user navigates.
+        let overviewOpen, setOverviewOpen = React.useState true
+        let overviewId = React.useId ()
         // A new index is another ARC, so the selection of the old one must not outlive it. React lets a
         // component reset state while it renders, so nothing of the old selection is drawn.
         // The parent keeps the index identity stable while the ARC stays the same.
@@ -558,6 +698,25 @@ type ProvenanceGraph =
 
         let crumbs =
             React.useMemo ((fun () -> ProvenanceView.crumbs index view), [| box index; box viewKey |])
+
+        // A failing query leaves the overview empty, and the path of the page stays usable.
+        let overview =
+            React.useMemo (
+                (fun () ->
+                    try
+                        Overview.rows index view
+                    with error ->
+                        Browser.Dom.console.error ("Could not compute the provenance overview", error)
+                        [||]
+                ),
+                [| box index; box viewKey |]
+            )
+
+        let toggleOverview =
+            if overview.Length > 0 then
+                Some(fun () -> setOverviewOpen (not overviewOpen))
+            else
+                None
 
         let empty = emptyKindOf view content
 
@@ -672,7 +831,14 @@ type ProvenanceGraph =
                 "swt:flex swt:size-full swt:min-h-0 swt:flex-col swt:overflow-hidden swt:bg-base-100 swt:text-base-content"
             prop.style [ for name, value in palette -> style.custom (name, value) ]
             prop.children [
-                ProvenanceGraph.Header(crumbs, navigate)
+                ProvenanceGraph.Header(crumbs, navigate, overviewOpen, toggleOverview, overviewId)
+
+                // The empty slot keeps the error boundary and the canvas mounted when the overview comes and goes.
+                if overviewOpen && overview.Length > 0 then
+                    ProvenanceGraph.Overview(overview, overviewId)
+                else
+                    Html.none
+
                 // An error while the body renders shows the alert in its place and leaves the header alone. A new
                 // view clears the error.
                 ErrorBoundary.ErrorBoundary(

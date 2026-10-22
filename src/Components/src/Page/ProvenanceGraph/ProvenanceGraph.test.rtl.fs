@@ -117,6 +117,15 @@ let private crumbElements () =
 
 let private crumbCount () : int = crumbElements().Count
 
+let private breadcrumbNav () : Element =
+    document.querySelector "nav[aria-label='Breadcrumb']"
+
+let private overviewRowCount () : int =
+    document.querySelectorAll("[data-testid^='provenance-overview-row-']").length
+
+let private selectedOverviewItems () =
+    document.querySelectorAll "[data-testid='provenance-overview-item'][data-selected='true']"
+
 let private nodeCount () : int =
     document.querySelectorAll("[data-testid^='graph-node-']").length
 
@@ -322,6 +331,101 @@ Vitest.describe (
                 Vitest.expect(crumbCount ()).toBe 2
                 Vitest.expect((byTestId "provenance-crumb-1").getAttribute "aria-current").toBe "page"
                 Vitest.expect(crumbText 1).toBe dataset
+            }
+        )
+
+        Vitest.test (
+            "has no overview and no toggle at the datasets level",
+            longTest,
+            fun () -> promise {
+                render Sample.index |> ignore
+                do! waitNode extraction
+
+                Vitest.expect(present (maybeTestId "provenance-overview-toggle")).toBe false
+                Vitest.expect(present (maybeTestId "provenance-overview")).toBe false
+            }
+        )
+
+        Vitest.test (
+            "marks the opened dataset in the overview",
+            longTest,
+            fun () -> promise {
+                render Sample.index |> ignore
+                do! waitNode extraction
+                do! open' extraction extractionProcess
+
+                Vitest.expect(overviewRowCount ()).toBe 1
+                Vitest.expect(selectedOverviewItems().length).toBe 1
+                Vitest.expect(selectedOverviewItems().[0].getAttribute "title").toBe (crumbText 1)
+            }
+        )
+
+        Vitest.test (
+            "hides and shows the overview through its toggle",
+            longTest,
+            fun () -> promise {
+                render Sample.index |> ignore
+                do! waitNode extraction
+                do! open' extraction extractionProcess
+
+                Vitest.expect((byTestId "provenance-overview-toggle").getAttribute "aria-expanded").toBe "true"
+                Vitest.expect(present (maybeTestId "provenance-overview")).toBe true
+
+                click (byTestId "provenance-overview-toggle")
+
+                Vitest.expect((byTestId "provenance-overview-toggle").getAttribute "aria-expanded").toBe "false"
+                Vitest.expect(present (maybeTestId "provenance-overview")).toBe false
+
+                click (byTestId "provenance-overview-toggle")
+
+                Vitest.expect((byTestId "provenance-overview-toggle").getAttribute "aria-expanded").toBe "true"
+                Vitest.expect(present (maybeTestId "provenance-overview")).toBe true
+            }
+        )
+
+        Vitest.test (
+            "shows a row for each level above the groups",
+            longTest,
+            fun () -> promise {
+                render Sample.index |> ignore
+                do! openGroups ()
+
+                Vitest.expect(overviewRowCount ()).toBe 2
+                Vitest.expect(selectedOverviewItems().length).toBe 2
+            }
+        )
+
+        Vitest.test (
+            "keeps the breadcrumbs mounted when the up button appears",
+            longTest,
+            fun () -> promise {
+                render Sample.index |> ignore
+                do! waitNode extraction
+                let navBefore = breadcrumbNav ()
+
+                do! open' extraction extractionProcess
+
+                Vitest.expect(present (maybeTestId "provenance-up")).toBe true
+                Vitest.expect(obj.ReferenceEquals(breadcrumbNav (), navBefore)).toBe true
+            }
+        )
+
+        Vitest.test (
+            "keeps the canvas mounted when the overview is hidden and shown",
+            longTest,
+            fun () -> promise {
+                render Sample.index |> ignore
+                do! waitNode extraction
+                do! open' extraction extractionProcess
+                let canvasBefore = byTestId "graph-canvas"
+
+                click (byTestId "provenance-overview-toggle")
+                Vitest.expect(present (maybeTestId "provenance-overview")).toBe false
+                Vitest.expect(obj.ReferenceEquals(byTestId "graph-canvas", canvasBefore)).toBe true
+
+                click (byTestId "provenance-overview-toggle")
+                Vitest.expect(present (maybeTestId "provenance-overview")).toBe true
+                Vitest.expect(obj.ReferenceEquals(byTestId "graph-canvas", canvasBefore)).toBe true
             }
         )
 

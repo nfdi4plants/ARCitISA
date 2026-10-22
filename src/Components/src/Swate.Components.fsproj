@@ -303,11 +303,13 @@
     <Compile Include="Page\ProvenanceGraph\Types.fs" />
     <Compile Include="Page\ProvenanceGraph\ToCanvas.fs" />
     <Compile Include="Page\ProvenanceGraph\Header.fs" />
+    <Compile Include="Page\ProvenanceGraph\Overview.fs" />
     <Compile Include="Page\ProvenanceGraph\ProvenanceGraph.sample.fs" />
     <Compile Include="Page\ProvenanceGraph\ProvenanceGraph.fs" />
     <Compile Include="Page\ProvenanceGraph\ProvenanceGraph.test.rtl.fs" />
     <Compile Include="Page\ProvenanceGraph\ToCanvas.test.fs" />
     <Compile Include="Page\ProvenanceGraph\Header.test.fs" />
+    <Compile Include="Page\ProvenanceGraph\Overview.test.fs" />
     <Compile Include="Page\Changelog\Changelog.fs" />
     <Compile Include="Page\Changelog\Changelog.test.rtl.fs" />
     <Compile Include="Page\Changelog\Changelog.sample.fs" />

@@ -64,6 +64,22 @@ type IncompleteRows = {
     MissingInputs: int
 }
 
+/// One item of an overview row. Selected marks the item that leads to the current view.
+type OverviewItem = {
+    Id: string
+    Label: string
+    Selected: bool
+}
+
+/// One level above the current view. Items is the part of the level that the row shows. Before and After count
+/// the items that the row leaves out on each side.
+type OverviewRow = {
+    Heading: string
+    Items: OverviewItem[]
+    Before: int
+    After: int
+}
+
 module ProvenanceView =
 
     /// The text of the level, without its ids.
