@@ -366,13 +366,15 @@ type OverviewNav =
             ]
 
         // The panel is at most 40 percent of the page. The page section is its percentage base. A row with
-        // hundreds of items scrolls inside the panel and leaves the graph its room.
+        // hundreds of items scrolls inside the panel and leaves the graph its room. Below 17.75rem of page width
+        // the panel hides with its toggle, because it could not be collapsed there. The named container is the
+        // page section.
         Html.nav [
             prop.id id
             prop.testId "provenance-overview"
             prop.ariaLabel "Location in the ARC"
             prop.className
-                "swt:max-h-[40%] swt:flex-none swt:overflow-y-auto swt:border-b swt:border-base-300 swt:bg-base-100 swt:px-3.5 swt:py-2 swt:text-xs"
+                "swt:max-h-[40%] swt:flex-none swt:overflow-y-auto swt:border-b swt:border-base-300 swt:bg-base-100 swt:px-3.5 swt:py-2 swt:text-xs swt:@max-[17.75rem]/graph:hidden"
             prop.onFocus (fun (event: FocusEvent) ->
                 let key = overviewControlKey (event.target :?> HTMLElement)
 

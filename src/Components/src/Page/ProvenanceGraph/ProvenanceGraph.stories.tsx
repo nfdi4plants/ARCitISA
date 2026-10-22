@@ -127,7 +127,7 @@ async function expectHeaderFits(canvas: ReturnType<typeof within>, canvasElement
 }
 
 // A header of about 180px with three crumbs. Every crumb cuts its text with an ellipsis and keeps a width of
-// its own, and nothing sticks out of the header.
+// its own, and nothing sticks out of the header. The up button hides here, and the overview hides with its toggle.
 export const VeryNarrowHeader: Story = {
   decorators: [box(180, 480)],
   play: async ({ canvasElement }) => {
@@ -140,6 +140,9 @@ export const VeryNarrowHeader: Story = {
     await waitFor(() => expect(canvas.getAllByTestId(/^provenance-crumb-\d+$/)).toHaveLength(3), wait);
     await expect(canvas.queryByTestId('provenance-crumb-menu')).not.toBeInTheDocument();
     await expectHeaderFits(canvas, canvasElement, ['provenance-crumb-0', 'provenance-crumb-1', 'provenance-crumb-2']);
+    // Below the width where the toggle hides, the overview hides too, because it could not be collapsed.
+    await expect(canvas.getByTestId('provenance-overview')).not.toBeVisible();
+    await expect(canvas.getByTestId('provenance-overview-toggle')).not.toBeVisible();
   },
 };
 
@@ -174,6 +177,7 @@ export const NarrowHeaderUpIcon: Story = {
 
     const up = await canvas.findByTestId('provenance-up');
     await expect(up).toBeVisible();
+    await expect(canvas.getByTestId('provenance-overview')).toBeVisible();
     await expect(up).toHaveAttribute('aria-label');
     await expect(up.querySelector('span')).not.toBeVisible();
     await expectHeaderFits(canvas, canvasElement, [
@@ -195,6 +199,7 @@ export const WideOverviewRows: Story = {
 
     await openLineage(canvas);
     const overview = await canvas.findByTestId('provenance-overview');
+    await expect(overview).toBeVisible();
 
     await waitFor(() => {
       const panel = overview.getBoundingClientRect();

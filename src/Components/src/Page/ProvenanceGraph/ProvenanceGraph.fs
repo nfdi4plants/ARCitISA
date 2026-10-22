@@ -288,10 +288,10 @@ type ProvenanceGraph =
     /// The layout switches when the full crumbs do not fit on one line. A ResizeObserver reports two widths:
     /// the space between the up button and the overview toggle (the box) and the natural width of the full
     /// crumbs (the ruler). Both are independent of the layout on screen, because the header is as wide as the
-    /// page and the ruler always holds all crumbs. The two buttons depend on the header width only, through
-    /// container queries, so they have the same width in either layout. The answer is therefore the same in
-    /// either layout, so the header cannot flip back and forth. The observed elements keep their size in both
-    /// layouts, so a layout switch does not fire the observer again.
+    /// page and the ruler always holds all crumbs. The two buttons depend on the width of the page section only,
+    /// through container queries, so they have the same width in either layout. The answer is therefore the
+    /// same in either layout, so the header cannot flip back and forth. The observed elements keep their size in
+    /// both layouts, so a layout switch does not fire the observer again.
     [<ReactComponent>]
     static member private Header
         (
@@ -430,14 +430,15 @@ type ProvenanceGraph =
             ]
 
         // The button goes one level up, like the crumb before the current one. It keeps its width, and its label
-        // is cut at the maximum width. A header narrower than 28rem shows the arrow only, and below 16rem the
-        // crumbs alone lead back.
+        // is cut at the maximum width. The thresholds are widths of the page section, which is the container. A
+        // header with less than 28rem of content shows the arrow only, and below 16rem of content the crumbs alone
+        // lead back. The header pads 14px on each side, which adds 1.75rem to both thresholds.
         let upButton (parent: Crumb) : ReactElement =
             Html.button [
                 prop.type'.button
                 prop.testId "provenance-up"
                 prop.className
-                    "swt:btn swt:btn-sm swt:btn-outline swt:flex-none swt:max-w-[30%] swt:gap-1.5 swt:font-normal swt:@max-[16rem]:hidden"
+                    "swt:btn swt:btn-sm swt:btn-outline swt:flex-none swt:max-w-[30%] swt:gap-1.5 swt:font-normal swt:@max-[17.75rem]/graph:hidden"
                 prop.ariaLabel $"Up to {parent.Label}"
                 prop.title $"Up to {parent.Label}"
                 prop.onClick (fun _ -> onNavigate parent.Target)
@@ -447,7 +448,7 @@ type ProvenanceGraph =
                         prop.className "swt:iconify swt:fluent--arrow-left-24-regular swt:size-4 swt:flex-none"
                     ]
                     Html.span [
-                        prop.className "swt:min-w-0 swt:truncate swt:@max-[28rem]:hidden"
+                        prop.className "swt:min-w-0 swt:truncate swt:@max-[29.75rem]/graph:hidden"
                         prop.text (cutLabel parent.Label)
                     ]
                 ]
@@ -459,7 +460,8 @@ type ProvenanceGraph =
             Html.button [
                 prop.type'.button
                 prop.testId "provenance-overview-toggle"
-                prop.className "swt:btn swt:btn-ghost swt:btn-sm swt:btn-square swt:flex-none swt:@max-[16rem]:hidden"
+                prop.className
+                    "swt:btn swt:btn-ghost swt:btn-sm swt:btn-square swt:flex-none swt:@max-[17.75rem]/graph:hidden"
                 prop.ariaLabel "Location overview"
                 prop.title "Location overview"
                 prop.custom ("aria-expanded", overviewOpen)
@@ -475,7 +477,7 @@ type ProvenanceGraph =
 
         Html.header [
             prop.className
-                "swt:@container swt:relative swt:flex swt:flex-none swt:items-center swt:justify-between swt:gap-x-3.5 swt:border-b swt:border-base-300 swt:bg-base-200 swt:px-3.5 swt:py-2.5"
+                "swt:relative swt:flex swt:flex-none swt:items-center swt:justify-between swt:gap-x-3.5 swt:border-b swt:border-base-300 swt:bg-base-200 swt:px-3.5 swt:py-2.5"
             prop.children [
                 // The empty slot keeps the following elements mounted, because React matches children by position.
                 if crumbs.Length > 1 then
@@ -741,7 +743,7 @@ type ProvenanceGraph =
             prop.testId "provenance-graph"
             prop.ariaLabel "Provenance graph"
             prop.className
-                "swt:flex swt:size-full swt:min-h-0 swt:flex-col swt:overflow-hidden swt:bg-base-100 swt:text-base-content"
+                "swt:@container/graph swt:flex swt:size-full swt:min-h-0 swt:flex-col swt:overflow-hidden swt:bg-base-100 swt:text-base-content"
             prop.style [ for name, value in palette -> style.custom (name, value) ]
             prop.children [
                 ProvenanceGraph.Header(crumbs, navigate, overviewOpen, toggleOverview, overviewId)
