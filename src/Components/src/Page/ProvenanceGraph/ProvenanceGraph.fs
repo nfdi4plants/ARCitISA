@@ -284,11 +284,11 @@ type ProvenanceGraph =
 
     /// The breadcrumbs and the invisible copy of them that decides between the full and the narrow layout.
     /// The layout switches when the full crumbs do not fit on one line. A ResizeObserver reports two widths:
-    /// the header content area (the box) and the natural width of the full crumbs (the ruler). Both are
+    /// the space next to the up button (the box) and the natural width of the full crumbs (the ruler). Both are
     /// independent of the layout on screen, because the header is as wide as the page and the ruler always
-    /// holds all crumbs. The answer is therefore the same in either layout, so the header cannot flip back
-    /// and forth. The observed elements keep their size in both layouts, so a layout switch does not fire the
-    /// observer again.
+    /// holds all crumbs. The up button has the same width in either layout. The answer is therefore the same
+    /// in either layout, so the header cannot flip back and forth. The observed elements keep their size in
+    /// both layouts, so a layout switch does not fire the observer again.
     [<ReactComponent>]
     static member private Header(crumbs: Crumb[], onNavigate: ProvenanceView -> unit) =
         let boxRef = React.useRef<HTMLElement option> None
@@ -419,63 +419,94 @@ type ProvenanceGraph =
                 ]
             ]
 
+        // The button goes one level up, like the crumb before the current one. It keeps its width, and its label
+        // is cut at the maximum width.
+        let upButton (parent: Crumb) : ReactElement =
+            Html.button [
+                prop.type'.button
+                prop.testId "provenance-up"
+                prop.className
+                    "swt:btn swt:btn-sm swt:btn-outline swt:flex-none swt:max-w-56 swt:gap-1.5 swt:font-normal"
+                prop.ariaLabel $"Back to {parent.Label}"
+                prop.title $"Back to {parent.Label}"
+                prop.onClick (fun _ -> onNavigate parent.Target)
+                prop.children [
+                    Html.i [
+                        prop.ariaHidden true
+                        prop.className "swt:iconify swt:fluent--arrow-left-24-regular swt:size-4 swt:flex-none"
+                    ]
+                    Html.span [
+                        prop.className "swt:min-w-0 swt:truncate"
+                        prop.text (cutLabel parent.Label)
+                    ]
+                ]
+            ]
+
         Html.header [
             prop.className
                 "swt:relative swt:flex swt:flex-none swt:items-center swt:justify-between swt:gap-x-3.5 swt:border-b swt:border-base-300 swt:bg-base-200 swt:px-3.5 swt:py-2.5"
             prop.children [
-                Html.nav [
-                    prop.ariaLabel "Breadcrumb"
-                    // Without the menu nothing has to stick out of the nav, so what does not fit is cut. The list
-                    // of the menu needs the room below the nav.
-                    prop.className (
-                        if narrow && hiddenCount = 0 then
-                            "swt:breadcrumbs swt:min-w-0 swt:overflow-hidden swt:p-0 swt:text-sm"
-                        else
-                            "swt:breadcrumbs swt:min-w-0 swt:overflow-visible swt:p-0 swt:text-sm"
-                    )
-                    prop.children [
-                        Html.ol [
-                            prop.children [
-                                for position, crumb in Array.indexed layout.Visible do
-                                    if position = 1 && hiddenCount > 0 then
-                                        menuItem
+                if crumbs.Length > 1 then
+                    upButton crumbs.[crumbs.Length - 2]
 
-                                    crumbItem position crumb
-                            ]
-                        ]
-                    ]
-                ]
-                // The ruler is the invisible copy of all crumbs. Its box has the width of the header content
-                // area and no height. The ruler inside has its natural width and draws its text with CSS content,
-                // so assistive technology reads each label once.
                 Html.div [
-                    prop.ref boxRef
-                    prop.ariaHidden true
-                    prop.className
-                        "swt:pointer-events-none swt:invisible swt:absolute swt:top-0 swt:right-3.5 swt:left-3.5 swt:h-0 swt:overflow-hidden"
+                    prop.className "swt:relative swt:flex swt:min-w-0 swt:flex-1 swt:items-center"
                     prop.children [
-                        Html.div [
-                            prop.ref fullRef
-                            prop.className
-                                "swt:breadcrumbs swt:w-max swt:max-w-none swt:overflow-visible swt:p-0 swt:text-sm swt:whitespace-nowrap"
+                        Html.nav [
+                            prop.ariaLabel "Breadcrumb"
+                            // Without the menu nothing has to stick out of the nav, so what does not fit is cut. The list
+                            // of the menu needs the room below the nav.
+                            prop.className (
+                                if narrow && hiddenCount = 0 then
+                                    "swt:breadcrumbs swt:min-w-0 swt:overflow-hidden swt:p-0 swt:text-sm"
+                                else
+                                    "swt:breadcrumbs swt:min-w-0 swt:overflow-visible swt:p-0 swt:text-sm"
+                            )
                             prop.children [
                                 Html.ol [
                                     prop.children [
-                                        for position, crumb in Array.indexed crumbs ->
-                                            Html.li [
-                                                prop.key position
-                                                prop.children [
-                                                    Html.span [
-                                                        prop.className (
-                                                            if position = crumbs.Length - 1 then
-                                                                "swt:font-semibold swt:before:content-[attr(data-text)]"
-                                                            else
-                                                                "swt:before:content-[attr(data-text)]"
-                                                        )
-                                                        prop.custom ("data-text", cutLabel crumb.Label)
+                                        for position, crumb in Array.indexed layout.Visible do
+                                            if position = 1 && hiddenCount > 0 then
+                                                menuItem
+
+                                            crumbItem position crumb
+                                    ]
+                                ]
+                            ]
+                        ]
+                        // The ruler is the invisible copy of all crumbs. Its box has the width of the space next to
+                        // the up button and no height. The ruler inside has its natural width and draws its text with
+                        // CSS content, so assistive technology reads each label once.
+                        Html.div [
+                            prop.ref boxRef
+                            prop.ariaHidden true
+                            prop.className
+                                "swt:pointer-events-none swt:invisible swt:absolute swt:top-0 swt:right-0 swt:left-0 swt:h-0 swt:overflow-hidden"
+                            prop.children [
+                                Html.div [
+                                    prop.ref fullRef
+                                    prop.className
+                                        "swt:breadcrumbs swt:w-max swt:max-w-none swt:overflow-visible swt:p-0 swt:text-sm swt:whitespace-nowrap"
+                                    prop.children [
+                                        Html.ol [
+                                            prop.children [
+                                                for position, crumb in Array.indexed crumbs ->
+                                                    Html.li [
+                                                        prop.key position
+                                                        prop.children [
+                                                            Html.span [
+                                                                prop.className (
+                                                                    if position = crumbs.Length - 1 then
+                                                                        "swt:font-semibold swt:before:content-[attr(data-text)]"
+                                                                    else
+                                                                        "swt:before:content-[attr(data-text)]"
+                                                                )
+                                                                prop.custom ("data-text", cutLabel crumb.Label)
+                                                            ]
+                                                        ]
                                                     ]
-                                                ]
                                             ]
+                                        ]
                                     ]
                                 ]
                             ]

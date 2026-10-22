@@ -279,6 +279,53 @@ Vitest.describe (
         )
 
         Vitest.test (
+            "has no up button at the datasets level",
+            longTest,
+            fun () -> promise {
+                render Sample.index |> ignore
+                do! waitNode extraction
+
+                Vitest.expect(present (maybeTestId "provenance-up")).toBe false
+            }
+        )
+
+        Vitest.test (
+            "names the parent level on the up button and returns to the datasets",
+            longTest,
+            fun () -> promise {
+                render Sample.index |> ignore
+                do! waitNode extraction
+                do! open' extraction extractionProcess
+
+                Vitest.expect((byTestId "provenance-up").getAttribute "aria-label").toContain (crumbText 0)
+
+                click (byTestId "provenance-up")
+                do! waitNode extraction
+
+                Vitest.expect(crumbCount ()).toBe 1
+                Vitest.expect((byTestId "provenance-crumb-0").getAttribute "aria-current").toBe "page"
+                Vitest.expect(present (maybeTestId "provenance-up")).toBe false
+            }
+        )
+
+        Vitest.test (
+            "goes from the groups back to the processes of the same dataset",
+            longTest,
+            fun () -> promise {
+                render Sample.index |> ignore
+                do! openGroups ()
+                let dataset = crumbText 1
+
+                click (byTestId "provenance-up")
+                do! waitNode extractionProcess
+
+                Vitest.expect(crumbCount ()).toBe 2
+                Vitest.expect((byTestId "provenance-crumb-1").getAttribute "aria-current").toBe "page"
+                Vitest.expect(crumbText 1).toBe dataset
+            }
+        )
+
+        Vitest.test (
             "switches to the dataset of an external process when it is clicked",
             longTest,
             fun () -> promise {
