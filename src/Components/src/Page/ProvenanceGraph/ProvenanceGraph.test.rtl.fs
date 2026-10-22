@@ -136,6 +136,24 @@ let private selectedOverviewItems () =
 let private overviewItems (row: int) =
     document.querySelectorAll $"[data-testid='provenance-overview-row-{row}'] [data-testid='provenance-overview-item']"
 
+/// The buttons of a row of the overview in the order of the page.
+let private overviewButtons (row: int) : HTMLElement[] =
+    let nodes =
+        document.querySelectorAll $"[data-testid='provenance-overview-row-{row}'] button"
+
+    [|
+        for i in 0 .. nodes.length - 1 -> nodes.[i] :?> HTMLElement
+    |]
+
+/// The buttons of the overview that the Tab key reaches.
+let private overviewTabStops () : HTMLElement[] =
+    let nodes = document.querySelectorAll "[data-testid='provenance-overview'] button"
+
+    [|
+        for i in 0 .. nodes.length - 1 -> nodes.[i] :?> HTMLElement
+    |]
+    |> Array.filter (fun el -> el.tabIndex = 0)
+
 /// The first chip of a row with the given selection.
 let private overviewItem (row: int) (selected: bool) : HTMLElement =
     document.querySelector
@@ -519,12 +537,16 @@ Vitest.describe (
                 Vitest.expect((overviewItems 0).length).toBe Overview.maxItems
 
                 let more = RTL.screen.getAllByTestId "provenance-overview-more"
-                Vitest.expect(more.[0].getAttribute "aria-expanded").toBe "false"
+                // The name of the button is its visible text, which starts with the count.
+                Vitest.expect(isNull (more.[0].getAttribute "aria-label")).toBe true
+                Vitest.expect(more.[0].textContent).toContain "+1"
                 click more.[0]
 
                 Vitest.expect((overviewItems 0).length).toBe 10
                 Vitest.expect(present (maybeTestId "provenance-overview-more")).toBe false
-                Vitest.expect((byTestId "provenance-overview-less").getAttribute "aria-expanded").toBe "true"
+                // An expanded row keeps its button to collapse right after the heading.
+                Vitest.expect(obj.ReferenceEquals((overviewButtons 0).[0], byTestId "provenance-overview-less")).toBe
+                    true
 
                 click (byTestId "provenance-overview-less")
 
@@ -546,6 +568,11 @@ Vitest.describe (
                 click first
 
                 Vitest.expect(isFocused (byTestId "provenance-overview-less")).toBe true
+                // The focus also moves the tab stop to the new button.
+                Vitest.expect(overviewTabStops () |> Array.map (fun el -> el.tabIndex)).toEqual [| 0 |]
+
+                Vitest.expect(obj.ReferenceEquals((overviewTabStops ()).[0], byTestId "provenance-overview-less")).toBe
+                    true
 
                 click (byTestId "provenance-overview-less")
 
@@ -554,6 +581,63 @@ Vitest.describe (
                 Vitest.expect(counts.Count).toBe 2
                 Vitest.expect(isFocused counts.[counts.Count - 1]).toBe true
                 Vitest.expect((byTestId "provenance-overview-row-0").contains counts.[0]).toBe true
+                Vitest.expect(obj.ReferenceEquals((overviewTabStops ()).[0], counts.[counts.Count - 1])).toBe true
+            }
+        )
+
+        Vitest.test (
+            "gives the overview one tab stop, which starts on the selected chip of the row above the deepest one",
+            longTest,
+            fun () -> promise {
+                render Sample.index |> ignore
+                do! openGroups ()
+
+                let stops = overviewTabStops ()
+                Vitest.expect(stops.Length).toBe 1
+                Vitest.expect(stops.[0].getAttribute "aria-current").toBe "true"
+                Vitest.expect((byTestId "provenance-overview-row-0").contains stops.[0]).toBe true
+
+                // The other controls are reached with the arrow keys.
+                Vitest.expect((overviewButtons 1).Length).toBeGreaterThan 0
+                Vitest.expect((overviewButtons 1) |> Array.forall (fun el -> el.tabIndex = -1)).toBe true
+            }
+        )
+
+        Vitest.test (
+            "moves the focus with the arrow keys, Home and End and keeps the tab stop on the focused control",
+            longTest,
+            fun () -> promise {
+                render Sample.index |> ignore
+                do! openGroups ()
+
+                let first = overviewButtons 0
+                Vitest.expect(first.Length).toBeGreaterThan 1
+                first.[0].focus ()
+
+                press first.[0] "ArrowRight"
+                Vitest.expect(isFocused first.[1]).toBe true
+                Vitest.expect(obj.ReferenceEquals((overviewTabStops ()).[0], first.[1])).toBe true
+
+                press first.[1] "End"
+                Vitest.expect(isFocused first.[first.Length - 1]).toBe true
+
+                // The row ends here, so the key leaves the focus where it is.
+                press first.[first.Length - 1] "ArrowRight"
+                Vitest.expect(isFocused first.[first.Length - 1]).toBe true
+
+                press first.[first.Length - 1] "Home"
+                Vitest.expect(isFocused first.[0]).toBe true
+
+                // The row below has no selected button, because its selected item marks the place. Its first
+                // control takes the focus.
+                press first.[0] "ArrowDown"
+                let below = overviewButtons 1
+                Vitest.expect(isFocused below.[0]).toBe true
+
+                // The row above has a selected button, which takes the focus.
+                press below.[0] "ArrowUp"
+                Vitest.expect(document.activeElement.getAttribute "aria-current").toBe "true"
+                Vitest.expect((byTestId "provenance-overview-row-0").contains document.activeElement).toBe true
             }
         )
 

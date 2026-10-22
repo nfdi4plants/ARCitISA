@@ -140,6 +140,114 @@ module private ProvenanceGraphHelper =
         | EmptyKind.NoGroups -> "This process has no inputs or outputs."
         | EmptyKind.NotInArc -> "This selection is not part of the loaded ARC."
 
+    /// The items that a row of the overview shows, and the counts of the items left out before and after them.
+    /// An expanded row shows every item.
+    let overviewShown (row: OverviewRow) (isExpanded: bool) : OverviewItem[] * int * int =
+        if isExpanded then
+            row.Items, 0, 0
+        else
+            Array.sub row.Items row.WindowStart row.WindowCount,
+            row.WindowStart,
+            row.Items.Length - row.WindowStart - row.WindowCount
+
+    /// The key of the chip of an item. The keys of the controls tell them apart for the single tab stop.
+    let overviewItemKey (depth: int) (itemId: string) : string = $"{depth}:item:{itemId}"
+
+    /// The keys of the controls of a row in the order of the page. The selected item of the deepest row marks the
+    /// place and is no control.
+    let overviewControlKeys (depth: int) (row: OverviewRow) (isExpanded: bool) (isDeepest: bool) : string[] =
+        let shown, before, after = overviewShown row isExpanded
+
+        [|
+            if isExpanded && row.Items.Length > row.WindowCount then
+                $"{depth}:less"
+
+            if before > 0 then
+                $"{depth}:more-before"
+
+            for item in shown do
+                if not (item.Selected && isDeepest) then
+                    overviewItemKey depth item.Id
+
+            if after > 0 then
+                $"{depth}:more-after"
+        |]
+
+    /// The control that holds the tab stop while the user has not focused one. It is the selected item of the
+    /// deepest row above the last one, which leads back to that level. A view without such an item takes the
+    /// first control of the last row.
+    let defaultOverviewControl (rows: OverviewRow[]) (expanded: Set<int>) : string option =
+        let selectedAbove =
+            rows
+            |> Array.indexed
+            |> Array.take (max 0 (rows.Length - 1))
+            |> Array.rev
+            |> Array.tryPick (fun (depth, row) ->
+                row.Items
+                |> Array.tryFind (fun item -> item.Selected)
+                |> Option.map (fun item -> overviewItemKey depth item.Id)
+            )
+
+        match selectedAbove, Array.tryLast rows with
+        | Some key, _ -> Some key
+        | None, Some last ->
+            let depth = rows.Length - 1
+            overviewControlKeys depth last (expanded.Contains depth) true |> Array.tryHead
+        | None, None -> None
+
+    /// The key that a control of the overview carries in its data attribute.
+    let overviewControlKey (control: HTMLElement) : string =
+        control.getAttribute "data-overview-key"
+
+    /// The buttons of each row of the overview list, in the order of the page.
+    let overviewControls (list: HTMLElement) : HTMLElement[][] = [|
+        for row in 0 .. list.children.length - 1 ->
+            let buttons = list.children.[row].querySelectorAll "button"
+
+            [|
+                for i in 0 .. buttons.length - 1 -> buttons.[i] :?> HTMLElement
+            |]
+    |]
+
+    /// The control that an arrow key, Home or End moves the focus to from `current`. Left and right stay in the
+    /// row and stop at its ends. Up and down go to the nearest row with controls, to its selected control or else
+    /// to its first one. The answer is None when the key does not move the focus.
+    let nextOverviewControl (controls: HTMLElement[][]) (current: HTMLElement) (key: string) : HTMLElement option =
+        let isCurrent (control: HTMLElement) = obj.ReferenceEquals(control, current)
+
+        match controls |> Array.tryFindIndex (Array.exists isCurrent) with
+        | None -> None
+        | Some rowIndex ->
+            let row = controls.[rowIndex]
+            let position = row |> Array.findIndex isCurrent
+
+            let entryOf (target: HTMLElement[]) =
+                target
+                |> Array.tryFind (fun control -> control.getAttribute "aria-current" = "true")
+                |> Option.orElse (Array.tryHead target)
+
+            let nonEmptyRows =
+                controls |> Array.indexed |> Array.filter (fun (_, target) -> target.Length > 0)
+
+            match key with
+            | "ArrowRight" ->
+                if position + 1 < row.Length then
+                    Some row.[position + 1]
+                else
+                    None
+            | "ArrowLeft" -> if position > 0 then Some row.[position - 1] else None
+            | "Home" -> Array.tryHead row
+            | "End" -> Array.tryLast row
+            | "ArrowDown" ->
+                nonEmptyRows
+                |> Array.tryFind (fun (index, _) -> index > rowIndex)
+                |> Option.bind (snd >> entryOf)
+            | "ArrowUp" ->
+                nonEmptyRows
+                |> Array.tryFindBack (fun (index, _) -> index < rowIndex)
+                |> Option.bind (snd >> entryOf)
+            | _ -> None
+
 open ProvenanceGraphTypes
 open ProvenanceGraphHelper
 
@@ -286,20 +394,41 @@ type ProvenanceGraph =
 
     /// The levels above the current view, one row per level, with the item that leads to the view marked. A click on
     /// an item opens the view of that item, like a click on a node of the level. A row that has more items than it
-    /// shows expands on request, and the rows are collapsed again when the view changes.
+    /// shows expands on request, and the rows are collapsed again when the view changes. The overview has one tab
+    /// stop, and the arrow keys, Home and End move the focus between its controls.
     [<ReactComponent>]
     static member private Overview
         (rows: OverviewRow[], id: string, viewKey: string, onNavigate: ProvenanceView -> unit)
         =
-        // The expanded rows belong to the view they were opened in. The state of another view counts as empty.
+        // The expanded rows and the control with the tab stop belong to the view they were set in. The state of
+        // another view counts as empty.
         let initialState: string * Set<int> = viewKey, Set.empty
         let expandedState, setExpandedState = React.useState initialState
+        let initialActive: string * string = viewKey, ""
+        let activeState, setActiveState = React.useState initialActive
 
         let expanded =
             if fst expandedState = viewKey then
                 snd expandedState
             else
                 Set.empty
+
+        // The last focused control keeps the tab stop as long as it is on the page. Otherwise the default control
+        // takes it.
+        let activeKey =
+            let allKeys =
+                rows
+                |> Array.indexed
+                |> Array.collect (fun (depth, row) ->
+                    overviewControlKeys depth row (expanded.Contains depth) (depth = rows.Length - 1)
+                )
+
+            let focused = if fst activeState = viewKey then snd activeState else ""
+
+            if focused <> "" && Array.contains focused allKeys then
+                Some focused
+            else
+                defaultOverviewControl rows expanded
 
         // The button that expands or collapses a row leaves the page with the click, and the focus would fall to the
         // page. The row waits in the ref until the render has committed, and the layout effect below moves the focus.
@@ -317,56 +446,74 @@ type ProvenanceGraph =
             setExpandedState (viewKey, rowsOpen)
 
         // An expanded row focuses its "Show less" button. A collapsed row focuses its last "+N" button, which is
-        // the count after the window when the row has one. The rows of the list sit in the order of their depth.
+        // the count after the window when the row has one. The focus also moves the tab stop to the button.
         React.useLayoutEffect (
             (fun () ->
                 match pendingFocus.current, listRef.current with
                 | Some(depth, isOpen), Some list ->
                     pendingFocus.current <- None
-                    let row = list.children.[depth]
+                    let controls = overviewControls list
 
-                    if isOpen then
-                        let less = row.querySelector "button[aria-expanded='true']"
+                    if depth < controls.Length then
+                        let wanted =
+                            if isOpen then
+                                controls.[depth]
+                                |> Array.tryFind (fun control -> overviewControlKey control = $"{depth}:less")
+                            else
+                                controls.[depth]
+                                |> Array.filter (fun control ->
+                                    let key = overviewControlKey control
+                                    key = $"{depth}:more-before" || key = $"{depth}:more-after"
+                                )
+                                |> Array.tryLast
 
-                        if not (isNull less) then
-                            (less :?> HTMLElement).focus ()
-                    else
-                        let counts = row.querySelectorAll "button[aria-expanded='false']"
-
-                        if counts.length > 0 then
-                            (counts.[counts.length - 1] :?> HTMLElement).focus ()
+                        wanted |> Option.iter (fun control -> control.focus ())
                 | _ -> ()
             ),
             [| box expandedState |]
         )
 
+        // Only the control with the tab stop can be reached with the Tab key. The others take the arrow keys.
+        let controlProps (key: string) : IReactProperty list = [
+            prop.custom ("data-overview-key", key)
+            prop.tabIndex (if activeKey = Some key then 0 else -1)
+        ]
+
+        let controlClass =
+            "swt:flex-none swt:cursor-pointer swt:rounded swt:px-1 swt:text-base-content/80 swt:hover:bg-base-200 swt:focus-visible:-outline-offset-2"
+
+        // The accessible name of the button is its visible text. The screen reader text completes the count.
         let moreButton (key: string) (depth: int) (count: int) : ReactElement =
-            Html.button [
-                prop.key key
-                prop.type'.button
-                prop.testId "provenance-overview-more"
-                prop.className
-                    "swt:flex-none swt:cursor-pointer swt:rounded swt:px-1 swt:text-base-content/80 swt:hover:bg-base-200"
-                prop.ariaLabel $"Show {count} more"
-                prop.custom ("aria-expanded", false)
-                prop.onClick (fun _ -> setRowOpen depth true)
-                prop.text $"+{count}"
-            ]
+            Html.button (
+                controlProps $"{depth}:more-{key}"
+                @ [
+                    prop.key key
+                    prop.type'.button
+                    prop.testId "provenance-overview-more"
+                    prop.className controlClass
+                    prop.onClick (fun _ -> setRowOpen depth true)
+                    prop.children [
+                        Html.text $"+{count}"
+                        Html.span [ prop.className "swt:sr-only"; prop.text " more" ]
+                    ]
+                ]
+            )
 
         let lessButton (depth: int) : ReactElement =
-            Html.button [
-                prop.key "less"
-                prop.type'.button
-                prop.testId "provenance-overview-less"
-                prop.className
-                    "swt:flex-none swt:cursor-pointer swt:rounded swt:px-1 swt:text-base-content/80 swt:hover:bg-base-200"
-                prop.custom ("aria-expanded", true)
-                prop.onClick (fun _ -> setRowOpen depth false)
-                prop.text "Show less"
-            ]
+            Html.button (
+                controlProps $"{depth}:less"
+                @ [
+                    prop.key "less"
+                    prop.type'.button
+                    prop.testId "provenance-overview-less"
+                    prop.className controlClass
+                    prop.onClick (fun _ -> setRowOpen depth false)
+                    prop.text "Show less"
+                ]
+            )
 
         // The selected item of the deepest row leads to the current view. It marks the place and takes no click.
-        let chip (key: string) (isDeepest: bool) (item: OverviewItem) : ReactElement =
+        let chip (key: string) (depth: int) (isDeepest: bool) (item: OverviewItem) : ReactElement =
             let isHere = item.Selected && isDeepest
 
             let chipStyle =
@@ -408,21 +555,23 @@ type ProvenanceGraph =
             elif item.Selected then
                 Html.button (
                     common
+                    @ controlProps (overviewItemKey depth item.Id)
                     @ [
                         prop.type'.button
                         prop.custom ("aria-current", "true")
                         prop.className
-                            "swt:max-w-40 swt:min-w-0 swt:flex-none swt:cursor-pointer swt:truncate swt:rounded-full swt:border swt:px-2 swt:py-px swt:font-semibold"
+                            "swt:max-w-40 swt:min-w-0 swt:flex-none swt:cursor-pointer swt:truncate swt:rounded-full swt:border swt:px-2 swt:py-px swt:font-semibold swt:focus-visible:-outline-offset-2"
                         prop.onClick (fun _ -> onNavigate item.Target)
                     ]
                 )
             else
                 Html.button (
                     common
+                    @ controlProps (overviewItemKey depth item.Id)
                     @ [
                         prop.type'.button
                         prop.className
-                            "swt:max-w-40 swt:min-w-10 swt:cursor-pointer swt:truncate swt:rounded-full swt:border swt:px-2 swt:py-px swt:text-base-content/80 swt:hover:bg-base-200"
+                            "swt:max-w-40 swt:min-w-10 swt:cursor-pointer swt:truncate swt:rounded-full swt:border swt:px-2 swt:py-px swt:text-base-content/80 swt:hover:bg-base-200 swt:focus-visible:-outline-offset-2"
                         prop.onClick (fun _ -> onNavigate item.Target)
                     ]
                 )
@@ -432,20 +581,7 @@ type ProvenanceGraph =
             let isDeepest = depth = rows.Length - 1
             let isExpanded = expanded.Contains depth
             let hasMore = row.Items.Length > row.WindowCount
-
-            let shown =
-                if isExpanded then
-                    row.Items
-                else
-                    Array.sub row.Items row.WindowStart row.WindowCount
-
-            let before = if isExpanded then 0 else row.WindowStart
-
-            let after =
-                if isExpanded then
-                    0
-                else
-                    row.Items.Length - row.WindowStart - row.WindowCount
+            let shown, before, after = overviewShown row isExpanded
 
             Html.li [
                 prop.key depth
@@ -470,15 +606,19 @@ type ProvenanceGraph =
                     Html.span [
                         prop.key "heading"
                         prop.title row.Heading
-                        prop.className "swt:min-w-0 swt:shrink-[1000] swt:truncate swt:text-base-content/80"
+                        prop.className "swt:min-w-12 swt:shrink-[1000] swt:truncate swt:text-base-content/80"
                         prop.text $"{row.Heading}:"
                     ]
+
+                    // An expanded row can be long. The button to collapse it stays at the start of the row.
+                    if isExpanded && hasMore then
+                        lessButton depth
 
                     if before > 0 then
                         moreButton "before" depth before
 
                     for item in shown do
-                        chip $"item-{item.Id}" isDeepest item
+                        chip $"item-{item.Id}" depth isDeepest item
 
                     if after > 0 then
                         moreButton "after" depth after
@@ -492,20 +632,36 @@ type ProvenanceGraph =
                         ]
 
                     match row.Extra with
-                    | Some extra -> chip "extra" isDeepest extra
+                    | Some extra -> chip "extra" depth isDeepest extra
                     | None -> ()
-
-                    if isExpanded && hasMore then
-                        lessButton depth
                 ]
             ]
 
+        // The panel is at most 40 percent of the page. The page section is its percentage base. A row with
+        // hundreds of items scrolls inside the panel and leaves the graph its room.
         Html.nav [
             prop.id id
             prop.testId "provenance-overview"
             prop.ariaLabel "Location in the ARC"
             prop.className
-                "swt:flex-none swt:border-b swt:border-base-300 swt:bg-base-100 swt:px-3.5 swt:py-2 swt:text-xs"
+                "swt:max-h-[40%] swt:flex-none swt:overflow-y-auto swt:border-b swt:border-base-300 swt:bg-base-100 swt:px-3.5 swt:py-2 swt:text-xs"
+            prop.onFocus (fun (event: FocusEvent) ->
+                let key = overviewControlKey (event.target :?> HTMLElement)
+
+                if not (isNull key) && key <> snd activeState then
+                    setActiveState (viewKey, key)
+            )
+            prop.onKeyDown (fun (event: KeyboardEvent) ->
+                if not (event.altKey || event.ctrlKey || event.metaKey) then
+                    match listRef.current with
+                    | Some list ->
+                        match nextOverviewControl (overviewControls list) (event.target :?> HTMLElement) event.key with
+                        | Some control ->
+                            event.preventDefault ()
+                            control.focus ()
+                        | None -> ()
+                    | None -> ()
+            )
             prop.children [
                 Html.ol [
                     prop.ref listRef
