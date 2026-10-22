@@ -454,8 +454,7 @@ type ProvenanceGraph =
                 ]
             ]
 
-        // The name stays the same in both states, because aria-expanded tells the state. The id of the panel goes
-        // into aria-controls.
+        // The name stays the same in both states, because aria-expanded tells the state.
         let overviewToggle (onToggle: unit -> unit) : ReactElement =
             Html.button [
                 prop.type'.button
