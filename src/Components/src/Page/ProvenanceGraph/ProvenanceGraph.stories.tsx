@@ -161,6 +161,31 @@ export const VeryNarrowHeaderWithMenu: Story = {
   },
 };
 
+// A header between 16rem and 28rem wide shows the arrow of the up button without its label. The name stays in the
+// aria label and the title, and the crumbs, the button and the overview toggle fit.
+export const NarrowHeaderUpIcon: Story = {
+  decorators: [box(360, 480)],
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    await canvas.findByTestId(`graph-node-${extraction}`, {}, wait);
+    await open(canvas, extraction, extractionProcess);
+    await open(canvas, extractionProcess, inputGroup);
+
+    const up = await canvas.findByTestId('provenance-up');
+    await expect(up).toBeVisible();
+    await expect(up).toHaveAttribute('aria-label');
+    await expect(up.querySelector('span')).not.toBeVisible();
+    await expectHeaderFits(canvas, canvasElement, [
+      'provenance-up',
+      'provenance-crumb-0',
+      'provenance-crumb-1',
+      'provenance-crumb-2',
+      'provenance-overview-toggle',
+    ]);
+  },
+};
+
 // A work in progress ARC shows how many rows are unfinished. A table with a protocol only has nothing to draw.
 export const WorkInProgress: Story = {
   args: { index: wipIndex },
