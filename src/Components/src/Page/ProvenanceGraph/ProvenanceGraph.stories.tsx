@@ -186,6 +186,29 @@ export const NarrowHeaderUpIcon: Story = {
   },
 };
 
+// The rows of the overview wrap when they are wider than the panel, so every control stays inside the panel and the
+// panel does not scroll sideways.
+export const WideOverviewRows: Story = {
+  decorators: [box(360, 560)],
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    await openLineage(canvas);
+    const overview = await canvas.findByTestId('provenance-overview');
+
+    await waitFor(() => {
+      const panel = overview.getBoundingClientRect();
+      const controls = Array.from(overview.querySelectorAll('button'));
+
+      expect(controls.length).toBeGreaterThan(0);
+      for (const control of controls) {
+        expect(control.getBoundingClientRect().right).toBeLessThanOrEqual(panel.right + 1);
+      }
+      expect(overview.scrollWidth).toBeLessThanOrEqual(overview.clientWidth + 1);
+    }, wait);
+  },
+};
+
 // A work in progress ARC shows how many rows are unfinished. A table with a protocol only has nothing to draw.
 export const WorkInProgress: Story = {
   args: { index: wipIndex },

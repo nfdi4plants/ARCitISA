@@ -153,7 +153,3 @@ let select (view: ProvenanceView) (rows: OverviewRow[]) : OverviewRow[] =
 
         Array.append (Array.sub rows 0 3) [| marked |]
     | _ -> rows
-
-/// The rows of a view, as the page shows them.
-let rows (index: ProvenanceIndex) (view: ProvenanceView) : OverviewRow[] =
-    baseRows index (queryView view) |> select view

@@ -5,6 +5,7 @@ module internal Swate.Components.Page.ProvenanceGraph.OverviewTests
 // data, never typed as literals.
 
 open Vitest
+open Swate.Components.Shared.ProvenanceGraph.Types
 open Swate.Components.Page.ProvenanceGraph.Types
 open Swate.Components.Page.ProvenanceGraph.Overview
 
@@ -13,6 +14,10 @@ module Sample = Swate.Components.Page.ProvenanceGraphSample
 let private dataset = "assays/Extraction/"
 let private processKey = "assays/Extraction/::Extraction"
 let private group = processKey + "#in0"
+
+/// The rows of a view, composed the way the page composes them.
+let private rows (index: ProvenanceIndex) (view: ProvenanceView) : OverviewRow[] =
+    baseRows index (queryView view) |> select view
 
 /// The ids of the selected items of a row, including the extra item.
 let private selectedIds (row: OverviewRow) : string[] =

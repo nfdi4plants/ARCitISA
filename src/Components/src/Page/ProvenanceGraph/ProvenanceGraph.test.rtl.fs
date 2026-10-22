@@ -17,7 +17,7 @@ module internal Swate.Components.Page.ProvenanceGraph.ProvenanceGraphTests
 // state of a view that cannot be computed or drawn. The header has an up button that goes to the parent level
 // (also for an external process, and after the groups). The location overview has no toggle at the datasets
 // level, marks the opened dataset, hides and shows through its toggle, and has a row per level above the view.
-// Its chips open the item they name, the selected chip of an upper row returns to that level, and the deepest
+// Its chips open the item they name. The selected chip of an upper row returns to that level, and the deepest
 // selected item only marks the place (a lineage node outside the group is appended as the selected item). A row
 // with more items than it shows expands and collapses. The breadcrumbs stay mounted when the up button appears,
 // and the canvas stays mounted when the overview comes and goes. The test for the focus that stays where the
@@ -243,12 +243,21 @@ let private chainIndex (length: int) : ProvenanceIndex =
         )
     )
 
-/// An ARC with `count` assays and no tables. Each assay is a dataset, so the datasets row of the overview is long.
+/// An ARC with `count` assays. Each assay is a dataset with one process "t", so the datasets row of the overview is
+/// long and every dataset has a level below it.
 let private manyDatasetsIndex (count: int) : ProvenanceIndex =
-    let assays =
-        ResizeArray [
-            for i in 1..count -> ArcAssay.create (identifier = $"Assay{i}")
-        ]
+    let headers = [
+        CompositeHeader.Input IOType.Sample
+        CompositeHeader.Output IOType.Sample
+    ]
+
+    let assay (i: int) =
+        ArcAssay.create (
+            identifier = $"Assay{i}",
+            tables = ResizeArray [ table "t" headers [ [ text $"in{i}"; text $"out{i}" ] ] ]
+        )
+
+    let assays = ResizeArray [ for i in 1..count -> assay i ]
 
     let arc = ArcInvestigation.create (identifier = "inv", assays = assays)
 
@@ -430,6 +439,43 @@ Vitest.describe (
 
                 Vitest.expect((byTestId "provenance-overview-toggle").getAttribute "aria-expanded").toBe "true"
                 Vitest.expect(present (maybeTestId "provenance-overview")).toBe true
+            }
+        )
+
+        Vitest.test (
+            "keeps the overview hidden after a navigation",
+            longTest,
+            fun () -> promise {
+                render Sample.index |> ignore
+                do! waitNode extraction
+                do! open' extraction extractionProcess
+
+                click (byTestId "provenance-overview-toggle")
+                do! open' extractionProcess inputGroup
+
+                Vitest.expect((byTestId "provenance-overview-toggle").getAttribute "aria-expanded").toBe "false"
+                Vitest.expect(present (maybeTestId "provenance-overview")).toBe false
+            }
+        )
+
+        Vitest.test (
+            "collapses an expanded row when the view comes back",
+            longTest,
+            fun () -> promise {
+                render (manyDatasetsIndex 10) |> ignore
+                do! waitNode "assays/Assay5/"
+                do! open' "assays/Assay5/" "assays/Assay5/::t"
+
+                click (RTL.screen.getAllByTestId "provenance-overview-more").[0]
+                Vitest.expect((overviewItems 0).length).toBe 10
+
+                // The overview stays mounted while the view changes to the groups and back.
+                do! open' "assays/Assay5/::t" "assays/Assay5/::t#in0"
+                click (byTestId "provenance-up")
+                do! waitNode "assays/Assay5/::t"
+
+                Vitest.expect((overviewItems 0).length).toBe Overview.maxItems
+                Vitest.expect(present (maybeTestId "provenance-overview-less")).toBe false
             }
         )
 
@@ -739,7 +785,7 @@ Vitest.describe (
                 Vitest.expect(crumbCount ()).toBe 3
                 Vitest.expect(crumbText 1).toBe "Extraction"
 
-                // The up button leads to the processes of the owning dataset, not to those of the first dataset.
+                // The up button leads to the processes of the dataset that owns the process.
                 let owner = crumbText 1
                 click (byTestId "provenance-up")
                 do! waitNode extractionProcess

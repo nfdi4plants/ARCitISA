@@ -308,6 +308,7 @@
     <Compile Include="Page\ProvenanceGraph\ToCanvas.fs" />
     <Compile Include="Page\ProvenanceGraph\Header.fs" />
     <Compile Include="Page\ProvenanceGraph\Overview.fs" />
+    <Compile Include="Page\ProvenanceGraph\OverviewNav.fs" />
     <Compile Include="Page\ProvenanceGraph\ProvenanceGraph.sample.fs" />
     <Compile Include="Page\ProvenanceGraph\ProvenanceGraph.fs" />
     <Compile Include="Page\ProvenanceGraph\ProvenanceGraph.test.rtl.fs" />
