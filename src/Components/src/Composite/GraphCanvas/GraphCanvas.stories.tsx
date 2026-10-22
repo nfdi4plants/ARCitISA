@@ -2,6 +2,7 @@ import React from 'react';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 import { GraphCanvas } from './GraphCanvas.fs.js';
+import { svgMarkup } from './ImageExport.fs.js';
 import type { CanvasEdge, CanvasNode, CanvasPill } from './Types.fs.js';
 
 // The Fable records are classes in the generated types. The stories build plain objects with the same fields,
@@ -206,6 +207,26 @@ export const Minimap: Story = {
   },
 };
 
+// The RGBA bytes that a CSS color resolves to. A canvas converts every color syntax that the browser knows.
+function rgbaOf(color: string): number[] {
+  const surface = document.createElement('canvas');
+  surface.width = surface.height = 1;
+  const context = surface.getContext('2d')!;
+  context.fillStyle = color;
+  context.fillRect(0, 0, 1, 1);
+  return Array.from(context.getImageData(0, 0, 1, 1).data);
+}
+
+// The computed base-100 color, read through a probe element inside the root as ImageExport.svgMarkup reads it.
+function base100Of(root: HTMLElement): string {
+  const probe = document.createElement('span');
+  probe.style.color = 'var(--color-base-100)';
+  root.appendChild(probe);
+  const color = getComputedStyle(probe).color;
+  probe.remove();
+  return color;
+}
+
 // The image holds the whole graph, also the nodes that are scrolled out of the 480 by 320 px box.
 export const ImageExport: Story = {
   args: {
@@ -225,11 +246,39 @@ export const ImageExport: Story = {
     const canvas = within(canvasElement);
 
     const download = await canvas.findByTestId('graph-image-download', {}, { timeout: 10000 });
+    const root = canvas.getByTestId('graph-canvas');
+    const mainSvg = canvas.getByTestId('graph-canvas-content').querySelector('svg')!;
 
-    // The layout size is the viewBox of the main svg. The scale is 2 unless the size limits of the export apply.
-    const viewBox = canvas.getByTestId('graph-canvas-content').querySelector('svg')!.getAttribute('viewBox')!.split(' ').map(Number);
+    // The layout size is the viewBox of the main svg.
+    const viewBox = mainSvg.getAttribute('viewBox')!.split(' ').map(Number);
     const [layoutWidth, layoutHeight] = [viewBox[2], viewBox[3]];
-    const factor = Math.min(2, 8192 / layoutWidth, 8192 / layoutHeight, Math.sqrt(16777216 / (layoutWidth * layoutHeight)));
+
+    // The export must not depend on what is visible, so the canvas is zoomed in and scrolled to the middle first.
+    await userEvent.click(canvas.getByTestId('graph-zoom-in'));
+    await waitFor(() => expect(Number(mainSvg.getAttribute('width'))).toBeGreaterThan(layoutWidth));
+    root.scrollLeft = (root.scrollWidth - root.clientWidth) / 2;
+    root.scrollTop = (root.scrollHeight - root.clientHeight) / 2;
+
+    const rootBox = root.getBoundingClientRect();
+    const hidden = canvas.getAllByTestId(/^graph-node-/).find((node) => {
+      const box = node.getBoundingClientRect();
+      return box.right <= rootBox.left || box.left >= rootBox.right || box.bottom <= rootBox.top || box.top >= rootBox.bottom;
+    });
+    expect(hidden).toBeDefined();
+
+    // The markup is a standalone copy of the drawing: computed colors only, nothing interactive, the background first.
+    const background = base100Of(root);
+    const markup = svgMarkup(mainSvg, root, layoutWidth, layoutHeight);
+    for (const forbidden of ['var(', 'color-mix(', ' class=', ' tabindex=', ' role=', ' aria-', ' data-testid=', '<title']) {
+      expect(markup).not.toContain(forbidden);
+    }
+    const copy = new DOMParser().parseFromString(markup, 'image/svg+xml').documentElement;
+    expect(copy.localName).toBe('svg');
+    expect(Number(copy.getAttribute('width'))).toBe(layoutWidth);
+    expect(Number(copy.getAttribute('height'))).toBe(layoutHeight);
+    expect(copy.getAttribute('viewBox')).toBe(`0 0 ${layoutWidth} ${layoutHeight}`);
+    expect(copy.firstElementChild!.localName).toBe('rect');
+    expect(copy.firstElementChild!.getAttribute('fill')).toBe(background);
 
     // The click on the anchor is captured, so the story does not navigate or open a save dialog.
     const originalClick = HTMLAnchorElement.prototype.click;
@@ -249,16 +298,41 @@ export const ImageExport: Story = {
     const png = await (await fetch(saved!.href)).blob();
     expect(png.type).toBe('image/png');
     const bitmap = await createImageBitmap(png);
-    expect(bitmap.width).toBe(Math.floor(layoutWidth * factor));
-    expect(bitmap.height).toBe(Math.floor(layoutHeight * factor));
-    bitmap.close();
 
-    // The copy button needs a secure context and ClipboardItem. A browser without them shows no button.
-    const copy = canvas.queryByTestId('graph-image-copy');
-    if (!copy) {
+    // The image has the size of the layout at the factor 2, which this small graph gets, and keeps its proportions.
+    expect(Math.abs(bitmap.width - 2 * layoutWidth)).toBeLessThan(1);
+    expect(Math.abs(bitmap.height - 2 * layoutHeight)).toBeLessThan(1);
+    expect(Math.abs((bitmap.height * layoutWidth) / layoutHeight - bitmap.width)).toBeLessThanOrEqual(1 + layoutWidth / layoutHeight);
+
+    const surface = document.createElement('canvas');
+    surface.width = bitmap.width;
+    surface.height = bitmap.height;
+    const context = surface.getContext('2d', { willReadFrequently: true })!;
+    context.drawImage(bitmap, 0, 0);
+    bitmap.close();
+    const pixelAt = (x: number, y: number) => Array.from(context.getImageData(Math.floor(x), Math.floor(y), 1, 1).data);
+
+    // The top left corner shows the background of the page.
+    const corner = pixelAt(0, 0);
+    const expectedBackground = rgbaOf(background);
+    corner.forEach((channel, index) => expect(Math.abs(channel - expectedBackground[index])).toBeLessThanOrEqual(1));
+
+    // A node that is outside the visible area is in the image. Its colored stripe, at the middle of its height,
+    // differs from the background.
+    const [x, y] = hidden!.getAttribute('transform')!.match(/-?[\d.]+/g)!.map(Number);
+    const nodeHeight = Number(hidden!.querySelector('rect')!.getAttribute('height'));
+    expect(pixelAt((x + 2) * 2, (y + nodeHeight / 2) * 2).slice(0, 3)).not.toEqual(corner.slice(0, 3));
+
+    // The copy button needs a secure context and ClipboardItem. Where the browser has them, the button must be there.
+    const copyButton = canvas.queryByTestId('graph-image-copy');
+    if (window.isSecureContext) {
+      expect(copyButton).not.toBeNull();
+    }
+    if (!copyButton) {
       return;
     }
 
+    await waitFor(() => expect(copyButton).toHaveAttribute('aria-disabled', 'false'));
     let item: ClipboardItem | undefined;
     Object.defineProperty(navigator.clipboard, 'write', {
       configurable: true,
@@ -268,8 +342,9 @@ export const ImageExport: Story = {
     });
 
     try {
-      await userEvent.click(copy);
-      await waitFor(() => expect(item).toBeDefined(), { timeout: 10000 });
+      copyButton.click();
+      // write runs inside the click handler, before the image exists. A wait here would hide a lost user action.
+      expect(item).toBeDefined();
     } finally {
       // The stub is an own property of the instance, so deleting it brings back the method of the prototype.
       delete (navigator.clipboard as { write?: unknown }).write;

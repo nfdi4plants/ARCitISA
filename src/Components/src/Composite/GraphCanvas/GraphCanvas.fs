@@ -556,7 +556,7 @@ type GraphCanvas =
 
     /// The whole drawing scaled down, with the visible part marked. Pressing or dragging on it scrolls the root
     /// so that the pointer's point is in the middle. It sits beside the scroll root, so it cannot change the
-    /// scroll size. Keyboard and screen reader users scroll the region itself, so the minimap is hidden from them.
+    /// scroll size. The minimap is a pointer shortcut for scrolling, so it is hidden from assistive technology.
     /// The visible part is state of this component, so scrolling does not render the canvas.
     [<ReactComponent>]
     static member private Minimap
@@ -568,7 +568,9 @@ type GraphCanvas =
             boxWidth: float,
             boxHeight: float
         ) =
-        let k = Minimap.scale drawn.LayoutWidth drawn.LayoutHeight
+        let frameWidth, frameHeight =
+            Minimap.frameSize boxWidth boxHeight drawn.LayoutWidth drawn.LayoutHeight
+
         let visible, setVisible = React.useState<Rect option> None
         let lastVisible = React.useRef<Rect option> None
         let dragging = React.useRef false
@@ -618,10 +620,18 @@ type GraphCanvas =
 
         let centerAt (event: PointerEvent) =
             match rootRef.current, contentRef.current with
-            | Some root, Some content when k > 0.0 ->
+            | Some root, Some content ->
                 let area = (event.currentTarget :?> Element).getBoundingClientRect ()
-                let x = (event.clientX - area.left) / k
-                let y = (event.clientY - area.top) / k
+
+                let x, y =
+                    Minimap.pointerToLayout
+                        boxWidth
+                        boxHeight
+                        drawn.LayoutWidth
+                        drawn.LayoutHeight
+                        (event.clientX - area.left)
+                        (event.clientY - area.top)
+
                 let left, top = Minimap.centerOn (readGeometry root content zoom) x y
                 root.scrollLeft <- left
                 root.scrollTop <- top
@@ -639,9 +649,10 @@ type GraphCanvas =
                 Svg.svg [
                     svg.xmlns "http://www.w3.org/2000/svg"
                     svg.className "swt:block"
-                    svg.width (k * drawn.LayoutWidth)
-                    svg.height (k * drawn.LayoutHeight)
+                    svg.width frameWidth
+                    svg.height frameHeight
                     svg.custom ("viewBox", $"0 0 {drawn.LayoutWidth} {drawn.LayoutHeight}")
+                    svg.custom ("preserveAspectRatio", "xMidYMid meet")
                     svg.onPointerDown (fun (event: PointerEvent) ->
                         event.preventDefault ()
                         dragging.current <- true
@@ -649,7 +660,8 @@ type GraphCanvas =
                         tryCapturePointer (event.currentTarget :?> Element) event.pointerId
                     )
                     svg.onPointerMove (fun (event: PointerEvent) ->
-                        if dragging.current then
+                        // A move without the primary button is a hover, also after a release that was never reported.
+                        if dragging.current && (int event.buttons &&& 1) <> 0 then
                             centerAt event
                     )
                     svg.onPointerUp stopDragging
@@ -669,13 +681,16 @@ type GraphCanvas =
 
     /// The buttons that save the whole graph as a PNG file or copy it to the clipboard, and the notice about the
     /// result. They render in the zoom group. The state of an export belongs here, so a running export does
-    /// not render the canvas. The image has the size of the layout, whatever the zoom and the scroll position are.
+    /// not render the canvas. The image shows the whole layout, whatever the zoom and the scroll position.
     [<ReactComponent>]
     static member private ExportControls
         (drawn: GraphLayout, svgRef: IRefValue<Element option>, rootRef: IRefValue<HTMLElement option>, fileName: string) =
         let busy, setBusy = React.useState false
         let notice, setNotice = React.useState<string option> None
         let timer = React.useRef None
+        let mounted = React.useRef false
+        // The click handlers read this, because the state of a render comes too late for a second click in a row.
+        let working = React.useRef false
 
         let clearTimer () =
             match timer.current with
@@ -684,7 +699,17 @@ type GraphCanvas =
                 timer.current <- None
             | None -> ()
 
-        React.useEffect ((fun () -> FsReact.createDisposable clearTimer), [||])
+        React.useEffect (
+            (fun () ->
+                mounted.current <- true
+
+                FsReact.createDisposable (fun () ->
+                    mounted.current <- false
+                    clearTimer ()
+                )
+            ),
+            [||]
+        )
 
         let showNotice (text: string) =
             clearTimer ()
@@ -701,78 +726,114 @@ type GraphCanvas =
                     )
                 )
 
+        // Every path of an export ends here, so the buttons never stay busy. The canvas may be gone by then.
+        let settle (message: string option) =
+            working.current <- false
+
+            if mounted.current then
+                setBusy false
+
+                match message with
+                | Some text -> showNotice text
+                | None -> ()
+
         let width = drawn.LayoutWidth
         let height = drawn.LayoutHeight
 
-        let fail (message: string) (error: obj) =
-            Browser.Dom.console.error (message, error)
-            setBusy false
-            showNotice message
+        // The heavy work waits for the next frame, so the busy state is painted first. The elements are read after
+        // the wait, because the canvas may have changed in the meantime.
+        let render () : JS.Promise<Blob> = promise {
+            do! ImageExport.nextFrame ()
 
-        let download () =
             match svgRef.current, rootRef.current with
             | Some svg, Some root ->
+                return! ImageExport.renderPng (ImageExport.svgMarkup svg root width height) width height
+            | _ -> return! Promise.reject (exn "The graph is no longer shown.")
+        }
+
+        let failToCreate (error: obj) =
+            Browser.Dom.console.error ("Could not create the image", error)
+            settle (Some "Could not create the image.")
+
+        let download () =
+            if not working.current then
+                working.current <- true
                 setBusy true
 
                 try
-                    let markup = ImageExport.svgMarkup svg root width height
-
-                    (ImageExport.renderPng markup width height)
+                    (render ())
                         .``then`` (
                             (fun blob ->
-                                ImageExport.downloadBlob blob fileName
-                                setBusy false
+                                try
+                                    ImageExport.downloadBlob blob fileName
+                                    settle None
+                                with error ->
+                                    failToCreate error
                             ),
-                            (fun error -> fail "Could not create the image." error)
+                            failToCreate
                         )
                     |> ignore
                 with error ->
-                    fail "Could not create the image." error
-            | _ -> ()
+                    failToCreate error
 
-        // The markup is built before the PNG, and write is called before the PNG exists: the clipboard
-        // accepts the click as the user action only when write runs synchronously in the handler.
+        // write runs synchronously in the handler, before the PNG exists: the clipboard accepts the click as the
+        // user action only then. The PNG promise logs its own error and marks the failure, because write rejects
+        // without saying whether the rendering or the clipboard failed.
         let copy () =
-            match svgRef.current, rootRef.current with
-            | Some svg, Some root ->
+            if not working.current then
+                working.current <- true
                 setBusy true
+                let renderFailed = ref false
 
                 try
-                    let markup = ImageExport.svgMarkup svg root width height
-                    let png = ImageExport.renderPng markup width height
+                    let png = promise {
+                        try
+                            return! render ()
+                        with error ->
+                            Browser.Dom.console.error ("Could not create the image", error)
+                            renderFailed.Value <- true
+                            return! Promise.reject error
+                    }
 
                     (ImageExport.copyPng png)
                         .``then`` (
-                            (fun () ->
-                                setBusy false
-                                showNotice "Image copied."
-                            ),
+                            (fun () -> settle (Some "Image copied.")),
                             (fun error ->
-                                let message =
-                                    if Dom.errorName error = "NotAllowedError" then
-                                        "Could not copy the image. Click the graph window and try again."
-                                    else
-                                        "Could not copy the image."
+                                if renderFailed.Value then
+                                    settle (Some "Could not create the image.")
+                                else
+                                    Browser.Dom.console.error ("Could not copy the image", error)
 
-                                Browser.Dom.console.error ("Could not copy the image", error)
-                                setBusy false
-                                showNotice message
+                                    settle (
+                                        Some(
+                                            if Dom.errorName error = "NotAllowedError" then
+                                                "Could not copy the image. Click the graph window and try again."
+                                            else
+                                                "Could not copy the image."
+                                        )
+                                    )
                             )
                         )
                     |> ignore
                 with error ->
-                    fail "Could not copy the image." error
-            | _ -> ()
+                    Browser.Dom.console.error ("Could not copy the image", error)
+                    settle (Some "Could not copy the image.")
 
+        // aria-disabled keeps the focus on the button, which disabled would drop. The handlers ignore clicks while busy.
         let exportButton (testId: string) (label: string) (icon: string) (onClick: unit -> unit) =
             Html.button [
                 prop.type'.button
                 prop.testId testId
                 prop.key testId
-                prop.className "swt:btn swt:btn-ghost swt:btn-square swt:btn-sm"
+                prop.className (
+                    if busy then
+                        "swt:btn swt:btn-ghost swt:btn-square swt:btn-sm swt:btn-disabled"
+                    else
+                        "swt:btn swt:btn-ghost swt:btn-square swt:btn-sm"
+                )
                 prop.ariaLabel label
                 prop.title label
-                prop.disabled busy
+                prop.custom ("aria-disabled", busy)
                 prop.onClick (fun _ -> onClick ())
                 prop.children [ Html.i [ prop.className icon; prop.ariaHidden true ] ]
             ]
@@ -787,7 +848,7 @@ type GraphCanvas =
                 prop.custom ("aria-live", "polite")
                 prop.className (
                     if notice.IsSome then
-                        "swt:px-1 swt:text-xs swt:whitespace-nowrap"
+                        "swt:max-w-48 swt:px-1 swt:text-xs swt:whitespace-normal"
                     else
                         "swt:sr-only"
                 )
@@ -1301,16 +1362,17 @@ type GraphCanvas =
                 prop.text glyph
             ]
 
-        let minimapToggle () =
-            let label = if minimapOpen then "Hide minimap" else "Show minimap"
+        // The minimap needs a graph that does not fit and a box with room for it.
+        let minimapAvailable = overflowing && Minimap.fitsBox boxWidth boxHeight
 
+        let minimapToggle () =
             Html.button [
                 prop.type'.button
                 prop.testId "graph-minimap-toggle"
                 prop.className "swt:btn swt:btn-ghost swt:btn-square swt:btn-sm"
                 prop.ariaPressed minimapOpen
-                prop.ariaLabel label
-                prop.title label
+                prop.ariaLabel "Minimap"
+                prop.title "Minimap"
                 prop.onClick (fun _ -> setMinimapOpen (not minimapOpen))
                 prop.children [
                     Html.i [
@@ -1368,10 +1430,10 @@ type GraphCanvas =
                         prop.className
                             "swt:absolute swt:right-3 swt:bottom-3 swt:z-20 swt:flex swt:items-center swt:gap-1.5 swt:rounded-lg swt:border swt:border-(color:--graph-border) swt:bg-base-100 swt:p-1 swt:text-xs swt:tabular-nums swt:shadow-md"
                         prop.role.group
-                        prop.ariaLabel "Graph zoom"
+                        prop.ariaLabel "Graph view controls"
                         prop.children [
                             // The toggle keeps its slot while it is absent, so the buttons after it are not remounted and keep their focus.
-                            if overflowing then minimapToggle () else Html.none
+                            if minimapAvailable then minimapToggle () else Html.none
                             zoomButton "graph-zoom-out" "Zoom out" "−" (zoom <= minZoom) (max minZoom (zoom - zoomStep))
                             Html.span [
                                 prop.className "swt:min-w-10 swt:text-center"
@@ -1386,7 +1448,7 @@ type GraphCanvas =
                         ]
                     ]
                 match drawn with
-                | Some drawn when overflowing && minimapOpen ->
+                | Some drawn when minimapAvailable && minimapOpen ->
                     GraphCanvas.Minimap(drawn, zoom, rootRef, contentRef, boxWidth, boxHeight)
                 | _ -> Html.none
             ]

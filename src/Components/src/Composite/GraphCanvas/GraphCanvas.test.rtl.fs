@@ -1450,14 +1450,15 @@ Vitest.describe (
         )
 )
 
-// Minimap. The box shows 300x200 px of a scroll area of 5000x3000 px, so the graph overflows it.
+// Minimap. The box shows 300x240 px of a scroll area of 5000x3000 px, so the graph overflows it.
 
-// The root sits at the origin and the drawing 30px to the right of it and 20px below. The svg of the minimap sits at (100, 200).
+// The drawing starts 30px to the right of the root and 20px below it, when the root is not scrolled, and moves
+// with the scroll position as it does in a browser. The svg of the minimap sits at (100, 200).
 [<Emit("""(() => {
     const original = Element.prototype.getBoundingClientRect;
     const rect = (top, left, width, height) => ({ top, left, bottom: top + height, right: left + width, x: left, y: top, width, height, toJSON() {} });
     Element.prototype.getBoundingClientRect = function () {
-        if (this.getAttribute('data-testid') === 'graph-canvas-content') return rect(20, 30, 0, 0);
+        if (this.getAttribute('data-testid') === 'graph-canvas-content') return rect(20 - this.parentElement.scrollTop, 30 - this.parentElement.scrollLeft, 0, 0);
         if (this.parentElement?.getAttribute('data-testid') === 'graph-minimap') return rect(200, 100, Number(this.getAttribute('width')), Number(this.getAttribute('height')));
         return rect(0, 0, 0, 0);
     };
@@ -1469,17 +1470,50 @@ Vitest.describe (
     "GraphCanvas minimap",
     fun () ->
         let overflowBox () =
-            stubBox 300.0 200.0 300.0 200.0
+            stubBox 300.0 240.0 300.0 240.0
             setScrollSize 5000.0 3000.0
+
+        // What the canvas reads from the stubbed DOM.
+        let geometryAt (scrollLeft: float) (scrollTop: float) (zoom: float) : ScrollGeometry = {
+            ScrollLeft = scrollLeft
+            ScrollTop = scrollTop
+            ClientWidth = 300.0
+            ClientHeight = 240.0
+            ScrollWidth = 5000.0
+            ScrollHeight = 3000.0
+            OffsetX = 30.0
+            OffsetY = 20.0
+            Zoom = zoom
+        }
 
         let minimapEl () : HTMLElement option =
             RTL.screen.queryByTestId "graph-minimap"
+
+        let minimapSvg () : HTMLElement =
+            unbox<HTMLElement> (((minimapEl ()).Value).querySelector "svg")
 
         let toggleButton () : HTMLElement =
             RTL.screen.getByTestId "graph-minimap-toggle"
 
         let minimapShown () : JS.Promise<unit> =
             eventually (fun () -> Vitest.expect(minimapEl().IsSome).toBe true)
+
+        let numberAttribute (el: HTMLElement) (name: string) : float = float (el.getAttribute name)
+
+        let pointer (name: string) (x: float) (y: float) (buttons: int) =
+            RTL.fireEvent.custom (
+                name,
+                minimapSvg (),
+                {|
+                    clientX = x
+                    clientY = y
+                    button = 0
+                    buttons = buttons
+                    pointerId = 1
+                    isPrimary = true
+                    pointerType = "mouse"
+                |}
+            )
 
         Vitest.test (
             "draws a rect for every node and the visible part when the graph overflows the box",
@@ -1506,6 +1540,21 @@ Vitest.describe (
             }
         )
 
+        for name, width, height in [ "narrow", 259.0, 240.0; "short", 300.0, 219.0 ] do
+            Vitest.test (
+                $"shows neither the minimap nor its toggle in a {name} box",
+                fun () -> promise {
+                    stubBox width height width height
+                    setScrollSize 5000.0 3000.0
+                    render defaults |> ignore
+                    do! drawn ()
+                    do! settle ()
+
+                    Vitest.expect(minimapEl().IsNone).toBe true
+                    Vitest.expect((RTL.screen.queryByTestId "graph-minimap-toggle").IsNone).toBe true
+                }
+            )
+
         Vitest.test (
             "hides and shows the minimap with the toggle, which reports its state",
             fun () -> promise {
@@ -1527,8 +1576,8 @@ Vitest.describe (
         Vitest.test (
             "keeps the focus on the zoom button when its click makes the graph overflow",
             fun () -> promise {
-                stubBox 300.0 200.0 300.0 200.0
-                setScrollSize 300.0 200.0
+                stubBox 300.0 240.0 300.0 240.0
+                setScrollSize 300.0 240.0
                 render defaults |> ignore
                 do! drawn ()
                 Vitest.expect((RTL.screen.queryByTestId "graph-minimap-toggle").IsNone).toBe true
@@ -1545,7 +1594,7 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "scrolls the canvas so that the pressed point of the minimap is in the middle",
+            "marks the visible part of the layout, which follows the scroll position and the zoom",
             fun () -> promise {
                 overflowBox ()
                 stubMinimapRects ()
@@ -1553,42 +1602,79 @@ Vitest.describe (
                 render defaults |> ignore
                 do! minimapShown ()
 
-                let k = Minimap.scale laid.LayoutWidth laid.LayoutHeight
-                let x = 0.75 * laid.LayoutWidth
-                let y = 0.75 * laid.LayoutHeight
+                let viewportEl () =
+                    RTL.screen.getByTestId "graph-minimap-viewport"
 
-                let geometry: ScrollGeometry = {
-                    ScrollLeft = 0.0
-                    ScrollTop = 0.0
-                    ClientWidth = 300.0
-                    ClientHeight = 200.0
-                    ScrollWidth = 5000.0
-                    ScrollHeight = 3000.0
-                    OffsetX = 30.0
-                    OffsetY = 20.0
-                    Zoom = 1.0
-                }
+                // The marker matches Minimap.viewport of the stubbed geometry, x, y, width and height.
+                let expectMarker (zoom: float) (scrollLeft: float) (scrollTop: float) : JS.Promise<unit> =
+                    let expected =
+                        (Minimap.viewport (geometryAt scrollLeft scrollTop zoom) laid.LayoutWidth laid.LayoutHeight)
+                            .Value
 
-                let expectedLeft, expectedTop = Minimap.centerOn geometry x y
-                // The point is far enough from the origin that clamping does not hide a wrong conversion.
-                Vitest.expect(expectedLeft).toBeGreaterThan 0.0
+                    eventually (fun () ->
+                        Vitest.expect(numberAttribute (viewportEl ()) "x").toBeCloseTo expected.Left
+                        Vitest.expect(numberAttribute (viewportEl ()) "y").toBeCloseTo expected.Top
 
-                RTL.fireEvent.custom (
-                    "pointerDown",
-                    unbox<HTMLElement> (((minimapEl ()).Value).querySelector "svg"),
-                    {|
-                        clientX = 100.0 + k * x
-                        clientY = 200.0 + k * y
-                        button = 0
-                        buttons = 1
-                        pointerId = 1
-                        isPrimary = true
-                        pointerType = "mouse"
-                    |}
-                )
+                        Vitest
+                            .expect(numberAttribute (viewportEl ()) "width")
+                            .toBeCloseTo (expected.Right - expected.Left)
 
-                Vitest.expect(scrollLeftOf (region ())).toBeCloseTo expectedLeft
-                Vitest.expect(scrollTopOf (region ())).toBeCloseTo expectedTop
+                        Vitest
+                            .expect(numberAttribute (viewportEl ()) "height")
+                            .toBeCloseTo (expected.Bottom - expected.Top)
+                    )
+
+                do! expectMarker 1.0 0.0 0.0
+
+                setScrollLeft (region ()) 200.0
+                setScrollTop (region ()) 30.0
+                RTL.fireEvent.custom ("scroll", region ())
+                do! expectMarker 1.0 200.0 30.0
+                let widthAtFullSize = numberAttribute (viewportEl ()) "width"
+
+                click (RTL.screen.getByTestId "graph-zoom-in")
+                do! expectMarker 1.25 200.0 30.0
+                Vitest.expect(numberAttribute (viewportEl ()) "width").toBeLessThan widthAtFullSize
+            }
+        )
+
+        Vitest.test (
+            "scrolls the canvas to the pressed point and follows the pointer only while the button is down",
+            fun () -> promise {
+                overflowBox ()
+                stubMinimapRects ()
+                let! laid = realLayout nodes edges unlimited
+                render defaults |> ignore
+                do! minimapShown ()
+
+                // The test graph is wide, so the drawing fills the frame from side to side and sits in the middle of
+                // its height. A pointer on the middle line then maps to the middle of the layout height.
+                let frame = minimapSvg ()
+                let frameWidth = numberAttribute frame "width"
+                let frameHeight = numberAttribute frame "height"
+                let k = Minimap.scale 300.0 240.0 laid.LayoutWidth laid.LayoutHeight
+                Vitest.expect(frameWidth).toBeCloseTo (k * laid.LayoutWidth)
+
+                let centered (fraction: float) =
+                    Minimap.centerOn (geometryAt 0.0 0.0 1.0) (fraction * laid.LayoutWidth) (laid.LayoutHeight / 2.0)
+
+                let left = 100.0
+                let middle = 200.0 + frameHeight / 2.0
+                let downLeft, downTop = centered 0.25
+                let moveLeft, moveTop = centered 0.75
+                // The two points differ, so a move that is ignored or misplaced shows.
+                Vitest.expect(moveLeft).toBeGreaterThan (downLeft + 1.0)
+
+                pointer "pointerDown" (left + 0.25 * frameWidth) middle 1
+                Vitest.expect(scrollLeftOf (region ())).toBeCloseTo downLeft
+                Vitest.expect(scrollTopOf (region ())).toBeCloseTo downTop
+
+                pointer "pointerMove" (left + 0.75 * frameWidth) middle 1
+                Vitest.expect(scrollLeftOf (region ())).toBeCloseTo moveLeft
+                Vitest.expect(scrollTopOf (region ())).toBeCloseTo moveTop
+
+                pointer "pointerMove" (left + 0.1 * frameWidth) middle 0
+                Vitest.expect(scrollLeftOf (region ())).toBeCloseTo moveLeft
             }
         )
 )

@@ -13,11 +13,12 @@ open Swate.Components.JsBindings
 let private usable (value: float) : bool =
     value > 0.0 && not (System.Double.IsInfinity value)
 
-/// Pixels of the PNG per layout unit. The limits keep one RGBA surface near 64 MiB, below what Chromium refuses.
+/// Pixels of the PNG per layout unit, at most 2. A side stays within 16384 px and the area within 16 Mi px, so one
+/// RGBA surface stays near 64 MiB, below what Chromium refuses.
 let scale (layoutWidth: float) (layoutHeight: float) : float =
     if usable layoutWidth && usable layoutHeight then
         min
-            (min 2.0 (min (8192.0 / layoutWidth) (8192.0 / layoutHeight)))
+            (min 2.0 (min (16384.0 / layoutWidth) (16384.0 / layoutHeight)))
             (sqrt (16777216.0 / (layoutWidth * layoutHeight)))
     else
         0.0
@@ -140,6 +141,11 @@ let private toPngBlob (canvas: HTMLCanvasElement) : JS.Promise<Blob> =
         )
     )
 
+/// Resolves at the next animation frame. A click handler waits for it before the heavy work, so the browser
+/// paints the busy state first.
+let nextFrame () : JS.Promise<unit> =
+    Promise.create (fun resolve _ -> window.requestAnimationFrame (fun _ -> resolve ()) |> ignore)
+
 /// Draws the markup into a canvas of scale times the layout size and encodes it as PNG.
 let renderPng (markup: string) (layoutWidth: float) (layoutHeight: float) : JS.Promise<Blob> = promise {
     let factor = scale layoutWidth layoutHeight
@@ -147,10 +153,11 @@ let renderPng (markup: string) (layoutWidth: float) (layoutHeight: float) : JS.P
     if factor = 0.0 then
         failwith "The graph has no size to draw."
 
-    let url = Dom.createObjectUrl (Dom.textBlob markup "image/svg+xml;charset=utf-8")
+    let url =
+        Dom.createObjectUrl (ClipboardBindings.createBlob markup "image/svg+xml;charset=utf-8")
 
     try
-        let image = Dom.createImage ()
+        let image = document.createElement "img" :?> HTMLImageElement
         image.src <- url
         do! Dom.decodeImage image
 
@@ -158,12 +165,12 @@ let renderPng (markup: string) (layoutWidth: float) (layoutHeight: float) : JS.P
         canvas.width <- max 1.0 (floor (layoutWidth * factor))
         canvas.height <- max 1.0 (floor (layoutHeight * factor))
 
-        let context = Dom.context2d canvas
+        let context = canvas.getContext_2d ()
 
         if isNull (box context) then
             failwith "The browser gave no canvas to draw on."
 
-        Dom.drawImage context image canvas.width canvas.height
+        context.drawImage (U3.Case1 image, 0.0, 0.0, canvas.width, canvas.height)
         return! toPngBlob canvas
     finally
         Dom.revokeObjectUrl url

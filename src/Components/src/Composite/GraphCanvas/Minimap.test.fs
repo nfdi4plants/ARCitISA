@@ -17,24 +17,102 @@ let private geometry: ScrollGeometry = {
     Zoom = 1.0
 }
 
+// A box that does not limit the minimap: 200 by 140 is the cap, which needs 500 by 400 px.
+let private largeBox = (600.0, 500.0)
+
 Vitest.describe (
-    "scale",
+    "fitsBox and maxSize",
     fun () ->
         Vitest.test (
-            "fits a landscape layout by its width and a portrait layout by its height",
+            "a box needs 260 by 220 px for a minimap",
             fun () ->
-                Vitest.expect(scale 1000.0 400.0).toBe 0.2
-                Vitest.expect(scale 400.0 1000.0).toBe 0.14
-                Vitest.expect(scale 100.0 100.0).toBe 1.4
+                Vitest.expect(fitsBox 260.0 220.0).toBe true
+                Vitest.expect(fitsBox 259.0 220.0).toBe false
+                Vitest.expect(fitsBox 260.0 219.0).toBe false
         )
 
         Vitest.test (
-            "is zero for a layout without a usable size",
+            "the drawing takes at most 40 percent of the width and 35 percent of the height of the box",
             fun () ->
-                Vitest.expect(scale 0.0 400.0).toBe 0.0
-                Vitest.expect(scale 400.0 -5.0).toBe 0.0
-                Vitest.expect(scale nan 400.0).toBe 0.0
-                Vitest.expect(scale infinity 400.0).toBe 0.0
+                Vitest.expect(maxSize 300.0 240.0).toEqual ((120.0, 84.0))
+                Vitest.expect(maxSize 480.0 320.0).toEqual ((192.0, 112.0))
+        )
+
+        Vitest.test (
+            "the drawing never exceeds 200 by 140 px",
+            fun () -> Vitest.expect(maxSize 2000.0 1500.0).toEqual ((200.0, 140.0))
+        )
+)
+
+Vitest.describe (
+    "scale",
+    fun () ->
+        let boxWidth, boxHeight = largeBox
+
+        Vitest.test (
+            "fits a landscape layout by its width and a portrait layout by its height",
+            fun () ->
+                Vitest.expect(scale boxWidth boxHeight 1000.0 400.0).toBe 0.2
+                Vitest.expect(scale boxWidth boxHeight 400.0 1000.0).toBe 0.14
+                Vitest.expect(scale boxWidth boxHeight 100.0 100.0).toBe 1.4
+        )
+
+        Vitest.test ("shrinks with the box", fun () -> Vitest.expect(scale 300.0 240.0 1000.0 400.0).toBe 0.12)
+
+        Vitest.test (
+            "is zero for a layout or a box without a usable size",
+            fun () ->
+                Vitest.expect(scale boxWidth boxHeight 0.0 400.0).toBe 0.0
+                Vitest.expect(scale boxWidth boxHeight 400.0 -5.0).toBe 0.0
+                Vitest.expect(scale boxWidth boxHeight nan 400.0).toBe 0.0
+                Vitest.expect(scale boxWidth boxHeight infinity 400.0).toBe 0.0
+                Vitest.expect(scale 0.0 240.0 1000.0 400.0).toBe 0.0
+        )
+)
+
+Vitest.describe (
+    "frameSize",
+    fun () ->
+        let boxWidth, boxHeight = largeBox
+
+        Vitest.test (
+            "is the drawing where both sides reach 48 px",
+            fun () -> Vitest.expect(frameSize boxWidth boxHeight 800.0 320.0).toEqual ((200.0, 80.0))
+        )
+
+        Vitest.test (
+            "grows the thin side of a thin drawing to 48 px",
+            fun () ->
+                Vitest.expect(frameSize boxWidth boxHeight 800.0 16.0).toEqual ((200.0, 48.0))
+                Vitest.expect(frameSize boxWidth boxHeight 16.0 1120.0).toEqual ((48.0, 140.0))
+        )
+
+        Vitest.test (
+            "stays inside the largest size for the box",
+            fun () -> Vitest.expect(frameSize 300.0 240.0 800.0 16.0).toEqual ((120.0, 48.0))
+        )
+)
+
+Vitest.describe (
+    "pointerToLayout",
+    fun () ->
+        let boxWidth, boxHeight = largeBox
+
+        Vitest.test (
+            "maps the middle of the frame to the middle of the layout",
+            fun () ->
+                // The frame of an 800 by 16 layout is 200 by 48 px. The drawing is 200 by 4 px in the middle of it.
+                Vitest.expect(pointerToLayout boxWidth boxHeight 800.0 16.0 100.0 24.0).toEqual ((400.0, 8.0))
+                Vitest.expect(pointerToLayout boxWidth boxHeight 800.0 320.0 100.0 40.0).toEqual ((400.0, 160.0))
+        )
+
+        Vitest.test (
+            "maps a pointer in the empty margin of the frame to the nearest point of the layout",
+            fun () ->
+                Vitest.expect(pointerToLayout boxWidth boxHeight 800.0 16.0 100.0 0.0).toEqual ((400.0, 0.0))
+                Vitest.expect(pointerToLayout boxWidth boxHeight 800.0 16.0 100.0 47.0).toEqual ((400.0, 16.0))
+                Vitest.expect(pointerToLayout boxWidth boxHeight 800.0 16.0 -5.0 24.0).toEqual ((0.0, 8.0))
+                Vitest.expect(pointerToLayout boxWidth boxHeight 800.0 16.0 250.0 24.0).toEqual ((800.0, 8.0))
         )
 )
 

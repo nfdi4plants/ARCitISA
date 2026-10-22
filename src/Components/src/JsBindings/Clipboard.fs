@@ -28,7 +28,7 @@ module ClipboardBindings =
     let parseHtml (_htmlText: string) : Browser.Types.Document = jsNative
 
     [<Emit("new Blob([$0], { type: $1 })")>]
-    let createBlob (_value: string) (_mimeType: string) : obj = jsNative
+    let createBlob (_value: string) (_mimeType: string) : Browser.Types.Blob = jsNative
 
     [<Emit("new ClipboardItem($0)")>]
     let private createItem (_values: obj) : ClipboardItem = jsNative
