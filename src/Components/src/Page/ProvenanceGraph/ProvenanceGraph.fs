@@ -474,8 +474,11 @@ type ProvenanceGraph =
         )
 
         // Only the control with the tab stop can be reached with the Tab key. The others take the arrow keys.
+        let hintId = React.useId ()
+
         let controlProps (key: string) : IReactProperty list = [
             prop.custom ("data-overview-key", key)
+            prop.custom ("aria-describedby", hintId)
             prop.tabIndex (if activeKey = Some key then 0 else -1)
         ]
 
@@ -648,7 +651,8 @@ type ProvenanceGraph =
             prop.onFocus (fun (event: FocusEvent) ->
                 let key = overviewControlKey (event.target :?> HTMLElement)
 
-                if not (isNull key) && key <> snd activeState then
+                // The stored key can belong to an earlier view, so it only counts for the current one.
+                if not (isNull key) && (fst activeState <> viewKey || snd activeState <> key) then
                     setActiveState (viewKey, key)
             )
             prop.onKeyDown (fun (event: KeyboardEvent) ->
@@ -663,6 +667,12 @@ type ProvenanceGraph =
                     | None -> ()
             )
             prop.children [
+                // The hint tells screen reader users about the arrow keys. Every control points to it.
+                Html.span [
+                    prop.id hintId
+                    prop.className "swt:sr-only"
+                    prop.text "Use the arrow keys to move between the items."
+                ]
                 Html.ol [
                     prop.ref listRef
                     prop.className "swt:m-0 swt:flex swt:list-none swt:flex-col swt:gap-1 swt:p-0"

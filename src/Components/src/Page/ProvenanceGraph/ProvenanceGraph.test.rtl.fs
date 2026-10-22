@@ -109,6 +109,10 @@ let private waitNode (id: string) : JS.Promise<unit> =
 
 let private click (el: HTMLElement) = RTL.fireEvent.click el
 
+/// Focuses an element the way a user does. React flushes the state of the focus handler inside act.
+let private focusInAct (el: HTMLElement) : JS.Promise<unit> =
+    RTL.act (fun () -> promise { el.focus () })
+
 let private press (el: HTMLElement) (key: string) =
     RTL.fireEvent.custom ("keyDown", el, {| key = key |})
 
@@ -600,6 +604,50 @@ Vitest.describe (
                 // The other controls are reached with the arrow keys.
                 Vitest.expect((overviewButtons 1).Length).toBeGreaterThan 0
                 Vitest.expect((overviewButtons 1) |> Array.forall (fun el -> el.tabIndex = -1)).toBe true
+            }
+        )
+
+        Vitest.test (
+            "moves the tab stop to a control whose key the previous view stored",
+            longTest,
+            fun () -> promise {
+                render Sample.index |> ignore
+                do! waitNode extraction
+                do! open' extraction extractionProcess
+
+                // The first focus in the overview stores the key of the chip.
+                let chip = overviewItem 0 false
+                do! focusInAct chip
+
+                // A click on a node opens the next level. The overview stays mounted and keeps the chip.
+                do! open' extractionProcess inputGroup
+                chip.blur ()
+
+                // Assistive technology can focus the chip without passing another control. Its key equals the
+                // key that the previous view stored.
+                let again = overviewItem 0 false
+                do! focusInAct again
+
+                let stops = overviewTabStops ()
+                Vitest.expect(stops.Length).toBe 1
+                Vitest.expect(obj.ReferenceEquals(stops.[0], again)).toBe true
+            }
+        )
+
+        Vitest.test (
+            "describes every control of the overview with a hint that exists",
+            longTest,
+            fun () -> promise {
+                render Sample.index |> ignore
+                do! openGroups ()
+
+                let nodes = document.querySelectorAll "[data-testid='provenance-overview'] button"
+                Vitest.expect(nodes.length).toBeGreaterThan 0
+
+                for i in 0 .. nodes.length - 1 do
+                    let hintId = nodes.[i].getAttribute "aria-describedby"
+                    Vitest.expect(isNull hintId).toBe false
+                    Vitest.expect((byTestId "provenance-overview").contains (document.getElementById hintId)).toBe true
             }
         )
 

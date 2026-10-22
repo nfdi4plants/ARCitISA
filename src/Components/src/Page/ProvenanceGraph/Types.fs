@@ -193,9 +193,9 @@ module ProvenanceView =
           |]
 
     /// The file name of the image of a view. The name says which view the image shows, because it lists the labels of
-    /// the crumbs after the root. It is safe on Windows, macOS and Linux. Every character outside letters, digits,
-    /// dot, underscore and hyphen becomes an underscore, and at most 100 characters of the labels remain. The datasets
-    /// level has no label of its own, so it is named "datasets".
+    /// the crumbs after the root. It is a valid file name on every desktop system. Every character outside letters,
+    /// digits, dot, underscore and hyphen becomes an underscore, and at most 100 characters of the labels remain. A
+    /// level whose labels leave nothing, such as the datasets level, is named after its kind.
     let imageFileName (crumbs: Crumb[]) : string =
         let joined =
             crumbs
@@ -203,9 +203,18 @@ module ProvenanceView =
             |> Array.map (fun crumb -> crumb.Label)
             |> String.concat "-"
 
-        let safe =
-            Regex.Replace(Regex.Replace(joined, "[^A-Za-z0-9._-]", "_"), "_+", "_").Trim([| '_'; '-' |])
+        let trimmed (text: string) = text.Trim([| '_'; '-' |])
 
-        let cut = if safe.Length > 100 then safe.Substring(0, 100) else safe
-        let part = if cut = "" then "datasets" else cut
+        let safe =
+            trimmed (Regex.Replace(Regex.Replace(joined, "[^A-Za-z0-9._-]", "_"), "_+", "_"))
+
+        // The cut can end in a separator, so the ends are trimmed again.
+        let cut = trimmed (if safe.Length > 100 then safe.Substring(0, 100) else safe)
+
+        let part =
+            if cut = "" then
+                kindText (Array.last crumbs).Target
+            else
+                cut
+
         $"provenance-{part}.png"

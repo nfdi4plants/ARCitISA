@@ -918,10 +918,29 @@ Vitest.describe (
         )
 
         Vitest.test (
+            "trims separators again when the cut ends in one",
+            fun () ->
+                // The 100th character of the sanitized labels is an underscore.
+                let name =
+                    ProvenanceView.imageFileName (withLabels [ String.replicate 99 "a" + "/bbb" ])
+
+                Vitest.expect(name).toBe ("provenance-" + String.replicate 99 "a" + ".png")
+        )
+
+        Vitest.test (
             "trims separators at the ends and falls back to the datasets when nothing is left",
             fun () ->
                 Vitest.expect(ProvenanceView.imageFileName (withLabels [ "-x-"; "?" ])).toBe "provenance-x.png"
                 Vitest.expect(ProvenanceView.imageFileName (withLabels [ "///"; ":" ])).toBe "provenance-datasets.png"
+        )
+
+        Vitest.test (
+            "names a deep view after its level when no label has a Latin letter",
+            fun () ->
+                let view = ProvenanceView.Detail("日本語", "データ", "グループ")
+
+                Vitest.expect(nameOf view).toBe $"provenance-{ProvenanceView.kindText view}.png"
+                Vitest.expect(nameOf view <> "provenance-datasets.png").toBe true
         )
 )
 
