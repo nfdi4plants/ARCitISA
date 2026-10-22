@@ -5,7 +5,7 @@ open Swate.Components.Shared.ProvenanceGraph.Types
 open Swate.Components.Shared.ProvenanceGraph.Queries
 open Swate.Components.Page.ProvenanceGraph.Types
 
-/// A row shows at most this many items.
+/// A collapsed row shows at most this many items.
 let maxItems = 7
 
 /// The part of a level that a row shows, as the start index and the item count. A level that fits is shown in
@@ -19,24 +19,31 @@ let windowAround (total: int) (selected: int option) (maxCount: int) : int * int
         | Some index -> max 0 (min (total - maxCount) (index - maxCount / 2)), maxCount
         | None -> 0, maxCount
 
-/// A row for the items (id, label) of one level. An id that is not among the items leaves the row without a
-/// selected item.
-let rowOf (heading: string) (items: (string * string)[]) (selectedId: string) : OverviewRow =
+/// A row for the items (id, label) of one level. `targetOf` gives the view that a click on an item opens. An id
+/// that is not among the items leaves the row without a selected item.
+let rowOf
+    (heading: string)
+    (items: (string * string)[])
+    (selectedId: string)
+    (targetOf: string -> ProvenanceView)
+    : OverviewRow =
     let selected = items |> Array.tryFindIndex (fun (id, _) -> id = selectedId)
     let start, count = windowAround items.Length selected maxItems
 
     {
         Heading = heading
         Items = [|
-            for id, label in Array.sub items start count ->
+            for id, label in items ->
                 {
                     Id = id
                     Label = label
                     Selected = (id = selectedId)
+                    Target = targetOf id
                 }
         |]
-        Before = start
-        After = items.Length - start - count
+        WindowStart = start
+        WindowCount = count
+        Extra = None
     }
 
 /// The ids that lead to the view, from the dataset down. Each id selects one item of the level at the same position.
@@ -50,12 +57,13 @@ let private selectionOf (view: ProvenanceView) : string[] =
 
 /// The items (id, label) of a level. The labels are the titles of the nodes in the graph of that level. The
 /// level of the datasets has no parent, and the others take the id of the item that the level above selects.
-/// The index has no result for an id it does not know.
+/// The index has no result for an id it does not know. The datasets come from the index itself, because the
+/// graph of the datasets also scans the rows of the whole ARC for its edges.
 let private itemsAt (index: ProvenanceIndex) (selection: string[]) (level: int) : (string * string)[] option =
     match level with
     | 0 ->
         Some [|
-            for node in (datasetGraph index).Nodes -> node.Id, node.Label
+            for dataset in index.Datasets -> dataset.Id, dataset.Identifier
         |]
     | 1 ->
         processGraph index selection.[0]
@@ -75,8 +83,25 @@ let private headingAt (crumbs: Crumb[]) (level: int) : string =
     | 2 -> $"Groups of {crumbs.[2].Label}"
     | _ -> $"Nodes of {crumbs.[3].Label}"
 
+/// The view of a level, in which a click on one of its items opens the next level.
+let private levelView (crumbs: Crumb[]) (level: int) : ProvenanceView =
+    if level = 0 then
+        ProvenanceView.Datasets
+    else
+        crumbs.[level].Target
+
+/// The view that decides which queries the rows need. A lineage that centers on another node stays in the same
+/// group, so it needs the same queries. The node id is empty here, and the nodes row has no selection yet.
+let queryView (view: ProvenanceView) : ProvenanceView =
+    match view with
+    | ProvenanceView.Lineage(datasetId, processKey, groupId, _) ->
+        ProvenanceView.Lineage(datasetId, processKey, groupId, "")
+    | other -> other
+
 /// One row per level above the view, from the datasets down. A level without a result in the index ends the list.
-let rows (index: ProvenanceIndex) (view: ProvenanceView) : OverviewRow[] =
+/// The queries behind the rows are the expensive part. A page that keeps the result for the same `queryView`
+/// leaves them out when a lineage centers on another node, and `select` makes the rows of that node.
+let baseRows (index: ProvenanceIndex) (view: ProvenanceView) : OverviewRow[] =
     let selection = selectionOf view
     let crumbs = ProvenanceView.crumbs index view
 
@@ -85,7 +110,50 @@ let rows (index: ProvenanceIndex) (view: ProvenanceView) : OverviewRow[] =
             found
         else
             match itemsAt index selection level with
-            | Some items -> collect (level + 1) (rowOf (headingAt crumbs level) items selection.[level] :: found)
+            | Some items ->
+                let targetOf (id: string) =
+                    ProvenanceView.next index (levelView crumbs level) id
+
+                collect (level + 1) (rowOf (headingAt crumbs level) items selection.[level] targetOf :: found)
             | None -> found
 
     collect 0 [] |> List.rev |> Array.ofList
+
+/// Marks the node of a lineage in the nodes row, which `baseRows` left without a selection. The lineage
+/// centers on any node of its graph, so the node is often not among the nodes of the group. Then the row gets the
+/// node as an extra item. The other views and rows stay as they are.
+let select (view: ProvenanceView) (rows: OverviewRow[]) : OverviewRow[] =
+    match view with
+    | ProvenanceView.Lineage(_, _, _, nodeId) when rows.Length = 4 ->
+        let row = rows.[3]
+        let selected = row.Items |> Array.tryFindIndex (fun item -> item.Id = nodeId)
+        let start, count = windowAround row.Items.Length selected maxItems
+
+        let marked = {
+            row with
+                Items =
+                    row.Items
+                    |> Array.map (fun item -> {
+                        item with
+                            Selected = (item.Id = nodeId)
+                    })
+                WindowStart = start
+                WindowCount = count
+                Extra =
+                    if selected.IsNone then
+                        Some {
+                            Id = nodeId
+                            Label = nodeId
+                            Selected = true
+                            Target = view
+                        }
+                    else
+                        None
+        }
+
+        Array.append (Array.sub rows 0 3) [| marked |]
+    | _ -> rows
+
+/// The rows of a view, as the page shows them.
+let rows (index: ProvenanceIndex) (view: ProvenanceView) : OverviewRow[] =
+    baseRows index (queryView view) |> select view

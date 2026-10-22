@@ -1,7 +1,8 @@
 module internal Swate.Components.Page.ProvenanceGraph.OverviewTests
 
-// The rules of the location overview: the window of items around the selected one and the rows of each view.
-// The rows come from the example ARC. Headings and labels are read from the data, never typed as literals.
+// The rules of the location overview: the window of items around the selected one, the rows of each view and the
+// view that a click on an item opens. The rows come from the example ARC. Headings and labels are read from the
+// data, never typed as literals.
 
 open Vitest
 open Swate.Components.Page.ProvenanceGraph.Types
@@ -13,10 +14,23 @@ let private dataset = "assays/Extraction/"
 let private processKey = "assays/Extraction/::Extraction"
 let private group = processKey + "#in0"
 
+/// The ids of the selected items of a row, including the extra item.
 let private selectedIds (row: OverviewRow) : string[] =
-    row.Items
-    |> Array.filter (fun item -> item.Selected)
-    |> Array.map (fun item -> item.Id)
+    let inLevel =
+        row.Items
+        |> Array.filter (fun item -> item.Selected)
+        |> Array.map (fun item -> item.Id)
+
+    let extra =
+        row.Extra
+        |> Option.filter (fun item -> item.Selected)
+        |> Option.map (fun item -> item.Id)
+        |> Option.toArray
+
+    Array.append inLevel extra
+
+let private siblingOf (row: OverviewRow) : OverviewItem =
+    row.Items |> Array.find (fun item -> not item.Selected)
 
 Vitest.describe (
     "windowAround",
@@ -53,27 +67,30 @@ Vitest.describe (
     "rowOf",
     fun () ->
         Vitest.test (
-            "keeps the items around the selected one and counts the items on each side",
+            "keeps every item and puts the window around the selected one",
             fun () ->
                 let items = [| for i in 0..19 -> $"id{i}", $"label{i}" |]
-                let row = rowOf "heading" items "id10"
+                let row = rowOf "heading" items "id10" ProvenanceView.Processes
 
-                Vitest.expect(row.Items.Length).toBe maxItems
-                Vitest.expect(row.Before).toBe 7
-                Vitest.expect(row.After).toBe 6
+                Vitest.expect(row.Items.Length).toBe 20
+                Vitest.expect(row.WindowCount).toBe maxItems
+                Vitest.expect(row.WindowStart).toBe 7
                 Vitest.expect(selectedIds row).toEqual [| "id10" |]
-                Vitest.expect(row.Items.[0].Label).toBe "label7"
+                Vitest.expect(row.Items.[row.WindowStart].Label).toBe "label7"
+                Vitest.expect(row.Items.[3].Target = ProvenanceView.Processes "id3").toBe true
         )
 
         Vitest.test (
             "leaves the row without a selected item when the id is not among the items",
             fun () ->
-                let row = rowOf "heading" [| "a", "A"; "b", "B" |] "c"
+                let row =
+                    rowOf "heading" [| "a", "A"; "b", "B" |] "c" (fun _ -> ProvenanceView.Datasets)
 
                 Vitest.expect(selectedIds row).toEqual Array.empty<string>
                 Vitest.expect(row.Items.Length).toBe 2
-                Vitest.expect(row.Before).toBe 0
-                Vitest.expect(row.After).toBe 0
+                Vitest.expect(row.WindowStart).toBe 0
+                Vitest.expect(row.WindowCount).toBe 2
+                Vitest.expect(row.Extra.IsNone).toBe true
         )
 )
 
@@ -111,14 +128,81 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "leaves the last row without a selected item for a node that the group does not contain",
+            "opens the processes of a sibling dataset and the detail of a sibling group",
+            fun () ->
+                let processes = rows Sample.index (ProvenanceView.Processes dataset)
+                let sibling = siblingOf processes.[0]
+
+                Vitest.expect(sibling.Target = ProvenanceView.Processes sibling.Id).toBe true
+
+                let detail = rows Sample.index (ProvenanceView.Detail(dataset, processKey, group))
+                let siblingGroup = siblingOf detail.[2]
+
+                Vitest.expect(siblingGroup.Target = ProvenanceView.Detail(dataset, processKey, siblingGroup.Id)).toBe
+                    true
+        )
+
+        Vitest.test (
+            "leads the selected items back to the next level and the deepest one to the view itself",
+            fun () ->
+                let view = ProvenanceView.Detail(dataset, processKey, group)
+                let rows = rows Sample.index view
+
+                let selected (row: OverviewRow) =
+                    row.Items |> Array.find (fun item -> item.Selected)
+
+                Vitest.expect((selected rows.[0]).Target = ProvenanceView.Processes dataset).toBe true
+                Vitest.expect((selected rows.[1]).Target = ProvenanceView.Groups(dataset, processKey)).toBe true
+                Vitest.expect((selected rows.[2]).Target = view).toBe true
+        )
+
+        Vitest.test (
+            "selects a lineage node that the group contains",
             fun () ->
                 let rows =
-                    rows Sample.index (ProvenanceView.Lineage(dataset, processKey, group, "node-of-another-group"))
+                    rows Sample.index (ProvenanceView.Lineage(dataset, processKey, group, "leaf-1"))
+
+                Vitest.expect(rows.Length).toBe 4
+                Vitest.expect(selectedIds rows.[3]).toEqual [| "leaf-1" |]
+                Vitest.expect(rows.[3].Extra.IsNone).toBe true
+        )
+
+        Vitest.test (
+            "appends a lineage node that the group does not contain as the selected extra item",
+            fun () ->
+                let view =
+                    ProvenanceView.Lineage(dataset, processKey, group, "node-of-another-group")
+
+                let rows = rows Sample.index view
 
                 Vitest.expect(rows.Length).toBe 4
                 Vitest.expect(selectedIds rows.[2]).toEqual [| group |]
-                Vitest.expect(selectedIds rows.[3]).toEqual Array.empty<string>
+                Vitest.expect(selectedIds rows.[3]).toEqual [| "node-of-another-group" |]
+                Vitest.expect(rows.[3].Items |> Array.exists (fun item -> item.Selected)).toBe false
+
+                let extra = rows.[3].Extra.Value
+                Vitest.expect(extra.Label).toBe "node-of-another-group"
+                Vitest.expect(extra.Target = view).toBe true
                 Vitest.expect(rows.[3].Items.Length).toBeGreaterThan 0
+        )
+
+        Vitest.test (
+            "reuses the rows of one lineage node for another node of the same group",
+            fun () ->
+                let first =
+                    ProvenanceView.Lineage(dataset, processKey, group, "node-of-another-group")
+
+                let second = ProvenanceView.Lineage(dataset, processKey, group, "leaf-1")
+
+                Vitest
+                    .expect(ProvenanceView.resetKey (queryView first))
+                    .toBe (ProvenanceView.resetKey (queryView second))
+
+                let shared = baseRows Sample.index (queryView first)
+                let reused = select second shared
+
+                Vitest.expect(selectedIds reused.[3]).toEqual [| "leaf-1" |]
+                Vitest.expect(reused.[3].Extra.IsNone).toBe true
+                Vitest.expect(obj.ReferenceEquals(reused.[1], shared.[1])).toBe true
         )
 )

@@ -64,20 +64,24 @@ type IncompleteRows = {
     MissingInputs: int
 }
 
-/// One item of an overview row. Selected marks the item that leads to the current view.
+/// One item of an overview row. Selected marks the item that leads to the current view. Target is the view that a
+/// click on the item opens.
 type OverviewItem = {
     Id: string
     Label: string
     Selected: bool
+    Target: ProvenanceView
 }
 
-/// One level above the current view. Items is the part of the level that the row shows. Before and After count
-/// the items that the row leaves out on each side.
+/// One level above the current view. Items holds every item of the level in the order of the level. A collapsed
+/// row shows the WindowCount items from WindowStart on, and an expanded row shows all of them. Extra is the item
+/// of the current view when the level does not contain it. The row shows it after the other items in either state.
 type OverviewRow = {
     Heading: string
     Items: OverviewItem[]
-    Before: int
-    After: int
+    WindowStart: int
+    WindowCount: int
+    Extra: OverviewItem option
 }
 
 module ProvenanceView =

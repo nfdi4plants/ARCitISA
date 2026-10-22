@@ -14,9 +14,15 @@ module internal Swate.Components.Page.ProvenanceGraph.ProvenanceGraphTests
 // New: a selection that the index does not know, the same index object that keeps the navigation, the
 // legend swatches, the list of hidden crumbs (state, Escape, click outside), the canvas that stays mounted
 // when the cap note comes and goes, the note about unfinished rows of a work in progress ARC, and the error
-// state of a view that cannot be computed or drawn. The test for the focus that stays where the user put it
-// when a parent renders again lives in tests/Electron.Renderer/ProvenanceGraphPage.test.fs, because it needs a
-// real parent render.
+// state of a view that cannot be computed or drawn. The header has an up button that goes to the parent level
+// (also for an external process, and after the groups). The location overview has no toggle at the datasets
+// level, marks the opened dataset, hides and shows through its toggle, and has a row per level above the view.
+// Its chips open the item they name, the selected chip of an upper row returns to that level, and the deepest
+// selected item only marks the place (a lineage node outside the group is appended as the selected item). A row
+// with more items than it shows expands and collapses. The breadcrumbs stay mounted when the up button appears,
+// and the canvas stays mounted when the overview comes and goes. The test for the focus that stays where the
+// user put it when a parent renders again lives in tests/Electron.Renderer/ProvenanceGraphPage.test.fs, because
+// it needs a real parent render.
 //
 // Dropped: the query name next to the crumbs (the label is not part of this page), and the assertions on the
 // texts of the legend, the empty messages, the hint and the aria labels. The tests find the elements by test id,
@@ -60,8 +66,8 @@ let private installObservers () : unit = jsNative
 })()""")>]
 let private removeObservers () : unit = jsNative
 
-// Reports the width of the header content area and the natural width of its full crumbs. The header observes
-// a box and, inside it, the ruler. The canvas observes one element only.
+// Reports the width of the box and the natural width of the full crumbs. The box is the space between the up button
+// and the overview toggle. The header observes the box and, inside it, the ruler. The canvas observes one element only.
 [<Emit("""(() => {
     const observer = globalThis.__provResize.find(o => o.targets.length === 2 && o.targets[0].contains(o.targets[1]));
     if (!observer) throw new Error('The page observes no header box.');
@@ -125,6 +131,16 @@ let private overviewRowCount () : int =
 
 let private selectedOverviewItems () =
     document.querySelectorAll "[data-testid='provenance-overview-item'][data-selected='true']"
+
+/// The chips of a row of the overview.
+let private overviewItems (row: int) =
+    document.querySelectorAll $"[data-testid='provenance-overview-row-{row}'] [data-testid='provenance-overview-item']"
+
+/// The first chip of a row with the given selection.
+let private overviewItem (row: int) (selected: bool) : HTMLElement =
+    document.querySelector
+        $"[data-testid='provenance-overview-row-{row}'] [data-testid='provenance-overview-item'][data-selected='{selected}']"
+    :?> HTMLElement
 
 let private nodeCount () : int =
     document.querySelectorAll("[data-testid^='graph-node-']").length
@@ -204,6 +220,17 @@ let private chainIndex (length: int) : ProvenanceIndex =
                 ]
         )
     )
+
+/// An ARC with `count` assays and no tables. Each assay is a dataset, so the datasets row of the overview is long.
+let private manyDatasetsIndex (count: int) : ProvenanceIndex =
+    let assays =
+        ResizeArray [
+            for i in 1..count -> ArcAssay.create (identifier = $"Assay{i}")
+        ]
+
+    let arc = ArcInvestigation.create (identifier = "inv", assays = assays)
+
+    ProvenanceIndex.ofData (ProvenanceGraphData.ofInvestigation arc)
 
 let private longTest = TestOptions(timeout = 60000)
 
@@ -324,6 +351,7 @@ Vitest.describe (
                 render Sample.index |> ignore
                 do! openGroups ()
                 let dataset = crumbText 1
+                Vitest.expect((byTestId "provenance-up").textContent).toBe dataset
 
                 click (byTestId "provenance-up")
                 do! waitNode extractionProcess
@@ -430,6 +458,128 @@ Vitest.describe (
         )
 
         Vitest.test (
+            "opens another dataset through a chip of the datasets row",
+            longTest,
+            fun () -> promise {
+                render Sample.index |> ignore
+                do! waitNode extraction
+                do! open' extraction extractionProcess
+
+                let sibling = overviewItem 0 false
+                let title = sibling.getAttribute "title"
+                click sibling
+
+                Vitest.expect(crumbCount ()).toBe 2
+                Vitest.expect(crumbText 1).toBe title
+            }
+        )
+
+        Vitest.test (
+            "goes back to a level through the selected chip of an upper row",
+            longTest,
+            fun () -> promise {
+                render Sample.index |> ignore
+                do! openGroups ()
+                Vitest.expect(crumbCount ()).toBe 3
+
+                click (overviewItem 0 true)
+                do! waitNode extractionProcess
+
+                Vitest.expect(crumbCount ()).toBe 2
+            }
+        )
+
+        Vitest.test (
+            "marks the place of the current view in the deepest row only, and without a button",
+            longTest,
+            fun () -> promise {
+                render Sample.index |> ignore
+                do! openGroups ()
+
+                let icons = RTL.screen.getAllByTestId "provenance-overview-location"
+                Vitest.expect(icons.Count).toBe 1
+
+                let row = (icons.[0].closest "[data-testid^='provenance-overview-row-']").Value
+                Vitest.expect(row.getAttribute "data-testid").toBe $"provenance-overview-row-{overviewRowCount () - 1}"
+
+                Vitest.expect((overviewItem 1 true).tagName <> "BUTTON").toBe true
+                Vitest.expect((overviewItem 1 true).getAttribute "aria-current").toBe "location"
+                Vitest.expect((overviewItem 0 true).tagName).toBe "BUTTON"
+            }
+        )
+
+        Vitest.test (
+            "expands a row that has more items than it shows and collapses it again",
+            longTest,
+            fun () -> promise {
+                render (manyDatasetsIndex 10) |> ignore
+                do! waitNode "assays/Assay5/"
+                click (nodeEl "assays/Assay5/")
+
+                Vitest.expect((overviewItems 0).length).toBe Overview.maxItems
+
+                let more = RTL.screen.getAllByTestId "provenance-overview-more"
+                Vitest.expect(more.[0].getAttribute "aria-expanded").toBe "false"
+                click more.[0]
+
+                Vitest.expect((overviewItems 0).length).toBe 10
+                Vitest.expect(present (maybeTestId "provenance-overview-more")).toBe false
+                Vitest.expect((byTestId "provenance-overview-less").getAttribute "aria-expanded").toBe "true"
+
+                click (byTestId "provenance-overview-less")
+
+                Vitest.expect((overviewItems 0).length).toBe Overview.maxItems
+                Vitest.expect(present (maybeTestId "provenance-overview-less")).toBe false
+            }
+        )
+
+        Vitest.test (
+            "moves the focus to the button that replaces the clicked one when a row expands or collapses",
+            longTest,
+            fun () -> promise {
+                render (manyDatasetsIndex 10) |> ignore
+                do! waitNode "assays/Assay5/"
+                click (nodeEl "assays/Assay5/")
+
+                let first = (RTL.screen.getAllByTestId "provenance-overview-more").[0]
+                first.focus ()
+                click first
+
+                Vitest.expect(isFocused (byTestId "provenance-overview-less")).toBe true
+
+                click (byTestId "provenance-overview-less")
+
+                // The row keeps a count before and a count after its window. The focus goes to the one after.
+                let counts = RTL.screen.getAllByTestId "provenance-overview-more"
+                Vitest.expect(counts.Count).toBe 2
+                Vitest.expect(isFocused counts.[counts.Count - 1]).toBe true
+                Vitest.expect((byTestId "provenance-overview-row-0").contains counts.[0]).toBe true
+            }
+        )
+
+        Vitest.test (
+            "marks a lineage node outside the group as the selected extra item of the last row",
+            longTest,
+            fun () -> promise {
+                render Sample.index |> ignore
+                do! openLineage ()
+
+                // The lineage centers on a node that the group of the process does not contain.
+                click (nodeEl "data/m1.raw")
+
+                let icons = RTL.screen.getAllByTestId "provenance-overview-location"
+                Vitest.expect(icons.Count).toBe 1
+
+                let chip = (icons.[0].closest "[data-testid='provenance-overview-item']").Value
+                Vitest.expect(chip.getAttribute "data-selected").toBe "true"
+                Vitest.expect(chip.textContent).toBe "data/m1.raw"
+
+                let row = (icons.[0].closest "[data-testid^='provenance-overview-row-']").Value
+                Vitest.expect(row.getAttribute "data-testid").toBe $"provenance-overview-row-{overviewRowCount () - 1}"
+            }
+        )
+
+        Vitest.test (
             "switches to the dataset of an external process when it is clicked",
             longTest,
             fun () -> promise {
@@ -443,6 +593,14 @@ Vitest.describe (
                 Vitest.expect(crumbCount ()).toBe 3
                 Vitest.expect(crumbText 1).toBe "Extraction"
 
+                // The up button leads to the processes of the owning dataset, not to those of the first dataset.
+                let owner = crumbText 1
+                click (byTestId "provenance-up")
+                do! waitNode extractionProcess
+                Vitest.expect(crumbCount ()).toBe 2
+                Vitest.expect(crumbText 1).toBe owner
+
+                do! open' extractionProcess inputGroup
                 click (byTestId "provenance-crumb-1")
                 do! waitNode extractionProcess
                 Vitest.expect(crumbCount ()).toBe 2

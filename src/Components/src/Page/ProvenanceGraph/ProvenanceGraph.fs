@@ -147,6 +147,8 @@ open ProvenanceGraphHelper
 /// groups of a process, the nodes around a group and the lineage of a node. A click on a node opens the next
 /// level, and the breadcrumbs lead back. The parent builds the index once for each ARC. A new index object
 /// returns the page to the datasets. The page fills its parent, which needs a height.
+/// The up button in the header goes one level up. The location overview below the header lists the levels above
+/// the current view, and a click on one of its items opens that item.
 /// A view that cannot be shown says so with the message of the error, and the breadcrumbs stay usable.
 [<Erase; Mangle(false)>]
 type ProvenanceGraph =
@@ -282,18 +284,91 @@ type ProvenanceGraph =
             ]
         ]
 
-    /// The levels above the current view, one row per level, with the item that leads to the view marked. The
-    /// overview is for reading only. Nothing in it takes focus or a click.
+    /// The levels above the current view, one row per level, with the item that leads to the view marked. A click on
+    /// an item opens the view of that item, like a click on a node of the level. A row that has more items than it
+    /// shows expands on request, and the rows are collapsed again when the view changes.
     [<ReactComponent>]
-    static member private Overview(rows: OverviewRow[], id: string) =
-        let countText (count: int) : ReactElement =
-            Html.span [
-                prop.className "swt:flex-none swt:text-base-content/80"
-                prop.ariaLabel $"{count} more"
+    static member private Overview
+        (rows: OverviewRow[], id: string, viewKey: string, onNavigate: ProvenanceView -> unit)
+        =
+        // The expanded rows belong to the view they were opened in. The state of another view counts as empty.
+        let initialState: string * Set<int> = viewKey, Set.empty
+        let expandedState, setExpandedState = React.useState initialState
+
+        let expanded =
+            if fst expandedState = viewKey then
+                snd expandedState
+            else
+                Set.empty
+
+        // The button that expands or collapses a row leaves the page with the click, and the focus would fall to the
+        // page. The row waits in the ref until the render has committed, and the layout effect below moves the focus.
+        let listRef = React.useRef<HTMLElement option> None
+        let pendingFocus = React.useRef<(int * bool) option> None
+
+        let setRowOpen (depth: int) (isOpen: bool) =
+            let rowsOpen =
+                if isOpen then
+                    Set.add depth expanded
+                else
+                    Set.remove depth expanded
+
+            pendingFocus.current <- Some(depth, isOpen)
+            setExpandedState (viewKey, rowsOpen)
+
+        // An expanded row focuses its "Show less" button. A collapsed row focuses its last "+N" button, which is
+        // the count after the window when the row has one. The rows of the list sit in the order of their depth.
+        React.useLayoutEffect (
+            (fun () ->
+                match pendingFocus.current, listRef.current with
+                | Some(depth, isOpen), Some list ->
+                    pendingFocus.current <- None
+                    let row = list.children.[depth]
+
+                    if isOpen then
+                        let less = row.querySelector "button[aria-expanded='true']"
+
+                        if not (isNull less) then
+                            (less :?> HTMLElement).focus ()
+                    else
+                        let counts = row.querySelectorAll "button[aria-expanded='false']"
+
+                        if counts.length > 0 then
+                            (counts.[counts.length - 1] :?> HTMLElement).focus ()
+                | _ -> ()
+            ),
+            [| box expandedState |]
+        )
+
+        let moreButton (key: string) (depth: int) (count: int) : ReactElement =
+            Html.button [
+                prop.key key
+                prop.type'.button
+                prop.testId "provenance-overview-more"
+                prop.className
+                    "swt:flex-none swt:cursor-pointer swt:rounded swt:px-1 swt:text-base-content/80 swt:hover:bg-base-200"
+                prop.ariaLabel $"Show {count} more"
+                prop.custom ("aria-expanded", false)
+                prop.onClick (fun _ -> setRowOpen depth true)
                 prop.text $"+{count}"
             ]
 
-        let chip (isDeepest: bool) (item: OverviewItem) : ReactElement =
+        let lessButton (depth: int) : ReactElement =
+            Html.button [
+                prop.key "less"
+                prop.type'.button
+                prop.testId "provenance-overview-less"
+                prop.className
+                    "swt:flex-none swt:cursor-pointer swt:rounded swt:px-1 swt:text-base-content/80 swt:hover:bg-base-200"
+                prop.custom ("aria-expanded", true)
+                prop.onClick (fun _ -> setRowOpen depth false)
+                prop.text "Show less"
+            ]
+
+        // The selected item of the deepest row leads to the current view. It marks the place and takes no click.
+        let chip (key: string) (isDeepest: bool) (item: OverviewItem) : ReactElement =
+            let isHere = item.Selected && isDeepest
+
             let chipStyle =
                 if item.Selected then
                     [
@@ -303,24 +378,16 @@ type ProvenanceGraph =
                 else
                     [ style.custom ("borderColor", neutralBorder) ]
 
-            let className =
-                if item.Selected then
-                    "swt:max-w-40 swt:min-w-0 swt:flex-none swt:truncate swt:rounded-full swt:border swt:px-2 swt:py-px swt:font-semibold"
-                else
-                    "swt:max-w-40 swt:min-w-0 swt:truncate swt:rounded-full swt:border swt:px-2 swt:py-px swt:text-base-content/80"
-
-            Html.span [
-                prop.key item.Id
+            let common: IReactProperty list = [
+                prop.key key
                 prop.testId "provenance-overview-item"
                 prop.custom ("data-selected", item.Selected)
                 prop.title item.Label
-                prop.className className
                 prop.style chipStyle
-                if item.Selected then
-                    prop.custom ("aria-current", "true")
                 prop.children [
-                    if item.Selected && isDeepest then
+                    if isHere then
                         Html.i [
+                            prop.testId "provenance-overview-location"
                             prop.ariaHidden true
                             prop.className "swt:iconify swt:fluent--location-16-filled swt:size-3 swt:align-[-2px]"
                         ]
@@ -329,48 +396,119 @@ type ProvenanceGraph =
                 ]
             ]
 
+            if isHere then
+                Html.span (
+                    common
+                    @ [
+                        prop.custom ("aria-current", "location")
+                        prop.className
+                            "swt:max-w-40 swt:min-w-0 swt:flex-none swt:truncate swt:rounded-full swt:border swt:px-2 swt:py-px swt:font-semibold"
+                    ]
+                )
+            elif item.Selected then
+                Html.button (
+                    common
+                    @ [
+                        prop.type'.button
+                        prop.custom ("aria-current", "true")
+                        prop.className
+                            "swt:max-w-40 swt:min-w-0 swt:flex-none swt:cursor-pointer swt:truncate swt:rounded-full swt:border swt:px-2 swt:py-px swt:font-semibold"
+                        prop.onClick (fun _ -> onNavigate item.Target)
+                    ]
+                )
+            else
+                Html.button (
+                    common
+                    @ [
+                        prop.type'.button
+                        prop.className
+                            "swt:max-w-40 swt:min-w-10 swt:cursor-pointer swt:truncate swt:rounded-full swt:border swt:px-2 swt:py-px swt:text-base-content/80 swt:hover:bg-base-200"
+                        prop.onClick (fun _ -> onNavigate item.Target)
+                    ]
+                )
+
+        // Every child of a row has a key, so the chips and buttons stay mounted when a row expands.
         let rowItem (depth: int) (row: OverviewRow) : ReactElement =
             let isDeepest = depth = rows.Length - 1
+            let isExpanded = expanded.Contains depth
+            let hasMore = row.Items.Length > row.WindowCount
+
+            let shown =
+                if isExpanded then
+                    row.Items
+                else
+                    Array.sub row.Items row.WindowStart row.WindowCount
+
+            let before = if isExpanded then 0 else row.WindowStart
+
+            let after =
+                if isExpanded then
+                    0
+                else
+                    row.Items.Length - row.WindowStart - row.WindowCount
 
             Html.li [
                 prop.key depth
                 prop.testId $"provenance-overview-row-{depth}"
                 prop.style [ style.marginLeft (depth * 14) ]
-                prop.className
-                    "swt:flex swt:min-w-0 swt:items-center swt:gap-1.5 swt:overflow-hidden swt:whitespace-nowrap"
+                prop.className (
+                    if isExpanded then
+                        "swt:flex swt:min-w-0 swt:flex-wrap swt:items-center swt:gap-1.5"
+                    else
+                        "swt:flex swt:min-w-0 swt:items-center swt:gap-1.5 swt:overflow-hidden swt:whitespace-nowrap"
+                )
                 prop.children [
                     if depth > 0 then
                         Html.i [
+                            prop.key "connector"
                             prop.ariaHidden true
                             prop.className
                                 "swt:iconify swt:fluent--arrow-turn-down-right-20-regular swt:size-3.5 swt:flex-none swt:opacity-60"
                         ]
 
+                    // The heading gives way first when the row is too narrow.
                     Html.span [
-                        prop.className "swt:flex-none swt:text-base-content/80"
+                        prop.key "heading"
+                        prop.title row.Heading
+                        prop.className "swt:min-w-0 swt:shrink-[1000] swt:truncate swt:text-base-content/80"
                         prop.text $"{row.Heading}:"
                     ]
 
-                    if row.Before > 0 then
-                        countText row.Before
+                    if before > 0 then
+                        moreButton "before" depth before
 
-                    for item in row.Items do
-                        chip isDeepest item
+                    for item in shown do
+                        chip $"item-{item.Id}" isDeepest item
 
-                    if row.After > 0 then
-                        countText row.After
+                    if after > 0 then
+                        moreButton "after" depth after
+
+                    if row.Extra.IsSome then
+                        Html.span [
+                            prop.key "separator"
+                            prop.ariaHidden true
+                            prop.className "swt:flex-none swt:text-base-content/80"
+                            prop.text "·"
+                        ]
+
+                    match row.Extra with
+                    | Some extra -> chip "extra" isDeepest extra
+                    | None -> ()
+
+                    if isExpanded && hasMore then
+                        lessButton depth
                 ]
             ]
 
-        Html.div [
+        Html.nav [
             prop.id id
             prop.testId "provenance-overview"
-            prop.role.group
             prop.ariaLabel "Location in the ARC"
             prop.className
                 "swt:flex-none swt:border-b swt:border-base-300 swt:bg-base-100 swt:px-3.5 swt:py-2 swt:text-xs"
             prop.children [
                 Html.ol [
+                    prop.ref listRef
                     prop.className "swt:m-0 swt:flex swt:list-none swt:flex-col swt:gap-1 swt:p-0"
                     prop.children [
                         for depth, row in Array.indexed rows -> rowItem depth row
@@ -530,9 +668,9 @@ type ProvenanceGraph =
                 prop.type'.button
                 prop.testId "provenance-up"
                 prop.className
-                    "swt:btn swt:btn-sm swt:btn-outline swt:flex-none swt:max-w-56 swt:gap-1.5 swt:font-normal"
-                prop.ariaLabel $"Back to {parent.Label}"
-                prop.title $"Back to {parent.Label}"
+                    "swt:btn swt:btn-sm swt:btn-outline swt:flex-none swt:max-w-[30%] swt:gap-1.5 swt:font-normal"
+                prop.ariaLabel $"Up to {parent.Label}"
+                prop.title $"Up to {parent.Label}"
                 prop.onClick (fun _ -> onNavigate parent.Target)
                 prop.children [
                     Html.i [
@@ -699,18 +837,28 @@ type ProvenanceGraph =
         let crumbs =
             React.useMemo ((fun () -> ProvenanceView.crumbs index view), [| box index; box viewKey |])
 
-        // A failing query leaves the overview empty, and the path of the page stays usable.
-        let overview =
+        // The queries behind the overview run once for a level. A lineage that centers on another node keeps them
+        // and only marks another node in the last row. A failing query leaves the overview empty, and the path of
+        // the page stays usable.
+        let overviewQueryView = Overview.queryView view
+
+        let overviewBase =
             React.useMemo (
                 (fun () ->
                     try
-                        Overview.rows index view
+                        Overview.baseRows index overviewQueryView
                     with error ->
                         Browser.Dom.console.error ("Could not compute the provenance overview", error)
                         [||]
                 ),
-                [| box index; box viewKey |]
+                [|
+                    box index
+                    box (ProvenanceView.resetKey overviewQueryView)
+                |]
             )
+
+        let overview =
+            React.useMemo ((fun () -> Overview.select view overviewBase), [| box overviewBase; box viewKey |])
 
         let toggleOverview =
             if overview.Length > 0 then
@@ -835,7 +983,7 @@ type ProvenanceGraph =
 
                 // The empty slot keeps the error boundary and the canvas mounted when the overview comes and goes.
                 if overviewOpen && overview.Length > 0 then
-                    ProvenanceGraph.Overview(overview, overviewId)
+                    ProvenanceGraph.Overview(overview, overviewId, viewKey, navigate)
                 else
                     Html.none
 
