@@ -207,7 +207,9 @@ open GraphCanvasHelper
 /// A graph that does not fit a box of at least 260 by 220 px shows a minimap of the whole drawing, with the
 /// visible part marked. Passing imageFileName shows the Download image and Copy image buttons, and the name is
 /// the file name of the downloaded image. Copy image appears only where the clipboard can take images, which needs a
-/// secure context with navigator.clipboard.write and ClipboardItem.
+/// secure context with navigator.clipboard.write and ClipboardItem. After a view change the canvas keeps drawing the
+/// last finished layout, dimmed and inert, until the new layout resolves. A small indicator appears when that wait
+/// lasts longer than 200 ms, and the very first layout shows its status text after the same delay.
 [<Erase; Mangle(false)>]
 type GraphCanvas =
 
@@ -570,7 +572,8 @@ type GraphCanvas =
             rootRef: IRefValue<HTMLElement option>,
             contentRef: IRefValue<HTMLElement option>,
             boxWidth: float,
-            boxHeight: float
+            boxHeight: float,
+            stale: bool
         ) =
         let frameWidth, frameHeight =
             Minimap.frameSize boxWidth boxHeight drawn.LayoutWidth drawn.LayoutHeight
@@ -645,8 +648,13 @@ type GraphCanvas =
 
         Html.div [
             prop.testId "graph-minimap"
-            prop.className
+            prop.className (
                 "swt:absolute swt:right-3 swt:bottom-16 swt:z-20 swt:rounded-lg swt:border swt:border-(color:--graph-border) swt:bg-base-100 swt:p-1 swt:shadow-md"
+                + (if stale then
+                       " swt:pointer-events-none swt:opacity-60"
+                   else
+                       "")
+            )
             prop.ariaHidden true
             css [ "touchAction", "none"; "cursor", "pointer" ]
             prop.children [
@@ -658,14 +666,15 @@ type GraphCanvas =
                     svg.custom ("viewBox", $"0 0 {drawn.LayoutWidth} {drawn.LayoutHeight}")
                     svg.custom ("preserveAspectRatio", "xMidYMid meet")
                     svg.onPointerDown (fun (event: PointerEvent) ->
-                        event.preventDefault ()
-                        dragging.current <- true
-                        centerAt event
-                        tryCapturePointer (event.currentTarget :?> Element) event.pointerId
+                        if not stale then
+                            event.preventDefault ()
+                            dragging.current <- true
+                            centerAt event
+                            tryCapturePointer (event.currentTarget :?> Element) event.pointerId
                     )
                     svg.onPointerMove (fun (event: PointerEvent) ->
                         // A move without the primary button is a hover, also after a release that was never reported.
-                        if dragging.current && (int event.buttons &&& 1) <> 0 then
+                        if not stale && dragging.current && (int event.buttons &&& 1) <> 0 then
                             centerAt event
                     )
                     svg.onPointerUp stopDragging
@@ -693,7 +702,8 @@ type GraphCanvas =
             svgRef: IRefValue<Element option>,
             rootRef: IRefValue<HTMLElement option>,
             fileName: string,
-            boxWidth: float
+            boxWidth: float,
+            stale: bool
         ) =
         let busy, setBusy = React.useState false
         let notice, setNotice = React.useState<string option> None
@@ -770,7 +780,7 @@ type GraphCanvas =
             settle (Some "Could not create the image.")
 
         let download () =
-            if not working.current then
+            if not working.current && not stale then
                 working.current <- true
                 setBusy true
 
@@ -794,7 +804,7 @@ type GraphCanvas =
         // user action only then. The PNG promise logs its own error and marks the failure, because write rejects
         // without saying whether the rendering or the clipboard failed.
         let copy () =
-            if not working.current then
+            if not working.current && not stale then
                 working.current <- true
                 setBusy true
                 let renderFailed = ref false
@@ -834,20 +844,21 @@ type GraphCanvas =
                     settle (Some "Could not copy the image.")
 
         // aria-disabled keeps the focus on the button, which disabled would drop. The handlers ignore clicks while busy.
+        // A stale drawing belongs to the view that was left, so it is never exported.
         let exportButton (testId: string) (label: string) (icon: string) (onClick: unit -> unit) =
             Html.button [
                 prop.type'.button
                 prop.testId testId
                 prop.key testId
                 prop.className (
-                    if busy then
+                    if busy || stale then
                         "swt:btn swt:btn-ghost swt:btn-square swt:btn-sm swt:btn-disabled"
                     else
                         "swt:btn swt:btn-ghost swt:btn-square swt:btn-sm"
                 )
                 prop.ariaLabel label
                 prop.title label
-                prop.custom ("aria-disabled", busy)
+                prop.custom ("aria-disabled", busy || stale)
                 prop.onClick (fun _ -> onClick ())
                 prop.children [ Html.i [ prop.className icon; prop.ariaHidden true ] ]
             ]
@@ -1035,7 +1046,8 @@ type GraphCanvas =
         // compact layout, which has no expanded edges and does not depend on the width.
         let layoutWidth = effectiveLayoutWidth portrait expanded.Length boxWidth
 
-        // The previous drawing stays until the next layout resolves, unless it belongs to another view.
+        // The previous drawing stays until the next layout resolves. Inside a view it stays active. After a view
+        // change it stays as a dimmed, inert drawing, so the canvas shows no status text between two views.
         let outcome, setOutcome = React.useState<Outcome option> None
 
         React.useEffect (
@@ -1104,8 +1116,39 @@ type GraphCanvas =
         let drawn = shown |> Option.bind (fun result -> result.Drawn)
         let failed = shown.IsSome && drawn.IsNone
 
-        let titles =
+        // The finished drawing of an earlier view, kept until the current view has an outcome. A failed earlier
+        // layout has no drawing to keep.
+        let stale =
+            match outcome with
+            | Some result when result.RequestedIn <> epoch -> result.Drawn
+            | _ -> None
+
+        let displayed =
             match drawn with
+            | Some _ -> drawn
+            | None when not failed -> stale
+            | None -> None
+
+        let isStale = drawn.IsNone && displayed.IsSome
+        let waiting = drawn.IsNone && not failed
+
+        // The indicator for a slow layout appears after 200 ms of waiting, so a quick layout shows nothing.
+        let slow, setSlow = React.useState false
+
+        React.useEffect (
+            (fun () ->
+                if waiting then
+                    let timer = Browser.Dom.window.setTimeout ((fun () -> setSlow true), 200)
+                    FsReact.createDisposable (fun () -> Browser.Dom.window.clearTimeout timer)
+                else
+                    setSlow false
+                    FsReact.createDisposable (fun () -> ())
+            ),
+            [| box waiting; box epoch |]
+        )
+
+        let titles =
+            match displayed with
             | Some drawn ->
                 drawn.LaidOutNodes
                 |> Array.fold (fun titles laid -> titles |> Map.add laid.Node.Id laid.Node.Title) Map.empty
@@ -1227,14 +1270,14 @@ type GraphCanvas =
         React.useLayoutEffect (
             (fun () ->
                 let next =
-                    match drawn, rootRef.current, contentRef.current with
+                    match displayed, rootRef.current, contentRef.current with
                     | Some _, Some root, Some content -> Minimap.overflows (readGeometry root content zoom)
                     | _ -> false
 
                 if next <> overflowing then
                     setOverflowing next
             ),
-            [| box drawn; box zoom; box boxWidth; box boxHeight |]
+            [| box displayed; box zoom; box boxWidth; box boxHeight |]
         )
 
         let edgeGroup (drawn: GraphLayout) (laid: LaidOutEdge) : ReactElement =
@@ -1290,7 +1333,7 @@ type GraphCanvas =
                             owner = owner,
                             ?listOpen = listOpen,
                             edgeId = laid.Edge.Id,
-                            onToggle = onToggle
+                            ?onToggle = (if isStale then None else Some onToggle)
                         )
                     ]
                 )
@@ -1330,11 +1373,19 @@ type GraphCanvas =
                 prop.ref contentRef
                 prop.testId "graph-canvas-content"
                 prop.custom ("data-compact", drawn.Compact)
+                prop.custom ("data-stale", isStale)
+                // A stale drawing takes no click, focus or pointer, and it dims to show that it is waiting.
+                if isStale then
+                    prop.custom ("inert", true)
                 prop.className (
-                    if drawn.Compact then
-                        "swt:relative swt:flex-none swt:mt-auto swt:mr-auto swt:mb-auto swt:ml-0"
-                    else
-                        "swt:relative swt:flex-none swt:m-auto"
+                    (if drawn.Compact then
+                         "swt:relative swt:flex-none swt:mt-auto swt:mr-auto swt:mb-auto swt:ml-0"
+                     else
+                         "swt:relative swt:flex-none swt:m-auto")
+                    + (if isStale then
+                           " swt:transition-opacity swt:opacity-60"
+                       else
+                           " swt:transition-opacity")
                 )
                 prop.children [
                     Svg.svg [
@@ -1368,7 +1419,9 @@ type GraphCanvas =
                             for laid in drawn.LaidOutNodes do
                                 React.KeyedFragment(
                                     laid.Node.Id,
-                                    [ GraphCanvas.NodeShape(laid, ?onClick = onNodeClick) ]
+                                    [
+                                        GraphCanvas.NodeShape(laid, ?onClick = (if isStale then None else onNodeClick))
+                                    ]
                                 )
                         ]
                     ]
@@ -1434,14 +1487,15 @@ type GraphCanvas =
                 Html.div [
                     prop.ref rootRef
                     prop.testId "graph-canvas"
+                    prop.custom ("aria-busy", waiting)
                     prop.className
                         "swt:relative swt:box-border swt:flex swt:size-full swt:overflow-auto swt:overscroll-auto swt:[scrollbar-gutter:stable] swt:text-base-content swt:focus:outline-none"
                     prop.role.region
                     prop.ariaLabel ariaLabel
                     prop.tabIndex -1
                     prop.children [
-                        match drawn with
-                        | Some drawn -> canvas drawn
+                        match displayed with
+                        | Some displayed -> canvas displayed
                         | None when shown.IsSome ->
                             Html.p [
                                 prop.testId "graph-status"
@@ -1464,11 +1518,28 @@ type GraphCanvas =
                                 prop.testId "graph-status"
                                 prop.className "swt:m-0 swt:px-3.5 swt:py-4 swt:text-base-content/80"
                                 prop.role.status
-                                prop.text "Laying out…"
+                                prop.text (if slow then "Laying out…" else "")
                             ]
                     ]
                 ]
-                if drawn.IsSome then
+                // Only a stale drawing needs this indicator. The first layout shows its text in the status paragraph.
+                if isStale && slow then
+                    Html.div [
+                        prop.testId "graph-loading"
+                        prop.role.status
+                        prop.className
+                            "swt:pointer-events-none swt:absolute swt:top-3 swt:right-3 swt:z-20 swt:flex swt:items-center swt:gap-2 swt:rounded-lg swt:border swt:border-(color:--graph-border) swt:bg-base-100 swt:px-2 swt:py-1 swt:text-xs swt:shadow-md"
+                        prop.children [
+                            Html.span [
+                                prop.className "swt:loading swt:loading-spinner swt:loading-xs"
+                                prop.ariaHidden true
+                            ]
+                            Html.span "Laying out…"
+                        ]
+                    ]
+                else
+                    Html.none
+                if displayed.IsSome then
                     Html.div [
                         prop.className
                             "swt:absolute swt:right-3 swt:bottom-3 swt:z-20 swt:flex swt:items-center swt:gap-1.5 swt:rounded-lg swt:border swt:border-(color:--graph-border) swt:bg-base-100 swt:p-1 swt:text-xs swt:tabular-nums swt:shadow-md"
@@ -1485,15 +1556,17 @@ type GraphCanvas =
                                 prop.text (string (floor (zoom * 100.0 + 0.5)) + "%")
                             ]
                             zoomButton "graph-zoom-in" "Zoom in" "+" (zoom >= maxZoom) (min maxZoom (zoom + zoomStep))
-                            match imageFileName, drawn with
-                            | Some fileName, Some drawn ->
-                                GraphCanvas.ExportControls(drawn, svgRef, rootRef, fileName, boxWidth)
+                            match imageFileName, displayed with
+                            | Some fileName, Some displayed ->
+                                GraphCanvas.ExportControls(displayed, svgRef, rootRef, fileName, boxWidth, isStale)
                             | _ -> Html.none
                         ]
                     ]
-                match drawn with
-                | Some drawn when minimapAvailable && minimapOpen && openMenu.IsNone ->
-                    GraphCanvas.Minimap(drawn, zoom, rootRef, contentRef, boxWidth, boxHeight)
+                else
+                    Html.none
+                match displayed with
+                | Some displayed when minimapAvailable && minimapOpen && openMenu.IsNone ->
+                    GraphCanvas.Minimap(displayed, zoom, rootRef, contentRef, boxWidth, boxHeight, isStale)
                 | _ -> Html.none
             ]
         ]

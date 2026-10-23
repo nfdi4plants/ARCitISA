@@ -318,6 +318,13 @@ let private menuEl () : HTMLElement option =
 
 let private menuNow () : HTMLElement = (menuEl ()).Value
 let private statusEl () : HTMLElement = RTL.screen.getByTestId "graph-status"
+
+let private contentEl () : HTMLElement =
+    RTL.screen.getByTestId "graph-canvas-content"
+
+let private loadingShown () : bool =
+    (RTL.screen.queryByTestId "graph-loading").IsSome
+
 let private roleOf (el: HTMLElement) : string = el.getAttribute "role"
 let private labelOf (el: HTMLElement) : string = el.getAttribute "aria-label"
 let private focused () : obj = box document.activeElement
@@ -900,17 +907,135 @@ Vitest.describe (
 
                 result.rerender (canvas (view "B"))
 
-                do! eventually (fun () -> Vitest.expect(roleOf (statusEl ())).toBe "status")
+                do! eventually (fun () -> Vitest.expect(contentEl().getAttribute "data-stale").toBe "true")
 
                 result.rerender (canvas (view "A"))
-                // The old drawing of A belongs to an earlier epoch, so the canvas says it lays out again.
-                Vitest.expect(roleOf (statusEl ())).toBe "status"
-                Vitest.expect(RTL.screen.queryByTestId("graph-node-a").IsNone).toBe true
+                // The old drawing of A belongs to an earlier epoch, so it stays as a stale drawing until A is laid out again.
+                Vitest.expect(contentEl().getAttribute "data-stale").toBe "true"
 
-                do! drawn ()
+                do! eventually (fun () -> Vitest.expect(contentEl().getAttribute "data-stale").toBe "false")
                 do! eventually (fun () -> Vitest.expect(focused ()).toBe (box (region ())))
                 // The scroll position is set again for the new epoch, here to the centered node.
                 Vitest.expect([| scrollLeftOf (region ()); scrollTopOf (region ()) |]).toEqual [| center - 150.0; 0.0 |]
+            }
+        )
+)
+
+// The drawing of the previous view while the layout of a new view is pending
+
+Vitest.describe (
+    "GraphCanvas stale drawing",
+    fun () ->
+        // Draws the first view, then switches to a view whose layout the second function controls.
+        let switchView (props: Props) (second: LayoutFn) : JS.Promise<RenderResult * Props> = promise {
+            let seam = seamOf [ (fun n e x m o -> layoutGraph n e x m o); second ]
+
+            let first = { props with LayoutSeam = Some seam.Fn }
+
+            let result = render first
+            do! drawn ()
+
+            let next = {
+                first with
+                    Nodes = [| plainNode "New" |]
+                    Edges = [||]
+                    ResetKey = "two"
+            }
+
+            result.rerender (canvas next)
+            do! eventually (fun () -> Vitest.expect(seam.Calls.Count).toBe 2)
+            return result, next
+        }
+
+        Vitest.test (
+            "keeps the old nodes dimmed and inert until the layout of the new view resolves",
+            fun () -> promise {
+                let clicks = ResizeArray<string>()
+                let pending = deferred ()
+
+                let! _, next =
+                    switchView
+                        {
+                            defaults with
+                                OnNodeClick = Some clicks.Add
+                                ImageFileName = Some "graph.png"
+                        }
+                        (fun _ _ _ _ _ -> pending.Promise)
+
+                nodeEl "a" |> ignore
+                Vitest.expect(contentEl().getAttribute "data-stale").toBe "true"
+                Vitest.expect(contentEl().hasAttribute "inert").toBe true
+                Vitest.expect(region().getAttribute "aria-busy").toBe "true"
+                Vitest.expect((RTL.screen.getByTestId "graph-image-download").getAttribute "aria-disabled").toBe "true"
+
+                click (nodeEl "a")
+                Vitest.expect(clicks.Count).toBe 0
+
+                let! newLayout = realLayout next.Nodes next.Edges unlimited
+                do! RTL.act (fun () -> promise { pending.Resolve newLayout })
+                do! eventually (fun () -> nodeEl "New" |> ignore)
+
+                Vitest.expect(RTL.screen.queryByTestId("graph-node-a").IsNone).toBe true
+                Vitest.expect(contentEl().getAttribute "data-stale").toBe "false"
+                Vitest.expect(contentEl().hasAttribute "inert").toBe false
+                Vitest.expect(region().getAttribute "aria-busy").toBe "false"
+                Vitest.expect((RTL.screen.getByTestId "graph-image-download").getAttribute "aria-disabled").toBe "false"
+            }
+        )
+
+        Vitest.test (
+            "shows the loading indicator only when the new layout takes longer than 200 ms",
+            fun () -> promise {
+                let pending = deferred ()
+                let! _, next = switchView defaults (fun _ _ _ _ _ -> pending.Promise)
+
+                Vitest.expect(loadingShown ()).toBe false
+                do! settle ()
+                Vitest.expect(loadingShown ()).toBe false
+                do! eventually (fun () -> Vitest.expect(loadingShown ()).toBe true)
+
+                let! newLayout = realLayout next.Nodes next.Edges unlimited
+                do! RTL.act (fun () -> promise { pending.Resolve newLayout })
+                do! eventually (fun () -> Vitest.expect(loadingShown ()).toBe false)
+            }
+        )
+
+        Vitest.test (
+            "shows the status text of the first layout only after 200 ms",
+            fun () -> promise {
+                let pending = deferred ()
+
+                let seam = seamOf [ (fun _ _ _ _ _ -> pending.Promise) ]
+
+                render {
+                    defaults with
+                        LayoutSeam = Some seam.Fn
+                }
+                |> ignore
+
+                Vitest.expect(roleOf (statusEl ())).toBe "status"
+                Vitest.expect((statusEl ()).textContent).toBe ""
+                do! eventually (fun () -> Vitest.expect((statusEl ()).textContent).not.toBe "")
+            }
+        )
+
+        Vitest.test (
+            "replaces the stale drawing with the alert when the layout of the new view fails",
+            fun () -> promise {
+                silenceConsoleError ()
+                let reject = ref (fun (_: exn) -> ())
+
+                let failing: JS.Promise<GraphLayout> =
+                    Promise.create (fun _ rejecter -> reject.Value <- rejecter)
+
+                let! _ = switchView defaults (fun _ _ _ _ _ -> failing)
+                nodeEl "a" |> ignore
+
+                do! RTL.act (fun () -> promise { reject.Value(exn "elk failed") })
+
+                do! eventually (fun () -> Vitest.expect(roleOf (statusEl ())).toBe "alert")
+                Vitest.expect(RTL.screen.queryByTestId("graph-node-a").IsNone).toBe true
+                Vitest.expect(region().getAttribute "aria-busy").toBe "false"
             }
         )
 )
