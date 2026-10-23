@@ -32,6 +32,10 @@ type Dirent =
     abstract member isFile: unit -> bool
     abstract member isSymbolicLink: unit -> bool
 
+/// Returns the Node.js system error code of a filesystem failure, such as ENOENT.
+[<Emit("(typeof $0?.code === 'string' ? $0.code : undefined)")>]
+let tryGetNodeErrorCode (error: exn) : string option = jsNative
+
 [<Import("mkdirSync", "fs")>]
 let mkdirSync (path: string) (options: MkdirOptions) : unit = jsNative
 

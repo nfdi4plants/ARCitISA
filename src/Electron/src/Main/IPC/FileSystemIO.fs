@@ -97,12 +97,6 @@ let pathExistsAsync (absolutePath: string) : JS.Promise<bool> = promise {
 let mkdirAsync (directoryPath: string) : JS.Promise<unit> =
     ARCtrl.FileSystemHelper.createDirectoryAsync directoryPath
 
-let tryGetNodeErrorCode (error: exn) : string option =
-    try
-        error?code |> unbox<string> |> Option.ofObj
-    with _ ->
-        None
-
 type private FileSystemRetryStrategy = {
     DelaysMs: int[]
     IsTransientErrorCode: string option -> bool

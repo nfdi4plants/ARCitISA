@@ -46,12 +46,20 @@ type IWatched =
 
 type IWatcher =
     abstract member close: unit -> Promise<unit>
-    abstract member add: paths: string -> unit
-    abstract member add: paths: string[] -> unit
-    abstract member unwatch: paths: string -> Promise<unit>
-    abstract member unwatch: paths: string[] -> Promise<unit>
+    abstract member add: paths: string -> IWatcher
+    abstract member add: paths: string[] -> IWatcher
+    abstract member unwatch: paths: string -> IWatcher
+    abstract member unwatch: paths: string[] -> IWatcher
     abstract member on: eventName: Events * callback: (string -> unit) -> IWatcher
+    abstract member on: eventName: Events * callback: (exn -> unit) -> IWatcher
     abstract member on: eventName: Events * callback: (string -> string -> unit) -> IWatcher
+
+    [<Emit("$0.on('ready', $1)")>]
+    abstract member onReady: callback: (unit -> unit) -> IWatcher
+
+    [<Emit("$0.on('error', $1)")>]
+    abstract member onError: callback: (obj -> unit) -> IWatcher
+
     abstract member getWatched: unit -> IWatched
 
 
