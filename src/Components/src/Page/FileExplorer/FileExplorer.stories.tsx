@@ -485,7 +485,7 @@ const BusyLfsRowFileExplorer = () => {
 };
 
 const lfsRowLabel = (canvasElement: HTMLElement, id: string) => {
-  const row = canvasElement.querySelector(`li[data-file-item-id="${id}"]`);
+  const row = canvasElement.querySelector(`[role="treeitem"][data-file-item-id="${id}"]`);
 
   if (!(row instanceof HTMLElement)) {
     throw new Error(`Expected file row ${id}.`);
@@ -1063,5 +1063,76 @@ export const LongNamesKeepInlineControlsVisible: StoryObj<typeof TruncatedOverfl
   play: async ({ canvasElement }) => {
     await expectLongNameControlsToStayVisible(canvasElement, veryLongFolderName);
     await expectLongNameControlsToStayVisible(canvasElement, veryLongFileName);
+  },
+};
+
+const LARGE_TREE_FILE_COUNT = 10000;
+
+const LargeTreeFileExplorer = () => {
+  const items = React.useMemo(
+    () =>
+      ofArray(
+        Array.from({ length: LARGE_TREE_FILE_COUNT }, (_, index) =>
+          createStableFile(`file-${index + 1}.txt`, `data/file-${index + 1}.txt`, `large-${index + 1}`),
+        ),
+      ),
+    [],
+  );
+
+  return (
+    <div data-testid="large-tree-viewport" style={{ height: 400, width: 320 }}>
+      <FileExplorer initialItems={items} truncateOverflowingItemNames={true} />
+    </div>
+  );
+};
+
+export const LargeTreeRendersOnlyVisibleRows: StoryObj<typeof LargeTreeFileExplorer> = {
+  render: () => <LargeTreeFileExplorer />,
+
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    await canvas.findByText("file-1.txt");
+    await expect(canvas.getAllByRole("treeitem").length).toBeLessThan(100);
+
+    const scrollContainer = await canvas.findByTestId("file-explorer-scroll-container");
+    scrollContainer.scrollTop = scrollContainer.scrollHeight;
+
+    await waitFor(() => expect(canvas.getByText(`file-${LARGE_TREE_FILE_COUNT}.txt`)).toBeInTheDocument());
+    await expect(canvas.getAllByRole("treeitem").length).toBeLessThan(100);
+    await expect(canvas.getByRole("tree")).toBeInTheDocument();
+  },
+};
+
+export const RefreshFolderIsOfferedForEveryDirectory: StoryObj<typeof LazyLoadDirectoryFileExplorer> = {
+  render: () => {
+    const refreshed: string[] = [];
+    return (
+      <div>
+        <FileExplorer
+          initialItems={ofArray([
+            createStableFolder("Empty Folder", "empty", "empty-folder", []),
+            createStableFile("notes.txt", "notes.txt", "notes"),
+          ])}
+          onRefreshDirectory={(item: FileItem) => {
+            refreshed.push(item.Id);
+            document.body.dataset.refreshed = refreshed.join(",");
+          }}
+        />
+      </div>
+    );
+  },
+
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const folder = await canvas.findByText("Empty Folder");
+
+    fireEvent.contextMenu(folder, { clientX: 24, clientY: 24, bubbles: true });
+    await userEvent.click(await screen.findByText("Refresh folder"));
+
+    await waitFor(() => expect(document.body.dataset.refreshed).toBe("empty-folder"));
+
+    fireEvent.contextMenu(await canvas.findByText("notes.txt"), { clientX: 24, clientY: 24, bubbles: true });
+    await waitFor(() => expect(screen.queryByText("Refresh folder")).toBeNull());
   },
 };
