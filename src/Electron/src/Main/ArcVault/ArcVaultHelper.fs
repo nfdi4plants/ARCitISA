@@ -407,26 +407,34 @@ let maxPdfPreviewBytes = 50.0 * 1024.0 * 1024.0
 
 let private binarySniffBytes = 8192
 
-/// True when the first bytes of the file contain a NUL byte. The handle is closed on success and on failure.
-/// The close is awaited so the file is released before the caller continues.
-let private startsWithNulByteAsync (path: string) : JS.Promise<bool> = promise {
+/// Reads up to maxBytes bytes from the start of the file through one handle. The handle is closed on success
+/// and on failure. The close is awaited so the file is released before the caller continues.
+let private readFirstBytesAsync (path: string) (maxBytes: int) : JS.Promise<byte[] * int> = promise {
     let! handle = Filesystem.openAsync path "r"
+    let buffer = Filesystem.allocBuffer maxBytes
 
-    let! hasNul = promise {
+    let! total = promise {
         try
-            let! result = handle.read (Filesystem.allocBuffer binarySniffBytes, 0, binarySniffBytes, 0)
-            return result.buffer |> Array.take result.bytesRead |> Array.exists (fun b -> b = 0uy)
+            let total = ref 0
+            let reachedEnd = ref false
+
+            while not reachedEnd.Value && total.Value < maxBytes do
+                let! result = handle.read (buffer, total.Value, maxBytes - total.Value, total.Value)
+                total.Value <- total.Value + result.bytesRead
+                reachedEnd.Value <- result.bytesRead = 0
+
+            return total.Value
         with error ->
             do! handle.close ()
             return raise error
     }
 
     do! handle.close ()
-    return hasNul
+    return buffer, total
 }
 
-/// Reads a file of an ARC for the preview. Files that are too large, not regular files, or binary
-/// come back as a NoPreview DTO without their content being read.
+/// Reads a file of an ARC for the preview. Files above the size limit and files without text content come
+/// back as a NoPreview DTO. Their content is not read.
 let readFileForPreviewAsync (absolutePath: string) (relativePath: string) : JS.Promise<FileContentDTO> = promise {
     let fileType = FileContentDTO.inferTextFileTypeFromPath relativePath
     let isPdf = fileType = FileContentType.PDF
@@ -437,15 +445,26 @@ let readFileForPreviewAsync (absolutePath: string) (relativePath: string) : JS.P
         return FileContentDTO.createNoPreview relativePath stats.size NoPreviewReason.Binary
     elif stats.size > limit then
         return FileContentDTO.createNoPreview relativePath stats.size NoPreviewReason.TooLarge
-    elif isPdf then
-        let! content = Filesystem.readFileBase64Async absolutePath
-        return FileContentDTO.create fileType content relativePath
     else
-        let! isBinary = startsWithNulByteAsync absolutePath
+        // One byte more than the limit shows a file that grew after the stat.
+        let capacity = int (min (limit + 1.0) (stats.size + 1.0))
+        let! buffer, total = readFirstBytesAsync absolutePath capacity
 
-        if isBinary then
+        if float total > limit then
+            return FileContentDTO.createNoPreview relativePath (float total) NoPreviewReason.TooLarge
+        elif isPdf then
+            return FileContentDTO.create fileType (Filesystem.bufferToBase64Prefix buffer total) relativePath
+        elif total >= 2 && buffer[0] = 0xFFuy && buffer[1] = 0xFEuy then
+            // UTF-16 text has NUL bytes, so a BOM decides before the NUL sniff.
+            return FileContentDTO.create fileType (Filesystem.bufferDecodePrefix buffer total "utf-16le") relativePath
+        elif total >= 2 && buffer[0] = 0xFEuy && buffer[1] = 0xFFuy then
+            return FileContentDTO.create fileType (Filesystem.bufferDecodePrefix buffer total "utf-16be") relativePath
+        elif
+            buffer
+            |> Array.truncate (min total binarySniffBytes)
+            |> Array.exists (fun b -> b = 0uy)
+        then
             return FileContentDTO.createNoPreview relativePath stats.size NoPreviewReason.Binary
         else
-            let! content = ARCtrl.FileSystemHelper.readFileTextAsync absolutePath
-            return FileContentDTO.create fileType content relativePath
+            return FileContentDTO.create fileType (Filesystem.bufferToUtf8Prefix buffer total) relativePath
 }

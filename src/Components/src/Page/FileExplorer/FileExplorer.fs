@@ -298,7 +298,8 @@ type FileExplorer =
                     ?onDeleteItem = onDeleteItem,
                     canDeleteItem = canDeleteItem,
                     ?statusAction = statusAction,
-                    ?children = childrenTree
+                    ?children = childrenTree,
+                    truncateNames = truncateOverflowingItemNames
                 )
             else
                 FileExplorerItem.FileRow(
@@ -310,7 +311,8 @@ type FileExplorer =
                     itemActions = itemActions,
                     ?onDeleteItem = onDeleteItem,
                     canDeleteItem = canDeleteItem,
-                    ?statusAction = statusAction
+                    ?statusAction = statusAction,
+                    truncateNames = truncateOverflowingItemNames
                 )
 
         Html.div [

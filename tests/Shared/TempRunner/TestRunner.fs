@@ -21,7 +21,7 @@ let private lfsBusyTests =
             let freeing = createLfsItem true false
 
             for item in [ downloading; freeing ] do
-                match lfsPillAction item (Some ignore) (Some ignore) with
+                match lfsPillAction item (Some ignore) with
                 | Some action -> Expect.equal action.Disabled (Some true) "The active pill action must be disabled."
                 | None -> failtest "An active LFS file must keep its pill action."
 

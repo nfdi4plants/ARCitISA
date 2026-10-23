@@ -20,7 +20,7 @@ type FileExplorerItem =
 
             prop.type'.button
             prop.className [
-                "swt:btn swt:btn-ghost swt:btn-square swt:btn-xs swt:opacity-0 swt:transition-opacity swt:group-hover:opacity-100 swt:focus:opacity-100"
+                "swt:btn swt:btn-ghost swt:btn-square swt:btn-xs swt:shrink-0 swt:opacity-0 swt:transition-opacity swt:group-hover:opacity-100 swt:focus:opacity-100"
 
                 match className with
                 | Some className -> className
@@ -198,9 +198,15 @@ type FileExplorerItem =
                         ]
 
                     Html.span [
-                        // Below this container width only the icon stays. The aria-label of the pill keeps the status.
+                        // Below this container width only the icon stays. The sr-only span below keeps the status readable.
                         prop.className "swt:@max-[12rem]:hidden"
                         prop.text (defaultArg item.LfsActivity "LFS")
+                    ]
+
+                    // Screen readers skip aria-label on a span and the label above is display:none in narrow rows.
+                    Html.span [
+                        prop.className "swt:sr-only"
+                        prop.text statusAccessibilityText
                     ]
                 ]
             ]
@@ -244,7 +250,7 @@ type FileExplorerItem =
                 prop.disabled isActionDisabled
                 yield!
                     commonProps [
-                        "swt:inline-flex swt:m-0 swt:overflow-hidden swt:rounded-full swt:border swt:border-base-300 swt:bg-transparent swt:p-0 swt:align-middle swt:transition-colors"
+                        "swt:inline-flex swt:min-w-0 swt:m-0 swt:overflow-hidden swt:rounded-full swt:border swt:border-base-300 swt:bg-transparent swt:p-0 swt:align-middle swt:transition-colors"
 
                         if isActionDisabled then
                             "swt:cursor-not-allowed swt:opacity-70"
@@ -262,7 +268,7 @@ type FileExplorerItem =
             Html.span [
                 yield!
                     commonProps [
-                        "swt:inline-flex swt:overflow-hidden swt:rounded-full swt:border swt:border-base-300"
+                        "swt:inline-flex swt:min-w-0 swt:overflow-hidden swt:rounded-full swt:border swt:border-base-300"
                     ]
                 prop.onClick stopPillClick
             ]
@@ -292,8 +298,10 @@ type FileExplorerItem =
             ?onDeleteItem: FileItem -> unit,
             ?canDeleteItem: FileItem -> bool,
             ?statusAction: ContextMenuItem,
-            ?children: ReactElement
+            ?children: ReactElement,
+            ?truncateNames: bool
         ) =
+        let truncateNames = defaultArg truncateNames false
         let canCreateItem = defaultArg canCreateItem (fun (_: FileItem) -> false)
         let itemActions = defaultArg itemActions []
         let canDeleteItem = defaultArg canDeleteItem (fun (_: FileItem) -> false)
@@ -312,7 +320,11 @@ type FileExplorerItem =
             Html.div [
                 prop.custom ("data-file-item-id", item.Id)
                 prop.className [
-                    "swt:group swt:@container swt:w-full swt:px-2 swt:py-1 swt:cursor-default"
+                    "swt:group swt:w-full swt:px-2 swt:py-1 swt:cursor-default"
+
+                    if truncateNames then
+                        "swt:@container"
+
                     rowHighlightClass
                 ]
                 prop.style [ style.display.flex; style.width (length.percent 100) ]
@@ -324,8 +336,10 @@ type FileExplorerItem =
                         prop.children [
                             Html.button [
                                 prop.type'.button
-                                prop.className
-                                    "swt:flex swt:min-w-16 swt:flex-1 swt:items-center swt:gap-2 swt:bg-transparent swt:border-0 swt:p-0 swt:text-left swt:cursor-default"
+                                prop.className [
+                                    "swt:flex swt:flex-1 swt:items-center swt:gap-2 swt:bg-transparent swt:border-0 swt:p-0 swt:text-left swt:cursor-default"
+                                    if truncateNames then "swt:min-w-24" else "swt:min-w-0"
+                                ]
                                 prop.onClick onDirectorySelect
 
                                 if canExpandDirectory then
@@ -360,8 +374,13 @@ type FileExplorerItem =
                                 || canDeleteFromDirectory
                             then
                                 Html.div [
-                                    prop.className
-                                        "swt:ml-auto swt:shrink swt:min-w-0 swt:flex swt:items-center swt:gap-2"
+                                    prop.className [
+                                        "swt:ml-auto swt:flex swt:items-center swt:gap-2"
+                                        if truncateNames then
+                                            "swt:shrink swt:min-w-0"
+                                        else
+                                            "swt:shrink-0"
+                                    ]
                                     prop.children [
                                         FileExplorerItem.CreateItemButton(item, onCreateItem, canCreateItem)
 
@@ -407,8 +426,10 @@ type FileExplorerItem =
             ?itemActions: ContextMenuItem list,
             ?onDeleteItem: FileItem -> unit,
             ?canDeleteItem: FileItem -> bool,
-            ?statusAction: ContextMenuItem
+            ?statusAction: ContextMenuItem,
+            ?truncateNames: bool
         ) =
+        let truncateNames = defaultArg truncateNames false
         let itemActions = defaultArg itemActions []
         let canDeleteItem = defaultArg canDeleteItem (fun (_: FileItem) -> false)
         let hasItemActions = itemActions |> List.isEmpty |> not
@@ -422,15 +443,19 @@ type FileExplorerItem =
                 Html.div [
                     prop.custom ("data-file-item-id", item.Id)
                     prop.className [
-                        "swt:group swt:@container swt:px-2 swt:py-1 swt:flex swt:min-w-0 swt:items-center swt:justify-between swt:cursor-default"
+                        "swt:group swt:px-2 swt:py-1 swt:flex swt:min-w-0 swt:items-center swt:justify-between swt:cursor-default"
+                        if truncateNames then
+                            "swt:@container"
                         rowHighlightClass
                     ]
                     prop.children [
                         Html.button [
                             prop.type'.button
                             prop.custom ("data-file-item-id", item.Id)
-                            prop.className
-                                "swt:flex swt:min-w-16 swt:flex-1 swt:items-center swt:gap-2 swt:bg-transparent swt:border-0 swt:p-0 swt:text-left swt:cursor-default"
+                            prop.className [
+                                "swt:flex swt:flex-1 swt:items-center swt:gap-2 swt:bg-transparent swt:border-0 swt:p-0 swt:text-left swt:cursor-default"
+                                if truncateNames then "swt:min-w-24" else "swt:min-w-0"
+                            ]
                             prop.onClick (fun _ -> onSelect ())
                             prop.children [
                                 Html.i [
@@ -455,7 +480,13 @@ type FileExplorerItem =
 
                         if hasStatusControl || hasItemActions || canDeleteFromFile then
                             Html.div [
-                                prop.className "swt:ml-auto swt:flex swt:shrink swt:min-w-0 swt:items-center swt:gap-2"
+                                prop.className [
+                                    "swt:ml-auto swt:flex swt:items-center swt:gap-2"
+                                    if truncateNames then
+                                        "swt:shrink swt:min-w-0"
+                                    else
+                                        "swt:shrink-0"
+                                ]
                                 prop.children [
                                     yield!
                                         itemActions

@@ -90,7 +90,7 @@ let private lfsAction label icon item enabled action =
             ContextMenuItem.disabled label icon
     )
 
-let lfsPillAction (item: FileItem) onDownloadLfsFile onFreeLocalLfsCopy =
+let lfsPillAction (item: FileItem) onDownloadLfsFile =
     let withFallback label icon enabled action =
         lfsAction label icon item enabled action
         |> Option.defaultValue (ContextMenuItem.disabled label icon)

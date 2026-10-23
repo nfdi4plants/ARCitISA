@@ -17,7 +17,7 @@ Vitest.describe (
         Vitest.test (
             "offers the download action for a pointer file",
             fun () ->
-                let action = lfsPillAction (lfsFile true) (Some ignore) (Some ignore)
+                let action = lfsPillAction (lfsFile true) (Some ignore)
                 Vitest.expect(action.IsSome).toBe true
                 Vitest.expect(action.Value.Label).toBe "Download LFS file"
         )
@@ -25,7 +25,7 @@ Vitest.describe (
         Vitest.test (
             "offers no action for a file with a local copy",
             fun () ->
-                let action = lfsPillAction (lfsFile false) (Some ignore) (Some ignore)
+                let action = lfsPillAction (lfsFile false) (Some ignore)
                 Vitest.expect(action.IsNone).toBe true
         )
 )

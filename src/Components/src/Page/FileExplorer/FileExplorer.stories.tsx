@@ -349,7 +349,7 @@ const LfsContextMenuFileExplorer = () => {
             freeLocalLfsCopy,
           )
         }
-        getItemStatusAction={(item) => fileExplorerGitLfsPillAction(item, downloadLfsFile, freeLocalLfsCopy)}
+        getItemStatusAction={(item) => fileExplorerGitLfsPillAction(item, downloadLfsFile)}
       />
       <div data-testid="lfs-download-count">Downloads: {downloadCount}</div>
       <div data-testid="lfs-free-count">Freed: {freeCount}</div>
@@ -477,7 +477,7 @@ const BusyLfsRowFileExplorer = () => {
         }
         canDeleteItem={() => true}
         onDeleteItem={() => {}}
-        getItemStatusAction={(item) => fileExplorerGitLfsPillAction(item, () => {}, () => {})}
+        getItemStatusAction={(item) => fileExplorerGitLfsPillAction(item, () => {})}
         truncateOverflowingItemNames={true}
       />
     </div>
@@ -548,30 +548,49 @@ const expectLongNameControlsToStayVisible = async (canvasElement: HTMLElement, i
   });
 };
 
+const narrowLfsPointerName = "a-very-long-pointer-file-name-for-the-sequencing-run.fastq.gz";
+const narrowLfsDownloadedName = "a-very-long-downloaded-file-name-for-the-alignment.bam";
+
+const createNarrowLfsItems = () =>
+  ofArray([
+    Object.assign(
+      createStableFolder("data", "data", "narrow-data", [
+        Object.assign(createStableFolder("raw", "data/raw", "narrow-raw", [
+          Object.assign(createStableFile(narrowLfsPointerName, "data/raw/pointer.fastq.gz", "narrow-pointer"), {
+            IsLFS: true,
+            Downloaded: false,
+            IsLFSPointer: true,
+            SizeFormatted: "42 MB",
+          }),
+          Object.assign(createStableFile(narrowLfsDownloadedName, "data/raw/downloaded.bam", "narrow-downloaded"), {
+            IsLFS: true,
+            Downloaded: true,
+            IsLFSPointer: false,
+            SizeFormatted: "14 MB",
+          }),
+        ]), { IsExpanded: true }),
+      ]),
+      { IsExpanded: true },
+    ),
+  ]);
+
 const NarrowLfsFileExplorer = () => {
   const [selectedPath, setSelectedPath] = React.useState("none");
-  const items = React.useMemo(
-    () =>
-      ofArray([
-        Object.assign(
-          FileTree_createFile("a-very-long-pointer-file-name-for-the-sequencing-run.fastq.gz", "data/pointer.fastq.gz", FileItemIcon_Document$()),
-          { IsLFS: true, Downloaded: false, IsLFSPointer: true, SizeFormatted: "42 MB" },
-        ),
-        Object.assign(
-          FileTree_createFile("a-very-long-downloaded-file-name-for-the-alignment.bam", "data/downloaded.bam", FileItemIcon_Document$()),
-          { IsLFS: true, Downloaded: true, IsLFSPointer: false, SizeFormatted: "14 MB" },
-        ),
-      ]),
-    [],
-  );
+  const items = React.useMemo(createNarrowLfsItems, []);
 
   return (
     <div>
-      <div data-testid="narrow-lfs-viewport" style={{ width: 240 }}>
+      <div data-testid="narrow-lfs-viewport" style={{ width: 240, overflow: "hidden" }}>
         <FileExplorer
           initialItems={items}
           onItemClick={(item) => setSelectedPath(item.Path ?? "none")}
-          getItemStatusAction={(item) => fileExplorerGitLfsPillAction(item, () => {}, () => {})}
+          getItemActions={() =>
+            ofArray([new ContextMenuItem("Rename", "swt:fluent--edit-24-regular", () => {}, undefined)])
+          }
+          canDeleteItem={() => true}
+          onDeleteItem={() => {}}
+          getItemStatusAction={(item) => fileExplorerGitLfsPillAction(item, () => {})}
+          truncateOverflowingItemNames={true}
         />
       </div>
       <div data-testid="narrow-lfs-selected">Selected: {selectedPath}</div>
@@ -584,18 +603,55 @@ export const LfsRowsKeepTheirNameAtNarrowWidth: StoryObj<typeof NarrowLfsFileExp
 
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
+    const viewport = await canvas.findByTestId("narrow-lfs-viewport");
 
-    for (const name of [
-      "a-very-long-pointer-file-name-for-the-sequencing-run.fastq.gz",
-      "a-very-long-downloaded-file-name-for-the-alignment.bam",
-    ]) {
+    for (const name of [narrowLfsPointerName, narrowLfsDownloadedName]) {
       const label = await canvas.findByText(name);
-      expect(label.getBoundingClientRect().width).toBeGreaterThan(0);
+      const row = label.closest("div[data-file-item-id]") as HTMLElement;
+
+      await waitFor(() => {
+        const viewportRect = viewport.getBoundingClientRect();
+        const pill = within(row).getByTitle(/LFS/);
+
+        expect(label.getBoundingClientRect().width).toBeGreaterThanOrEqual(64);
+        expect(pill.getBoundingClientRect().right).toBeLessThanOrEqual(viewportRect.right + 1);
+      });
     }
 
-    const downloadedName = await canvas.findByText("a-very-long-downloaded-file-name-for-the-alignment.bam");
+    // The row is narrower than 16rem, so the pill drops its size segment.
+    expect(canvas.getByText("42 MB")).not.toBeVisible();
+    expect(canvas.getByText("14 MB")).not.toBeVisible();
+
+    const downloadedName = await canvas.findByText(narrowLfsDownloadedName);
     await userEvent.click(downloadedName);
-    await waitFor(() => expect(canvas.getByTestId("narrow-lfs-selected")).toHaveTextContent("Selected: data/downloaded.bam"));
+    await waitFor(() =>
+      expect(canvas.getByTestId("narrow-lfs-selected")).toHaveTextContent("Selected: data/raw/downloaded.bam"),
+    );
+  },
+};
+
+const ScrollingLfsFileExplorer = () => {
+  const items = React.useMemo(createNarrowLfsItems, []);
+
+  return (
+    <div style={{ width: 240 }}>
+      <FileExplorer
+        initialItems={items}
+        getItemStatusAction={(item) => fileExplorerGitLfsPillAction(item, () => {})}
+      />
+    </div>
+  );
+};
+
+export const DefaultModeScrollsHorizontallyForLongNames: StoryObj<typeof ScrollingLfsFileExplorer> = {
+  render: () => <ScrollingLfsFileExplorer />,
+
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await canvas.findByText(narrowLfsDownloadedName);
+    const scrollContainer = await canvas.findByTestId("file-explorer-scroll-container");
+
+    await waitFor(() => expect(scrollContainer.scrollWidth).toBeGreaterThan(scrollContainer.clientWidth));
   },
 };
 

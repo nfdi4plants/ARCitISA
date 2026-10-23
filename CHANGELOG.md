@@ -16,6 +16,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 🔄 Changed
+
+- Files above the preview size limit or with binary content open as a page that shows the file name and size, with a button to open the file in its default application. (by @caroott)
+- The Git LFS badge of a downloaded file no longer frees its local copy. Freeing is in the right-click menu and asks for confirmation first. (by @caroott)
+
+### 🐛 Fixed
+
+- File names of Git LFS files stay visible in narrow file tree rows. The badge drops its text and size first. (by @caroott)
+
 ## 3.1.0 - 2026-10-21
 
 ### ✨ Added
