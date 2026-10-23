@@ -6,6 +6,8 @@ open ARCtrl
 open Swate.Components.Shared
 open Swate.Electron.Shared.FileIOTypes
 
+let LegacyDataMapFileName = "isa_datamap"
+
 let getNonEmptyPathParts (path: string) =
     PathHelpers.normalizePath path
     |> fun p -> p.Split('/', StringSplitOptions.RemoveEmptyEntries)
@@ -19,7 +21,9 @@ let pathsEqual (left: string) (right: string) =
 let isLegacyDataMapPath (path: string) =
     getNonEmptyPathParts path
     |> Array.tryLast
-    |> Option.exists (fun fileName -> String.Equals(fileName, "isa_datamap", StringComparison.OrdinalIgnoreCase))
+    |> Option.exists (fun fileName ->
+        String.Equals(fileName, LegacyDataMapFileName, StringComparison.OrdinalIgnoreCase)
+    )
 
 let isRootFolderPath (rootFolderName: string) (candidateRelativePath: string) =
     match getNonEmptyPathParts candidateRelativePath with
