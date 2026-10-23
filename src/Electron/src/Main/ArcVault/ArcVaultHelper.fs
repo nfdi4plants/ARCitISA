@@ -446,12 +446,13 @@ let readFileForPreviewAsync (absolutePath: string) (relativePath: string) : JS.P
     elif stats.size > limit then
         return FileContentDTO.createNoPreview relativePath stats.size NoPreviewReason.TooLarge
     else
-        // One byte more than the limit shows a file that grew after the stat.
+        // The read is capped at the size from the stat plus one byte. A file that grew afterwards is previewed
+        // up to that cap, and one that crossed the limit while it was exactly at it shows as too large.
         let capacity = int (min (limit + 1.0) (stats.size + 1.0))
         let! buffer, total = readFirstBytesAsync absolutePath capacity
 
         if float total > limit then
-            return FileContentDTO.createNoPreview relativePath (float total) NoPreviewReason.TooLarge
+            return FileContentDTO.createNoPreview relativePath stats.size NoPreviewReason.TooLarge
         elif isPdf then
             return FileContentDTO.create fileType (Filesystem.bufferToBase64Prefix buffer total) relativePath
         elif total >= 2 && buffer[0] = 0xFFuy && buffer[1] = 0xFEuy then

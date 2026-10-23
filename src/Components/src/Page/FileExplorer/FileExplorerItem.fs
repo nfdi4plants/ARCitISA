@@ -199,6 +199,7 @@ type FileExplorerItem =
 
                     Html.span [
                         // Below this container width only the icon stays. The sr-only span below keeps the status readable.
+                        prop.ariaHidden true
                         prop.className "swt:@max-[12rem]:hidden"
                         prop.text (defaultArg item.LfsActivity "LFS")
                     ]
@@ -217,6 +218,8 @@ type FileExplorerItem =
             match visibleSize with
             | Some size ->
                 Html.span [
+                    // The sr-only status text already includes the size.
+                    prop.ariaHidden true
                     prop.className [
                         "swt:badge"
                         "swt:badge-sm"
