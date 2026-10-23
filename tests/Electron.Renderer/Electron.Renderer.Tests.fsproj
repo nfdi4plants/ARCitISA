@@ -9,6 +9,7 @@
     <Compile Include="ArcVaultHelper.test.fs" />
     <Compile Include="DataHubBrowserTarget.test.fs" />
     <Compile Include="JsonImportWidget.test.fs" />
+    <Compile Include="FileTreeStore.test.fs" />
     <Compile Include="FileStateContextReload.test.fs" />
     <Compile Include="FileSystemHelper.test.fs" />
     <Compile Include="FileTreeFileTargetWorkflow.test.fs" />
