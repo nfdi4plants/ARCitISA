@@ -158,13 +158,7 @@ let private withFileEntryLfsMetadata
 let private buildLargeObjectsByComparisonKey (largeObjectsByRelativePath: Map<string, ObjectStateDto>) =
     largeObjectsByRelativePath
     |> Map.toSeq
-    |> Seq.groupBy (fun (relativePath, _) -> PathHelpers.normalizeForUnicodeComparison relativePath)
-    |> Seq.choose (fun (comparisonKey, matchingObjects) ->
-        match matchingObjects |> Seq.toList with
-        | [ (_, largeObject) ] -> Some(comparisonKey, largeObject)
-        | _ -> None
-    )
-    |> Map.ofSeq
+    |> Main.LargeObjectIndex.buildComparisonKeyMap
 
 let withFileEntriesLfsMetadata
     (repoRoot: string)
