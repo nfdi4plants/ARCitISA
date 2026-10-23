@@ -324,6 +324,46 @@ module ArcEntityPathRules =
         |> splitPathSegments
         |> tryParseCanonicalArcFileTargetFromSegments
 
+    let private platformJunkFileNames = [ ".ds_store"; ".directory"; "thumbs.db"; "desktop.ini" ]
+
+    /// True for the files that operating systems and file managers add to any folder.
+    let isPlatformJunkName (name: string) =
+        name.StartsWith("._", StringComparison.Ordinal)
+        || List.contains (name.ToLowerInvariant()) platformJunkFileNames
+
+    /// True for the paths the permanent watcher observes: the ARC root, root metadata files and `.gitattributes`,
+    /// zone folders, entity folders, and the canonical entity file and datamap of each entity. Nothing deeper is
+    /// structural, so payload folders are never descended into. A missing directory hint keeps the paths whose
+    /// shape allows either kind, because chokidar asks before it has stat data.
+    let isStructuralWatcherPath (relativePath: string) (isDirectory: bool option) =
+        let segments = relativePath |> normalizeRelativePath |> splitPathSegments
+
+        if segments |> Array.exists isPlatformJunkName then
+            false
+        else
+            let mayBeFile = isDirectory <> Some true
+            let mayBeFolder = isDirectory <> Some false
+
+            match segments with
+            | [||] -> true
+            | [| name |] when isAddZoneSegment name -> mayBeFolder
+            | [| name |] ->
+                mayBeFile
+                && (PathHelpers.pathMatchesAny structuralRootFileNames name
+                    || PathHelpers.pathsEqual name ".gitattributes")
+            | [| zoneSegment; name |] ->
+                mayBeFolder
+                && isAddZoneSegment zoneSegment
+                && not (name.StartsWith(".", StringComparison.Ordinal))
+            | [| zoneSegment; _; fileName |] ->
+                match tryParseZone zoneSegment with
+                | Some zone ->
+                    mayBeFile
+                    && (PathHelpers.pathsEqual fileName (zoneEntityFileName zone)
+                        || PathHelpers.pathsEqual fileName ARCtrl.ArcPathHelper.DataMapFileName)
+                | None -> false
+            | _ -> false
+
     let classifyDeleteTarget (relativePath: string) =
         let normalizedRelativePath = normalizeRelativePath relativePath
         let segments = normalizedRelativePath |> splitPathSegments

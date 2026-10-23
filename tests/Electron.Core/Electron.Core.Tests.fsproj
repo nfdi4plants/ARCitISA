@@ -21,6 +21,7 @@
     <Compile Include="FileTreeCreator.test.fs" />
     <Compile Include="ArcFileMutationHelper.test.fs" />
     <Compile Include="ArcVaultHelper.test.fs" />
+    <Compile Include="FileWatcher.test.fs" />
     <Compile Include="ArcPersonsReader.test.fs" />
     <Compile Include="ArcNodesReader.test.fs" />
     <Compile Include="ArcAddExtensions.test.fs" />
