@@ -30,6 +30,7 @@
     <Compile Include="EnsureNotesFolder.test.fs" />
     <Compile Include="IpcArchitectureReview.test.fs" />
     <Compile Include="ArcFileSystemHelper.test.fs" />
+    <Compile Include="FilesystemBindings.test.fs" />
     <Compile Include="RenamePathRules.test.fs" />
     <Compile Include="ProvenanceGroupingReader.test.fs" />
     <Compile Include="ProvenanceGraphReader.test.fs" />

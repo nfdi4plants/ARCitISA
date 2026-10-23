@@ -177,11 +177,7 @@ type OpenArcRootRenamePlan = {
 let private resolveAbsolutePath (pathValue: string) =
     pathDynamic?resolve (pathValue) |> unbox<string> |> PathHelpers.normalizePath
 
-let private tryGetNodeErrorCode (error: exn) : string option =
-    try
-        error?code |> unbox<string> |> Option.ofObj
-    with _ ->
-        None
+let private tryGetNodeErrorCode = Filesystem.tryGetNodeErrorCode
 
 let private pathExistsAsync (absolutePath: string) : JS.Promise<bool> = promise {
     let! fileExists = ARCtrl.FileSystemHelper.fileExistsAsync absolutePath
