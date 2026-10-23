@@ -23,6 +23,7 @@ let private resetsWhenSelectionIsRemoved =
     | PageState.PDFPage _
     | PageState.TextPage _
     | PageState.UnknownPage
+    | PageState.LargeFilePage _
     | PageState.ErrorPage _ -> true
     | _ -> false
 
@@ -61,6 +62,7 @@ let private reloadsWhenSelectedFileChanges =
     | PageState.PDFPage _
     | PageState.TextPage _
     | PageState.UnknownPage
+    | PageState.LargeFilePage _
     | PageState.ErrorPage _ -> true
     | _ -> false
 

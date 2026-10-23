@@ -58,6 +58,7 @@
     <Compile Include="Components\MainContent\MarkdownEditorTarget.fs" />
     <Compile Include="Components\MainContent\PDFViewer.fs" />
     <Compile Include="Components\MainContent\UnknownPreviewTarget.fs" />
+    <Compile Include="Components\MainContent\LargeFilePreviewTarget.fs" />
     <Compile Include="Components\MainContent\ErrorViewTarget.fs" />
     <Compile Include="Components\MainContent\NotesDraftTarget.fs" />
     <Compile Include="Components\MainContent\NotesSearchTarget.fs" />

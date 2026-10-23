@@ -103,3 +103,17 @@ let readdirAsync (path: string) : JS.Promise<string[]> = jsNative
 
 [<Import("readdir", "fs/promises")>]
 let readdirWithTypesAsync (path: string) (options: ReaddirOptions) : JS.Promise<Dirent[]> = jsNative
+
+type ReadResult =
+    abstract member bytesRead: int
+    abstract member buffer: byte[]
+
+type FileHandle =
+    abstract member close: unit -> JS.Promise<unit>
+    abstract member read: buffer: byte[] * offset: int * length: int * position: int -> JS.Promise<ReadResult>
+
+[<Import("open", "fs/promises")>]
+let openAsync (path: string) (flags: string) : JS.Promise<FileHandle> = jsNative
+
+[<Emit("Buffer.alloc($0)")>]
+let allocBuffer (length: int) : byte[] = jsNative
