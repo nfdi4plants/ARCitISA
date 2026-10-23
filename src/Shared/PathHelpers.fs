@@ -1,6 +1,7 @@
 namespace Swate.Components.Shared
 
 open System
+open Fable.Core
 
 
 [<RequireQualifiedAccess>]
@@ -29,9 +30,13 @@ module PathHelpers =
         normalizeSeparators path
         |> fun normalized -> normalized.Trim().TrimEnd('/').ToLowerInvariant()
 
+    /// Composes a string to Unicode NFC, so an NFD name from macOS readdir equals git's NFC form.
+    let normalizeToNfc (value: string) =
+        value.Normalize(System.Text.NormalizationForm.FormC)
+
     let normalizeForUnicodeComparison (path: string) =
         normalizeSeparators path
-        |> fun normalized -> normalized.Normalize(System.Text.NormalizationForm.FormC)
+        |> normalizeToNfc
         |> fun normalized -> normalized.ToLowerInvariant()
 
     /// Produces a normalized, case-insensitive path suitable for filesystem comparisons.
@@ -607,3 +612,22 @@ module ArcEntityPathRules =
         canonicalEntityFilePath zone identifier
         canonicalDataMapFilePath zone identifier
     ]
+
+/// A comparison key for a path. Display paths stay as scanned, and keys decide which paths name the same entry.
+[<Erase>]
+type PathKey = PathKey of string
+
+module PathKey =
+
+    /// Separators, trim and trailing slash, then Unicode NFC, then lower case when the file system ignores case.
+    let ofPath (caseInsensitive: bool) (path: string) : PathKey =
+        let composed = path |> PathHelpers.normalizePath |> PathHelpers.normalizeToNfc
+
+        PathKey(
+            if caseInsensitive then
+                composed.ToLowerInvariant()
+            else
+                composed
+        )
+
+    let value (PathKey key) : string = key

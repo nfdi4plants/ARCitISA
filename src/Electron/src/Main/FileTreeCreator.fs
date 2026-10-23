@@ -16,16 +16,74 @@ open VersionControlService.Abstractions
 let normalizeRootPath (path: string) =
     resolve [| path |] |> PathHelpers.normalizePath
 
-let private shouldIgnoreDirName (name: string) = name = ".git"
+/// Result of stat-ing one probe path.
+type CaseProbeStat =
+    | ProbeIdentity of dev: string * ino: string
+    | ProbeMissing
+    | ProbeUnreadable
 
-let private shouldIgnorePath (path: string) =
-    let normalizedPath = PathHelpers.normalizeSeparators path
-    let tempXlsxPattern = """\.~\$.*\.xlsx$"""
-    let temporaryLfsBackupPattern = """\.vcs-lfs-backup-[0-9a-fA-F]{32}$"""
+let private swapCase (name: string) =
+    name
+    |> String.map (fun c ->
+        if Char.IsUpper c then Char.ToLowerInvariant c
+        elif Char.IsLower c then Char.ToUpperInvariant c
+        else c
+    )
 
-    System.Text.RegularExpressions.Regex.IsMatch(normalizedPath, tempXlsxPattern)
-    || System.Text.RegularExpressions.Regex.IsMatch(normalizedPath, temporaryLfsBackupPattern)
-    || isLegacyDataMapPath normalizedPath
+let private lstatForProbeAsync (path: string) : JS.Promise<CaseProbeStat> = promise {
+    try
+        let! stats = lstatBigintAsync path (LstatBigintOptions(true))
+        return ProbeIdentity(stats.dev.ToString(), stats.ino.ToString())
+    with error ->
+        return
+            match tryGetNodeErrorCode error with
+            | Some "ENOENT" -> ProbeMissing
+            | _ -> ProbeUnreadable
+}
+
+/// Decides whether the file system under an ARC root ignores case. It starts from the platform default and
+/// stats the case-swapped name of an existing root entry. When both names resolve to the same device and
+/// inode, case is ignored. When the swapped name is missing, case matters. Other results keep the default,
+/// and the probe never creates files.
+let detectCaseInsensitiveWithAsync
+    (defaultCaseInsensitive: bool)
+    (listRoot: string -> JS.Promise<string[]>)
+    (probeStat: string -> JS.Promise<CaseProbeStat>)
+    (arcRoot: string)
+    : JS.Promise<bool> =
+    promise {
+        try
+            let! names = listRoot arcRoot
+
+            match names |> Array.tryFind (fun name -> swapCase name <> name) with
+            | None -> return defaultCaseInsensitive
+            | Some name ->
+                let original = join [| arcRoot; name |]
+                let swapped = join [| arcRoot; swapCase name |]
+                let! originalStat = probeStat original
+                let! swappedStat = probeStat swapped
+
+                return
+                    match originalStat, swappedStat with
+                    | ProbeIdentity(dev, ino), ProbeIdentity(swappedDev, swappedIno) when ino <> "0" ->
+                        if dev = swappedDev && ino = swappedIno then
+                            true
+                        else
+                            defaultCaseInsensitive
+                    | ProbeIdentity _, ProbeMissing -> false
+                    | _ -> defaultCaseInsensitive
+        with _ ->
+            return defaultCaseInsensitive
+    }
+
+/// Case sensitivity of the file system under an ARC root, probed once when the ARC opens.
+let detectCaseInsensitiveAsync (arcRoot: string) : JS.Promise<bool> =
+    let defaultCaseInsensitive =
+        match ProviderComposition.currentPathCaseSensitivity () with
+        | CaseInsensitive -> true
+        | CaseSensitive -> false
+
+    detectCaseInsensitiveWithAsync defaultCaseInsensitive readdirAsync lstatForProbeAsync arcRoot
 
 let private tryListLargeObjects
     (repoRoot: string)
@@ -219,16 +277,15 @@ let getFileEntries (path: string) (openSession: bool) : Fable.Core.JS.Promise<Fi
                 let name = dirent.name
                 let isDir = dirent.isDirectory ()
 
+                let fullPath = join [| currentDir; name |] |> PathHelpers.normalizeSeparators
+                let relativePath = fullPath.Substring(repoRoot.Length).TrimStart('/')
+
                 if isDir then
-                    if not (shouldIgnoreDirName name) then
-                        let fullPath = join [| currentDir; name |] |> PathHelpers.normalizeSeparators
+                    if not (isIgnoredInventoryEntry name relativePath true) then
                         entries.Add(FileEntry.create (name, fullPath, true, None))
                         stack.Add(fullPath)
-                else
-                    let fullPath = join [| currentDir; name |] |> PathHelpers.normalizeSeparators
-
-                    if not (shouldIgnorePath fullPath) then
-                        entries.Add(FileEntry.create (name, fullPath, false, None))
+                else if not (isIgnoredInventoryEntry name relativePath false) then
+                    entries.Add(FileEntry.create (name, fullPath, false, None))
             )
 
         let scannedEntries = entries.ToArray()

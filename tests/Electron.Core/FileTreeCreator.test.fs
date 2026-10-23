@@ -4,6 +4,7 @@ open System
 open Fable.Core
 open Fable.Core.JsInterop
 open Main
+open Swate.Components.Shared
 open Main.Bindings.Path
 open Main.VersionControl
 open Swate.Components.Composite.Authentication.Types
@@ -350,6 +351,166 @@ Vitest.describe (
 
                         Vitest.expect(plainEntry.largeObject).toEqual (None)
                     })
+            }
+        )
+)
+
+Vitest.describe (
+    "path keys, ignore rules and the case sensitivity probe",
+    fun () ->
+        let ignored name relativePath isDirectory =
+            Swate.Electron.Shared.FileIOHelper.isIgnoredInventoryEntry name relativePath isDirectory
+
+        Vitest.test (
+            "PathKey normalizes separators, slashes, Unicode form and case",
+            fun () ->
+                let key insensitive path =
+                    PathKey.value (PathKey.ofPath insensitive path)
+
+                Vitest.expect(key true "C:\Arc\Data\\").toBe ("c:/arc/data")
+                Vitest.expect(key false "C:\Arc\Data\\").toBe ("C:/Arc/Data")
+                Vitest.expect(key true "c:/ARC/data").toBe (key true "C:/arc/DATA")
+                Vitest.expect(key false "c:/ARC/data").not.toBe (key false "C:/arc/DATA")
+                Vitest.expect(key true "Data").toBe (key true "data")
+                Vitest.expect(key false "Data").not.toBe (key false "data")
+                Vitest.expect(key false "ä.txt").toBe (key false "ä.txt")
+                Vitest.expect(key true "Ä.txt").toBe (key true "Ä.txt")
+        )
+
+        Vitest.test (
+            "scan and watcher rules agree on shared inputs",
+            fun () ->
+                let hex = String.replicate 32 "a"
+
+                let cases = [
+                    ".git", true
+                    ".git/config", true
+                    "notes/.GIT/config", true
+                    ".gitignore", false
+                    ".gitattributes", false
+                    "assays/a1/isa_datamap", true
+                    "assays/a1/isa.datamap.xlsx", false
+                    "assays/a1/.~$data.xlsx", true
+                    $"assays/a1/data.bin.vcs-lfs-backup-{hex}", true
+                    "assays/a1/data.bin", false
+                ]
+
+                for relativePath, expectedIgnored in cases do
+                    let name = PathHelpers.getNameFromPath relativePath
+                    Vitest.expect(ignored name relativePath false).toBe expectedIgnored
+                    Vitest.expect(Main.ArcVaultHelper.isFileWatcherPathIgnored relativePath).toBe expectedIgnored
+        )
+
+        Vitest.test (
+            "a .git file, a .git directory and LFS backup directories are ignored",
+            fun () ->
+                let hex = String.replicate 32 "b"
+                Vitest.expect(ignored ".git" ".git" false).toBe (true)
+                Vitest.expect(ignored ".git" "sub/.git" true).toBe (true)
+                Vitest.expect(ignored $"x.vcs-lfs-backup-{hex}" $"x.vcs-lfs-backup-{hex}" true).toBe (true)
+                Vitest.expect(ignored $"x.vcs-lfs-backup-{hex}" $"a/x.vcs-lfs-backup-{hex}" false).toBe (true)
+                Vitest.expect(ignored ".~$x.xlsx" "a/.~$x.xlsx" false).toBe (true)
+                Vitest.expect(ignored "~$x.xlsx" "a/~$x.xlsx" false).toBe (true)
+                Vitest.expect(ignored "a~$x.xlsx" "a/a~$x.xlsx" false).toBe (false)
+                Vitest.expect(ignored "isa_datamap" "a/isa_datamap" true).toBe (false)
+        )
+
+        Vitest.test (
+            "the tree scan skips ignored entries and keeps import staging folders",
+            fileTreeCreatorTestOptions,
+            fun () -> promise {
+                let! rootPath = createTempDirectoryAsync ()
+
+                try
+                    let hex = String.replicate 32 "c"
+                    let stagingName = $".swate-import-{hex}"
+                    do! fsPromisesDynamic?mkdir (join [| rootPath; ".git" |]) |> unbox<JS.Promise<unit>>
+
+                    do!
+                        fsPromisesDynamic?mkdir (join [| rootPath; stagingName |])
+                        |> unbox<JS.Promise<unit>>
+
+                    do!
+                        fsPromisesDynamic?mkdir (join [| rootPath; $"old.vcs-lfs-backup-{hex}" |])
+                        |> unbox<JS.Promise<unit>>
+
+                    do! writeUtf8FileAsync (join [| rootPath; ".git"; "config" |]) "x"
+                    do! writeUtf8FileAsync (join [| rootPath; ".~$lock.xlsx" |]) "x"
+                    do! writeUtf8FileAsync (join [| rootPath; "keep.txt" |]) "x"
+
+                    let! entries = FileTreeCreator.getFileEntries rootPath false
+
+                    let names = entries |> Array.map (fun entry -> entry.name) |> Array.sort
+
+                    Vitest
+                        .expect(names)
+                        .toEqual (
+                            Array.sort [|
+                                basename (normalizeSlashes rootPath)
+                                stagingName
+                                "keep.txt"
+                            |]
+                        )
+
+                    do! removeDirectoryAsync rootPath
+                with error ->
+                    do! removeDirectoryAsync rootPath
+                    return raise error
+            }
+        )
+
+        Vitest.test (
+            "the case probe agrees with a direct case-swapped lookup",
+            fileTreeCreatorTestOptions,
+            fun () -> promise {
+                let! rootPath = createTempDirectoryAsync ()
+
+                try
+                    do! writeUtf8FileAsync (join [| rootPath; "Probe.txt" |]) "x"
+
+                    let! detected = FileTreeCreator.detectCaseInsensitiveAsync rootPath
+
+                    let swappedExists =
+                        Main.Bindings.Filesystem.existsSync (join [| rootPath; "pROBE.TXT" |])
+
+                    Vitest.expect(detected).toBe (swappedExists)
+                    do! removeDirectoryAsync rootPath
+                with error ->
+                    do! removeDirectoryAsync rootPath
+                    return raise error
+            }
+        )
+
+        Vitest.test (
+            "the case probe maps same identity, missing and unreadable stats",
+            fileTreeCreatorTestOptions,
+            fun () -> promise {
+                let listRoot (_: string) = promise { return [| "123"; "Data" |] }
+
+                let probe defaultInsensitive swappedStat =
+                    FileTreeCreator.detectCaseInsensitiveWithAsync
+                        defaultInsensitive
+                        listRoot
+                        (fun path -> promise {
+                            return
+                                if (normalizeSlashes path).EndsWith "/Data" then
+                                    FileTreeCreator.ProbeIdentity("1", "42")
+                                else
+                                    swappedStat
+                        })
+                        "/arc"
+
+                let! sameIdentity = probe false (FileTreeCreator.ProbeIdentity("1", "42"))
+                let! otherIdentity = probe true (FileTreeCreator.ProbeIdentity("1", "43"))
+                let! missing = probe true FileTreeCreator.ProbeMissing
+                let! unreadableKeepsInsensitive = probe true FileTreeCreator.ProbeUnreadable
+                let! unreadableKeepsSensitive = probe false FileTreeCreator.ProbeUnreadable
+
+                Vitest.expect(sameIdentity).toBe (true)
+                Vitest.expect(otherIdentity).toBe (true)
+                Vitest.expect(missing).toBe (false)
+                Vitest.expect(unreadableKeepsInsensitive).toBe (true)
+                Vitest.expect(unreadableKeepsSensitive).toBe (false)
             }
         )
 )
