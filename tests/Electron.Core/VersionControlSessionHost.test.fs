@@ -751,6 +751,12 @@ let private withCreateArcSetup
         let cleanup () = promise {
             Vitest.vi.restoreAllMocks ()
             electronMock?reset () |> ignore
+
+            // Creating the ARC starts a file watcher. Leaving it running while the folder is deleted makes
+            // chokidar reject with EPERM on Windows after the test has finished.
+            for vault in Seq.toArray ARC_VAULTS.Vaults.Values do
+                do! vault.StopFileWatcher()
+
             ARC_VAULTS.Vaults.Clear()
 
             do! host.CloseAll() |> Async.StartAsPromise
