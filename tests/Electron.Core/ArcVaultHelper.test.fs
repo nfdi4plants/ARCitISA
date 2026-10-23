@@ -4191,7 +4191,14 @@ Vitest.describe (
 
                         let! loadResult = ARC.LoadAsyncSwate arcPath
                         let loadedArc = TestHelpers.expectLoadedArc loadResult
-                        let stalePaths = loadedArc.FileSystem.Tree.ToFilePaths()
+                        // Structural loading no longer lists payload files, so the stale tree is built explicitly.
+                        let stalePaths =
+                            Array.append (loadedArc.FileSystem.Tree.ToFilePaths()) [|
+                                "payload.txt"
+                                "assays/.gitkeep"
+                            |]
+
+                        loadedArc.SetFilePaths stalePaths
 
                         Vitest.expect(stalePaths |> Array.contains "payload.txt").toBe (true)
                         Vitest.expect(stalePaths |> Array.contains "assays/.gitkeep").toBe (true)

@@ -136,6 +136,16 @@ module PathHelpers =
         existingPaths
         |> Seq.exists (fun existingPath -> pathsEqual existingPath targetPath)
 
+/// Shared ordering for directory entry names, so listings do not depend on readdir order.
+[<RequireQualifiedAccess>]
+module PathOrder =
+
+    /// Orders names ordinally ignoring case, then ordinally so names differing only in case stay distinct.
+    let compareNames (left: string) (right: string) =
+        match String.Compare(left, right, StringComparison.OrdinalIgnoreCase) with
+        | 0 -> String.CompareOrdinal(left, right)
+        | result -> result
+
 [<RequireQualifiedAccess>]
 module ArcEntityPathRules =
 
@@ -186,14 +196,21 @@ module ArcEntityPathRules =
     let private splitPathSegments (path: string) =
         path.Split([| '/' |], StringSplitOptions.RemoveEmptyEntries)
 
-    let private zoneFolderName =
+    let allAddZones = [
+        AddZone.Studies
+        AddZone.Assays
+        AddZone.Workflows
+        AddZone.Runs
+    ]
+
+    let zoneFolderName =
         function
         | AddZone.Studies -> ARCtrl.ArcPathHelper.StudiesFolderName
         | AddZone.Assays -> ARCtrl.ArcPathHelper.AssaysFolderName
         | AddZone.Workflows -> ARCtrl.ArcPathHelper.WorkflowsFolderName
         | AddZone.Runs -> ARCtrl.ArcPathHelper.RunsFolderName
 
-    let private zoneEntityFileName =
+    let zoneEntityFileName =
         function
         | AddZone.Studies -> ARCtrl.ArcPathHelper.StudyFileName
         | AddZone.Assays -> ARCtrl.ArcPathHelper.AssayFileName
@@ -226,6 +243,15 @@ module ArcEntityPathRules =
             None
 
     let private isAddZoneSegment segment = (tryParseZone segment).IsSome
+
+    /// Root-level license files that ARCtrl reads into ARC.License.
+    let licenseFileNames =
+        ARCtrl.ArcPathHelper.LICENSEFileName
+        :: ARCtrl.ArcPathHelper.alternativeLICENSEFileNames
+
+    /// Root-level files that ARCtrl reads into the ARC model.
+    let structuralRootFileNames =
+        ARCtrl.ArcPathHelper.InvestigationFileName :: licenseFileNames
 
     let private classifyStructuralArcPath =
         function
