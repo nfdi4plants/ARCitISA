@@ -19,6 +19,12 @@ module internal Swate.Components.Composite.GraphCanvas.GraphCanvasTests
 // New: the navigation epoch (A, B, A before B resolves), the list that stays closed when the box returns to
 // the width it was opened on, Space on a node, zoom bounds, zoom that survives a new view, and a new layout
 // function identity that starts no layout.
+//
+// The stale drawing cases cover a view change while the new layout is pending. The old drawing stays with its
+// stale and busy attributes. It ignores node clicks and shows no edge toggles. Export and the minimap ignore
+// input, and the focus stays on a toolbar control when the layout lands. A failed layout replaces the drawing
+// with the alert. The dimming of the old drawing and the loading indicator wait 200 ms, and so does the status
+// text of a layout with no drawing to keep.
 
 open Browser.Dom
 open Browser.Types
@@ -322,8 +328,10 @@ let private statusEl () : HTMLElement = RTL.screen.getByTestId "graph-status"
 let private contentEl () : HTMLElement =
     RTL.screen.getByTestId "graph-canvas-content"
 
+let private loadingEl () : HTMLElement = RTL.screen.getByTestId "graph-loading"
+
 let private loadingShown () : bool =
-    (RTL.screen.queryByTestId "graph-loading").IsSome
+    (loadingEl ()).getAttribute "data-shown" = "true"
 
 let private roleOf (el: HTMLElement) : string = el.getAttribute "role"
 let private labelOf (el: HTMLElement) : string = el.getAttribute "aria-label"
@@ -375,6 +383,27 @@ let private settle () : JS.Promise<unit> =
 let private isDisabled (el: HTMLElement) : bool = (el :?> HTMLButtonElement).disabled
 
 let private render (props: Props) : RenderResult = RTL.render (canvas props)
+
+// Draws the first view, then switches to a view whose layout the second function controls.
+let private switchView (props: Props) (second: LayoutFn) : JS.Promise<RenderResult * Props> = promise {
+    let seam = seamOf [ (fun n e x m o -> layoutGraph n e x m o); second ]
+
+    let first = { props with LayoutSeam = Some seam.Fn }
+
+    let result = render first
+    do! drawn ()
+
+    let next = {
+        first with
+            Nodes = [| plainNode "New" |]
+            Edges = [||]
+            ResetKey = "two"
+    }
+
+    result.rerender (canvas next)
+    do! eventually (fun () -> Vitest.expect(seam.Calls.Count).toBe 2)
+    return result, next
+}
 
 // Node rendering
 
@@ -926,29 +955,8 @@ Vitest.describe (
 Vitest.describe (
     "GraphCanvas stale drawing",
     fun () ->
-        // Draws the first view, then switches to a view whose layout the second function controls.
-        let switchView (props: Props) (second: LayoutFn) : JS.Promise<RenderResult * Props> = promise {
-            let seam = seamOf [ (fun n e x m o -> layoutGraph n e x m o); second ]
-
-            let first = { props with LayoutSeam = Some seam.Fn }
-
-            let result = render first
-            do! drawn ()
-
-            let next = {
-                first with
-                    Nodes = [| plainNode "New" |]
-                    Edges = [||]
-                    ResetKey = "two"
-            }
-
-            result.rerender (canvas next)
-            do! eventually (fun () -> Vitest.expect(seam.Calls.Count).toBe 2)
-            return result, next
-        }
-
         Vitest.test (
-            "keeps the old nodes dimmed and inert until the layout of the new view resolves",
+            "keeps the old nodes inert until the layout of the new view resolves",
             fun () -> promise {
                 let clicks = ResizeArray<string>()
                 let pending = deferred ()
@@ -989,14 +997,43 @@ Vitest.describe (
                 let pending = deferred ()
                 let! _, next = switchView defaults (fun _ _ _ _ _ -> pending.Promise)
 
+                // The region is mounted from the start, so a screen reader announces the text when it appears.
+                Vitest.expect(roleOf (loadingEl ())).toBe "status"
                 Vitest.expect(loadingShown ()).toBe false
+                Vitest.expect((loadingEl ()).textContent).toBe ""
                 do! settle ()
                 Vitest.expect(loadingShown ()).toBe false
-                do! eventually (fun () -> Vitest.expect(loadingShown ()).toBe true)
+
+                do!
+                    eventually (fun () ->
+                        Vitest.expect(loadingShown ()).toBe true
+                        Vitest.expect((loadingEl ()).textContent).not.toBe ""
+                    )
 
                 let! newLayout = realLayout next.Nodes next.Edges unlimited
                 do! RTL.act (fun () -> promise { pending.Resolve newLayout })
                 do! eventually (fun () -> Vitest.expect(loadingShown ()).toBe false)
+                Vitest.expect((loadingEl ()).textContent).toBe ""
+            }
+        )
+
+        Vitest.test (
+            "dims the stale drawing only when the new layout takes longer than 200 ms",
+            fun () -> promise {
+                let pending = deferred ()
+                let! _, next = switchView defaults (fun _ _ _ _ _ -> pending.Promise)
+
+                // The drawing is inert at once and dims later.
+                Vitest.expect(contentEl().getAttribute "data-stale").toBe "true"
+                Vitest.expect(contentEl().hasAttribute "inert").toBe true
+                Vitest.expect(contentEl().className.Contains "swt:opacity-60").toBe false
+
+                do! eventually (fun () -> Vitest.expect(contentEl().className.Contains "swt:opacity-60").toBe true)
+
+                let! newLayout = realLayout next.Nodes next.Edges unlimited
+                do! RTL.act (fun () -> promise { pending.Resolve newLayout })
+                do! eventually (fun () -> Vitest.expect(contentEl().getAttribute "data-stale").toBe "false")
+                Vitest.expect(contentEl().className.Contains "swt:opacity-60").toBe false
             }
         )
 
@@ -1014,6 +1051,8 @@ Vitest.describe (
                 |> ignore
 
                 Vitest.expect(roleOf (statusEl ())).toBe "status"
+                // The text of the first layout is announced when it appears, so the region is not busy.
+                Vitest.expect(region().getAttribute "aria-busy").toBe "false"
                 Vitest.expect((statusEl ()).textContent).toBe ""
                 do! eventually (fun () -> Vitest.expect((statusEl ()).textContent).not.toBe "")
             }
@@ -1036,6 +1075,56 @@ Vitest.describe (
                 do! eventually (fun () -> Vitest.expect(roleOf (statusEl ())).toBe "alert")
                 Vitest.expect(RTL.screen.queryByTestId("graph-node-a").IsNone).toBe true
                 Vitest.expect(region().getAttribute "aria-busy").toBe "false"
+            }
+        )
+
+        Vitest.test (
+            "does not export while the drawing is stale",
+            fun () -> promise {
+                let pending = deferred ()
+
+                let! _ =
+                    switchView
+                        {
+                            defaults with
+                                ImageFileName = Some "graph.png"
+                        }
+                        (fun _ _ _ _ _ -> pending.Promise)
+
+                // Without the guard, the export fails in jsdom and shows a notice.
+                click (RTL.screen.getByTestId "graph-image-download")
+                do! RTL.act (fun () -> promise { do! Promise.sleep 200 })
+
+                Vitest.expect((RTL.screen.getByTestId "graph-image-notice").textContent).toBe ""
+            }
+        )
+
+        Vitest.test (
+            "draws the pills of the old drawing without edge toggles",
+            fun () -> promise {
+                let pending = deferred ()
+                let! _ = switchView defaults (fun _ _ _ _ _ -> pending.Promise)
+
+                edgeEl "ab" |> ignore
+                Vitest.expect((RTL.screen.queryByTestId "graph-edge-toggle-ab").IsNone).toBe true
+            }
+        )
+
+        Vitest.test (
+            "keeps the focus on a toolbar control when the layout of the new view lands",
+            fun () -> promise {
+                let pending = deferred ()
+                let! _, next = switchView defaults (fun _ _ _ _ _ -> pending.Promise)
+
+                let zoomOut = RTL.screen.getByTestId "graph-zoom-out"
+                zoomOut.focus ()
+
+                let! newLayout = realLayout next.Nodes next.Edges unlimited
+                do! RTL.act (fun () -> promise { pending.Resolve newLayout })
+                do! eventually (fun () -> nodeEl "New" |> ignore)
+                do! settle ()
+
+                Vitest.expect(focused ()).toBe (box zoomOut)
             }
         )
 )
@@ -1946,6 +2035,34 @@ Vitest.describe (
 
                 pointer "pointerMove" (left + 0.1 * frameWidth) middle 0
                 Vitest.expect(scrollLeftOf (region ())).toBeCloseTo moveLeft
+            }
+        )
+
+        Vitest.test (
+            "leaves the scroll position alone when the minimap is pressed while the drawing is stale",
+            fun () -> promise {
+                overflowBox ()
+                stubMinimapRects ()
+                let! laid = realLayout nodes edges unlimited
+                let pending = deferred ()
+                let! _ = switchView defaults (fun _ _ _ _ _ -> pending.Promise)
+                do! minimapShown ()
+
+                let frame = minimapSvg ()
+                let frameWidth = numberAttribute frame "width"
+                let frameHeight = numberAttribute frame "height"
+                let middle = 200.0 + frameHeight / 2.0
+
+                // A press that is not ignored would scroll to a point that differs from the start.
+                let pressedLeft, _ =
+                    Minimap.centerOn (geometryAt 0.0 0.0 1.0) (0.75 * laid.LayoutWidth) (laid.LayoutHeight / 2.0)
+
+                Vitest.expect(pressedLeft).toBeGreaterThan 1.0
+
+                pointer "pointerDown" (100.0 + 0.75 * frameWidth) middle 1
+                pointer "pointerMove" (100.0 + 0.5 * frameWidth) middle 1
+
+                Vitest.expect([| scrollLeftOf (region ()); scrollTopOf (region ()) |]).toEqual [| 0.0; 0.0 |]
             }
         )
 )

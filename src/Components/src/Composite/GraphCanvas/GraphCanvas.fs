@@ -208,8 +208,9 @@ open GraphCanvasHelper
 /// visible part marked. Passing imageFileName shows the Download image and Copy image buttons, and the name is
 /// the file name of the downloaded image. Copy image appears only where the clipboard can take images, which needs a
 /// secure context with navigator.clipboard.write and ClipboardItem. After a view change the canvas keeps drawing the
-/// last finished layout, dimmed and inert, until the new layout resolves. A small indicator appears when that wait
-/// lasts longer than 200 ms, and the very first layout shows its status text after the same delay.
+/// last finished layout, inert, until the new layout resolves. A wait of more than 200 ms shows a loading indicator.
+/// A layout with no drawing to keep (the first one, or one after a failed layout) shows its status text after the
+/// same delay.
 [<Erase; Mangle(false)>]
 type GraphCanvas =
 
@@ -573,7 +574,8 @@ type GraphCanvas =
             contentRef: IRefValue<HTMLElement option>,
             boxWidth: float,
             boxHeight: float,
-            stale: bool
+            stale: bool,
+            dimmed: bool
         ) =
         let frameWidth, frameHeight =
             Minimap.frameSize boxWidth boxHeight drawn.LayoutWidth drawn.LayoutHeight
@@ -650,10 +652,8 @@ type GraphCanvas =
             prop.testId "graph-minimap"
             prop.className (
                 "swt:absolute swt:right-3 swt:bottom-16 swt:z-20 swt:rounded-lg swt:border swt:border-(color:--graph-border) swt:bg-base-100 swt:p-1 swt:shadow-md"
-                + (if stale then
-                       " swt:pointer-events-none swt:opacity-60"
-                   else
-                       "")
+                + (if stale then " swt:pointer-events-none" else "")
+                + (if dimmed then " swt:opacity-60" else "")
             )
             prop.ariaHidden true
             css [ "touchAction", "none"; "cursor", "pointer" ]
@@ -929,7 +929,6 @@ type GraphCanvas =
             ?layout: CanvasNode[] -> CanvasEdge[] -> string[] -> MeasureText -> LayoutOptions -> JS.Promise<GraphLayout>
         ) =
         let rootRef = React.useRef<HTMLElement option> None
-        let wrapperRef = React.useRef<HTMLElement option> None
         let contentRef = React.useRef<HTMLElement option> None
         let svgRef = React.useRef<Element option> None
         let zoom, setZoom = React.useState 1.0
@@ -1047,7 +1046,8 @@ type GraphCanvas =
         let layoutWidth = effectiveLayoutWidth portrait expanded.Length boxWidth
 
         // The previous drawing stays until the next layout resolves. Inside a view it stays active. After a view
-        // change it stays as a dimmed, inert drawing, so the canvas shows no status text between two views.
+        // change it stays as an inert drawing until the new layout resolves. A layout with no drawing to keep shows
+        // the status text instead.
         let outcome, setOutcome = React.useState<Outcome option> None
 
         React.useEffect (
@@ -1147,6 +1147,9 @@ type GraphCanvas =
             [| box waiting; box epoch |]
         )
 
+        // A stale drawing dims and the loading indicator shows only once the wait has passed 200 ms.
+        let dimmed = isStale && slow
+
         let titles =
             match displayed with
             | Some drawn ->
@@ -1186,8 +1189,9 @@ type GraphCanvas =
                 |> Array.tryFind (fun laid -> laid.Edge.Id = open'.MenuEdgeId)
             | _ -> None
 
-        // After a navigation the container takes focus, because the focused node is gone. The first mount leaves
-        // focus alone unless focusOnMount is set. The draw effect below decides whether the focus may move.
+        // After a navigation the container takes focus. The node that was activated stays in the DOM as an inert node
+        // of the stale drawing, and the browser moves the focus off it. The first mount leaves focus alone unless
+        // focusOnMount is set. The draw effect below decides whether the focus may move.
         let lastEpoch = React.useRef epoch
         let focusOnDraw = React.useRef (defaultArg focusOnMount false)
 
@@ -1200,20 +1204,22 @@ type GraphCanvas =
             [| box epoch |]
         )
 
-        // The focus may move to the container when nothing holds it: it sits on the body, where a removed node
-        // leaves it, or inside the canvas. A control outside the canvas that survives the navigation, such as an
-        // up button of the page, keeps the focus, also when the canvas mounts anew with focusOnMount set.
+        // The focus may move to the container when nothing holds it: it sits on the body, where an inert or removed
+        // node leaves it, or inside the scroll root, which holds the drawing and the pill list. A control that
+        // survives the navigation keeps the focus. These are the toolbar controls of the canvas, such as zoom, and
+        // controls outside the canvas, such as an up button of the page, also when the canvas mounts anew with
+        // focusOnMount set.
         let focusMayMove () : bool =
             let active = Browser.Dom.document.activeElement
 
-            let insideCanvas =
-                match wrapperRef.current with
-                | Some wrapper -> wrapper.contains (active :> Node)
+            let insideRoot =
+                match rootRef.current with
+                | Some root -> root.contains (active :> Node)
                 | None -> false
 
             isNull (box active)
             || obj.ReferenceEquals(active, Browser.Dom.document.body)
-            || insideCanvas
+            || insideRoot
 
         // A new view starts at the top left, or on centerNodeId. Expanding an edge keeps the scroll position.
         // A failed layout takes the focus too, because the container then shows the alert.
@@ -1374,7 +1380,7 @@ type GraphCanvas =
                 prop.testId "graph-canvas-content"
                 prop.custom ("data-compact", drawn.Compact)
                 prop.custom ("data-stale", isStale)
-                // A stale drawing takes no click, focus or pointer, and it dims to show that it is waiting.
+                // A stale drawing is inert, so it takes no input. It dims when the wait for the new layout gets long.
                 if isStale then
                     prop.custom ("inert", true)
                 prop.className (
@@ -1382,7 +1388,7 @@ type GraphCanvas =
                          "swt:relative swt:flex-none swt:mt-auto swt:mr-auto swt:mb-auto swt:ml-0"
                      else
                          "swt:relative swt:flex-none swt:m-auto")
-                    + (if isStale then
+                    + (if dimmed then
                            " swt:transition-opacity swt:opacity-60"
                        else
                            " swt:transition-opacity")
@@ -1477,8 +1483,26 @@ type GraphCanvas =
                 ]
             ]
 
+        let loadingClass =
+            if dimmed then
+                "swt:pointer-events-none swt:absolute swt:top-3 swt:right-3 swt:z-20 swt:flex swt:items-center swt:gap-2 swt:rounded-lg swt:border swt:border-(color:--graph-border) swt:bg-base-100 swt:px-2 swt:py-1 swt:text-xs swt:shadow-md"
+            else
+                "swt:sr-only"
+
+        let loadingContent =
+            if dimmed then
+                [
+                    Html.span [
+                        prop.className
+                            "swt:inline-block swt:size-3 swt:animate-spin swt:rounded-full swt:border-2 swt:border-current swt:border-t-transparent"
+                        prop.ariaHidden true
+                    ]
+                    Html.span "Laying out…"
+                ]
+            else
+                []
+
         Html.div [
-            prop.ref wrapperRef
             prop.className "swt:relative swt:size-full swt:min-h-0"
             prop.style [
                 for name, value in rootColors -> style.custom (name, value)
@@ -1487,7 +1511,7 @@ type GraphCanvas =
                 Html.div [
                     prop.ref rootRef
                     prop.testId "graph-canvas"
-                    prop.custom ("aria-busy", waiting)
+                    prop.custom ("aria-busy", isStale)
                     prop.className
                         "swt:relative swt:box-border swt:flex swt:size-full swt:overflow-auto swt:overscroll-auto swt:[scrollbar-gutter:stable] swt:text-base-content swt:focus:outline-none"
                     prop.role.region
@@ -1522,20 +1546,17 @@ type GraphCanvas =
                             ]
                     ]
                 ]
-                // Only a stale drawing needs this indicator. The first layout shows its text in the status paragraph.
-                if isStale && slow then
+                // Only a stale drawing needs this indicator. A layout with no drawing to keep shows its text in the
+                // status paragraph. The region stays mounted while a drawing is displayed, so screen readers
+                // announce the text when it appears. The spinner is a CSS rotation, which the compositor keeps
+                // moving while the main thread is busy with a layout.
+                if displayed.IsSome then
                     Html.div [
                         prop.testId "graph-loading"
                         prop.role.status
-                        prop.className
-                            "swt:pointer-events-none swt:absolute swt:top-3 swt:right-3 swt:z-20 swt:flex swt:items-center swt:gap-2 swt:rounded-lg swt:border swt:border-(color:--graph-border) swt:bg-base-100 swt:px-2 swt:py-1 swt:text-xs swt:shadow-md"
-                        prop.children [
-                            Html.span [
-                                prop.className "swt:loading swt:loading-spinner swt:loading-xs"
-                                prop.ariaHidden true
-                            ]
-                            Html.span "Laying out…"
-                        ]
+                        prop.custom ("data-shown", dimmed)
+                        prop.className loadingClass
+                        prop.children loadingContent
                     ]
                 else
                     Html.none
@@ -1566,7 +1587,7 @@ type GraphCanvas =
                     Html.none
                 match displayed with
                 | Some displayed when minimapAvailable && minimapOpen && openMenu.IsNone ->
-                    GraphCanvas.Minimap(displayed, zoom, rootRef, contentRef, boxWidth, boxHeight, isStale)
+                    GraphCanvas.Minimap(displayed, zoom, rootRef, contentRef, boxWidth, boxHeight, isStale, dimmed)
                 | _ -> Html.none
             ]
         ]
