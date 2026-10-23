@@ -4,14 +4,14 @@ open Fable.Core
 open Vitest
 open Swate.Components.Util.WebWorker
 
-// The unit project runs in Node, which has no Worker.
+// Node (unit project) and jsdom (Electron renderer tests) have no Worker.
 let private neverCreated: unit -> WorkerInstance =
     fun () -> failwith "No worker should be created"
 
 let private twice (n: int) : JS.Promise<int> = promise { return n * 2 }
 
-[<Emit("typeof globalThis.onmessage")>]
-let private onMessageType () : string = jsNative
+[<Emit("globalThis.onmessage")>]
+let private onMessage () : obj = jsNative
 
 Vitest.describe (
     "WebWorker without a Worker",
@@ -19,9 +19,10 @@ Vitest.describe (
         Vitest.test (
             "createWorker registers nothing and returns a definition without a constructor",
             fun () ->
+                let before = onMessage ()
                 let def = createWorker neverCreated twice
 
-                Vitest.expect(onMessageType ()).toBe "undefined"
+                Vitest.expect(onMessage ()).toBe before
                 Vitest.expect(def.Ctor.IsNone).toBe true
         )
 
