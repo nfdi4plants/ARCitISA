@@ -635,7 +635,7 @@ type FileTree =
 
             React.Fragment [
                 Html.div [
-                    prop.className "swt:w-full"
+                    prop.className "swt:w-full swt:h-full swt:min-h-0"
                     prop.children [
                         Swate.Components.Page.FileExplorer.FileExplorer.FileExplorer(
                             initialItems = visibleItems,

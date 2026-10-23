@@ -321,17 +321,6 @@ module ContextMenuItem =
 
 module FileExplorerLogic =
 
-    let private expandedIdsFromPath itemId items =
-        let pathItems =
-            match FileTree.getPath itemId items [] with
-            | Some pathItems -> pathItems
-            | None -> []
-
-        pathItems
-        |> List.take (max 0 (List.length pathItems - 1))
-        |> List.choose (fun item -> if item.Children.IsSome then Some item.Id else None)
-        |> Set.ofList
-
     let rec private collectExpandedIds acc items =
         items
         |> List.fold
@@ -344,34 +333,65 @@ module FileExplorerLogic =
             )
             acc
 
-    let rec private collectIds acc items =
-        items
-        |> List.fold
-            (fun accIds item ->
-                let next = Set.add item.Id accIds
+    /// A directory can expand when its children are not loaded yet (None) or when it has children.
+    /// Some [] is a known empty directory.
+    let canExpandDirectory (item: FileItem) =
+        item.IsDirectory
+        && (
+            match item.Children with
+            | Some children -> not (List.isEmpty children)
+            | None -> true
+        )
 
-                match item.Children with
-                | Some children -> collectIds next children
-                | None -> next
+    /// One visible row of the tree in display order.
+    type VisibleRow = {
+        Id: string
+        Item: FileItem
+        Depth: int
+        SetSize: int
+        PosInSet: int
+    }
+
+    /// Rows that are visible with the given expanded directories, in display order. Children of
+    /// collapsed directories and of directories without loaded children are not visible.
+    let flattenVisibleRows (expandedIds: Set<string>) (items: FileItem list) : VisibleRow[] =
+        let rows = ResizeArray<VisibleRow>()
+
+        let rec walk depth (siblings: FileItem list) =
+            let setSize = List.length siblings
+
+            siblings
+            |> List.iteri (fun index item ->
+                rows.Add {
+                    Id = item.Id
+                    Item = item
+                    Depth = depth
+                    SetSize = setSize
+                    PosInSet = index + 1
+                }
+
+                if item.IsDirectory && expandedIds.Contains item.Id then
+                    match item.Children with
+                    | Some children -> walk (depth + 1) children
+                    | None -> ()
             )
-            acc
 
+        walk 0 items
+        rows.ToArray()
+
+    /// State the component keeps when the parent does not control expansion or selection.
     type Model = {
-        Items: FileItem list
         SelectedId: string option
-        SelectedPath: FileItem list
         ExpandedIds: Set<string>
     }
 
     type Msg =
         | SetExpanded of itemId: string * isExpanded: bool
+        | ExpandMany of Set<string>
         | SelectItem of string
-        | UpdateItems of FileItem list * selectedItemId: string option option
 
     let init items = {
-        Items = items
         SelectedId = None
-        SelectedPath = []
         ExpandedIds = collectExpandedIds Set.empty items
     }
 
@@ -386,53 +406,9 @@ module FileExplorerLogic =
 
             { model with ExpandedIds = expandedIds }
 
-        | SelectItem itemId ->
-            let path =
-                match FileTree.getPath itemId model.Items [] with
-                | Some p -> p
-                | None -> []
+        | ExpandMany itemIds -> {
+            model with
+                ExpandedIds = Set.union model.ExpandedIds itemIds
+          }
 
-            {
-                model with
-                    SelectedId = Some itemId
-                    SelectedPath = path
-            }
-
-        | UpdateItems(items, selectedItemId) ->
-            let validIds = collectIds Set.empty items
-
-            let persistedExpanded =
-                model.ExpandedIds |> Set.filter (fun id -> validIds.Contains id)
-
-            let persistedSelectedId = model.SelectedId |> Option.filter validIds.Contains
-
-            let nextSelectedId =
-                selectedItemId
-                |> Option.map (Option.filter validIds.Contains)
-                |> Option.defaultValue persistedSelectedId
-
-            let selectionChanged = nextSelectedId <> model.SelectedId
-
-            let selectedPath =
-                match nextSelectedId with
-                | Some itemId ->
-                    match FileTree.getPath itemId items [] with
-                    | Some path -> path
-                    | None -> []
-                | None -> []
-
-            let expandedFromSelection =
-                if selectionChanged then
-                    nextSelectedId
-                    |> Option.map (fun itemId -> expandedIdsFromPath itemId items)
-                    |> Option.defaultValue Set.empty
-                else
-                    Set.empty
-
-            {
-                model with
-                    Items = items
-                    SelectedId = nextSelectedId
-                    SelectedPath = selectedPath
-                    ExpandedIds = persistedExpanded |> Set.union expandedFromSelection
-            }
+        | SelectItem itemId -> { model with SelectedId = Some itemId }

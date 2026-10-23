@@ -1,5 +1,6 @@
 namespace Swate.Components.Page.FileExplorer
 
+open Swate.Components
 open Swate.Components.Page.FileExplorer.Types
 open Fable.Core
 open Fable.Core.JsInterop
@@ -40,12 +41,8 @@ module private FileExplorerHelper =
         (getCopyPath: FileItem -> string option)
         (getCopyRelativePath: FileItem -> string option)
         (setExpanded: FileItem -> bool -> unit)
+        (onRefreshDirectory: (FileItem -> unit) option)
         : Swate.Components.Page.FileExplorer.Types.ContextMenuItem list =
-        let canExpandDirectory =
-            match item.Children with
-            | Some children -> not (List.isEmpty children)
-            | None -> true
-
         [
             if not item.IsDirectory then
                 ContextMenuItem.create "Open" "swt:fluent--open-24-regular" (fun () -> selectItem item)
@@ -69,7 +66,7 @@ module private FileExplorerHelper =
                 | None -> ()
             | None -> ()
 
-            if item.IsDirectory && canExpandDirectory then
+            if FileExplorerLogic.canExpandDirectory item then
                 ContextMenuItem.create
                     (if isExpanded then "Collapse" else "Expand")
                     (if isExpanded then
@@ -77,6 +74,12 @@ module private FileExplorerHelper =
                      else
                          "swt:fluent--folder-24-regular")
                     (fun () -> setExpanded item (not isExpanded))
+
+            if item.IsDirectory then
+                match onRefreshDirectory with
+                | Some refresh ->
+                    ContextMenuItem.create "Refresh folder" "swt:fluent--arrow-sync-24-regular" (fun () -> refresh item)
+                | None -> ()
         ]
 
     let getContextMenuItems
@@ -88,10 +91,18 @@ module private FileExplorerHelper =
         (getCopyRelativePath: FileItem -> string option)
         (includeDefaultContextMenuItems: bool)
         (setExpanded: FileItem -> bool -> unit)
+        (onRefreshDirectory: (FileItem -> unit) option)
         =
         let defaultItems =
             if includeDefaultContextMenuItems then
-                defaultContextMenuItems item isExpanded selectItem getCopyPath getCopyRelativePath setExpanded
+                defaultContextMenuItems
+                    item
+                    isExpanded
+                    selectItem
+                    getCopyPath
+                    getCopyRelativePath
+                    setExpanded
+                    onRefreshDirectory
             else
                 []
 
@@ -99,6 +110,24 @@ module private FileExplorerHelper =
             onContextMenu |> Option.map (fun fn -> fn item) |> Option.defaultValue []
 
         defaultItems @ customItems
+
+    /// The props the stable row handlers read at call time. The component refreshes it on every render.
+    type Latest = {
+        Rows: FileExplorerLogic.VisibleRow[]
+        ExpandedIds: Set<string>
+        IsExpansionControlled: bool
+        IsSelectionControlled: bool
+        OnItemClick: (FileItem -> unit) option
+        OnDirectoryExpansionChange: (FileItem -> bool -> unit) option
+        OnExpandedIdsChange: (Set<string> -> unit) option
+        GetItemIconClass: FileItem -> string option
+        GetItemActions: FileItem -> Swate.Components.Page.FileExplorer.Types.ContextMenuItem list
+        GetItemStatusAction: FileItem -> Swate.Components.Page.FileExplorer.Types.ContextMenuItem option
+        CanCreateItem: FileItem -> bool
+        OnCreateItem: (FileItem -> unit) option
+        CanDeleteItem: FileItem -> bool
+        OnDeleteItem: (FileItem -> unit) option
+    }
 
 // ---------------------------------------------------------------------------
 [<Mangle(false); Erase>]
@@ -124,11 +153,23 @@ type FileExplorer =
             ?getItemIconClass: FileItem -> string option,
             ?getCopyPath: FileItem -> string option,
             ?getCopyRelativePath: FileItem -> string option,
-            ?includeDefaultContextMenuItems: bool
+            ?includeDefaultContextMenuItems: bool,
+            ?expandedIds: Set<string>,
+            ?onExpandedIdsChange: Set<string> -> unit,
+            ?onRefreshDirectory: FileItem -> unit
         ) =
-        let reducer model msg = FileExplorerLogic.update msg model
+        // A row re-renders when the parent supplies new row functions. The identities are taken before the defaults are applied.
+        let rowFunctionIdentities = [|
+            box getItemActions
+            box getItemStatusAction
+            box getItemIconClass
+            box canCreateItem
+            box canDeleteItem
+            box onCreateItem
+            box onDeleteItem
+        |]
 
-        let initialModel = FileExplorerLogic.init (defaultArg initialItems [])
+        let items = defaultArg initialItems []
 
         let delegateHorizontalScrollToParent =
             defaultArg delegateHorizontalScrollToParent false
@@ -144,11 +185,244 @@ type FileExplorer =
         let getItemStatusAction = defaultArg getItemStatusAction (fun (_: FileItem) -> None)
         let canDeleteItem = defaultArg canDeleteItem (fun (_: FileItem) -> false)
 
-        let model, dispatch = React.useReducer (reducer, initialModel)
-        let containerRef = React.useElementRef ()
-
         let onDirectoryExpansionChange =
             onDirectoryExpansionChange |> Option.orElse onExpansionChange
+
+        // The uncontrolled state starts from the IsExpanded hints of the first items.
+        let initialModel = React.useMemo ((fun () -> FileExplorerLogic.init items), [||])
+
+        let model, dispatch =
+            React.useReducer ((fun model msg -> FileExplorerLogic.update msg model), initialModel)
+
+        let containerRef = React.useElementRef ()
+        let scrollRef = React.useElementRef ()
+
+        let isExpansionControlled = expandedIds.IsSome
+        let expandedIds = defaultArg expandedIds model.ExpandedIds
+        let selectedPropId = selectedItemId |> Option.bind id
+
+        let selectedId =
+            if selectedItemId.IsSome then
+                selectedPropId
+            else
+                model.SelectedId
+
+        let rows =
+            React.useMemo (
+                (fun () -> FileExplorerLogic.flattenVisibleRows expandedIds items),
+                [| box initialItems; box expandedIds |]
+            )
+
+        let selectedPath =
+            React.useMemo (
+                (fun () ->
+                    selectedId
+                    |> Option.bind (fun id -> FileTree.getPath id items [])
+                    |> Option.defaultValue []
+                ),
+                [| box initialItems; box selectedId |]
+            )
+
+        let highlightedIds =
+            React.useMemo ((fun () -> selectedPath |> List.map _.Id |> Set.ofList), [| box selectedPath |])
+
+        // Selecting an item reveals it: the directories above it with loaded children expand.
+        React.useEffect (
+            (fun () ->
+                if not isExpansionControlled && not selectedPath.IsEmpty then
+                    let ancestorIds =
+                        selectedPath
+                        |> List.take (selectedPath.Length - 1)
+                        |> List.choose (fun item -> if item.Children.IsSome then Some item.Id else None)
+                        |> Set.ofList
+
+                    if not ancestorIds.IsEmpty then
+                        dispatch (FileExplorerLogic.ExpandMany ancestorIds)
+            ),
+            [| box selectedId; box (not selectedPath.IsEmpty) |]
+        )
+
+        let currentLatest: FileExplorerHelper.Latest = {
+            Rows = rows
+            ExpandedIds = expandedIds
+            IsExpansionControlled = isExpansionControlled
+            IsSelectionControlled = selectedItemId.IsSome
+            OnItemClick = onItemClick
+            OnDirectoryExpansionChange = onDirectoryExpansionChange
+            OnExpandedIdsChange = onExpandedIdsChange
+            GetItemIconClass = getItemIconClass
+            GetItemActions = getItemActions
+            GetItemStatusAction = getItemStatusAction
+            CanCreateItem = canCreateItem
+            OnCreateItem = onCreateItem
+            CanDeleteItem = canDeleteItem
+            OnDeleteItem = onDeleteItem
+        }
+
+        // Handlers read the props of the latest committed render. The ref is updated after commit,
+        // never during render, so a discarded render cannot leak into an event handler.
+        let latest = React.useRef currentLatest
+        React.useLayoutEffect (fun () -> latest.current <- currentLatest)
+
+        let findRowItem (itemId: string) =
+            latest.current.Rows
+            |> Array.tryFind (fun row -> row.Id = itemId)
+            |> Option.map _.Item
+
+        let setExpandedById =
+            React.useCallback (
+                (fun (itemId: string) (willExpand: bool) ->
+                    let current = latest.current
+                    let isExpanded = current.ExpandedIds.Contains itemId
+
+                    if isExpanded <> willExpand then
+                        let next =
+                            if willExpand then
+                                current.ExpandedIds.Add itemId
+                            else
+                                current.ExpandedIds.Remove itemId
+
+                        if not current.IsExpansionControlled then
+                            dispatch (FileExplorerLogic.SetExpanded(itemId, willExpand))
+
+                        current.OnExpandedIdsChange |> Option.iter (fun fn -> fn next)
+
+                        match findRowItem itemId, current.OnDirectoryExpansionChange with
+                        | Some item, Some fn -> fn item willExpand
+                        | _ -> ()
+                ),
+                [||]
+            )
+
+        let selectItemById =
+            React.useCallback (
+                (fun (itemId: string) ->
+                    match findRowItem itemId with
+                    | Some item ->
+                        if not latest.current.IsSelectionControlled then
+                            dispatch (FileExplorerLogic.SelectItem itemId)
+
+                        latest.current.OnItemClick |> Option.iter (fun fn -> fn item)
+                    | None -> ()
+                ),
+                [||]
+            )
+
+        let onRowClick =
+            React.useCallback (
+                (fun (itemId: string) ->
+                    match findRowItem itemId with
+                    | Some item ->
+                        if FileExplorerLogic.canExpandDirectory item then
+                            setExpandedById itemId (not (latest.current.ExpandedIds.Contains itemId))
+
+                        selectItemById itemId
+                    | None -> ()
+                ),
+                [||]
+            )
+
+        let hasCreateHandler = onCreateItem.IsSome
+        let hasDeleteHandler = onDeleteItem.IsSome
+
+        let rowHandlers: TreeRowHandlers =
+            React.useMemo (
+                (fun () -> {
+                    GetItemIconClass = fun item -> latest.current.GetItemIconClass item
+                    GetItemActions = fun item -> latest.current.GetItemActions item
+                    GetItemStatusAction = fun item -> latest.current.GetItemStatusAction item
+                    CanCreateItem = fun item -> latest.current.CanCreateItem item
+                    OnCreateItem =
+                        if hasCreateHandler then
+                            Some(fun item -> latest.current.OnCreateItem |> Option.iter (fun fn -> fn item))
+                        else
+                            None
+                    CanDeleteItem = fun item -> latest.current.CanDeleteItem item
+                    OnDeleteItem =
+                        if hasDeleteHandler then
+                            Some(fun item -> latest.current.OnDeleteItem |> Option.iter (fun fn -> fn item))
+                        else
+                            None
+                    OnRowClick = onRowClick
+                }),
+                [|
+                    box hasCreateHandler
+                    box hasDeleteHandler
+                    yield! rowFunctionIdentities
+                |]
+            )
+
+        let virtualizer =
+            Virtual.useVirtualizer (
+                count = rows.Length,
+                getScrollElement = (fun () -> scrollRef.current),
+                estimateSize = (fun _ -> TreeRow.RowHeight),
+                overscan = 12,
+                getItemKey =
+                    (fun index ->
+                        if index < rows.Length then
+                            rows.[index].Id
+                        else
+                            string index
+                    )
+            )
+
+        // The first render has no measured items yet. Rendering the first rows then keeps the tree
+        // visible before the scroll element reports its size.
+        let virtualRanges =
+            let measured = virtualizer.getVirtualItems ()
+
+            if measured.Length = 0 && rows.Length > 0 then
+                let isAtTop =
+                    scrollRef.current
+                    |> Option.map (fun element -> element.scrollTop = 0.0)
+                    |> Option.defaultValue true
+
+                if isAtTop then
+                    [| 0 .. min (rows.Length - 1) 12 |]
+                    |> Array.map (fun index -> index, index * TreeRow.RowHeight)
+                else
+                    [||]
+            else
+                measured |> Array.map (fun item -> item.index, item.start)
+
+        let spacerTop =
+            if virtualRanges.Length = 0 then
+                0
+            else
+                snd virtualRanges.[0]
+
+        let spacerBottom =
+            if virtualRanges.Length = 0 then
+                0
+            else
+                let lastEnd = snd virtualRanges.[virtualRanges.Length - 1] + TreeRow.RowHeight
+                max 0 (virtualizer.getTotalSize () - lastEnd)
+
+        let selectedIndex =
+            React.useMemo (
+                (fun () ->
+                    selectedPropId
+                    |> Option.bind (fun id -> rows |> Array.tryFindIndex (fun row -> row.Id = id))
+                    |> Option.defaultValue -1
+                ),
+                [| box rows; box selectedPropId |]
+            )
+
+        // A changed selectedItemId scrolls its row into view once the row is part of the visible rows.
+        let lastScrolledId = React.useRef (None: string option)
+
+        React.useEffect (
+            (fun () ->
+                match selectedPropId with
+                | Some id when selectedIndex >= 0 && lastScrolledId.current <> Some id ->
+                    lastScrolledId.current <- Some id
+                    virtualizer.scrollToIndex selectedIndex
+                | Some _ -> ()
+                | None -> lastScrolledId.current <- None
+            ),
+            [| box selectedPropId; box selectedIndex |]
+        )
 
         let scrollContainerClassName =
             if truncateOverflowingItemNames then
@@ -160,52 +434,28 @@ type FileExplorer =
 
         let listClassName =
             if truncateOverflowingItemNames then
-                "swt:w-full swt:min-w-0 swt:list-none swt:m-0 swt:p-0"
+                "swt:w-full swt:min-w-0"
             else
-                "swt:w-full swt:min-w-max swt:list-none swt:m-0 swt:p-0"
+                "swt:w-full swt:min-w-max"
 
-        React.useEffect (
-            (fun () -> dispatch (FileExplorerLogic.UpdateItems(defaultArg initialItems [], selectedItemId))),
-            [| box initialItems; box selectedItemId |]
-        )
-
-        let setExpanded (item: FileItem) (willExpand: bool) =
-            let isExpanded = model.ExpandedIds.Contains item.Id
-
-            if isExpanded <> willExpand then
-                dispatch (FileExplorerLogic.SetExpanded(item.Id, willExpand))
-                onDirectoryExpansionChange |> Option.iter (fun fn -> fn item willExpand)
-
-        let selectItem (item: FileItem) =
-            if selectedItemId.IsNone then
-                dispatch (FileExplorerLogic.SelectItem item.Id)
-
-            onItemClick |> Option.iter (fun fn -> fn item)
-
-        let handleDirectorySelection (item: FileItem) (canExpand: bool) (ev: Browser.Types.MouseEvent) =
-            ev.preventDefault ()
-            ev.stopPropagation ()
-
-            if canExpand then
-                setExpanded item (not (model.ExpandedIds.Contains item.Id))
-
-            selectItem item
+        let menuItemsFor (item: FileItem) =
+            FileExplorerHelper.getContextMenuItems
+                item
+                (expandedIds.Contains item.Id)
+                (fun item -> selectItemById item.Id)
+                onContextMenu
+                getCopyPath
+                getCopyRelativePath
+                includeDefaultContextMenuItems
+                (fun item willExpand -> setExpandedById item.Id willExpand)
+                onRefreshDirectory
 
         let contextMenu =
             Swate.Components.Primitive.ContextMenu.ContextMenu.ContextMenu(
                 (fun data ->
-                    let item = data |> unbox<FileItem>
-                    let isExpanded = model.ExpandedIds.Contains item.Id
-
-                    FileExplorerHelper.getContextMenuItems
-                        item
-                        isExpanded
-                        selectItem
-                        onContextMenu
-                        getCopyPath
-                        getCopyRelativePath
-                        includeDefaultContextMenuItems
-                        setExpanded
+                    data
+                    |> unbox<FileItem>
+                    |> menuItemsFor
                     |> List.map (fun x -> x.ToPrimitiveContextMenuItem())
                 ),
                 ref = containerRef,
@@ -221,118 +471,62 @@ type FileExplorer =
                             let trigger = trigger :?> Browser.Types.HTMLElement
                             let itemId: string = !!trigger?dataset?fileItemId
 
-                            match FileTree.findItem itemId model.Items with
+                            match findRowItem itemId with
                             | Some item ->
-                                let menuItems =
-                                    FileExplorerHelper.getContextMenuItems
-                                        item
-                                        (model.ExpandedIds.Contains item.Id)
-                                        selectItem
-                                        onContextMenu
-                                        getCopyPath
-                                        getCopyRelativePath
-                                        includeDefaultContextMenuItems
-                                        setExpanded
-
-                                if List.isEmpty menuItems then None else Some(box item)
+                                if List.isEmpty (menuItemsFor item) then
+                                    None
+                                else
+                                    Some(box item)
                             | None -> None
                         | _ -> None
                     )
             )
 
-        let selectedPathIds = model.SelectedPath |> List.map _.Id |> Set.ofList
-
-        let rec renderItem item =
-            let isSelected = model.SelectedId = Some item.Id
-            let isInSelectedPath = selectedPathIds.Contains item.Id
-            let isHighlighted = isSelected || isInSelectedPath
-
-            let rowHighlightClass =
-                if isHighlighted then
-                    "swt:bg-base-300 swt:active:bg-base-300"
-                else
-                    "swt:hover:bg-base-300 swt:active:bg-base-300"
-
-            let selectedNameClass =
-                if isSelected then
-                    "swt:font-semibold swt:text-primary"
-                else
-                    ""
-
-            let isExpanded = model.ExpandedIds.Contains item.Id
-
-            let canExpand =
-                match item.Children with
-                | Some children -> not (List.isEmpty children)
-                | None -> true
-
-            let itemActions = getItemActions item
-            let statusAction = getItemStatusAction item
-
-            if item.IsDirectory then
-                let childrenTree =
-                    if isExpanded then
-                        match item.Children with
-                        | Some children ->
-                            Some(
-                                Html.ul [
-                                    prop.className "swt:ml-4"
-                                    prop.children (children |> List.map renderItem)
-                                ]
-                            )
-                        | None -> None
-                    else
-                        None
-
-                FileExplorerItem.DirectoryRow(
-                    item,
-                    rowHighlightClass,
-                    selectedNameClass,
-                    isExpanded,
-                    canExpand,
-                    getItemIconClass,
-                    handleDirectorySelection item canExpand,
-                    ?onCreateItem = onCreateItem,
-                    canCreateItem = canCreateItem,
-                    itemActions = itemActions,
-                    ?onDeleteItem = onDeleteItem,
-                    canDeleteItem = canDeleteItem,
-                    ?statusAction = statusAction,
-                    ?children = childrenTree,
-                    truncateNames = truncateOverflowingItemNames
-                )
-            else
-                FileExplorerItem.FileRow(
-                    item,
-                    rowHighlightClass,
-                    selectedNameClass,
-                    getItemIconClass,
-                    (fun () -> selectItem item),
-                    itemActions = itemActions,
-                    ?onDeleteItem = onDeleteItem,
-                    canDeleteItem = canDeleteItem,
-                    ?statusAction = statusAction,
-                    truncateNames = truncateOverflowingItemNames
-                )
-
         Html.div [
             prop.ref containerRef
-            prop.className "swt:w-full"
+            prop.className "swt:w-full swt:h-full swt:min-h-0"
             prop.children [
                 Html.div [
+                    prop.ref scrollRef
                     prop.testId "file-explorer-scroll-container"
-                    prop.className scrollContainerClassName
+                    prop.className [
+                        scrollContainerClassName
+                        "swt:h-full swt:min-h-0 swt:overflow-y-auto"
+                    ]
                     prop.children [
-                        Html.ul [
+                        Html.div [
                             prop.testId "file-explorer-container"
+                            prop.role "tree"
                             prop.className listClassName
-                            prop.children (model.Items |> List.map renderItem)
+                            prop.style [
+                                style.paddingTop spacerTop
+                                style.paddingBottom spacerBottom
+                            ]
+                            prop.children [
+                                for (index, _) in virtualRanges do
+                                    if index < rows.Length then
+                                        let row = rows.[index]
+
+                                        React.memoRender (
+                                            TreeRow.Render,
+                                            {
+                                                Row = row
+                                                IsSelected = (selectedId = Some row.Id)
+                                                IsHighlighted = highlightedIds.Contains row.Id
+                                                IsExpanded = expandedIds.Contains row.Id
+                                                Handlers = rowHandlers
+                                                TruncateNames = truncateOverflowingItemNames
+                                            },
+                                            withKey = (fun props -> props.Row.Id)
+                                        )
+                            ]
                         ]
                     ]
                 ]
                 contextMenu
             ]
         ]
+
 
 
 
