@@ -26,6 +26,7 @@ let private resetsWhenSelectionIsRemoved =
     | PageState.SVGImage _
     | PageState.TextPage _
     | PageState.UnknownPage
+    | PageState.LargeFilePage _
     | PageState.ErrorPage _ -> true
     | _ -> false
 
@@ -67,6 +68,7 @@ let private reloadsWhenSelectedFileChanges =
     | PageState.SVGImage _
     | PageState.TextPage _
     | PageState.UnknownPage
+    | PageState.LargeFilePage _
     | PageState.ErrorPage _ -> true
     | _ -> false
 

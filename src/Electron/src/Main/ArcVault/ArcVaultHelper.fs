@@ -398,3 +398,54 @@ let sendArcHasUnsavedChangesUpdate (hasUnsavedChanges: bool) (window: BrowserWin
     WindowSend.send<Swate.Electron.Shared.IPCTypes.MainToRendererIpc.IHasUnsavedArcChangesRendererApi>
         window
         (fun api -> api.arcUnsavedChangesUpdate hasUnsavedChanges)
+
+/// Text files above this size get no preview.
+let maxTextPreviewBytes = 20.0 * 1024.0 * 1024.0
+
+/// PDFs above this size get no preview.
+let maxPdfPreviewBytes = 50.0 * 1024.0 * 1024.0
+
+let private binarySniffBytes = 8192
+
+/// True when the first bytes of the file contain a NUL byte. The handle is closed on success and on failure.
+/// The close is awaited so the file is released before the caller continues.
+let private startsWithNulByteAsync (path: string) : JS.Promise<bool> = promise {
+    let! handle = Filesystem.openAsync path "r"
+
+    let! hasNul = promise {
+        try
+            let! result = handle.read (Filesystem.allocBuffer binarySniffBytes, 0, binarySniffBytes, 0)
+            return result.buffer |> Array.take result.bytesRead |> Array.exists (fun b -> b = 0uy)
+        with error ->
+            do! handle.close ()
+            return raise error
+    }
+
+    do! handle.close ()
+    return hasNul
+}
+
+/// Reads a file of an ARC for the preview. Files that are too large, not regular files, or binary
+/// come back as a NoPreview DTO without their content being read.
+let readFileForPreviewAsync (absolutePath: string) (relativePath: string) : JS.Promise<FileContentDTO> = promise {
+    let fileType = FileContentDTO.inferTextFileTypeFromPath relativePath
+    let isPdf = fileType = FileContentType.PDF
+    let! stats = Filesystem.statAsync absolutePath
+    let limit = if isPdf then maxPdfPreviewBytes else maxTextPreviewBytes
+
+    if not (stats.isFile ()) then
+        return FileContentDTO.createNoPreview relativePath stats.size NoPreviewReason.Binary
+    elif stats.size > limit then
+        return FileContentDTO.createNoPreview relativePath stats.size NoPreviewReason.TooLarge
+    elif isPdf then
+        let! content = Filesystem.readFileBase64Async absolutePath
+        return FileContentDTO.create fileType content relativePath
+    else
+        let! isBinary = startsWithNulByteAsync absolutePath
+
+        if isBinary then
+            return FileContentDTO.createNoPreview relativePath stats.size NoPreviewReason.Binary
+        else
+            let! content = ARCtrl.FileSystemHelper.readFileTextAsync absolutePath
+            return FileContentDTO.create fileType content relativePath
+}

@@ -288,6 +288,7 @@ module FileContentType =
         | FileContentType.CLI -> Some DTOType.CLI
         | FileContentType.Markdown -> None
         | FileContentType.PDF -> None
+        | FileContentType.NoPreview -> None
         | FileContentType.PNGImage -> None
         | FileContentType.JPGImage -> None
         | FileContentType.SVGImage -> None
@@ -330,6 +331,19 @@ module FileContentDTO =
         fileType = fileType
         content = content
         path = path
+        noPreview = None
+    |}
+
+    /// Describes a file that is shown without content, with its size in bytes and the reason.
+    let createNoPreview (path: string) (sizeBytes: float) (reason: NoPreviewReason) : FileContentDTO = {|
+        fileType = FileContentType.NoPreview
+        content = ""
+        path = path
+        noPreview =
+            Some {|
+                sizeBytes = sizeBytes
+                reason = reason
+            |}
     |}
 
     let inferTextFileTypeFromPath (path: string) : FileContentType =

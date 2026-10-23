@@ -16,6 +16,7 @@ open Renderer.Components.MainContent.NotesSearchTarget
 open Renderer.Components.MainContent.ProvenanceGroupingTarget
 open Renderer.Components.MainContent.TextPreviewTarget
 open Renderer.Components.MainContent.UnknownPreviewTarget
+open Renderer.Components.MainContent.LargeFilePreviewTarget
 open Renderer.Components.MainContent.SettingsPageTarget
 open Renderer.Components.MainContent.ValidationPackageBrowserTarget
 
@@ -132,6 +133,8 @@ let Main (appRootPath: ArcRootPath, pageState: PageState option) =
                     | Some _, Some(PageState.SVGImage content) -> ImageViewer.Main("image/svg+xml", content)
                     | Some _, Some(PageState.TextPage content) -> TextPreviewTarget content
                     | Some _, Some PageState.UnknownPage -> UnknownPreviewTarget()
+                    | Some _, Some(PageState.LargeFilePage(path, sizeBytes, reason)) ->
+                        LargeFilePreviewTarget(path, sizeBytes, reason)
                     | Some _, Some(PageState.ErrorPage errMsg) -> ErrorViewTarget errMsg
                     // | Some _, Some PageState.LandingDraftPage -> LandingDraftTarget()
                     | Some _, Some PageState.NotesDraftPage -> NotesDraftTarget()

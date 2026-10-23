@@ -73,11 +73,24 @@ type FileContentType =
     | ISA_Workflow
     | ISA_Datamap
     | CLI
+    /// A file without text preview. The noPreview field of the DTO holds its size and the reason.
+    | NoPreview
+
+/// Why a file has no preview.
+[<RequireQualifiedAccess; StringEnum>]
+type NoPreviewReason =
+    | TooLarge
+    | Binary
 
 type FileContentDTO = {|
     fileType: FileContentType
     content: string
     path: string
+    noPreview:
+        {|
+            sizeBytes: float
+            reason: NoPreviewReason
+        |} option
 |}
 
 type RenamePathRequest = {

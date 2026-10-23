@@ -224,6 +224,7 @@ type PageState =
     | SVGImage of string
     | TextPage of string
     | UnknownPage
+    | LargeFilePage of path: string * sizeBytes: float * reason: NoPreviewReason
     //| LandingDraftPage
     | NotesDraftPage
     | NotesSearchPage
@@ -274,6 +275,10 @@ type PageState =
             | None ->
                 PageState.ErrorPage
                     $"Failed to parse ARC file: {dto.path} - {dto.fileType} - unsupported format or corrupted content."
+        | FileContentType.NoPreview ->
+            match dto.noPreview with
+            | Some info -> PageState.LargeFilePage(dto.path, info.sizeBytes, info.reason)
+            | None -> PageState.UnknownPage
         | _ -> PageState.UnknownPage
 
 

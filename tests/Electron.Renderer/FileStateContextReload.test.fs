@@ -10,6 +10,7 @@ open Renderer.Context.FileStateContext
 open Renderer.Types
 open ARCtrl
 open Swate.Electron.Shared.FileIOTypes
+open Swate.Electron.Shared.FileIOHelper
 open Swate.Components.Shared
 open Swate.Components.Page.ArcFileEditor.Types
 open Vitest
@@ -414,6 +415,7 @@ Vitest.describe (
                     fileType = FileContentType.Markdown
                     content = "# My Note"
                     path = "notes/my-note.md"
+                    noPreview = None
                 |}
 
                 let pageState = RendererPageState.fromFileContentDTO dto
@@ -430,6 +432,7 @@ Vitest.describe (
                     fileType = FileContentType.PDF
                     content = "PDF content"
                     path = "protocols/my-protocol.pdf"
+                    noPreview = None
                 |}
 
                 let pageState = RendererPageState.fromFileContentDTO dto
@@ -550,4 +553,17 @@ Vitest.describe (
                 | _ -> failwith "Expected the redirected DataMap click to select the DataMap view."
         )
 
+        Vitest.test (
+            "fromFileContentDTO maps a file without preview to LargeFilePage",
+            fun () ->
+                let dto =
+                    FileContentDTO.createNoPreview "data/big.txt" 1234.0 NoPreviewReason.TooLarge
+
+                match RendererPageState.fromFileContentDTO dto with
+                | RendererPageState.LargeFilePage(path, sizeBytes, reason) ->
+                    Vitest.expect(path).toBe "data/big.txt"
+                    Vitest.expect(sizeBytes).toBe 1234.0
+                    Vitest.expect(reason).toEqual NoPreviewReason.TooLarge
+                | _ -> failwith "Expected LargeFilePage for a file without preview."
+        )
 )
