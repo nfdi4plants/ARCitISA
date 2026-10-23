@@ -26,6 +26,7 @@ module private FileTreeHelper =
         | FileSystemCreateDialog of FileSystemCreateDraft
         | RenameDialog of ArcRenameDraft
         | DeleteDialog of FileItem
+        | FreeLfsDialog of string
 
 open FileTreeHelper
 
@@ -304,6 +305,11 @@ type FileTree =
             if canCreateFileSystemItemIn kind item then
                 openDialog (FileSystemCreateDialog { Parent = item; Kind = kind })
 
+        // The context menu runs Free through this request, which only opens the confirmation.
+        let requestFreeLocalLfsCopy (relativePath: string) : JS.Promise<Result<unit, string>> =
+            openDialog (FreeLfsDialog relativePath)
+            promise { return Ok() }
+
         let requestDeleteItem =
             FileTreeDeleteWorkflow.requestDeleteItem (Option.iter (DeleteDialog >> openDialog))
 
@@ -346,7 +352,33 @@ type FileTree =
             | Some(FileSystemCreateDialog draft) -> None, Some draft, None, None
             | Some(RenameDialog renameDraft) -> None, None, Some renameDraft, None
             | Some(DeleteDialog item) -> None, None, None, Some item
+            | Some(FreeLfsDialog _)
             | None -> None, None, None, None
+
+        let activeFreeLfsPath =
+            match activeDialog with
+            | Some(FreeLfsDialog path) -> Some path
+            | _ -> None
+
+        let confirmFreeLocalLfsCopy () =
+            activeFreeLfsPath
+            |> Option.iter (fun path ->
+                closeDialog ()
+
+                promise {
+                    match! runFreeLocalLfsCopy path with
+                    | Ok() -> ()
+                    | Error msg ->
+                        errorModal.enqueue (
+                            ErrorModalRequest.create (
+                                $"Git LFS cleanup failed for '{path}': {msg}",
+                                title = "Git LFS cleanup failed",
+                                ?scopeId = arcScopeId
+                            )
+                        )
+                }
+                |> Promise.start
+            )
 
         let confirmDeleteItem () =
             if not isDialogBusy then
@@ -501,7 +533,7 @@ type FileTree =
             enqueueError = errorModal.enqueue
             runToggleLfsMark = runToggleLfsMark
             runDownloadLfsFile = runDownloadLfsFile
-            runFreeLocalLfsCopy = runFreeLocalLfsCopy
+            runFreeLocalLfsCopy = requestFreeLocalLfsCopy
             lfsActivePaths = lfsActivePaths
         }
 
@@ -581,6 +613,16 @@ type FileTree =
                 isDeleting = isDialogBusy
             )
 
+        let freeLfsModal =
+            FileTreeFreeLfsModal.Main(
+                isOpen = activeFreeLfsPath.IsSome,
+                itemName =
+                    (activeFreeLfsPath
+                     |> Option.map (fun path -> path.Split([| '/'; '\\' |]) |> Array.last)),
+                close = closeDialog,
+                submit = confirmFreeLocalLfsCopy
+            )
+
         let renameModal =
             FileTreeRenameModal.Main(
                 isOpen = activeRenameDraft.IsSome,
@@ -627,6 +669,7 @@ type FileTree =
                 fileSystemCreateModal
                 renameModal
                 deleteConfirmModal
+                freeLfsModal
             ]
         | None ->
             React.Fragment [
@@ -635,4 +678,5 @@ type FileTree =
                 fileSystemCreateModal
                 renameModal
                 deleteConfirmModal
+                freeLfsModal
             ]

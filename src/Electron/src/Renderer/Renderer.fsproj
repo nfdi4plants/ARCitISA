@@ -41,6 +41,7 @@
     <Compile Include="Components\LeftSidebar\FileExplorer\Modals\CreateFileSystemItemModal.fs" />
     <Compile Include="Components\LeftSidebar\FileExplorer\Modals\FileTreeRenameModal.fs" />
     <Compile Include="Components\LeftSidebar\FileExplorer\Modals\FileTreeDeleteModal.fs" />
+    <Compile Include="Components\LeftSidebar\FileExplorer\Modals\FileTreeFreeLfsModal.fs" />
     <Compile Include="Components\LeftSidebar\FileExplorer\FileTreeRename.fs" />
     <Compile Include="Components\LeftSidebar\FileExplorer\FileTreeDelete.fs" />
     <Compile Include="Components\LeftSidebar\FileExplorer\FileTree.fs" />
