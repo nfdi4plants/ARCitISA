@@ -9,6 +9,23 @@ open Swate.Components.Page.ProvenanceGraph.Types
 
 module private OverviewNavHelper =
 
+    /// The row with the window that the overview kept for its level. A level that the overview has not drawn yet
+    /// keeps the window of the row.
+    let withKeptWindow (starts: Map<string, int>) (row: OverviewRow) : OverviewRow =
+        match Map.tryFind row.Key starts with
+        | Some start ->
+            let selected = row.Items |> Array.tryFindIndex (fun item -> item.Selected)
+
+            let start, count =
+                Overview.stableWindow row.Items.Length selected Overview.maxItems (Some start)
+
+            {
+                row with
+                    WindowStart = start
+                    WindowCount = count
+            }
+        | None -> row
+
     /// The items that a row of the overview shows, and the counts of the items left out before and after them.
     /// An expanded row shows every item.
     let overviewShown (row: OverviewRow) (isExpanded: bool) : OverviewItem[] * int * int =
@@ -45,7 +62,7 @@ module private OverviewNavHelper =
     /// The control that holds the tab stop while the user has not focused one. It is the selected item of the
     /// deepest row above the last one, which leads back to that level. A view without such an item takes the
     /// first control of the last row.
-    let defaultOverviewControl (rows: OverviewRow[]) (expanded: Set<int>) : string option =
+    let defaultOverviewControl (rows: OverviewRow[]) (expanded: Set<string>) : string option =
         let selectedAbove =
             rows
             |> Array.indexed
@@ -61,7 +78,9 @@ module private OverviewNavHelper =
         | Some key, _ -> Some key
         | None, Some last ->
             let depth = rows.Length - 1
-            overviewControlKeys depth last (expanded.Contains depth) true |> Array.tryHead
+
+            overviewControlKeys depth last (expanded.Contains last.Key) true
+            |> Array.tryHead
         | None, None -> None
 
     /// The key that a control of the overview carries in its data attribute.
@@ -121,28 +140,56 @@ open OverviewNavHelper
 
 /// The levels above the current view, one row per level, with the item that leads to the view marked. A click on
 /// an item opens the view of that item, like a click on a node of the level. A row that has more items than it
-/// shows expands on request. A new view starts with collapsed rows and the default tab stop. The overview has one
-/// tab stop. The arrow keys move the focus between its controls, and Home and End jump to the ends of a row.
+/// shows expands on request. A level keeps its state while the user navigates: an expanded row stays expanded and
+/// a collapsed row keeps its window of items as long as the selected item lies inside it. The overview has one tab
+/// stop, which a new view resets to the default control. The arrow keys move the focus between its controls, and
+/// Home and End jump to the ends of a row.
 [<Erase; Mangle(false)>]
 type OverviewNav =
 
     [<ReactComponent>]
     static member OverviewNav(rows: OverviewRow[], id: string, viewKey: string, onNavigate: ProvenanceView -> unit) =
-        // React lets a component reset its state while it renders, so a new view never draws the expanded rows or
-        // the tab stop of the old one. Returning to a view starts collapsed again.
+        // React lets a component reset its state while it renders, so a new view never draws the tab stop of the
+        // old one.
         let seenKey, setSeenKey = React.useState viewKey
-        let noRows: Set<int> = Set.empty
-        let expandedState, setExpandedState = React.useState noRows
         let focusedState, setFocusedState = React.useState ""
         let isSameView = seenKey = viewKey
 
         if not isSameView then
             setSeenKey viewKey
-            setExpandedState noRows
             setFocusedState ""
 
-        let expanded = if isSameView then expandedState else noRows
         let focused = if isSameView then focusedState else ""
+
+        // The expanded levels and the window starts belong to the levels, not to the view. They live as long as the
+        // overview does, so the rows hold still when the user picks an item or goes down a level and back up.
+        let noLevels: Set<string> = Set.empty
+        let expanded, setExpanded = React.useState noLevels
+        let noStarts: Map<string, int> = Map.empty
+        let windowStarts, setWindowStarts = React.useState noStarts
+
+        // The render reads the starts of the previous render, and the layout effect stores the ones that changed
+        // before the browser paints.
+        let rows =
+            React.useMemo (
+                (fun () -> rows |> Array.map (withKeptWindow windowStarts)),
+                [| box rows; box windowStarts |]
+            )
+
+        React.useLayoutEffect (
+            (fun () ->
+                let changed =
+                    rows
+                    |> Array.filter (fun row -> Map.tryFind row.Key windowStarts <> Some row.WindowStart)
+
+                if changed.Length > 0 then
+                    setWindowStarts (
+                        changed
+                        |> Array.fold (fun starts row -> Map.add row.Key row.WindowStart starts) windowStarts
+                    )
+            ),
+            [| box rows |]
+        )
 
         // The last focused control keeps the tab stop as long as it is on the page. Otherwise the default control
         // takes it.
@@ -151,7 +198,7 @@ type OverviewNav =
                 rows
                 |> Array.indexed
                 |> Array.collect (fun (depth, row) ->
-                    overviewControlKeys depth row (expanded.Contains depth) (depth = rows.Length - 1)
+                    overviewControlKeys depth row (expanded.Contains row.Key) (depth = rows.Length - 1)
                 )
 
             if focused <> "" && Array.contains focused allKeys then
@@ -164,14 +211,14 @@ type OverviewNav =
         let listRef = React.useRef<HTMLElement option> None
         let pendingFocus = React.useRef<(int * bool) option> None
 
-        let setRowOpen (depth: int) (isOpen: bool) =
+        let setRowOpen (depth: int) (key: string) (isOpen: bool) =
             pendingFocus.current <- Some(depth, isOpen)
 
-            setExpandedState (
+            setExpanded (
                 if isOpen then
-                    Set.add depth expanded
+                    Set.add key expanded
                 else
-                    Set.remove depth expanded
+                    Set.remove key expanded
             )
 
         // An expanded row focuses its "Show less" button. A collapsed row focuses its last "+N" button, which is
@@ -199,7 +246,7 @@ type OverviewNav =
                         wanted |> Option.iter (fun control -> control.focus ())
                 | _ -> ()
             ),
-            [| box expandedState |]
+            [| box expanded |]
         )
 
         // Only the control with the tab stop can be reached with the Tab key. The others take the arrow keys.
@@ -215,7 +262,7 @@ type OverviewNav =
             "swt:flex-none swt:cursor-pointer swt:rounded swt:px-1 swt:text-base-content/80 swt:hover:bg-base-200 swt:focus-visible:-outline-offset-2"
 
         // The accessible name of the button is its visible text. The screen reader text completes the count.
-        let moreButton (key: string) (depth: int) (count: int) : ReactElement =
+        let moreButton (key: string) (depth: int) (row: OverviewRow) (count: int) : ReactElement =
             Html.button (
                 controlProps $"{depth}:more-{key}"
                 @ [
@@ -223,7 +270,7 @@ type OverviewNav =
                     prop.type'.button
                     prop.testId "provenance-overview-more"
                     prop.className controlClass
-                    prop.onClick (fun _ -> setRowOpen depth true)
+                    prop.onClick (fun _ -> setRowOpen depth row.Key true)
                     prop.children [
                         Html.text $"+{count}"
                         Html.span [ prop.className "swt:sr-only"; prop.text " more" ]
@@ -231,7 +278,7 @@ type OverviewNav =
                 ]
             )
 
-        let lessButton (depth: int) : ReactElement =
+        let lessButton (depth: int) (row: OverviewRow) : ReactElement =
             Html.button (
                 controlProps $"{depth}:less"
                 @ [
@@ -239,12 +286,15 @@ type OverviewNav =
                     prop.type'.button
                     prop.testId "provenance-overview-less"
                     prop.className controlClass
-                    prop.onClick (fun _ -> setRowOpen depth false)
+                    prop.onClick (fun _ -> setRowOpen depth row.Key false)
                     prop.text "Show less"
                 ]
             )
 
         // The selected item of the deepest row leads to the current view. It marks the place and takes no click.
+        // Every chip has the same font weight and the pin takes no inline space, so a chip keeps its width when it
+        // becomes the selected one. The pin sits over the corner and the label truncates in an inner element,
+        // because a truncating chip would clip the pin.
         let chip (key: string) (depth: int) (isDeepest: bool) (item: OverviewItem) : ReactElement =
             let isHere = item.Selected && isDeepest
 
@@ -263,16 +313,6 @@ type OverviewNav =
                 prop.custom ("data-selected", item.Selected)
                 prop.title item.Label
                 prop.style chipStyle
-                prop.children [
-                    if isHere then
-                        Html.i [
-                            prop.testId "provenance-overview-location"
-                            prop.ariaHidden true
-                            prop.className "swt:iconify swt:fluent--location-16-filled swt:size-3 swt:align-[-2px]"
-                        ]
-
-                    Html.text item.Label
-                ]
             ]
 
             if isHere then
@@ -281,7 +321,25 @@ type OverviewNav =
                     @ [
                         prop.custom ("aria-current", "location")
                         prop.className
-                            "swt:max-w-40 swt:min-w-0 swt:flex-none swt:truncate swt:rounded-full swt:border swt:px-2 swt:py-px swt:font-semibold"
+                            "swt:relative swt:max-w-40 swt:min-w-0 swt:flex-none swt:rounded-full swt:border swt:px-2 swt:py-px"
+                        prop.children [
+                            Html.span [
+                                prop.testId "provenance-overview-location"
+                                prop.ariaHidden true
+                                prop.className
+                                    "swt:pointer-events-none swt:absolute swt:-top-1.5 swt:-left-1.5 swt:flex swt:size-3.5 swt:items-center swt:justify-center swt:rounded-full swt:bg-base-100"
+                                prop.children [
+                                    Html.i [
+                                        prop.className "swt:iconify swt:fluent--location-16-filled swt:size-3"
+                                    ]
+                                ]
+                            ]
+
+                            Html.span [
+                                prop.className "swt:block swt:truncate"
+                                prop.text item.Label
+                            ]
+                        ]
                     ]
                 )
             elif item.Selected then
@@ -292,7 +350,8 @@ type OverviewNav =
                         prop.type'.button
                         prop.custom ("aria-current", "true")
                         prop.className
-                            "swt:max-w-40 swt:min-w-0 swt:flex-none swt:cursor-pointer swt:truncate swt:rounded-full swt:border swt:px-2 swt:py-px swt:font-semibold swt:focus-visible:-outline-offset-2"
+                            "swt:max-w-40 swt:min-w-0 swt:flex-none swt:cursor-pointer swt:truncate swt:rounded-full swt:border swt:px-2 swt:py-px swt:focus-visible:-outline-offset-2"
+                        prop.text item.Label
                         prop.onClick (fun _ -> onNavigate item.Target)
                     ]
                 )
@@ -304,6 +363,7 @@ type OverviewNav =
                         prop.type'.button
                         prop.className
                             "swt:max-w-40 swt:min-w-10 swt:cursor-pointer swt:truncate swt:rounded-full swt:border swt:px-2 swt:py-px swt:text-base-content/80 swt:hover:bg-base-200 swt:focus-visible:-outline-offset-2"
+                        prop.text item.Label
                         prop.onClick (fun _ -> onNavigate item.Target)
                     ]
                 )
@@ -312,7 +372,7 @@ type OverviewNav =
         // when it is wider than the panel, so no control sticks out of it.
         let rowItem (depth: int) (row: OverviewRow) : ReactElement =
             let isDeepest = depth = rows.Length - 1
-            let isExpanded = expanded.Contains depth
+            let isExpanded = expanded.Contains row.Key
             let hasMore = row.Items.Length > row.WindowCount
             let shown, before, after = overviewShown row isExpanded
 
@@ -340,16 +400,16 @@ type OverviewNav =
 
                     // An expanded row can be long. The button to collapse it stays at the start of the row.
                     if isExpanded && hasMore then
-                        lessButton depth
+                        lessButton depth row
 
                     if before > 0 then
-                        moreButton "before" depth before
+                        moreButton "before" depth row before
 
                     for item in shown do
                         chip $"item-{item.Id}" depth isDeepest item
 
                     if after > 0 then
-                        moreButton "after" depth after
+                        moreButton "after" depth row after
 
                     if row.Extra.IsSome then
                         Html.span [

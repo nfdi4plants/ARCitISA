@@ -459,7 +459,7 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "collapses an expanded row when the view comes back",
+            "keeps an expanded row expanded when the user picks another item or goes down a level and back",
             longTest,
             fun () -> promise {
                 render (manyDatasetsIndex 10) |> ignore
@@ -469,13 +469,51 @@ Vitest.describe (
                 click (RTL.screen.getAllByTestId "provenance-overview-more").[0]
                 Vitest.expect((overviewItems 0).length).toBe 10
 
-                // The overview stays mounted while the view changes to the groups and back.
-                do! open' "assays/Assay5/::t" "assays/Assay5/::t#in0"
-                click (byTestId "provenance-up")
-                do! waitNode "assays/Assay5/::t"
+                // Another dataset from the expanded row keeps the row open.
+                let title = (overviewItem 0 false).getAttribute "title"
+                click (overviewItem 0 false)
+                do! waitNode $"assays/{title}/::t"
 
-                Vitest.expect((overviewItems 0).length).toBe Overview.maxItems
-                Vitest.expect(present (maybeTestId "provenance-overview-less")).toBe false
+                Vitest.expect((overviewItems 0).length).toBe 10
+                Vitest.expect(present (maybeTestId "provenance-overview-less")).toBe true
+
+                // The overview stays mounted while the view changes to the groups and back.
+                do! open' $"assays/{title}/::t" $"assays/{title}/::t#in0"
+                Vitest.expect((overviewItems 0).length).toBe 10
+                Vitest.expect(present (maybeTestId "provenance-overview-less")).toBe true
+
+                click (byTestId "provenance-up")
+                do! waitNode $"assays/{title}/::t"
+
+                Vitest.expect((overviewItems 0).length).toBe 10
+                Vitest.expect(present (maybeTestId "provenance-overview-less")).toBe true
+            }
+        )
+
+        Vitest.test (
+            "keeps the window of a collapsed row when the user clicks a visible item that is not at its center",
+            longTest,
+            fun () -> promise {
+                render (manyDatasetsIndex 20) |> ignore
+                do! waitNode "assays/Assay10/"
+                do! open' "assays/Assay10/" "assays/Assay10/::t"
+
+                let shownTitles () = [|
+                    for i in 0 .. (overviewItems 0).length - 1 -> (overviewItems 0).[i].getAttribute "title"
+                |]
+
+                let before = shownTitles ()
+                Vitest.expect(before.Length).toBe Overview.maxItems
+
+                // The window is centered on the opened dataset. The first chip of the window is the farthest from it.
+                let target = overviewItem 0 false
+                let title = target.getAttribute "title"
+                Vitest.expect(title).toBe before.[0]
+                click target
+                do! waitNode $"assays/{title}/::t"
+
+                Vitest.expect(selectedOverviewItems().[0].getAttribute "title").toBe title
+                Vitest.expect(shownTitles ()).toEqual before
             }
         )
 

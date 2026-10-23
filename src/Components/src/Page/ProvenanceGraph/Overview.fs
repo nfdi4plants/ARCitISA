@@ -19,9 +19,27 @@ let windowAround (total: int) (selected: int option) (maxCount: int) : int * int
         | Some index -> max 0 (min (total - maxCount) (index - maxCount / 2)), maxCount
         | None -> 0, maxCount
 
-/// A row for the items (id, label) of one level. `targetOf` gives the view that a click on an item opens. An id
-/// that is not among the items leaves the row without a selected item.
+/// The window of a level that was drawn before, with the start that it had. The window stays where it was as long
+/// as the selected item lies inside it, so a click on a visible item does not move the items. The remembered start
+/// is clamped to the level first, because the level may have shrunk. A selected item outside the window, or a level
+/// without a remembered start, gets the window around the selected item.
+let stableWindow (total: int) (selected: int option) (maxCount: int) (previousStart: int option) : int * int =
+    if total <= maxCount then
+        0, total
+    else
+        match previousStart with
+        | Some remembered ->
+            let start = max 0 (min (total - maxCount) remembered)
+
+            match selected with
+            | Some index when index < start || index >= start + maxCount -> windowAround total selected maxCount
+            | _ -> start, maxCount
+        | None -> windowAround total selected maxCount
+
+/// A row for the items (id, label) of one level. `key` identifies the level. `targetOf` gives the view that a click
+/// on an item opens. An id that is not among the items leaves the row without a selected item.
 let rowOf
+    (key: string)
     (heading: string)
     (items: (string * string)[])
     (selectedId: string)
@@ -31,6 +49,7 @@ let rowOf
     let start, count = windowAround items.Length selected maxItems
 
     {
+        Key = key
         Heading = heading
         Items = [|
             for id, label in items ->
@@ -75,6 +94,15 @@ let private itemsAt (index: ProvenanceIndex) (selection: string[]) (level: int) 
         processDetail index selection.[2]
         |> Option.map (fun graph -> [| for node in graph.Nodes -> node.Id, node.Id |])
 
+/// The key of a level names the kind of its items and the item that owns the level. Two views that show the same
+/// level give the same key.
+let private keyAt (selection: string[]) (level: int) : string =
+    match level with
+    | 0 -> "datasets"
+    | 1 -> $"processes:{selection.[0]}"
+    | 2 -> $"groups:{selection.[1]}"
+    | _ -> $"nodes:{selection.[2]}"
+
 /// The heading of a row names the item that owns the level. That item is the crumb at the same position.
 let private headingAt (crumbs: Crumb[]) (level: int) : string =
     match level with
@@ -114,7 +142,10 @@ let baseRows (index: ProvenanceIndex) (view: ProvenanceView) : OverviewRow[] =
                 let targetOf (id: string) =
                     ProvenanceView.next index (levelView crumbs level) id
 
-                collect (level + 1) (rowOf (headingAt crumbs level) items selection.[level] targetOf :: found)
+                collect
+                    (level + 1)
+                    (rowOf (keyAt selection level) (headingAt crumbs level) items selection.[level] targetOf
+                     :: found)
             | None -> found
 
     collect 0 [] |> List.rev |> Array.ofList

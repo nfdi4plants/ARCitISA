@@ -69,13 +69,57 @@ Vitest.describe (
 )
 
 Vitest.describe (
+    "stableWindow",
+    fun () ->
+        Vitest.test (
+            "shows the whole level when it fits",
+            fun () ->
+                Vitest.expect(stableWindow 5 (Some 2) 7 (Some 3)).toEqual ((0, 5))
+                Vitest.expect(stableWindow 7 None 7 None).toEqual ((0, 7))
+        )
+
+        Vitest.test (
+            "keeps the window while the selected item stays inside it",
+            fun () ->
+                // The window around item 10 starts at 7. Item 8 is inside it, so a click on item 8 keeps the start.
+                Vitest.expect(stableWindow 20 (Some 8) 7 (Some 7)).toEqual ((7, 7))
+                Vitest.expect(stableWindow 20 (Some 13) 7 (Some 7)).toEqual ((7, 7))
+        )
+
+        Vitest.test (
+            "moves the window to the selected item when it leaves the window",
+            fun () ->
+                Vitest.expect(stableWindow 20 (Some 6) 7 (Some 7)).toEqual (windowAround 20 (Some 6) 7)
+                Vitest.expect(stableWindow 20 (Some 14) 7 (Some 7)).toEqual (windowAround 20 (Some 14) 7)
+        )
+
+        Vitest.test (
+            "clamps a remembered start that is out of range now",
+            fun () ->
+                // The level shrank from 30 to 12 items, so the last start is 5.
+                Vitest.expect(stableWindow 12 (Some 8) 7 (Some 20)).toEqual ((5, 7))
+                Vitest.expect(stableWindow 12 None 7 (Some -3)).toEqual ((0, 7))
+        )
+
+        Vitest.test (
+            "keeps the window when nothing is selected",
+            fun () -> Vitest.expect(stableWindow 20 None 7 (Some 9)).toEqual ((9, 7))
+        )
+
+        Vitest.test (
+            "centers on the selected item when no start is remembered",
+            fun () -> Vitest.expect(stableWindow 20 (Some 10) 7 None).toEqual (windowAround 20 (Some 10) 7)
+        )
+)
+
+Vitest.describe (
     "rowOf",
     fun () ->
         Vitest.test (
             "keeps every item and puts the window around the selected one",
             fun () ->
                 let items = [| for i in 0..19 -> $"id{i}", $"label{i}" |]
-                let row = rowOf "heading" items "id10" ProvenanceView.Processes
+                let row = rowOf "level" "heading" items "id10" ProvenanceView.Processes
 
                 Vitest.expect(row.Items.Length).toBe 20
                 Vitest.expect(row.WindowCount).toBe maxItems
@@ -89,7 +133,7 @@ Vitest.describe (
             "leaves the row without a selected item when the id is not among the items",
             fun () ->
                 let row =
-                    rowOf "heading" [| "a", "A"; "b", "B" |] "c" (fun _ -> ProvenanceView.Datasets)
+                    rowOf "level" "heading" [| "a", "A"; "b", "B" |] "c" (fun _ -> ProvenanceView.Datasets)
 
                 Vitest.expect(selectedIds row).toEqual Array.empty<string>
                 Vitest.expect(row.Items.Length).toBe 2

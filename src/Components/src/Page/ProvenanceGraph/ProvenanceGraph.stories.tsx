@@ -214,6 +214,66 @@ export const WideOverviewRows: Story = {
   },
 };
 
+// The chips of the first overview row hold still while the user navigates. After a click into a deeper level and a
+// click on a sibling chip, every chip that stays in the row keeps its left edge and its width. A chip has the same
+// width as the selected chip and as an unselected one, because the pin sits over the corner of the chip and takes no
+// inline space. The pin lies inside the panel, which clips what sticks out of its top.
+export const OverviewHoldsStill: Story = {
+  decorators: [box('100%', 640)],
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    const chipBoxes = () => {
+      const chips = Array.from(
+        canvasElement.querySelectorAll('[data-testid="provenance-overview-row-0"] [data-testid="provenance-overview-item"]'),
+      );
+      return new Map(
+        chips.map((chip) => {
+          const rect = chip.getBoundingClientRect();
+          return [chip.getAttribute('title') as string, { left: rect.left, width: rect.width }] as const;
+        }),
+      );
+    };
+
+    const expectSameBoxes = (before: ReturnType<typeof chipBoxes>) => {
+      const after = chipBoxes();
+      expect(after.size).toBeGreaterThan(1);
+      for (const [title, rect] of after) {
+        const old = before.get(title);
+        if (!old) continue;
+        expect(Math.abs(rect.left - old.left)).toBeLessThanOrEqual(0.5);
+        expect(Math.abs(rect.width - old.width)).toBeLessThanOrEqual(0.5);
+      }
+    };
+
+    await canvas.findByTestId(`graph-node-${extraction}`, {}, wait);
+    await open(canvas, extraction, extractionProcess);
+
+    const overview = await canvas.findByTestId('provenance-overview');
+    const before = chipBoxes();
+    expect(before.size).toBeGreaterThan(2);
+
+    const pin = canvas.getByTestId('provenance-overview-location');
+    await expect(pin).toBeVisible();
+    await expect(getComputedStyle(pin).position).toBe('absolute');
+    await expect(getComputedStyle(pin).pointerEvents).toBe('none');
+    await expect(pin.getBoundingClientRect().top).toBeGreaterThanOrEqual(overview.getBoundingClientRect().top);
+
+    // A click into a deeper level turns the selected chip of the first row from the pin chip into a button.
+    await open(canvas, extractionProcess, inputGroup);
+    await waitFor(() => expectSameBoxes(before), wait);
+
+    // A click on a sibling chip makes it the selected one and the old one an unselected button.
+    const sibling = canvasElement.querySelector(
+      '[data-testid="provenance-overview-row-0"] [data-testid="provenance-overview-item"][data-selected="false"]',
+    ) as HTMLElement;
+    const title = sibling.getAttribute('title') as string;
+    await userEvent.click(sibling);
+    await waitFor(() => expect(canvas.getByTestId('provenance-crumb-1')).toHaveTextContent(title), wait);
+    await waitFor(() => expectSameBoxes(before), wait);
+  },
+};
+
 // A work in progress ARC shows how many rows are unfinished. A table with a protocol only has nothing to draw.
 export const WorkInProgress: Story = {
   args: { index: wipIndex },
