@@ -938,10 +938,15 @@ type GraphCanvas =
         let scrolledIn = React.useRef<int option> None
         let markerPrefix = (React.useId ()).Replace(":", "")
 
-        // The layout function is read through a ref, so a new function identity per render never starts a layout.
-        let layoutRef = React.useRef (defaultArg layout layoutGraph)
+        // ELK runs in a worker. This hook comes before the layout effect, so the worker exists when the first
+        // layout starts.
+        let _, runElk = useWebWorker ElkWorker.Worker
+        let defaultLayout = layoutGraphWith runElk
 
-        React.useLayoutEffect (fun () -> layoutRef.current <- defaultArg layout layoutGraph)
+        // The layout function is read through a ref, so a new function identity per render never starts a layout.
+        let layoutRef = React.useRef (defaultArg layout defaultLayout)
+
+        React.useLayoutEffect (fun () -> layoutRef.current <- defaultArg layout defaultLayout)
 
         // A changed resetKey is a new view. React lets a component reset state while it renders, so the new
         // epoch is known before anything is drawn. Results, expansion and the scroll position are tied to an

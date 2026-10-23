@@ -75,6 +75,9 @@
     <Compile Include="JsBindings\Virtual.fs" />
     <Compile Include="JsBindings\FloatingUI.fs" />
     <Compile Include="JsBindings\DndKit.fs" />
+    <Compile Include="Util\WebWorker.fs" />
+    <Compile Include="Util\WebWorker.test.fs" />
+    <Compile Include="Util\WebWorker.test.worker.fs" />
     <Compile Include="JsBindings\Elk.fs" />
     <Compile Include="JsBindings\Dom.fs" />
     <Compile Include="JsBindings\Errors.fs" />
@@ -86,6 +89,8 @@
     <Compile Include="Util\DateTimeExtensions.fs" />
     <Compile Include="Util\Extensions.fs" />
     <Compile Include="Util\ReactHooks.fs" />
+    <Compile Include="Util\WebWorker.sample.fs" />
+    <Compile Include="Util\WebWorker.test.rtl.fs" />
     <Compile Include="Util\UserOS.fs" />
     <Compile Include="ARCtrl\TermCollection.fs" />
     <Compile Include="ARCtrl\Helper.fs" />
@@ -274,6 +279,7 @@
     <Compile Include="Composite\GraphCanvas\Types.fs" />
     <Compile Include="Composite\GraphCanvas\Pills.fs" />
     <Compile Include="Composite\GraphCanvas\Pills.test.fs" />
+    <Compile Include="Composite\GraphCanvas\ElkWorker.fs" />
     <Compile Include="Composite\GraphCanvas\Layout.fs" />
     <Compile Include="Composite\GraphCanvas\Layout.test.fs" />
     <Compile Include="Composite\GraphCanvas\Minimap.fs" />
