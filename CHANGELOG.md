@@ -23,6 +23,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A minimap in the corner of the provenance graph shows the whole graph and the visible part, and a click or drag on it moves the view. (by @caroott)
 - The whole provenance graph can be saved as a PNG image or copied to paste into Slack or Teams. (by @caroott)
 
+### 🔄 Changed
+
+- Switching views in the provenance graph keeps the previous graph on screen until the new one is ready, so the view no longer flashes. (by @caroott)
+- The provenance graph lays out large graphs in the background, so the app stays responsive in the meantime. (by @caroott)
+
 ### ✨ Added
 
 - "Refresh folder" in the file tree's right-click menu reads a folder from disk again. (by @caroott)
