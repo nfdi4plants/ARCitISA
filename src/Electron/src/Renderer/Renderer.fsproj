@@ -15,6 +15,7 @@
     <Compile Include="Context\AppStateContext.fs" />
     <Compile Include="Context\LargeObjectStore.fs" />
     <Compile Include="Context\PageStateContext.fs" />
+    <Compile Include="Context\FileTreeStore.fs" />
     <Compile Include="Context\FileStateContext.fs" />
     <Compile Include="Context\AuthStateContext.fs" />
     <Compile Include="Context\GitWorkflow.fs" />
