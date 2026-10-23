@@ -77,8 +77,8 @@ type OverviewItem = {
 /// One level above the current view. Items holds every item of the level in the order of the level. A collapsed
 /// row shows the WindowCount items from WindowStart on, and an expanded row shows all of them. Extra is the item
 /// of the current view when the level does not contain it. The row shows it after the other items in either state.
-/// WindowStart is the window of a level that the overview has not drawn yet. A level it has drawn keeps its
-/// window while the selected item stays inside it.
+/// WindowStart is the start of the window that a level gets before the overview has drawn it. A level that the
+/// overview has drawn keeps its window while the selected item stays inside it.
 type OverviewRow = {
     /// Identifies the level independent of the view, so the page can keep per-level state.
     Key: string

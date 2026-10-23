@@ -292,9 +292,10 @@ type OverviewNav =
             )
 
         // The selected item of the deepest row leads to the current view. It marks the place and takes no click.
-        // Every chip has the same font weight and the pin takes no inline space, so a chip keeps its width when it
-        // becomes the selected one. The pin sits over the corner and the label truncates in an inner element,
-        // because a truncating chip would clip the pin.
+        // Every chip has the same font weight, minimum width and flex basis, and the pin takes no inline space, so a
+        // chip keeps its width when it becomes the selected one. A row wraps, so no chip needs to shrink. The pin
+        // sits over the corner and the label truncates in an inner element, because a truncating chip would clip
+        // the pin.
         let chip (key: string) (depth: int) (isDeepest: bool) (item: OverviewItem) : ReactElement =
             let isHere = item.Selected && isDeepest
 
@@ -321,7 +322,7 @@ type OverviewNav =
                     @ [
                         prop.custom ("aria-current", "location")
                         prop.className
-                            "swt:relative swt:max-w-40 swt:min-w-0 swt:flex-none swt:rounded-full swt:border swt:px-2 swt:py-px"
+                            "swt:relative swt:max-w-40 swt:min-w-10 swt:flex-none swt:rounded-full swt:border swt:px-2 swt:py-px"
                         prop.children [
                             Html.span [
                                 prop.testId "provenance-overview-location"
@@ -350,7 +351,7 @@ type OverviewNav =
                         prop.type'.button
                         prop.custom ("aria-current", "true")
                         prop.className
-                            "swt:max-w-40 swt:min-w-0 swt:flex-none swt:cursor-pointer swt:truncate swt:rounded-full swt:border swt:px-2 swt:py-px swt:focus-visible:-outline-offset-2"
+                            "swt:max-w-40 swt:min-w-10 swt:flex-none swt:cursor-pointer swt:truncate swt:rounded-full swt:border swt:px-2 swt:py-px swt:focus-visible:-outline-offset-2"
                         prop.text item.Label
                         prop.onClick (fun _ -> onNavigate item.Target)
                     ]
@@ -362,7 +363,7 @@ type OverviewNav =
                     @ [
                         prop.type'.button
                         prop.className
-                            "swt:max-w-40 swt:min-w-10 swt:cursor-pointer swt:truncate swt:rounded-full swt:border swt:px-2 swt:py-px swt:text-base-content/80 swt:hover:bg-base-200 swt:focus-visible:-outline-offset-2"
+                            "swt:max-w-40 swt:min-w-10 swt:flex-none swt:cursor-pointer swt:truncate swt:rounded-full swt:border swt:px-2 swt:py-px swt:text-base-content/80 swt:hover:bg-base-200 swt:focus-visible:-outline-offset-2"
                         prop.text item.Label
                         prop.onClick (fun _ -> onNavigate item.Target)
                     ]

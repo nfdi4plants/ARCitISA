@@ -104,8 +104,13 @@ let private byTestId (id: string) : HTMLElement = RTL.screen.getByTestId id
 let private maybeTestId (id: string) : HTMLElement option = RTL.screen.queryByTestId id
 let private nodeEl (id: string) : HTMLElement = byTestId $"graph-node-{id}"
 
+/// Waits for a node and for the layout of its view. A node with the same id can still belong to the previous view
+/// while the next one lays out, so the canvas must not be stale.
 let private waitNode (id: string) : JS.Promise<unit> =
-    eventually (fun () -> nodeEl id |> ignore)
+    eventually (fun () ->
+        nodeEl id |> ignore
+        Vitest.expect((byTestId "graph-canvas-content").getAttribute "data-stale").toBe "false"
+    )
 
 let private click (el: HTMLElement) = RTL.fireEvent.click el
 

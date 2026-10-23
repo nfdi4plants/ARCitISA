@@ -3,6 +3,8 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, userEvent, waitFor, within } from 'storybook/test';
 import { ProvenanceGraph } from './ProvenanceGraph.fs.js';
 import { emptyIndex, index, wipIndex } from './ProvenanceGraph.sample.fs.js';
+import { ProvenanceGraphData_ofInvestigation, ProvenanceIndex_ofData } from '../../../../Shared/ProvenanceGraph/BuildIndex.fs.ts';
+import { ArcAssay, ArcInvestigation } from '../../fable_modules/ARCtrl.Core.3.0.0-beta.12/ArcTypes.fs.js';
 
 // The page fills its parent, so every story gives it a box with a height.
 const box = (width: number | string, height: number) => (Story: React.ComponentType) => (
@@ -214,6 +216,31 @@ export const WideOverviewRows: Story = {
   },
 };
 
+// The left edge and the width of every chip of the first overview row, by the title of the chip.
+function chipBoxes(canvasElement: HTMLElement) {
+  const chips = Array.from(
+    canvasElement.querySelectorAll('[data-testid="provenance-overview-row-0"] [data-testid="provenance-overview-item"]'),
+  );
+  return new Map(
+    chips.map((chip) => {
+      const rect = chip.getBoundingClientRect();
+      return [chip.getAttribute('title') as string, { left: rect.left, width: rect.width }] as const;
+    }),
+  );
+}
+
+// Every chip that was in the row before is at the same place and has the same width now.
+function expectSameBoxes(canvasElement: HTMLElement, before: ReturnType<typeof chipBoxes>) {
+  const after = chipBoxes(canvasElement);
+  expect(after.size).toBeGreaterThan(1);
+  for (const [title, rect] of after) {
+    const old = before.get(title);
+    if (!old) continue;
+    expect(Math.abs(rect.left - old.left)).toBeLessThanOrEqual(0.5);
+    expect(Math.abs(rect.width - old.width)).toBeLessThanOrEqual(0.5);
+  }
+}
+
 // The chips of the first overview row hold still while the user navigates. After a click into a deeper level and a
 // click on a sibling chip, every chip that stays in the row keeps its left edge and its width. A chip has the same
 // width as the selected chip and as an unselected one, because the pin sits over the corner of the chip and takes no
@@ -223,34 +250,11 @@ export const OverviewHoldsStill: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
 
-    const chipBoxes = () => {
-      const chips = Array.from(
-        canvasElement.querySelectorAll('[data-testid="provenance-overview-row-0"] [data-testid="provenance-overview-item"]'),
-      );
-      return new Map(
-        chips.map((chip) => {
-          const rect = chip.getBoundingClientRect();
-          return [chip.getAttribute('title') as string, { left: rect.left, width: rect.width }] as const;
-        }),
-      );
-    };
-
-    const expectSameBoxes = (before: ReturnType<typeof chipBoxes>) => {
-      const after = chipBoxes();
-      expect(after.size).toBeGreaterThan(1);
-      for (const [title, rect] of after) {
-        const old = before.get(title);
-        if (!old) continue;
-        expect(Math.abs(rect.left - old.left)).toBeLessThanOrEqual(0.5);
-        expect(Math.abs(rect.width - old.width)).toBeLessThanOrEqual(0.5);
-      }
-    };
-
     await canvas.findByTestId(`graph-node-${extraction}`, {}, wait);
     await open(canvas, extraction, extractionProcess);
 
     const overview = await canvas.findByTestId('provenance-overview');
-    const before = chipBoxes();
+    const before = chipBoxes(canvasElement);
     expect(before.size).toBeGreaterThan(2);
 
     const pin = canvas.getByTestId('provenance-overview-location');
@@ -261,7 +265,7 @@ export const OverviewHoldsStill: Story = {
 
     // A click into a deeper level turns the selected chip of the first row from the pin chip into a button.
     await open(canvas, extractionProcess, inputGroup);
-    await waitFor(() => expectSameBoxes(before), wait);
+    await waitFor(() => expectSameBoxes(canvasElement, before), wait);
 
     // A click on a sibling chip makes it the selected one and the old one an unselected button.
     const sibling = canvasElement.querySelector(
@@ -270,7 +274,48 @@ export const OverviewHoldsStill: Story = {
     const title = sibling.getAttribute('title') as string;
     await userEvent.click(sibling);
     await waitFor(() => expect(canvas.getByTestId('provenance-crumb-1')).toHaveTextContent(title), wait);
-    await waitFor(() => expectSameBoxes(before), wait);
+    await waitFor(() => expectSameBoxes(canvasElement, before), wait);
+  },
+};
+
+// Three datasets with labels shorter than the minimum width of a chip. The chips keep the minimum width in every
+// state, so a chip that becomes the selected one does not shrink.
+const shortLabels = ProvenanceIndex_ofData(
+  ProvenanceGraphData_ofInvestigation(
+    ArcInvestigation.create(
+      'Short-example',
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      [ArcAssay.create('S1'), ArcAssay.create('S2'), ArcAssay.create('S3')],
+    ),
+  ),
+);
+
+export const OverviewShortLabels: Story = {
+  args: { index: shortLabels },
+  decorators: [box('100%', 480)],
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    await userEvent.click(await canvas.findByTestId('graph-node-assays/S1/', {}, wait));
+    await canvas.findByTestId('provenance-overview', {}, wait);
+    await waitFor(() => expect(canvas.getByTestId('provenance-crumb-1')).toHaveTextContent('S1'), wait);
+
+    const before = chipBoxes(canvasElement);
+    expect(before.size).toBe(3);
+
+    const sibling = canvasElement.querySelector(
+      '[data-testid="provenance-overview-row-0"] [data-testid="provenance-overview-item"][title="S2"]',
+    ) as HTMLElement;
+    await userEvent.click(sibling);
+    await waitFor(() => expect(canvas.getByTestId('provenance-crumb-1')).toHaveTextContent('S2'), wait);
+    await waitFor(() => expectSameBoxes(canvasElement, before), wait);
+    await expect(chipBoxes(canvasElement).size).toBe(3);
   },
 };
 
