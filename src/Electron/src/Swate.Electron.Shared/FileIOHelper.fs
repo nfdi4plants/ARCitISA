@@ -25,6 +25,23 @@ let isLegacyDataMapPath (path: string) =
         String.Equals(fileName, LegacyDataMapFileName, StringComparison.OrdinalIgnoreCase)
     )
 
+// Excel writes "~$name.xlsx" lock files, some tools prefix them with a dot.
+let private officeLockFilePattern = """(^|/)\.?~\$[^/]*\.xlsx$"""
+let private lfsBackupPattern = """\.vcs-lfs-backup-[0-9a-fA-F]{32}$"""
+
+/// True for entries that are not part of the ARC inventory: git metadata (a `.git` directory or a `.git`
+/// gitlink file, anywhere on the path), Office lock files, LFS backup leftovers and the legacy `isa_datamap`
+/// file. The tree scan and the file watcher share this rule. `relativePath` is relative to the ARC root.
+let isIgnoredInventoryEntry (name: string) (relativePath: string) (isDirectory: bool) =
+    let normalizedPath = PathHelpers.normalizeSeparators relativePath
+
+    String.Equals(name, ".git", StringComparison.OrdinalIgnoreCase)
+    || getNonEmptyPathParts normalizedPath
+       |> Array.exists (fun segment -> String.Equals(segment, ".git", StringComparison.OrdinalIgnoreCase))
+    || System.Text.RegularExpressions.Regex.IsMatch(normalizedPath, officeLockFilePattern)
+    || System.Text.RegularExpressions.Regex.IsMatch(normalizedPath, lfsBackupPattern)
+    || (not isDirectory && isLegacyDataMapPath normalizedPath)
+
 let isRootFolderPath (rootFolderName: string) (candidateRelativePath: string) =
     match getNonEmptyPathParts candidateRelativePath with
     | [| candidateRoot |] -> pathsEqual rootFolderName candidateRoot

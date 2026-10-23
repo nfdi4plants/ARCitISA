@@ -68,6 +68,14 @@ type ArcVault(window: BrowserWindow) =
 
     member val window: BrowserWindow = window with get
     member val path: string option = None with get, set
+
+    /// Whether the file system under the open ARC root ignores case. Starts as the platform default and is
+    /// probed when the ARC opens.
+    member val isCaseInsensitive: bool =
+        (match Main.VersionControl.ProviderComposition.currentPathCaseSensitivity () with
+         | VersionControlService.Abstractions.CaseInsensitive -> true
+         | VersionControlService.Abstractions.CaseSensitive -> false) with get, set
+
     member val arc: ARC option = None with get, private set
     // This flag is intentionally coarse and can remain true even if later edits restore the previous logical state.
     //Good workaround, for a missing member 👍 Might even be more performant, than calculating a isDirty flag. On the other hand, it is unable to detect if changes are removed again. For example:
@@ -78,6 +86,11 @@ type ArcVault(window: BrowserWindow) =
     member val hasUnsavedArcChanges: bool = false with get, private set
     member val fileTree: Dictionary<string, FileEntry> = Dictionary<string, FileEntry>() with get, set
     member val watcher: Chokidar.IWatcher option = None with get, set
+
+    /// Creates the file watcher. Tests replace it to observe or fake the watcher.
+    member val internal FileWatcherFactory: (string -> bool option -> Chokidar.IWatcher) =
+        (fun path usePolling -> createFileWatcher path usePolling) with get, set
+
     member val fileWatcherReloadArcTimeout: int option = None with get, set
     member val fileWatcherPendingEvents: ResizeArray<ArcVaultFileSystemEvent> = ResizeArray() with get
     member val fileWatcherPendingArcMergeEvents: ResizeArray<ArcVaultFileSystemEvent> = ResizeArray() with get
@@ -702,7 +715,7 @@ module ArcVaultExtensions =
                 match this.watcher with
                 | Some _ -> ()
                 | None ->
-                    let watcher = createFileWatcher this.path.Value usePolling
+                    let watcher = this.FileWatcherFactory this.path.Value usePolling
 
                     let sendWatcherMessage = WindowSend.sender<IArcFileWatcherApi> this.window
 
@@ -762,7 +775,23 @@ module ArcVaultExtensions =
 
         /// Loads the ARC during initialization. The watcher is activated only after the initial
         /// file-tree snapshot has been installed, so an older scan cannot overwrite watcher updates.
-        member this.Startup() = promise { do! this.LoadArc() }
+        member this.Startup() = promise {
+            match this.path with
+            | Some arcRoot ->
+                let! isCaseInsensitive = detectCaseInsensitiveAsync arcRoot
+                this.isCaseInsensitive <- isCaseInsensitive
+
+                swatelogfn
+                    this.window.id
+                    "ARC root file system is %s."
+                    (if isCaseInsensitive then
+                         "case-insensitive"
+                     else
+                         "case-sensitive")
+            | None -> ()
+
+            do! this.LoadArc()
+        }
 
         /// Finalizes a prepared ARC after every asynchronous initialization step succeeded.
         member internal this.FinalizeArcInitialization(fileTree: Dictionary<string, FileEntry>) =

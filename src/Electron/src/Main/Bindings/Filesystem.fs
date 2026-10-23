@@ -101,6 +101,18 @@ let statAsync (path: string) : JS.Promise<Stats> = jsNative
 [<Import("lstat", "fs/promises")>]
 let lstatAsync (path: string) : JS.Promise<Stats> = jsNative
 
+[<JS.PojoAttribute>]
+type LstatBigintOptions(bigint: bool) =
+    member val bigint: bool = bigint with get, set
+
+/// Stats read with `bigint: true`, so inode numbers above 2^53 stay exact.
+type BigIntStats =
+    abstract member dev: bigint
+    abstract member ino: bigint
+
+[<Import("lstat", "fs/promises")>]
+let lstatBigintAsync (path: string) (options: LstatBigintOptions) : JS.Promise<BigIntStats> = jsNative
+
 [<Import("readdir", "fs/promises")>]
 let readdirAsync (path: string) : JS.Promise<string[]> = jsNative
 

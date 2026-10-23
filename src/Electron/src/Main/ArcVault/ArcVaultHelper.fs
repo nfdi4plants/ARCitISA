@@ -353,17 +353,14 @@ let shouldUsePollingByDefault (platform: string) =
 let private currentNodePlatform () : string =
     emitJsExpr () "process.platform" |> unbox<string>
 
+/// Chokidar passes cwd-relative paths without telling files from directories, so the shared rule runs as for a file.
+/// Import staging folders stay hidden here only, because they exist for the length of an import.
 let isFileWatcherPathIgnored (path: string) =
     let normalizedPath = PathHelpers.normalizeSeparators path
-    let tempXlsxPattern = """\.~\$.*\.xlsx$"""
     let temporaryImportPattern = """(^|/)\.swate-import-[0-9a-fA-F]{32}(/|$)"""
-    let temporaryLfsBackupPattern = """\.vcs-lfs-backup-[0-9a-fA-F]{32}$"""
 
-    System.Text.RegularExpressions.Regex.IsMatch(normalizedPath, tempXlsxPattern)
-    || isGitMetadataPath normalizedPath
-    || isLegacyDataMapPath normalizedPath
+    isIgnoredInventoryEntry (PathHelpers.getNameFromPath normalizedPath) normalizedPath false
     || System.Text.RegularExpressions.Regex.IsMatch(normalizedPath, temporaryImportPattern)
-    || System.Text.RegularExpressions.Regex.IsMatch(normalizedPath, temporaryLfsBackupPattern)
 
 let createFileWatcher (path: string) (usePolling: bool option) =
 
