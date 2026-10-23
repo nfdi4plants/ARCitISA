@@ -2247,9 +2247,7 @@ Vitest.describe (
                             loadingVault <- vaults.TryGetVault(targetWindowId)
 
                             loadingVault
-                            |> Option.exists (fun vault ->
-                                vault.path.IsSome && vault.arc.IsNone && vault.watcher.IsNone
-                            )
+                            |> Option.exists (fun vault -> vault.path.IsSome && vault.arc.IsNone)
 
                         let windowState = createTestWindow (testWindowOptions targetWindowId)
 
@@ -2499,9 +2497,7 @@ Vitest.describe (
                             loadingVault <- ARC_VAULTS.TryGetVault(targetWindowId)
 
                             loadingVault
-                            |> Option.exists (fun vault ->
-                                vault.path.IsSome && vault.arc.IsNone && vault.watcher.IsNone
-                            )
+                            |> Option.exists (fun vault -> vault.path.IsSome && vault.arc.IsNone)
 
                         let targetWindowState = createTestWindow (testWindowOptions targetWindowId)
                         let mutable arcWasOpeningWhenClosed = false
@@ -2578,7 +2574,7 @@ Vitest.describe (
                         let mutable targetWasRegistered = false
                         let mutable pathWasAssigned = false
                         let mutable arcWasLoaded = false
-                        let mutable watcherWasAbsent = false
+                        let mutable watcherWasStarted = false
                         let mutable fileTreeWasEmpty = false
 
                         let isArcStartedBeforeFileTreePublication () =
@@ -2589,12 +2585,12 @@ Vitest.describe (
                                 targetWasRegistered <- true
                                 pathWasAssigned <- vault.path = Some expectedPath
                                 arcWasLoaded <- vault.arc.IsSome
-                                watcherWasAbsent <- vault.watcher.IsNone
+                                watcherWasStarted <- vault.watcher.IsSome
                                 fileTreeWasEmpty <- vault.fileTree.Count = 0
 
                                 pathWasAssigned
                                 && arcWasLoaded
-                                && watcherWasAbsent
+                                && watcherWasStarted
                                 && fileTreeWasEmpty
                                 && vault.isInitializingArc
                             | None -> false
@@ -2647,7 +2643,7 @@ Vitest.describe (
                             Vitest.expect(targetWindowState.WasShown()).toBe (true)
                             Vitest.expect(pathWasAssigned).toBe (true)
                             Vitest.expect(arcWasLoaded).toBe (true)
-                            Vitest.expect(watcherWasAbsent).toBe (true)
+                            Vitest.expect(watcherWasStarted).toBe (true)
                             Vitest.expect(fileTreeWasEmpty).toBe (true)
                             Vitest.expect(startupWasCompleteWhenClosed).toBe (true)
                             Vitest.expect(targetWindowState.IsDestroyed()).toBe (true)
@@ -2688,7 +2684,7 @@ Vitest.describe (
                         let mutable vaultExistedWhenClosed = false
                         let mutable pathWasAssignedWhenClosed = false
                         let mutable arcWasNoneWhenClosed = false
-                        let mutable watcherWasAbsentWhenClosed = false
+                        let mutable watcherWasStartedWhenClosed = false
 
                         let isArcOpening () =
                             loadingVault <- ARC_VAULTS.TryGetVault(windowId)
@@ -2699,13 +2695,13 @@ Vitest.describe (
                                 pathWasAssignedWhenClosed <- vault.path = Some(PathHelpers.normalizePath arcPath)
 
                                 arcWasNoneWhenClosed <- vault.arc.IsNone
-                                watcherWasAbsentWhenClosed <- vault.watcher.IsNone
+                                watcherWasStartedWhenClosed <- vault.watcher.IsSome
                             | None -> ()
 
                             vaultExistedWhenClosed
                             && pathWasAssignedWhenClosed
                             && arcWasNoneWhenClosed
-                            && watcherWasAbsentWhenClosed
+                            && watcherWasStartedWhenClosed
 
                         let windowState = createTestWindow (testWindowOptions windowId)
                         let mutable arcWasOpeningWhenClosed = false
@@ -2748,7 +2744,7 @@ Vitest.describe (
                                 Vitest.expect(vaultExistedWhenClosed).toBe (true)
                                 Vitest.expect(pathWasAssignedWhenClosed).toBe (true)
                                 Vitest.expect(arcWasNoneWhenClosed).toBe (true)
-                                Vitest.expect(watcherWasAbsentWhenClosed).toBe (true)
+                                Vitest.expect(watcherWasStartedWhenClosed).toBe (true)
                                 Vitest.expect(windowState.IsDestroyed()).toBe (true)
                                 Vitest.expect(vault.watcher.IsNone).toBe (true)
                                 Vitest.expect(ARC_VAULTS.Vaults.ContainsKey(windowId)).toBe (false)
@@ -2775,7 +2771,7 @@ Vitest.describe (
                         let mutable currentVault: ArcVault option = None
                         let mutable pathWasAssigned = false
                         let mutable arcWasLoaded = false
-                        let mutable watcherWasAbsent = false
+                        let mutable watcherWasStarted = false
                         let mutable fileTreeWasEmpty = false
 
                         let isArcStartedBeforeFileTreePublication () =
@@ -2785,12 +2781,12 @@ Vitest.describe (
                             | Some vault ->
                                 pathWasAssigned <- vault.path = Some expectedPath
                                 arcWasLoaded <- vault.arc.IsSome
-                                watcherWasAbsent <- vault.watcher.IsNone
+                                watcherWasStarted <- vault.watcher.IsSome
                                 fileTreeWasEmpty <- vault.fileTree.Count = 0
 
                                 pathWasAssigned
                                 && arcWasLoaded
-                                && watcherWasAbsent
+                                && watcherWasStarted
                                 && fileTreeWasEmpty
                                 && vault.isInitializingArc
                             | None -> false
@@ -2839,7 +2835,7 @@ Vitest.describe (
                             Vitest.expect(createdWindowCount).toBe (0)
                             Vitest.expect(pathWasAssigned).toBe (true)
                             Vitest.expect(arcWasLoaded).toBe (true)
-                            Vitest.expect(watcherWasAbsent).toBe (true)
+                            Vitest.expect(watcherWasStarted).toBe (true)
                             Vitest.expect(fileTreeWasEmpty).toBe (true)
                             Vitest.expect(startupWasCompleteWhenClosed).toBe (true)
                             Vitest.expect(windowState.IsDestroyed()).toBe (true)
@@ -3394,7 +3390,7 @@ Vitest.describe (
                 let mutable targetWasRegistered = false
                 let mutable targetPathWasAssigned = false
                 let mutable creationReachedPostWriteLoad = false
-                let mutable watcherWasAbsent = false
+                let mutable watcherWasStarted = false
                 let mutable vaultWasEmptyWhenShown = false
 
                 let isArcLoadingAfterWrite () =
@@ -3405,12 +3401,12 @@ Vitest.describe (
                         targetWasRegistered <- true
                         targetPathWasAssigned <- vault.path = Some expectedPath
                         creationReachedPostWriteLoad <- vault.arc.IsSome
-                        watcherWasAbsent <- vault.watcher.IsNone
+                        watcherWasStarted <- vault.watcher.IsSome
 
                         targetWasRegistered
                         && targetPathWasAssigned
                         && creationReachedPostWriteLoad
-                        && watcherWasAbsent
+                        && watcherWasStarted
                         && vault.isInitializingArc
                         && not vault.isBusyWriting
                         && vault.hasUnsavedArcChanges
@@ -3534,7 +3530,7 @@ Vitest.describe (
                 let mutable targetWasRegistered = false
                 let mutable pathWasAssigned = false
                 let mutable arcWasLoaded = false
-                let mutable watcherWasAbsent = false
+                let mutable watcherWasStarted = false
                 let mutable fileTreeWasEmpty = false
                 let mutable vaultWasEmptyWhenShown = false
 
@@ -3546,12 +3542,12 @@ Vitest.describe (
                         targetWasRegistered <- true
                         pathWasAssigned <- vault.path = Some expectedPath
                         arcWasLoaded <- vault.arc.IsSome
-                        watcherWasAbsent <- vault.watcher.IsNone
+                        watcherWasStarted <- vault.watcher.IsSome
                         fileTreeWasEmpty <- vault.fileTree.Count = 0
 
                         pathWasAssigned
                         && arcWasLoaded
-                        && watcherWasAbsent
+                        && watcherWasStarted
                         && fileTreeWasEmpty
                         && vault.isInitializingArc
                         && not vault.hasUnsavedArcChanges
@@ -3621,7 +3617,7 @@ Vitest.describe (
                     Vitest.expect(vaultWasEmptyWhenShown).toBe (true)
                     Vitest.expect(pathWasAssigned).toBe (true)
                     Vitest.expect(arcWasLoaded).toBe (true)
-                    Vitest.expect(watcherWasAbsent).toBe (true)
+                    Vitest.expect(watcherWasStarted).toBe (true)
                     Vitest.expect(fileTreeWasEmpty).toBe (true)
                     Vitest.expect(startupWasCompleteWhenClosed).toBe (true)
                     Vitest.expect(targetWindowState.IsDestroyed()).toBe (true)

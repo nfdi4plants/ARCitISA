@@ -362,34 +362,93 @@ let isFileWatcherPathIgnored (path: string) =
     isIgnoredInventoryEntry (PathHelpers.getNameFromPath normalizedPath) normalizedPath false
     || System.Text.RegularExpressions.Regex.IsMatch(normalizedPath, temporaryImportPattern)
 
-let createFileWatcher (path: string) (usePolling: bool option) =
+/// Environment variable that forces polling for network or FUSE mounts, where native file events do not arrive.
+[<Literal>]
+let watchPollingEnvironmentVariable = "SWATE_WATCH_POLLING"
 
+/// Decides between polling and native events. An explicit choice wins. Otherwise the environment flag
+/// forces polling on any platform and the platform default applies without it.
+let resolveFileWatcherPolling (platform: string) (environmentFlag: string option) (explicitChoice: bool option) =
+    match explicitChoice with
+    | Some choice -> choice
+    | None -> environmentFlag = Some "1" || shouldUsePollingByDefault platform
+
+/// Timings of the watcher in milliseconds. Tests shorten them. The write values are chokidar's defaults.
+type FileWatcherTuning = {
+    PollingIntervalMs: int
+    BinaryPollingIntervalMs: int
+    WriteStabilityMs: int
+    WritePollMs: int
+}
+
+let defaultFileWatcherTuning = {
+    PollingIntervalMs = 200
+    BinaryPollingIntervalMs = 400
+    WriteStabilityMs = 2000
+    WritePollMs = 100
+}
+
+/// Keeps the permanent watcher on ARC structure. Chokidar often asks before it has stat data, so the path shape
+/// decides first and the stats only separate files from folders where the shape allows both.
+let isStructuralFileWatcherPath (arcPath: string) (candidatePath: string) (stats: Chokidar.IWatchedStats option) =
+    let absolutePath =
+        if Main.Bindings.Path.isAbsolute candidatePath then
+            candidatePath
+        else
+            Main.Bindings.Path.resolve [| arcPath; candidatePath |]
+
+    match tryGetRepoRelativePathOrRoot arcPath absolutePath with
+    | None -> false
+    | Some relativePath ->
+        // Import staging folders and git metadata are checked on the relative path, so a parent folder of the ARC
+        // with such a name cannot hide the whole ARC.
+        (relativePath = "" || not (isFileWatcherPathIgnored relativePath))
+        && ArcEntityPathRules.isStructuralWatcherPath
+            relativePath
+            (stats |> Option.map (fun value -> value.isDirectory ()))
+
+let createWatchOptions (path: string) (usePolling: bool) (tuning: FileWatcherTuning) =
+    let ignored =
+        System.Func<string, Chokidar.IWatchedStats option, bool>(fun candidatePath stats ->
+            not (isStructuralFileWatcherPath path candidatePath stats)
+        )
+
+    let awaitWriteFinish =
+        Chokidar.AwaitWriteFinishOptions(
+            stabilityThreshold = tuning.WriteStabilityMs,
+            pollInterval = tuning.WritePollMs
+        )
+
+    if usePolling then
+        Chokidar.WatchOptions(
+            cwd = path,
+            awaitWriteFinish = !^awaitWriteFinish,
+            ignored = !^ignored,
+            ignoreInitial = true,
+            usePolling = true,
+            interval = tuning.PollingIntervalMs,
+            binaryInterval = tuning.BinaryPollingIntervalMs
+        )
+    else
+        Chokidar.WatchOptions(
+            cwd = path,
+            awaitWriteFinish = !^awaitWriteFinish,
+            ignored = !^ignored,
+            ignoreInitial = true
+        )
+
+let createFileWatcherWith (tuning: FileWatcherTuning) (path: string) (usePolling: bool option) =
     // Native Windows file events can keep handles that block app-initiated folder renames.
     let usePolling =
-        defaultArg usePolling (shouldUsePollingByDefault (currentNodePlatform ()))
+        resolveFileWatcherPolling
+            (currentNodePlatform ())
+            (Main.Bindings.Node.environmentVariable watchPollingEnvironmentVariable)
+            usePolling
 
-    let watcherOptions =
-        if usePolling then
-            Chokidar.WatchOptions(
-                cwd = path,
-                awaitWriteFinish = true,
-                ignored = !^isFileWatcherPathIgnored,
-                ignoreInitial = true,
-                usePolling = true,
-                interval = 200,
-                binaryInterval = 400
-            )
-        else
-            Chokidar.WatchOptions(
-                cwd = path,
-                awaitWriteFinish = true,
-                ignored = !^isFileWatcherPathIgnored,
-                ignoreInitial = true
-            )
+    Chokidar.Chokidar.watch (path, createWatchOptions path usePolling tuning)
 
-    let watcher = Chokidar.Chokidar.watch (path, watcherOptions)
-
-    watcher
+let createFileWatcher (path: string) (usePolling: bool option) =
+    createFileWatcherWith defaultFileWatcherTuning path usePolling
 
 let sendArcHasUnsavedChangesUpdate (hasUnsavedChanges: bool) (window: BrowserWindow) =
     WindowSend.send<Swate.Electron.Shared.IPCTypes.MainToRendererIpc.IHasUnsavedArcChangesRendererApi>
