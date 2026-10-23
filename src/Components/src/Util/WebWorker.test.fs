@@ -35,4 +35,20 @@ Vitest.describe (
                 Vitest.expect(client.InWorker).toBe false
             }
         )
+
+        Vitest.test (
+            "start runs the handler on the main thread when the constructor throws",
+            fun () -> promise {
+                let client =
+                    start {
+                        Ctor = Some neverCreated
+                        Handle = twice
+                    }
+
+                let! result = client.Dispatch 21
+
+                Vitest.expect(result).toBe 42
+                Vitest.expect(client.InWorker).toBe false
+            }
+        )
 )

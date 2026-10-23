@@ -315,7 +315,8 @@ module React =
 /// Returns the definition and a stable dispatch function. The definition is returned as it came in, so a
 /// caller that does not need it writes `let _, dispatch = useWebWorker MyWorker.Worker`. The worker is created
 /// in an effect and terminated on cleanup. A request sent before that effect has run, or after the worker has
-/// failed, runs the handler on the main thread.
+/// failed, runs the handler on the main thread. A request that is still pending when the component unmounts
+/// never settles, so the caller has to ignore a late result itself.
 ///
 /// The definition must be a module-level value, because a new definition starts a new worker.
 [<Hook>]

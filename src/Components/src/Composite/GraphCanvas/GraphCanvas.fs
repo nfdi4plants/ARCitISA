@@ -930,6 +930,7 @@ type GraphCanvas =
         ) =
         let rootRef = React.useRef<HTMLElement option> None
         let contentRef = React.useRef<HTMLElement option> None
+        let minimapToggleRef = React.useRef<HTMLElement option> None
         let svgRef = React.useRef<Element option> None
         let zoom, setZoom = React.useState 1.0
         // True when the graph does not fit the box. The minimap and its toggle only appear then.
@@ -939,8 +940,15 @@ type GraphCanvas =
         let markerPrefix = (React.useId ()).Replace(":", "")
 
         // ELK runs in a worker. This hook comes before the layout effect, so the worker exists when the first
-        // layout starts.
-        let _, runElk = useWebWorker ElkWorker.Worker
+        // layout starts. A canvas with its own layout function never runs ELK, so it gets the definition without a worker.
+        let _, runElk =
+            useWebWorker (
+                if layout.IsSome then
+                    ElkWorker.MainThread
+                else
+                    ElkWorker.Worker
+            )
+
         let defaultLayout = layoutGraphWith runElk
 
         // The layout function is read through a ref, so a new function identity per render never starts a layout.
@@ -1286,6 +1294,14 @@ type GraphCanvas =
                     | _ -> false
 
                 if next <> overflowing then
+                    // The toggle leaves with the overflow, and the browser drops the focus of a removed element to
+                    // the page. The region takes it instead.
+                    if not next then
+                        match minimapToggleRef.current, rootRef.current with
+                        | Some toggle, Some root when obj.ReferenceEquals(Browser.Dom.document.activeElement, toggle) ->
+                            Dom.focusWithoutScroll root
+                        | _ -> ()
+
                     setOverflowing next
             ),
             [| box displayed; box zoom; box boxWidth; box boxHeight |]
@@ -1385,6 +1401,7 @@ type GraphCanvas =
                 prop.testId "graph-canvas-content"
                 prop.custom ("data-compact", drawn.Compact)
                 prop.custom ("data-stale", isStale)
+                prop.custom ("data-dimmed", dimmed)
                 // A stale drawing is inert, so it takes no input. It dims when the wait for the new layout gets long.
                 if isStale then
                     prop.custom ("inert", true)
@@ -1474,6 +1491,7 @@ type GraphCanvas =
         let minimapToggle () =
             Html.button [
                 prop.type'.button
+                prop.ref minimapToggleRef
                 prop.testId "graph-minimap-toggle"
                 prop.className "swt:btn swt:btn-ghost swt:btn-square swt:btn-sm"
                 prop.ariaPressed minimapOpen
@@ -1553,8 +1571,9 @@ type GraphCanvas =
                 ]
                 // Only a stale drawing needs this indicator. A layout with no drawing to keep shows its text in the
                 // status paragraph. The region stays mounted while a drawing is displayed, so screen readers
-                // announce the text when it appears. The spinner is a CSS rotation, which the compositor keeps
-                // moving while the main thread is busy with a layout.
+                // announce the text when it appears. It tells the user that a new view is on its way when ELK takes
+                // longer than 200 ms, for a large graph in the worker or for a layout on the main thread. The spinner
+                // is a CSS rotation, which the compositor keeps moving even while the main thread is busy.
                 if displayed.IsSome then
                     Html.div [
                         prop.testId "graph-loading"

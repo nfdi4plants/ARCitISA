@@ -12,3 +12,7 @@ open Swate.Components.Util.WebWorker
 /// calling thread.
 let Worker: WorkerDef<Elk.ElkNode, Elk.ElkLayoutResult> =
     createWorker (selfWorker ("./ElkWorker" + Compiler.extension)) (fun graph -> Elk.layout graph)
+
+/// The same function without a Worker, for a canvas that does not run ELK. The value is module-level, so
+/// `useWebWorker` keeps its identity between renders.
+let MainThread: WorkerDef<Elk.ElkNode, Elk.ElkLayoutResult> = { Worker with Ctor = None }

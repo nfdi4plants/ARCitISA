@@ -6,9 +6,14 @@
 ///
 /// Requests and replies cross the worker boundary through structured clone. Keep them to plain data
 /// (anonymous records, arrays, numbers, strings), because class instances lose their methods on the way.
+///
+/// In a Vite dev server, worker modules must stay out of React Fast Refresh (the exclude option of
+/// @vitejs/plugin-react). The refresh runtime needs window, so it throws inside a worker. This matters for
+/// files that Fable emits with a .jsx extension, which plugin-react wraps.
 module Swate.Components.Util.WebWorker
 
 open Fable.Core
+open Swate.Components.JsBindings
 
 [<AllowNullLiteral>]
 type MessageEvent =
@@ -64,7 +69,8 @@ type WorkerDef<'Req, 'Res> = {
 }
 
 /// What `start` returns. Dispatch sends a request and resolves with the reply. Terminate stops the worker,
-/// and later requests run on the main thread. InWorker is true when a worker was created.
+/// and later requests run on the main thread. A request that is still pending when the client is terminated
+/// never settles. InWorker is true when a worker was created.
 type WorkerClient<'Req, 'Res> = {
     Dispatch: 'Req -> JS.Promise<'Res>
     Terminate: unit -> unit
@@ -75,8 +81,9 @@ type WorkerClient<'Req, 'Res> = {
 /// `let Worker = createWorker (selfWorker ("./MyWorker" + Compiler.extension)) (fun req -> ...)`.
 ///
 /// Inside a worker the handler is registered for incoming requests. Each request is answered with the
-/// handler result or, when the handler throws or its promise rejects, with the error message. Outside a worker
-/// nothing is registered and the definition is only returned.
+/// handler result or, when the handler throws or its promise rejects, with the error message (the text of
+/// the thrown value when it has no message). Outside a worker nothing is registered and the definition is
+/// only returned. A worker file calls it once, because the last registered handler wins.
 let createWorker (ctor: unit -> WorkerInstance) (handle: 'Req -> JS.Promise<'Res>) : WorkerDef<'Req, 'Res> =
     if isWorkerScope () then
         setOnMessage (fun ev ->
@@ -102,7 +109,7 @@ let createWorker (ctor: unit -> WorkerInstance) (handle: 'Req -> JS.Promise<'Res
                     id = msg.id
                     ok = false
                     res = Unchecked.defaultof<'Res>
-                    error = error.Message
+                    error = Errors.messageOf error
                 |}
             )
             |> ignore
@@ -113,6 +120,19 @@ let createWorker (ctor: unit -> WorkerInstance) (handle: 'Req -> JS.Promise<'Res
         Handle = handle
     }
 
+let private mainThreadClient (def: WorkerDef<'Req, 'Res>) : WorkerClient<'Req, 'Res> = {
+    Dispatch = def.Handle
+    Terminate = ignore
+    InWorker = false
+}
+
+// An error event of a script that did not load carries no message.
+let private reasonOf (ev: ErrorEvent) : string =
+    if System.String.IsNullOrEmpty ev.message then
+        "script error"
+    else
+        ev.message
+
 type private Waiting<'Req, 'Res> = {
     Req: 'Req
     Resolve: 'Res -> unit
@@ -122,20 +142,30 @@ type private Waiting<'Req, 'Res> = {
 /// Starts the worker of a definition. Without a Ctor, Dispatch runs the handler on the main thread.
 ///
 /// A request whose handler fails is rejected with the error message of the handler. When the worker itself
-/// fails (a script that does not load, an error outside the handler), the worker is terminated, the pending
-/// requests run on the main thread, and later requests run there as well. The first failure writes one
-/// console warning.
+/// fails (a script that does not load, or an error outside the handler), the client terminates it and writes
+/// one console warning. It runs the pending requests on the main thread and sends later requests there too.
+/// A Ctor that throws gives the same main-thread client and warning.
 ///
-/// `useWebWorker` wraps this for components.
+/// A request that is still pending when the client is terminated never settles, so a caller that cares has
+/// to ignore it. `useWebWorker` wraps this for components.
 let start (def: WorkerDef<'Req, 'Res>) : WorkerClient<'Req, 'Res> =
-    match def.Ctor with
-    | None -> {
-        Dispatch = def.Handle
-        Terminate = ignore
-        InWorker = false
-      }
-    | Some ctor ->
-        let worker = ctor ()
+    let created =
+        match def.Ctor with
+        | None -> None
+        | Some ctor ->
+            try
+                Some(ctor ())
+            with error ->
+                JS.console.warn (
+                    "The worker could not be created, running on the main thread instead.",
+                    Errors.messageOf error
+                )
+
+                None
+
+    match created with
+    | None -> mainThreadClient def
+    | Some worker ->
         let waiting = JS.Constructors.Map.Create<int, Waiting<'Req, 'Res>>()
         let nextId = ref 0
         let onMainThread = ref false
@@ -160,7 +190,7 @@ let start (def: WorkerDef<'Req, 'Res>) : WorkerClient<'Req, 'Res> =
         worker.onerror <-
             fun ev ->
                 if not onMainThread.Value then
-                    JS.console.warn ("The worker failed, running on the main thread instead.", ev.message)
+                    JS.console.warn ("The worker failed, running on the main thread instead.", reasonOf ev)
                     stop ()
 
                     waiting.forEach (fun request _ _ ->

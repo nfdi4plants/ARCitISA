@@ -1026,14 +1026,14 @@ Vitest.describe (
                 // The drawing is inert at once and dims later.
                 Vitest.expect(contentEl().getAttribute "data-stale").toBe "true"
                 Vitest.expect(contentEl().hasAttribute "inert").toBe true
-                Vitest.expect(contentEl().className.Contains "swt:opacity-60").toBe false
+                Vitest.expect(contentEl().getAttribute "data-dimmed").toBe "false"
 
-                do! eventually (fun () -> Vitest.expect(contentEl().className.Contains "swt:opacity-60").toBe true)
+                do! eventually (fun () -> Vitest.expect(contentEl().getAttribute "data-dimmed").toBe "true")
 
                 let! newLayout = realLayout next.Nodes next.Edges unlimited
                 do! RTL.act (fun () -> promise { pending.Resolve newLayout })
                 do! eventually (fun () -> Vitest.expect(contentEl().getAttribute "data-stale").toBe "false")
-                Vitest.expect(contentEl().className.Contains "swt:opacity-60").toBe false
+                Vitest.expect(contentEl().getAttribute "data-dimmed").toBe "false"
             }
         )
 
@@ -1950,6 +1950,31 @@ Vitest.describe (
                 do! minimapShown ()
                 Vitest.expect(RTL.screen.getByTestId ("graph-zoom-in")).toBe zoomIn
                 Vitest.expect(focused ()).toBe (box zoomIn)
+            }
+        )
+
+        Vitest.test (
+            "moves the focus to the region when the focused minimap toggle goes away with the old view",
+            fun () -> promise {
+                overflowBox ()
+                let pending = deferred ()
+                let! _, next = switchView defaults (fun _ _ _ _ _ -> pending.Promise)
+                do! minimapShown ()
+
+                // The new view fits the box, so the toggle goes away when its layout lands.
+                (toggleButton ()).focus ()
+                setScrollSize 300.0 240.0
+
+                let! newLayout = realLayout next.Nodes next.Edges unlimited
+                do! RTL.act (fun () -> promise { pending.Resolve newLayout })
+                do! eventually (fun () -> nodeEl "New" |> ignore)
+
+                do!
+                    eventually (fun () ->
+                        Vitest.expect((RTL.screen.queryByTestId "graph-minimap-toggle").IsNone).toBe true
+                    )
+
+                Vitest.expect(focused ()).toBe (box (region ()))
             }
         )
 

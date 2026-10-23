@@ -75,12 +75,14 @@
     <Compile Include="JsBindings\Virtual.fs" />
     <Compile Include="JsBindings\FloatingUI.fs" />
     <Compile Include="JsBindings\DndKit.fs" />
+    <Compile Include="JsBindings\Errors.fs" />
     <Compile Include="Util\WebWorker.fs" />
     <Compile Include="Util\WebWorker.test.fs" />
     <Compile Include="Util\WebWorker.test.worker.fs" />
+    <Compile Include="Util\WebWorker.test.worker.rejecting.fs" />
+    <Compile Include="Util\WebWorker.test.worker.crashing.fs" />
     <Compile Include="JsBindings\Elk.fs" />
     <Compile Include="JsBindings\Dom.fs" />
-    <Compile Include="JsBindings\Errors.fs" />
     <Compile Include="Util\Download.fs" />
     <Compile Include="Util\SemVer.fs" />
     <Compile Include="Util\SemVer.test.fs" />

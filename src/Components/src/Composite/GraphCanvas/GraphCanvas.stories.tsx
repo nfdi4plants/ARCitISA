@@ -3,6 +3,9 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 import { GraphCanvas } from './GraphCanvas.fs.js';
 import { svgMarkup } from './ImageExport.fs.js';
+import { Worker$ as ElkWorker } from './ElkWorker.fs.js';
+import { layoutGraph } from './Layout.fs.js';
+import { warmUpWorker } from '../../Util/WebWorker.test.helpers';
 import type { CanvasEdge, CanvasNode, CanvasPill } from './Types.fs.js';
 
 // The Fable records are classes in the generated types. The stories build plain objects with the same fields,
@@ -105,6 +108,8 @@ const meta = {
     onNodeClick: fn(),
   },
   component: GraphCanvas,
+  // The ELK worker script loads once here, so the 10 s waits of the stories measure the layout only.
+  loaders: [() => warmUpWorker(ElkWorker, { id: 'warm-up' })],
 } satisfies Meta<typeof GraphCanvas>;
 
 export default meta;
@@ -353,5 +358,76 @@ export const ImageExport: Story = {
     const copied = await item!.getType('image/png');
     expect(copied.type).toBe('image/png');
     expect(copied.size).toBeGreaterThan(0);
+  },
+};
+
+// The workers that a story creates, the replies they send and the console warnings. beforeEach installs the
+// wrapper after the loaders have run and before the canvas mounts, and its cleanup removes it.
+type WorkerWatch = { urls: string[]; replies: { ok: boolean; res?: { children?: unknown[] } }[]; warnings: string[]; restore: () => void };
+
+function watchWorkers(): WorkerWatch {
+  const OriginalWorker = window.Worker;
+  const originalWarn = console.warn;
+  const watch: WorkerWatch = {
+    urls: [],
+    replies: [],
+    warnings: [],
+    restore: () => {
+      window.Worker = OriginalWorker;
+      console.warn = originalWarn;
+    },
+  };
+
+  window.Worker = class extends OriginalWorker {
+    constructor(url: string | URL, options?: WorkerOptions) {
+      super(url, options);
+      watch.urls.push(String(url));
+      this.addEventListener('message', (event) => watch.replies.push(event.data));
+    }
+  };
+  console.warn = (...args: unknown[]) => {
+    watch.warnings.push(args.map(String).join(' '));
+    originalWarn(...args);
+  };
+  return watch;
+}
+
+let workers: WorkerWatch;
+
+const watchWorkersBeforeEach = () => {
+  workers = watchWorkers();
+  return () => workers.restore();
+};
+
+const sizedBox = (Story: () => React.JSX.Element) => (
+  <div style={{ width: '100%', height: 480 }}>
+    <Story />
+  </div>
+);
+
+// The default layout runs ELK in a worker, and the worker answers with the laid out graph.
+export const RunsElkInAWorker: Story = {
+  decorators: [sizedBox],
+  beforeEach: watchWorkersBeforeEach,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    await canvas.findByTestId('graph-node-study', {}, { timeout: 10000 });
+
+    expect(workers.urls.some((url) => url.includes('ElkWorker'))).toBe(true);
+    await waitFor(() => expect(workers.replies.some((reply) => reply.ok && reply.res?.children?.length === nodes.length)).toBe(true));
+    expect(workers.warnings.filter((text) => text.includes('worker failed'))).toEqual([]);
+  },
+};
+
+// A canvas with its own layout function never runs ELK, so it starts no worker.
+export const LayoutFunctionStartsNoWorker: Story = {
+  args: { layout: layoutGraph as never },
+  decorators: [sizedBox],
+  beforeEach: watchWorkersBeforeEach,
+  play: async ({ canvasElement }) => {
+    await within(canvasElement).findByTestId('graph-node-study', {}, { timeout: 10000 });
+
+    expect(workers.urls).toEqual([]);
   },
 };
