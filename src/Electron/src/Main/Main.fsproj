@@ -47,6 +47,7 @@
     <Compile Include="VersionControl\WorkspaceSessionHost.fs" />
     <Compile Include="VersionControl\TextDiffHandles.fs" />
     <Compile Include="IndexedFileTree.fs" />
+    <Compile Include="Git\LargeObjectIndex.fs" />
     <Compile Include="FileTreeCreator.fs" />
     <Compile Include="ArcVault\Types.fs" />
     <Compile Include="ArcVault\ArcVaultHelper.fs" />
