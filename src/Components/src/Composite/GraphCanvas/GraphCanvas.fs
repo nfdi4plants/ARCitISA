@@ -1007,19 +1007,32 @@ type GraphCanvas =
         // square box would flip the layout mode back and forth. The client size serves for the widths and heights.
         let measuredBox, setMeasuredBox = React.useStateWithUpdater<MeasuredBox option> None
 
+        // The minimap toggle leaves when the graph stops overflowing and when the box gets too small for the
+        // minimap. The browser drops the focus of a removed element to the page, and an effect that runs after
+        // the removal cannot tell where the focus was. The region takes the focus before the state change that
+        // removes the toggle.
+        let releaseMinimapFocus () =
+            match minimapToggleRef.current, rootRef.current with
+            | Some toggle, Some root when obj.ReferenceEquals(Browser.Dom.document.activeElement, toggle) ->
+                Dom.focusWithoutScroll root
+            | _ -> ()
+
         ReactHooks.useLayoutEffectWithCleanup (
             (fun () ->
                 match rootRef.current with
                 | None -> box (fun () -> ())
                 | Some root ->
                     let measureBox () =
-                        setMeasuredBox (fun current ->
-                            let next: MeasuredBox = {
-                                ClientWidth = root.clientWidth
-                                ClientHeight = root.clientHeight
-                                Portrait = isPortrait root.clientWidth root.offsetHeight root.offsetWidth
-                            }
+                        let next: MeasuredBox = {
+                            ClientWidth = root.clientWidth
+                            ClientHeight = root.clientHeight
+                            Portrait = isPortrait root.clientWidth root.offsetHeight root.offsetWidth
+                        }
 
+                        if not (Minimap.fitsBox next.ClientWidth next.ClientHeight) then
+                            releaseMinimapFocus ()
+
+                        setMeasuredBox (fun current ->
                             match current with
                             | Some current when sameBox current next -> Some current
                             | _ -> Some next
@@ -1294,13 +1307,8 @@ type GraphCanvas =
                     | _ -> false
 
                 if next <> overflowing then
-                    // The toggle leaves with the overflow, and the browser drops the focus of a removed element to
-                    // the page. The region takes it instead.
                     if not next then
-                        match minimapToggleRef.current, rootRef.current with
-                        | Some toggle, Some root when obj.ReferenceEquals(Browser.Dom.document.activeElement, toggle) ->
-                            Dom.focusWithoutScroll root
-                        | _ -> ()
+                        releaseMinimapFocus ()
 
                     setOverflowing next
             ),

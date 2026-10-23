@@ -1979,6 +1979,28 @@ Vitest.describe (
         )
 
         Vitest.test (
+            "moves the focus to the region when the focused minimap toggle goes away because the box shrinks",
+            fun () -> promise {
+                overflowBox ()
+                installResizeObserver ()
+                render defaults |> ignore
+                do! minimapShown ()
+
+                // Below 260 by 220 px the minimap does not fit, while the graph still overflows the box.
+                (toggleButton ()).focus ()
+                setBox 300.0 200.0 300.0 200.0
+                do! RTL.act (fun () -> promise { notifyResize () })
+
+                do!
+                    eventually (fun () ->
+                        Vitest.expect((RTL.screen.queryByTestId "graph-minimap-toggle").IsNone).toBe true
+                    )
+
+                Vitest.expect(focused ()).toBe (box (region ()))
+            }
+        )
+
+        Vitest.test (
             "marks the visible part of the layout, which follows the scroll position and the zoom",
             fun () -> promise {
                 overflowBox ()
