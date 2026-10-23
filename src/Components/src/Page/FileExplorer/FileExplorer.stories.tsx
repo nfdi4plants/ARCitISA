@@ -548,6 +548,57 @@ const expectLongNameControlsToStayVisible = async (canvasElement: HTMLElement, i
   });
 };
 
+const NarrowLfsFileExplorer = () => {
+  const [selectedPath, setSelectedPath] = React.useState("none");
+  const items = React.useMemo(
+    () =>
+      ofArray([
+        Object.assign(
+          FileTree_createFile("a-very-long-pointer-file-name-for-the-sequencing-run.fastq.gz", "data/pointer.fastq.gz", FileItemIcon_Document$()),
+          { IsLFS: true, Downloaded: false, IsLFSPointer: true, SizeFormatted: "42 MB" },
+        ),
+        Object.assign(
+          FileTree_createFile("a-very-long-downloaded-file-name-for-the-alignment.bam", "data/downloaded.bam", FileItemIcon_Document$()),
+          { IsLFS: true, Downloaded: true, IsLFSPointer: false, SizeFormatted: "14 MB" },
+        ),
+      ]),
+    [],
+  );
+
+  return (
+    <div>
+      <div data-testid="narrow-lfs-viewport" style={{ width: 240 }}>
+        <FileExplorer
+          initialItems={items}
+          onItemClick={(item) => setSelectedPath(item.Path ?? "none")}
+          getItemStatusAction={(item) => fileExplorerGitLfsPillAction(item, () => {}, () => {})}
+        />
+      </div>
+      <div data-testid="narrow-lfs-selected">Selected: {selectedPath}</div>
+    </div>
+  );
+};
+
+export const LfsRowsKeepTheirNameAtNarrowWidth: StoryObj<typeof NarrowLfsFileExplorer> = {
+  render: () => <NarrowLfsFileExplorer />,
+
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    for (const name of [
+      "a-very-long-pointer-file-name-for-the-sequencing-run.fastq.gz",
+      "a-very-long-downloaded-file-name-for-the-alignment.bam",
+    ]) {
+      const label = await canvas.findByText(name);
+      expect(label.getBoundingClientRect().width).toBeGreaterThan(0);
+    }
+
+    const downloadedName = await canvas.findByText("a-very-long-downloaded-file-name-for-the-alignment.bam");
+    await userEvent.click(downloadedName);
+    await waitFor(() => expect(canvas.getByTestId("narrow-lfs-selected")).toHaveTextContent("Selected: data/downloaded.bam"));
+  },
+};
+
 const meta: Meta<typeof FileExplorerExample> = {
   title: "Page Components/FileExplorer",
   component: FileExplorerExample,
@@ -849,9 +900,10 @@ export const LfsContextMenuStates: StoryObj<typeof LfsContextMenuFileExplorer> =
     await userEvent.click(pointerPill);
     await waitFor(() => expect(canvas.getByTestId("lfs-download-count")).toHaveTextContent("Downloads: 1"));
 
-    const downloadedPill = await canvas.findByLabelText("Free local LFS copy Downloaded LFS. LFS Downloaded - 14 MB");
+    const downloadedPill = await canvas.findByLabelText("LFS Downloaded - 14 MB");
+    expect(downloadedPill.tagName).not.toBe("BUTTON");
     await userEvent.click(downloadedPill);
-    await waitFor(() => expect(canvas.getByTestId("lfs-free-count")).toHaveTextContent("Freed: 1"));
+    expect(canvas.getByTestId("lfs-free-count")).toHaveTextContent("Freed: 0");
 
     const downloadedFile = await canvas.findByText("Downloaded LFS");
     const downloadedItem = downloadedFile.closest("[data-file-item-id]");
@@ -867,6 +919,8 @@ export const LfsContextMenuStates: StoryObj<typeof LfsContextMenuFileExplorer> =
     await expect(enabledMenuItem).toBeVisible();
     await expect(enabledMenuItem).not.toHaveClass("swt:opacity-50");
     await expect(disabledDownloadMenuItem).toHaveClass("swt:opacity-50");
+    await userEvent.click(enabledMenuItem);
+    await waitFor(() => expect(canvas.getByTestId("lfs-free-count")).toHaveTextContent("Freed: 1"));
 
     await userEvent.click(document.body);
 

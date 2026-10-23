@@ -197,7 +197,11 @@ type FileExplorerItem =
                             prop.className $"swt:iconify {statusIconClassName} swt:size-3"
                         ]
 
-                    Html.span [ prop.text (defaultArg item.LfsActivity "LFS") ]
+                    Html.span [
+                        // Below this container width only the icon stays. The aria-label of the pill keeps the status.
+                        prop.className "swt:@max-[12rem]:hidden"
+                        prop.text (defaultArg item.LfsActivity "LFS")
+                    ]
                 ]
             ]
 
@@ -210,6 +214,7 @@ type FileExplorerItem =
                     prop.className [
                         "swt:badge"
                         "swt:badge-sm"
+                        "swt:@max-[16rem]:hidden"
                         "swt:rounded-none"
                         "swt:border-0"
                         segmentCursorClass
@@ -307,7 +312,7 @@ type FileExplorerItem =
             Html.div [
                 prop.custom ("data-file-item-id", item.Id)
                 prop.className [
-                    "swt:group swt:w-full swt:px-2 swt:py-1 swt:cursor-default"
+                    "swt:group swt:@container swt:w-full swt:px-2 swt:py-1 swt:cursor-default"
                     rowHighlightClass
                 ]
                 prop.style [ style.display.flex; style.width (length.percent 100) ]
@@ -320,7 +325,7 @@ type FileExplorerItem =
                             Html.button [
                                 prop.type'.button
                                 prop.className
-                                    "swt:flex swt:min-w-0 swt:flex-1 swt:items-center swt:gap-2 swt:bg-transparent swt:border-0 swt:p-0 swt:text-left swt:cursor-default"
+                                    "swt:flex swt:min-w-16 swt:flex-1 swt:items-center swt:gap-2 swt:bg-transparent swt:border-0 swt:p-0 swt:text-left swt:cursor-default"
                                 prop.onClick onDirectorySelect
 
                                 if canExpandDirectory then
@@ -355,7 +360,8 @@ type FileExplorerItem =
                                 || canDeleteFromDirectory
                             then
                                 Html.div [
-                                    prop.className "swt:ml-auto swt:shrink-0 swt:flex swt:items-center swt:gap-2"
+                                    prop.className
+                                        "swt:ml-auto swt:shrink swt:min-w-0 swt:flex swt:items-center swt:gap-2"
                                     prop.children [
                                         FileExplorerItem.CreateItemButton(item, onCreateItem, canCreateItem)
 
@@ -416,7 +422,7 @@ type FileExplorerItem =
                 Html.div [
                     prop.custom ("data-file-item-id", item.Id)
                     prop.className [
-                        "swt:group swt:px-2 swt:py-1 swt:flex swt:min-w-0 swt:items-center swt:justify-between swt:cursor-default"
+                        "swt:group swt:@container swt:px-2 swt:py-1 swt:flex swt:min-w-0 swt:items-center swt:justify-between swt:cursor-default"
                         rowHighlightClass
                     ]
                     prop.children [
@@ -424,7 +430,7 @@ type FileExplorerItem =
                             prop.type'.button
                             prop.custom ("data-file-item-id", item.Id)
                             prop.className
-                                "swt:flex swt:min-w-0 swt:flex-1 swt:items-center swt:gap-2 swt:bg-transparent swt:border-0 swt:p-0 swt:text-left swt:cursor-default"
+                                "swt:flex swt:min-w-16 swt:flex-1 swt:items-center swt:gap-2 swt:bg-transparent swt:border-0 swt:p-0 swt:text-left swt:cursor-default"
                             prop.onClick (fun _ -> onSelect ())
                             prop.children [
                                 Html.i [
@@ -449,7 +455,7 @@ type FileExplorerItem =
 
                         if hasStatusControl || hasItemActions || canDeleteFromFile then
                             Html.div [
-                                prop.className "swt:ml-auto swt:flex swt:shrink-0 swt:items-center swt:gap-2"
+                                prop.className "swt:ml-auto swt:flex swt:shrink swt:min-w-0 swt:items-center swt:gap-2"
                                 prop.children [
                                     yield!
                                         itemActions
