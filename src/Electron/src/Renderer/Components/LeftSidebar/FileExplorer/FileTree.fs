@@ -371,7 +371,7 @@ type FileTree =
                     | Error msg ->
                         errorModal.enqueue (
                             ErrorModalRequest.create (
-                                $"Git LFS cleanup failed for '{path}': {msg}",
+                                $"Git LFS cleanup failed for '{PathHelpers.getFileName path}': {msg}",
                                 title = "Git LFS cleanup failed",
                                 ?scopeId = arcScopeId
                             )
@@ -557,11 +557,7 @@ type FileTree =
             )
 
         let getItemStatusAction =
-            Renderer.Components.FileExplorerLfs.createLfsPillAction
-                errorModal.enqueue
-                arcScopeId
-                runDownloadLfsFile
-                runFreeLocalLfsCopy
+            Renderer.Components.FileExplorerLfs.createLfsPillAction errorModal.enqueue arcScopeId runDownloadLfsFile
 
         let confirmRenameItem (newName: string) =
             if not isDialogBusy then

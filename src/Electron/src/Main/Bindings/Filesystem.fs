@@ -75,6 +75,9 @@ let readFileBase64Async (path: string) : JS.Promise<string> =
 [<Import("writeFile", "fs/promises")>]
 let writeFileAsync (path: string) (content: string) (encoding: TextEncoding) : JS.Promise<unit> = jsNative
 
+[<Import("truncate", "fs/promises")>]
+let truncateAsync (path: string) (length: float) : JS.Promise<unit> = jsNative
+
 [<Import("rename", "fs/promises")>]
 let renameAsync (oldPath: string) (newPath: string) : JS.Promise<unit> = jsNative
 
@@ -117,3 +120,15 @@ let openAsync (path: string) (flags: string) : JS.Promise<FileHandle> = jsNative
 
 [<Emit("Buffer.alloc($0)")>]
 let allocBuffer (length: int) : byte[] = jsNative
+
+/// Decodes the first length bytes of a Node buffer as UTF-8. A leading BOM stays in the text, as with readFile.
+[<Emit("$0.toString('utf8', 0, $1)")>]
+let bufferToUtf8Prefix (buffer: byte[]) (length: int) : string = jsNative
+
+/// Decodes the first length bytes with a TextDecoder. The label is a WHATWG encoding label such as utf-16le.
+/// The decoder drops a leading BOM.
+[<Emit("new TextDecoder($2).decode($0.subarray(0, $1))")>]
+let bufferDecodePrefix (buffer: byte[]) (length: int) (encodingLabel: string) : string = jsNative
+
+[<Emit("$0.toString('base64', 0, $1)")>]
+let bufferToBase64Prefix (buffer: byte[]) (length: int) : string = jsNative

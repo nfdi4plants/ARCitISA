@@ -326,6 +326,14 @@ Vitest.describe (
                 Vitest
                     .expect(
                         FileExplorerStateReconciliation.shouldResetPageStateAfterSelectionRemoval (
+                            Some(RendererPageState.LargeFilePage("data/big.txt", 1234.0, NoPreviewReason.TooLarge))
+                        )
+                    )
+                    .toBe (true)
+
+                Vitest
+                    .expect(
+                        FileExplorerStateReconciliation.shouldResetPageStateAfterSelectionRemoval (
                             Some(RendererPageState.ErrorPage "err")
                         )
                     )
@@ -551,6 +559,28 @@ Vitest.describe (
                 match pageState with
                 | RendererPageState.ArcFilePage(_, Some ActiveView.DataMap) -> ()
                 | _ -> failwith "Expected the redirected DataMap click to select the DataMap view."
+        )
+
+        Vitest.test (
+            "tryGetReloadableSelectedFilePath reloads a no-preview page like an unknown page",
+            fun () ->
+                let fileTree = [|
+                    FileEntry.create ("big.txt", "data/big.txt", false, None)
+                |]
+
+                for pageState in
+                    [
+                        RendererPageState.UnknownPage
+                        RendererPageState.LargeFilePage("data/big.txt", 1234.0, NoPreviewReason.TooLarge)
+                    ] do
+                    Vitest
+                        .expect(
+                            FileExplorerStateReconciliation.tryGetReloadableSelectedFilePath
+                                fileTree
+                                (Some "data/big.txt")
+                                (Some pageState)
+                        )
+                        .toEqual (Some "data/big.txt")
         )
 
         Vitest.test (

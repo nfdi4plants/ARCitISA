@@ -78,10 +78,7 @@ let createDownloadLfsFile enqueueErrorModal arcScopeId runDownload =
         arcScopeId
         runDownload
 
-let createLfsPillAction enqueueErrorModal arcScopeId runDownload runCleanup =
+let createLfsPillAction enqueueErrorModal arcScopeId runDownload =
     let downloadLfsFile = createDownloadLfsFile enqueueErrorModal arcScopeId runDownload
 
-    let freeLocalLfsCopy =
-        createFreeLocalLfsCopy enqueueErrorModal arcScopeId runCleanup
-
-    fun item -> FileExplorerGitLfsHelper.lfsPillAction item (Some downloadLfsFile) (Some freeLocalLfsCopy)
+    fun item -> FileExplorerGitLfsHelper.lfsPillAction item (Some downloadLfsFile)

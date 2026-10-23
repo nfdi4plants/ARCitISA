@@ -505,8 +505,10 @@ module ArcVaultExtensions =
                                                 if reachedDeferralLimit then
                                                     // The limit latches during a write, so every later deferral publishes the
                                                     // tree batch too. A file the tree shows before its entity is merged opens
-                                                    // through the disk fallback of openFile (raw file text) until the retained
-                                                    // ARC batch merges after the write. A tree that hides every external change
+                                                    // through the disk fallback of openFile until the retained ARC batch merges
+                                                    // after the write. That fallback shows text files as text and files above the
+                                                    // preview limit or without text content as a no-preview page.
+                                                    // A tree that hides every external change
                                                     // for the whole duration of a long write would be worse.
                                                     // The ARC batch is restored first, so a rejected tree update cannot lose it.
                                                     // Appending is enough because both consumers re-check the disk at apply time.

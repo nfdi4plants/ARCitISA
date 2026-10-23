@@ -74,8 +74,20 @@ let private withPreviewFile (name: string) (content: string) (check: string -> J
         return raise error
 }
 
-let private megabytes (count: int) =
-    String.replicate (count * 1024 * 1024) "a"
+/// A sparse file of the given size. The bytes are zeros and the test never reads them.
+let private withSizedPreviewFile (name: string) (sizeBytes: float) (check: string -> JS.Promise<unit>) =
+    withPreviewFile
+        name
+        ""
+        (fun path -> promise {
+            do! truncateAsync path sizeBytes
+            do! check path
+        })
+
+[<Import("writeFile", "fs/promises")>]
+let private writeBytesAsync (path: string) (bytes: byte[]) : JS.Promise<unit> = jsNative
+
+let private megabytes (count: int) = float count * 1024.0 * 1024.0
 
 Vitest.describe (
     "readFileForPreviewAsync",
@@ -83,7 +95,7 @@ Vitest.describe (
         Vitest.test (
             "reports a text file above 20 MB as too large",
             fun () ->
-                withPreviewFile
+                withSizedPreviewFile
                     "big.txt"
                     (megabytes 21)
                     (fun path -> promise {
@@ -93,7 +105,7 @@ Vitest.describe (
                             .expect(dto.noPreview)
                             .toEqual (
                                 Some {|
-                                    sizeBytes = 21.0 * 1024.0 * 1024.0
+                                    sizeBytes = megabytes 21
                                     reason = NoPreviewReason.TooLarge
                                 |}
                             )
@@ -134,9 +146,63 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "reports a PDF above 50 MB as too large",
+            "previews a small PDF that has NUL bytes in its first 8 KB",
             fun () ->
                 withPreviewFile
+                    "doc.pdf"
+                    ("%PDF" + string (char 0) + "-1")
+                    (fun path -> promise {
+                        let! dto = Main.ArcVaultHelper.readFileForPreviewAsync path "doc.pdf"
+                        Vitest.expect(dto.fileType).toEqual FileContentType.PDF
+                        Vitest.expect(dto.content).toBe "JVBERgAtMQ=="
+                    })
+        )
+
+        Vitest.test (
+            "previews a UTF-16 LE text file with a BOM as text",
+            fun () ->
+                // FF FE is the BOM, the rest is "<a/>" in UTF-16 LE, so every second byte is NUL.
+                withPreviewFile
+                    "info.xml"
+                    ""
+                    (fun path -> promise {
+                        do!
+                            writeBytesAsync path [|
+                                0xFFuy
+                                0xFEuy
+                                0x3Cuy
+                                0uy
+                                0x61uy
+                                0uy
+                                0x2Fuy
+                                0uy
+                                0x3Euy
+                                0uy
+                            |]
+
+                        let! dto = Main.ArcVaultHelper.readFileForPreviewAsync path "info.xml"
+                        Vitest.expect(dto.noPreview).toEqual None
+                        Vitest.expect(dto.content).toBe "<a/>"
+                    })
+        )
+
+        Vitest.test (
+            "previews a zero-byte text file as empty text",
+            fun () ->
+                withPreviewFile
+                    "empty.txt"
+                    ""
+                    (fun path -> promise {
+                        let! dto = Main.ArcVaultHelper.readFileForPreviewAsync path "empty.txt"
+                        Vitest.expect(dto.noPreview).toEqual None
+                        Vitest.expect(dto.content).toBe ""
+                    })
+        )
+
+        Vitest.test (
+            "reports a PDF above 50 MB as too large",
+            fun () ->
+                withSizedPreviewFile
                     "big.pdf"
                     (megabytes 51)
                     (fun path -> promise {
@@ -146,7 +212,7 @@ Vitest.describe (
                             .expect(dto.noPreview)
                             .toEqual (
                                 Some {|
-                                    sizeBytes = 51.0 * 1024.0 * 1024.0
+                                    sizeBytes = megabytes 51
                                     reason = NoPreviewReason.TooLarge
                                 |}
                             )

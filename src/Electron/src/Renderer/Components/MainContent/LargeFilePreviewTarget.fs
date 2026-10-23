@@ -1,15 +1,18 @@
 module Renderer.Components.MainContent.LargeFilePreviewTarget
 
+open Fable.Core
 open Feliz
+open Swate.Components.Page.FileExplorer.Types
 open Swate.Electron.Shared.FileIOTypes
 open Renderer
-
-module Paged = Swate.Components.Page.GitComparison.GitPagedDiffTypes
 
 /// The page of a file without text preview. The button opens the file in the default application.
 [<ReactComponent>]
 let LargeFilePreviewTarget (path: string, sizeBytes: float, reason: NoPreviewReason) =
     let openFailure, setOpenFailure = React.useState<string option> None
+
+    // A new path starts without the failure of the previous file.
+    React.useEffect ((fun () -> setOpenFailure None), [| box path |])
 
     let fileName = path.Split('/') |> Array.last
 
@@ -26,7 +29,8 @@ let LargeFilePreviewTarget (path: string, sizeBytes: float, reason: NoPreviewRea
             | Ok() -> setOpenFailure None
             | Error error -> setOpenFailure (Some error.Message)
         }
-        |> ignore
+        |> Promise.catch (fun error -> setOpenFailure (Some error.Message))
+        |> Promise.start
 
     Html.div [
         prop.className "swt:size-full swt:flex swt:flex-col swt:gap-2 swt:justify-center swt:items-center"
@@ -35,7 +39,7 @@ let LargeFilePreviewTarget (path: string, sizeBytes: float, reason: NoPreviewRea
                 prop.className "swt:text-lg swt:font-semibold"
                 prop.text fileName
             ]
-            Html.p [ prop.text (Paged.formatBytes sizeBytes) ]
+            Html.p [ prop.text (FileTree.formatSize (int64 sizeBytes)) ]
             Html.p [ prop.text message ]
             Html.button [
                 prop.className "swt:btn swt:btn-primary"
