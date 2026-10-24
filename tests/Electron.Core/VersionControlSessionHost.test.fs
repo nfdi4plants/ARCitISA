@@ -25,6 +25,20 @@ let private mockCallCount (mock: obj) : int = jsNative
 
 let private git (cwd: string) (args: string list) = execFile "git" (List.toArray args) cwd
 
+let private largeObjectTestOptions = TestOptions(timeout = 40000)
+
+let private waitUntilIndexReady (vault: ArcVault) = promise {
+    let mutable waited = 0
+
+    while vault.GetLargeObjectIndexSnapshot().state <> LargeObjectIndexStatus.Ready
+          && waited < 30000 do
+        do! Promise.sleep 50
+        waited <- waited + 50
+
+    if vault.GetLargeObjectIndexSnapshot().state <> LargeObjectIndexStatus.Ready then
+        failwith "The large object index did not become ready."
+}
+
 let private expectFailure (operation: string) (result: OperationResult<'T>) =
     match result with
     | Failed failure -> failure
@@ -1383,6 +1397,7 @@ Vitest.describe (
 
         Vitest.test (
             "a save stores a small dataset file as a large object",
+            largeObjectTestOptions,
             fun () ->
                 withFixture (fun fixture -> promise {
                     let vault = registerVault 62 fixture.RepoRoot
@@ -1425,6 +1440,128 @@ Vitest.describe (
                     Vitest.expect(datasetContent.StartsWith("version https://git-lfs.github.com/spec/v1")).toBe true
 
                     Vitest.expect(attributes.Contains(datasetPath)).toBe true
+
+                    // The index lists the saved file as a large object whose content is on disk.
+                    vault.StartLargeObjectIndex()
+                    do! waitUntilIndexReady vault
+
+                    let listed =
+                        vault.GetLargeObjectIndexSnapshot().entries
+                        |> Array.tryFind (fun dto -> dto.Path = datasetPath)
+                        |> Option.defaultWith (fun () -> failwith "The large object index omitted the dataset file.")
+
+                    Vitest.expect(listed.IsMaterialized).toBe true
+                    Vitest.expect(listed.ObjectId.IsSome).toBe true
+                    vault.DisposeLargeObjectIndex()
+                })
+        )
+
+        Vitest.test (
+            "a save invalidates the large object index of the vault",
+            largeObjectTestOptions,
+            fun () ->
+                withFixture (fun fixture -> promise {
+                    let vault = registerVault 64 fixture.RepoRoot
+                    let api = Main.IPC.IVersionControlApi.api (ipcEvent 64)
+                    let listings = ref 0
+
+                    vault.LargeObjectListing <-
+                        fun _ _ -> promise {
+                            listings.Value <- listings.Value + 1
+                            return Ok [||]
+                        }
+
+                    vault.LargeObjectInvalidationDebounceMs <- 20
+                    vault.StartLargeObjectIndex()
+                    do! waitUntilIndexReady vault
+                    Vitest.expect(listings.Value).toBe 1
+
+                    writeText (join [| fixture.RepoRoot; "note.txt" |]) "note\n"
+                    let! status = api.getStatus (request "invalidate-status")
+                    let version = (expectDtoValue "invalidate status" status).Value.WorkspaceVersion
+
+                    let! created =
+                        api.createRevision {
+                            OperationId = "invalidate-save"
+                            Message = "Save note"
+                            Paths = [| "note.txt" |]
+                            ExpectedWorkspaceVersion = version
+                        }
+
+                    expectDtoValue "save note" created |> ignore
+
+                    let mutable waited = 0
+
+                    while listings.Value < 2 && waited < 5000 do
+                        do! Promise.sleep 20
+                        waited <- waited + 20
+
+                    Vitest.expect(listings.Value).toBe 2
+                    vault.DisposeLargeObjectIndex()
+                })
+        )
+
+        Vitest.test (
+            "the large object index lists pointer and materialized files from a real repository",
+            largeObjectTestOptions,
+            fun () ->
+                withFixture (fun fixture -> promise {
+                    let pointerPath = join [| fixture.RepoRoot; "pointer.psd" |]
+                    let downloadedPath = join [| fixture.RepoRoot; "downloaded.psd" |]
+
+                    git fixture.RepoRoot [ "lfs"; "track"; "*.psd" ] |> ignore
+                    writeText pointerPath "Pointer-like content.\n"
+                    writeText downloadedPath "Hydrated-like content.\n"
+
+                    git fixture.RepoRoot [ "add"; ".gitattributes"; "pointer.psd"; "downloaded.psd" ]
+                    |> ignore
+
+                    writeText pointerPath (git fixture.RepoRoot [ "lfs"; "pointer"; "--file"; pointerPath ])
+
+                    let index =
+                        Main.LargeObjectIndex.LargeObjectIndex(
+                            (fun context -> Main.LargeObjectIndex.listObjectsFromSession fixture.RepoRoot context),
+                            (fun () -> false),
+                            ignore,
+                            30000
+                        )
+
+                    index.Invalidate()
+
+                    let mutable waited = 0
+
+                    while (index.Snapshot false).state <> LargeObjectIndexStatus.Ready && waited < 30000 do
+                        do! Promise.sleep 50
+                        waited <- waited + 50
+
+                    let entries = (index.Snapshot false).entries
+
+                    let find path =
+                        entries
+                        |> Array.tryFind (fun dto -> dto.Path = path)
+                        |> Option.defaultWith (fun () -> failwith $"The index omitted {path}.")
+
+                    let pointer = find "pointer.psd"
+                    let downloaded = find "downloaded.psd"
+
+                    Vitest.expect(pointer.IsMaterialized).toBe false
+                    Vitest.expect(pointer.IsLocallyAvailable).toBe true
+                    Vitest.expect(pointer.SizeBytes |> Option.get).toBeGreaterThan 0
+                    Vitest.expect(downloaded.IsMaterialized).toBe true
+                    Vitest.expect(downloaded.IsLocallyAvailable).toBe true
+
+                    for dto in [ pointer; downloaded ] do
+                        Vitest
+                            .expect(
+                                System.Text.RegularExpressions.Regex.IsMatch(
+                                    dto.ObjectId |> Option.get,
+                                    "^[0-9a-fA-F]{64}$"
+                                )
+                            )
+                            .toBe
+                            true
+
+                    index.Dispose()
                 })
         )
 

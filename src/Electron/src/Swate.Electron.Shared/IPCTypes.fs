@@ -94,11 +94,18 @@ type IValidationPackageIPC = {
     getAllPackages: unit -> JS.Promise<Result<ValidationPackageDTO[], exn>>
 }
 
-/// State of the large object index of a vault. state is notLoaded, loading, ready or unavailable. entries is empty
-/// unless the state is ready. caseInsensitive is the flag the paths of the entries were keyed with.
+[<RequireQualifiedAccess; StringEnum>]
+type LargeObjectIndexStatus =
+    | NotLoaded
+    | Loading
+    | Ready
+    | Unavailable
+
+/// State of the large object index of a vault. entries is empty unless the state is ready. caseInsensitive is the
+/// flag the paths of the entries were keyed with.
 type LargeObjectIndexSnapshot = {|
     version: int
-    state: string
+    state: LargeObjectIndexStatus
     caseInsensitive: bool
     entries: ObjectStateDto[]
 |}

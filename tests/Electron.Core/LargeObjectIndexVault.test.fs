@@ -30,10 +30,12 @@ type private FakeListing() =
     member val Gated = false with get, set
     member val Entries: ObjectStateDto[] = [||] with get, set
     member val Contexts = ResizeArray<OperationContext>()
+    member val Roots = ResizeArray<string>()
     member val Pending = ResizeArray<Result<ObjectStateDto[], string> -> unit>()
 
-    member this.List (_root: string) (context: OperationContext) : JS.Promise<Result<ObjectStateDto[], string>> =
+    member this.List (root: string) (context: OperationContext) : JS.Promise<Result<ObjectStateDto[], string>> =
         this.Count <- this.Count + 1
+        this.Roots.Add root
         this.Contexts.Add context
 
         if this.Gated then
@@ -72,7 +74,7 @@ let private waitUntil (what: string) (condition: unit -> bool) = promise {
 let private settle () = Promise.sleep 150
 
 let private isReady (vault: ArcVault) =
-    vault.GetLargeObjectIndexSnapshot().state = "ready"
+    vault.GetLargeObjectIndexSnapshot().state = LargeObjectIndexStatus.Ready
 
 /// Starts the index of a vault bound to an existing directory and waits for its first build.
 let private startVaultWith (caseInsensitive: bool) (root: string) (fake: FakeListing) = promise {
@@ -307,7 +309,7 @@ Vitest.describe (
 
                     do! settle ()
                     Vitest.expect(sent |> Seq.filter isIndexPush |> Seq.length).toBe pushesBeforeClose
-                    Vitest.expect(vault.GetLargeObjectIndexSnapshot().state).toBe "notLoaded"
+                    Vitest.expect(vault.GetLargeObjectIndexSnapshot().state).toBe LargeObjectIndexStatus.NotLoaded
                 })
         )
 
@@ -340,7 +342,7 @@ Vitest.describe (
                     match pulled with
                     | Error error -> failwith error.Message
                     | Ok snapshot ->
-                        Vitest.expect(snapshot.state).toBe "ready"
+                        Vitest.expect(snapshot.state).toBe LargeObjectIndexStatus.Ready
                         Vitest.expect(snapshot.caseInsensitive).toBe true
                         Vitest.expect(snapshot.version).toBe 1
 
@@ -352,4 +354,166 @@ Vitest.describe (
                     Vitest.expect(sent |> Seq.exists isIndexPush).toBe true
                 })
         )
+
+        Vitest.test (
+            "a successful rename lists again for the new root",
+            fun () ->
+                withTempDirectory (fun parent -> promise {
+                    let root = join [| parent; "arcA" |]
+                    mkdirSync root (MkdirOptions(recursive = true))
+                    let fake = FakeListing()
+                    let! vault, _ = startVault root fake
+
+                    match! vault.RenameOpenArcRoot "arcB" with
+                    | Error error -> failwith error.Message
+                    | Ok renamedPath ->
+                        do! waitUntil "the listing for the new root" (fun () -> fake.Roots.Count >= 2)
+                        Vitest.expect(fake.Roots.[fake.Roots.Count - 1]).toBe renamedPath
+                        Vitest.expect(vault.path).toEqual (Some renamedPath)
+
+                    vault.DisposeLargeObjectIndex()
+                })
+        )
+
+        Vitest.test (
+            "a failed rename keeps the ready state visible while the replacement lists again",
+            fun () ->
+                withTempDirectory (fun parent -> promise {
+                    let root = join [| parent; "arcA" |]
+                    mkdirSync root (MkdirOptions(recursive = true))
+                    mkdirSync (join [| parent; "arcB" |]) (MkdirOptions(recursive = true))
+                    let fake = FakeListing()
+                    fake.Entries <- [| entry "a.bin" |]
+                    let! vault, _ = startVault root fake
+                    let versionBefore = vault.GetLargeObjectIndexSnapshot().version
+
+                    match! vault.RenameOpenArcRoot "arcB" with
+                    | Ok _ -> failwith "The rename onto an existing folder should fail."
+                    | Error _ -> ()
+
+                    let seeded = vault.GetLargeObjectIndexSnapshot()
+                    Vitest.expect(seeded.state).toBe LargeObjectIndexStatus.Ready
+                    Vitest.expect(seeded.entries.Length).toBe 1
+                    Vitest.expect(seeded.version).toBe versionBefore
+
+                    let states = ResizeArray<LargeObjectIndexStatus>()
+
+                    vault.LargeObjectIndex.Value.Subscribe(fun () ->
+                        states.Add(vault.GetLargeObjectIndexSnapshot().state)
+                    )
+                    |> ignore
+
+                    do! waitUntil "the replacement listing" (fun () -> fake.Count = 2)
+                    do! settle ()
+                    Vitest.expect(states.Contains LargeObjectIndexStatus.Loading).toBe false
+                    Vitest.expect(vault.GetLargeObjectIndexSnapshot().version).toBe (versionBefore + 1)
+                    vault.DisposeLargeObjectIndex()
+                })
+        )
+
+        Vitest.test (
+            "a rename waits until the running listing call has returned",
+            fun () ->
+                withTempDirectory (fun parent -> promise {
+                    let root = join [| parent; "arcA" |]
+                    mkdirSync root (MkdirOptions(recursive = true))
+                    let fake = FakeListing()
+                    fake.Gated <- true
+                    let! vault, _ = startVault root fake
+                    let finished = ref false
+
+                    let renaming =
+                        vault.RenameOpenArcRoot "arcB"
+                        |> Promise.map (fun result ->
+                            finished.Value <- true
+                            result
+                        )
+
+                    do! Promise.sleep 100
+                    Vitest.expect(finished.Value).toBe false
+                    Vitest.expect(fake.Contexts.[0].Cancellation.IsCancellationRequested()).toBe true
+
+                    for resolve in fake.Pending do
+                        resolve (Error "canceled")
+
+                    let! result = renaming
+                    Vitest.expect(finished.Value).toBe true
+                    Vitest.expect(result.IsOk).toBe true
+                    vault.DisposeLargeObjectIndex()
+                })
+        )
+
+        Vitest.test (
+            "a failed initialization disposes the index",
+            fun () ->
+                withTempDirectory (fun root -> promise {
+                    let fake = FakeListing()
+                    let! vault, _ = startVault root fake
+
+                    do! vault.RestoreEmptyVaultAfterFailedInitialization()
+
+                    Vitest.expect(vault.LargeObjectIndex.IsNone).toBe true
+                })
+        )
+
+
+        Vitest.test (
+            "a focus check sees a branch that moved to another commit through its loose ref",
+            fun () ->
+                withTempDirectory (fun root -> promise {
+                    let gitDir = join [| root; ".git" |]
+                    writeGitDir gitDir
+                    mkdirSync (join [| gitDir; "refs"; "heads" |]) (MkdirOptions(recursive = true))
+
+                    TestHelpers.writeText
+                        (join [| gitDir; "refs"; "heads"; "main" |])
+                        "aaaa
+"
+
+                    let fake = FakeListing()
+                    let! vault, _ = startVault root fake
+
+                    do! vault.CheckGitStateOnFocus()
+                    do! settle ()
+                    Vitest.expect(fake.Count).toBe 1
+
+                    TestHelpers.writeText
+                        (join [| gitDir; "refs"; "heads"; "main" |])
+                        "bbbb
+"
+
+                    do! vault.CheckGitStateOnFocus()
+                    do! waitUntil "the rebuild" (fun () -> fake.Count = 2)
+                    vault.DisposeLargeObjectIndex()
+                })
+        )
+
+        Vitest.test (
+            "a focus check sees a branch that moved to another commit through packed-refs",
+            fun () ->
+                withTempDirectory (fun root -> promise {
+                    let gitDir = join [| root; ".git" |]
+                    writeGitDir gitDir
+
+                    TestHelpers.writeText
+                        (join [| gitDir; "packed-refs" |])
+                        "# pack-refs
+aaaa refs/heads/main
+"
+
+                    let fake = FakeListing()
+                    let! vault, _ = startVault root fake
+
+                    TestHelpers.writeText
+                        (join [| gitDir; "packed-refs" |])
+                        "# pack-refs
+bbbb refs/heads/main
+"
+
+                    do! vault.CheckGitStateOnFocus()
+                    do! waitUntil "the rebuild" (fun () -> fake.Count = 2)
+                    vault.DisposeLargeObjectIndex()
+                })
+        )
+
 )

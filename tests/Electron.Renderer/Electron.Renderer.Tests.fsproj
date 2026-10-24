@@ -24,6 +24,7 @@
     <Compile Include="LfsActivityContext.test.fs" />
     <Compile Include="LargeObjectStore.test.fs" />
     <Compile Include="LargeObjectStore.test.rtl.fs" />
+    <Compile Include="FileExplorerStateReconciliation.test.rtl.fs" />
     <Compile Include="NoteSearchInterop.test.fs" />
     <Compile Include="ProvenanceGraphPage.test.fs" />
   </ItemGroup>

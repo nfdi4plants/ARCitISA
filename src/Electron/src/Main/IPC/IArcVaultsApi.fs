@@ -1011,6 +1011,14 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
                                 return Ok renamedPath
                         })
             with e ->
+                swatelogfn
+                    (try
+                        windowIdFromIpcEvent event
+                     with _ ->
+                         -1)
+                    "Renaming the ARC folder failed: %s"
+                    e.Message
+
                 return Error e
         }
     writeFile =

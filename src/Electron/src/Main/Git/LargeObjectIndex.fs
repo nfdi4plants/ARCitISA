@@ -12,10 +12,9 @@ open VersionControlService.Abstractions
 /// Index built from one successful listing.
 type ReadyIndex = {
     Version: int
-    /// Case flag the keys of ByPathKey were built with.
+    /// Case flag the renderer keys the entries with.
     CaseInsensitive: bool
-    ByPathKey: Map<PathKey, ObjectStateDto>
-    ByComparisonKey: Map<string, ObjectStateDto>
+    Entries: ObjectStateDto[]
     LastError: string option
 }
 
@@ -65,14 +64,20 @@ type LargeObjectIndex
         isCaseInsensitive: unit -> bool,
         log: string -> unit,
         timeLimitMs: int,
-        startVersion: int
+        startVersion: int,
+        initialReady: ReadyIndex option
     ) =
-    let mutable state = NotLoaded
+    let mutable state =
+        match initialReady with
+        | Some ready -> Ready ready
+        | None -> NotLoaded
+
     let mutable version = startVersion
     let mutable running = false
     let mutable dirty = false
     let mutable disposed = false
     let mutable currentSource: OperationCancellation.Source option = None
+    let mutable inFlight: JS.Promise<unit> option = None
     let mutable cancelReason = "listing canceled"
     let mutable lastLogged: string option = None
     let listeners = ResizeArray<unit -> unit>()
@@ -96,11 +101,7 @@ type LargeObjectIndex
     let buildIndex (caseInsensitive: bool) (entries: ObjectStateDto[]) : ReadyIndex = {
         Version = version
         CaseInsensitive = caseInsensitive
-        ByPathKey =
-            entries
-            |> Array.map (fun dto -> PathKey.ofPath caseInsensitive dto.Path, dto)
-            |> Map.ofArray
-        ByComparisonKey = entries |> Array.map (fun dto -> dto.Path, dto) |> buildComparisonKeyMap
+        Entries = entries
         LastError = None
     }
 
@@ -129,16 +130,24 @@ type LargeObjectIndex
                 )
                 timeLimitMs
 
-        let! outcome =
-            race [|
-                promise {
-                    try
-                        return! listObjects context
-                    with error ->
-                        return Error error.Message
-                }
-                canceled
-            |]
+        // The race below settles on cancellation, while this promise settles when listObjects itself returns.
+        let listing = promise {
+            try
+                return! listObjects context
+            with error ->
+                return Error error.Message
+        }
+
+        let settled = listing |> Promise.map ignore
+        inFlight <- Some settled
+
+        settled
+        |> Promise.iter (fun () ->
+            if inFlight |> Option.exists (fun current -> obj.ReferenceEquals(current, settled)) then
+                inFlight <- None
+        )
+
+        let! outcome = race [| listing; canceled |]
 
         JS.clearTimeout timer
         currentSource <- None
@@ -157,26 +166,33 @@ type LargeObjectIndex
                 | _ -> setState (Unavailable message)
     }
 
-    let startLoop () : unit =
+    // The flag is cleared in the same step that finds no more work, so an Invalidate after that step starts a new loop.
+    let rec startLoop () : unit =
         running <- true
         dirty <- true
+        loop ()
 
-        promise {
-            try
-                while dirty && not disposed do
-                    dirty <- false
-                    do! runOnce ()
-            finally
-                running <- false
-        }
-        |> ignore
+    and loop () : unit =
+        if dirty && not disposed then
+            dirty <- false
 
-    /// Starts at version 0.
+            runOnce ()
+            |> Promise.either
+                (fun () -> loop ())
+                (fun error ->
+                    log $"Large object index run failed: {error.Message}"
+                    loop ()
+                )
+            |> ignore
+        else
+            running <- false
+
+    /// Starts at version 0 without a ready index.
     new(listObjects, isCaseInsensitive, log, timeLimitMs) =
-        LargeObjectIndex(listObjects, isCaseInsensitive, log, timeLimitMs, 0)
+        LargeObjectIndex(listObjects, isCaseInsensitive, log, timeLimitMs, 0, None)
 
     static member Create(listObjects, isCaseInsensitive, log) =
-        LargeObjectIndex(listObjects, isCaseInsensitive, log, DefaultTimeLimitMs, 0)
+        LargeObjectIndex(listObjects, isCaseInsensitive, log, DefaultTimeLimitMs, 0, None)
 
     member _.State = state
     member _.Version = version
@@ -192,14 +208,6 @@ type LargeObjectIndex
         if not disposed then
             if running then dirty <- true else startLoop ()
 
-    member _.TryFind(relativePath: string) : ObjectStateDto option =
-        match state with
-        | Ready index ->
-            match Map.tryFind (PathKey.ofPath index.CaseInsensitive relativePath) index.ByPathKey with
-            | Some found -> Some found
-            | None -> Map.tryFind (PathHelpers.normalizeForUnicodeComparison relativePath) index.ByComparisonKey
-        | _ -> None
-
     /// Calls the listener after every state change. The returned function removes it.
     member _.Subscribe(listener: unit -> unit) : unit -> unit =
         listeners.Add listener
@@ -209,10 +217,10 @@ type LargeObjectIndex
     member _.Snapshot(vaultCaseInsensitive: bool) : LargeObjectIndexSnapshot =
         let name, caseInsensitive, entries =
             match state with
-            | NotLoaded -> "notLoaded", vaultCaseInsensitive, [||]
-            | Loading -> "loading", vaultCaseInsensitive, [||]
-            | Ready index -> "ready", index.CaseInsensitive, index.ByPathKey |> Map.toArray |> Array.map snd
-            | Unavailable _ -> "unavailable", vaultCaseInsensitive, [||]
+            | NotLoaded -> LargeObjectIndexStatus.NotLoaded, vaultCaseInsensitive, [||]
+            | Loading -> LargeObjectIndexStatus.Loading, vaultCaseInsensitive, [||]
+            | Ready index -> LargeObjectIndexStatus.Ready, index.CaseInsensitive, index.Entries
+            | Unavailable _ -> LargeObjectIndexStatus.Unavailable, vaultCaseInsensitive, [||]
 
         {|
             version = version
@@ -220,6 +228,25 @@ type LargeObjectIndex
             caseInsensitive = caseInsensitive
             entries = entries
         |}
+
+    /// Cancels the running listing and resolves when the listObjects call itself has returned, or after capMs.
+    /// The call can still own a git process with the ARC folder as its working directory when it is canceled.
+    member _.CancelAndWaitAsync(capMs: int) : JS.Promise<unit> = promise {
+        match currentSource with
+        | Some source -> source.Cancel()
+        | None -> ()
+
+        match inFlight with
+        | None -> ()
+        | Some settled ->
+            let timer = ref None
+
+            let cap =
+                Promise.create (fun resolve _ -> timer.Value <- Some(JS.setTimeout (fun () -> resolve ()) capMs))
+
+            do! race [| settled; cap |]
+            timer.Value |> Option.iter JS.clearTimeout
+    }
 
     /// Cancels a running listing and blocks further runs. Called when the vault closes.
     member _.Dispose() =

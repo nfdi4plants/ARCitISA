@@ -2,6 +2,7 @@ module ElectronCore.LargeObjectIndexTests
 
 open Fable.Core
 open Main.LargeObjectIndex
+open Swate.Electron.Shared.IPCTypes
 open Swate.Electron.Shared.VersionControlTypes
 open VersionControlService.Abstractions
 open Vitest
@@ -40,8 +41,8 @@ let private create (caseInsensitive: bool) (timeLimitMs: int) =
 
     fake, logs, index
 
-let private paths (found: ObjectStateDto option) =
-    found |> Option.map (fun dto -> dto.Path)
+let private entryPaths (index: LargeObjectIndex) =
+    (index.Snapshot false).entries |> Array.map (fun dto -> dto.Path) |> Array.sort
 
 let private lastError (index: LargeObjectIndex) =
     match index.State with
@@ -78,7 +79,7 @@ Vitest.describe (
                 do! settle ()
                 Vitest.expect(fake.Calls.Count).toBe 2
                 Vitest.expect(index.Version).toBe 2
-                Vitest.expect((index.Snapshot false).state).toBe "ready"
+                Vitest.expect((index.Snapshot false).state).toBe LargeObjectIndexStatus.Ready
                 Vitest.expect((index.Snapshot false).entries.Length).toBe 2
             }
         )
@@ -101,49 +102,6 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "finds entries by exact key, case-insensitively when the flag is set, and by NFC for an NFD name",
-            fun () -> promise {
-                let fake, _, index = create true 60000
-                index.Invalidate()
-                do! settle ()
-                let nfc = "arc/Café.bin"
-                let nfd = "arc/Café.bin"
-                fake.Calls.[0].Resolve(Ok [| entry "Data/File.TXT"; entry nfc |])
-                do! settle ()
-                Vitest.expect(paths (index.TryFind "Data/File.TXT")).toEqual (Some "Data/File.TXT")
-                Vitest.expect(paths (index.TryFind "data/file.txt")).toEqual (Some "Data/File.TXT")
-                Vitest.expect(paths (index.TryFind nfd)).toEqual (Some nfc)
-                Vitest.expect(paths (index.TryFind "missing.bin")).toEqual None
-            }
-        )
-
-        Vitest.test (
-            "keeps names that differ by case apart when the flag is not set",
-            fun () -> promise {
-                let fake, _, index = create false 60000
-                index.Invalidate()
-                do! settle ()
-                fake.Calls.[0].Resolve(Ok [| entry "A.bin"; entry "a.bin" |])
-                do! settle ()
-                Vitest.expect(paths (index.TryFind "A.bin")).toEqual (Some "A.bin")
-                Vitest.expect(paths (index.TryFind "a.bin")).toEqual (Some "a.bin")
-            }
-        )
-
-        Vitest.test (
-            "drops ambiguous comparison keys from the fallback map",
-            fun () -> promise {
-                let fake, _, index = create false 60000
-                index.Invalidate()
-                do! settle ()
-                fake.Calls.[0].Resolve(Ok [| entry "A.bin"; entry "a.bin"; entry "Solo.bin" |])
-                do! settle ()
-                Vitest.expect(paths (index.TryFind "A.BIN")).toEqual None
-                Vitest.expect(paths (index.TryFind "solo.BIN")).toEqual (Some "Solo.bin")
-            }
-        )
-
-        Vitest.test (
             "a failing rebuild keeps the previous entries, sets LastError and logs the message once",
             fun () -> promise {
                 let fake, logs, index = create false 60000
@@ -161,7 +119,7 @@ Vitest.describe (
                 fake.Calls.[2].Resolve(Error "boom")
                 do! settle ()
 
-                Vitest.expect(paths (index.TryFind "a.bin")).toEqual (Some "a.bin")
+                Vitest.expect(entryPaths index).toEqual [| "a.bin" |]
                 Vitest.expect(lastError index).toEqual (Some "boom")
                 Vitest.expect(index.Version).toBe 1
                 Vitest.expect(logs.Count).toBe 1
@@ -184,7 +142,7 @@ Vitest.describe (
                 fake.Calls.[0].Resolve(Error "no git lfs")
                 do! settle ()
                 Vitest.expect(index.State).toEqual (Unavailable "no git lfs")
-                Vitest.expect(paths (index.TryFind "a.bin")).toEqual None
+                Vitest.expect(entryPaths index).toEqual [||]
                 do! wait 30
                 Vitest.expect(fake.Calls.Count).toBe 1
             }
@@ -245,4 +203,106 @@ Vitest.describe (
                 Vitest.expect(fired.Value).toBe 2
             }
         )
+
+        Vitest.test (
+            "CancelAndWaitAsync resolves when the listing call returns, or after the cap",
+            fun () -> promise {
+                let fake, _, index = create false 60000
+                index.Invalidate()
+                do! settle ()
+
+                let returned = ref false
+
+                let waiting =
+                    index.CancelAndWaitAsync 5000 |> Promise.map (fun () -> returned.Value <- true)
+
+                do! settle ()
+                Vitest.expect(fake.Calls.[0].Context.Cancellation.IsCancellationRequested()).toBe true
+                Vitest.expect(returned.Value).toBe false
+
+                fake.Calls.[0].Resolve(Error "canceled")
+                do! waiting
+                Vitest.expect(returned.Value).toBe true
+
+                let fake2, _, index2 = create false 60000
+                index2.Invalidate()
+                do! settle ()
+                let capped = ref false
+
+                let cappedWait =
+                    index2.CancelAndWaitAsync 30 |> Promise.map (fun () -> capped.Value <- true)
+
+                do! wait 100
+                Vitest.expect(capped.Value).toBe true
+                Vitest.expect(fake2.Calls.Count).toBe 1
+                do! cappedWait
+            }
+        )
+
+        Vitest.test (
+            "an Invalidate from a microtask after the last run finished starts another run",
+            fun () -> promise {
+                for hops in 0..6 do
+                    let fake, _, index = create false 60000
+                    let fired = ref false
+
+                    let rec hop (remaining: int) =
+                        if remaining = 0 then
+                            index.Invalidate()
+                        else
+                            JS.Constructors.Promise.resolve ()
+                            |> Promise.iter (fun () -> hop (remaining - 1))
+
+                    index.Subscribe(fun () ->
+                        match index.State with
+                        | Ready _ when not fired.Value ->
+                            fired.Value <- true
+                            hop hops
+                        | _ -> ()
+                    )
+                    |> ignore
+
+                    index.Invalidate()
+                    do! settle ()
+                    fake.Calls.[0].Resolve(Ok [||])
+                    do! settle ()
+                    Vitest.expect(fake.Calls.Count).toBe 2
+                    index.Dispose()
+            }
+        )
+
+        Vitest.test (
+            "a seeded index keeps showing the ready state while the replacement lists",
+            fun () -> promise {
+                let fake = FakeListing()
+
+                let seed: ReadyIndex = {
+                    Version = 4
+                    CaseInsensitive = false
+                    Entries = [| entry "a.bin" |]
+                    LastError = None
+                }
+
+                let index =
+                    LargeObjectIndex(fake.List, (fun () -> false), ignore, 60000, 4, Some seed)
+
+                let states = ResizeArray<LargeObjectIndexStatus>()
+                index.Subscribe(fun () -> states.Add (index.Snapshot false).state) |> ignore
+
+                Vitest.expect((index.Snapshot false).state).toBe LargeObjectIndexStatus.Ready
+                Vitest.expect(index.Version).toBe 4
+
+                index.Invalidate()
+                do! settle ()
+                Vitest.expect((index.Snapshot false).state).toBe LargeObjectIndexStatus.Ready
+                Vitest.expect(states.Count).toBe 0
+
+                fake.Calls.[0].Resolve(Ok [| entry "b.bin" |])
+                do! settle ()
+                Vitest.expect(index.Version).toBe 5
+                Vitest.expect(entryPaths index).toEqual [| "b.bin" |]
+                Vitest.expect(states.Count).toBe 1
+            }
+        )
+
 )

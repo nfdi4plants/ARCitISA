@@ -4732,4 +4732,37 @@ Vitest.describe (
                 Vitest.expect(error.Message).toContain ("window 42")
         )
 
+
+        Vitest.test (
+            "an EBUSY rename failure maps to a readable message with the code",
+            fun () ->
+                let busy =
+                    emitJsExpr () "Object.assign(new Error('busy'), { code: 'EBUSY' })"
+                    |> unbox<exn>
+
+                let mapped = mapArcRootRenameDiskError "/arcs/a" "/arcs/b" busy
+
+                Vitest.expect(mapped.Message).toContain "in use"
+                Vitest.expect(mapped.Message).toContain "(EBUSY)"
+        )
+
+        Vitest.test (
+            "an unknown rename failure keeps the code and the native message",
+            fun () ->
+                let other =
+                    emitJsExpr () "Object.assign(new Error('cross-device link not permitted'), { code: 'EXDEV' })"
+                    |> unbox<exn>
+
+                let mapped = mapArcRootRenameDiskError "/arcs/a" "/arcs/b" other
+
+                Vitest.expect(mapped.Message).toContain "cross-device link not permitted"
+                Vitest.expect(mapped.Message).toContain "EXDEV"
+        )
+
+        Vitest.test (
+            "the rename retries wait up to four seconds on win32 and keep the short table elsewhere",
+            fun () ->
+                Vitest.expect(renameRetryDelaysMs "win32").toEqual [| 0; 100; 300; 1000; 2000; 4000 |]
+                Vitest.expect(renameRetryDelaysMs "linux").toEqual [| 0; 75; 200; 500 |]
+        )
 )
