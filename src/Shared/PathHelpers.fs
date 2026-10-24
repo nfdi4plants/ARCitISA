@@ -659,12 +659,31 @@ type PathKey = PathKey of string
 
 module PathKey =
 
+    /// True for a path that needs no separator change, no trailing slash trim and no Unicode composition.
+    let private isPlainAscii (path: string) =
+        let mutable plain = path.Length = 0 || path.[path.Length - 1] <> '/'
+        let mutable index = 0
+
+        while plain && index < path.Length do
+            let code = int path.[index]
+
+            if code = 92 || code > 127 then
+                plain <- false
+
+            index <- index + 1
+
+        plain
+
     /// Separators and trailing slash, then Unicode NFC, then lower case when the file system ignores case.
     let ofPath (caseInsensitive: bool) (path: string) : PathKey =
         // Whitespace is part of a file name, so the key keeps it. normalizePath would trim it.
+        // Most paths are plain ASCII with forward slashes, which the normalization steps would leave as they are.
         let composed =
-            (PathHelpers.normalizeSeparators path).TrimEnd('/')
-            |> PathHelpers.normalizeToNfc
+            if isPlainAscii path then
+                path
+            else
+                (PathHelpers.normalizeSeparators path).TrimEnd('/')
+                |> PathHelpers.normalizeToNfc
 
         PathKey(
             if caseInsensitive then

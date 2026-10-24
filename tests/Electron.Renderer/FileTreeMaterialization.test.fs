@@ -98,6 +98,48 @@ Vitest.describe (
         )
 
         Vitest.test (
+            "a second build with the same snapshot reuses the cached items of untouched entries",
+            fun () ->
+                let snapshot =
+                    snapshotOf [
+                        dir "big"
+                        file "big/a.txt"
+                        file "big/b.txt"
+                        dir "small"
+                        file "small/c.txt"
+                    ] [ "big"; "small" ]
+
+                // The cache keeps the row of an entry instance, like the file tree does.
+                let cache = Renderer.ReferenceCache.ReferenceCache<FileEntry, FileItem>()
+                let built = ref 0
+
+                let cachedItem (entry: FileEntry) =
+                    cache.GetOrAdd(
+                        entry,
+                        fun entry ->
+                            built.Value <- built.Value + 1
+                            createItem (ResizeArray()) entry
+                    )
+
+                let first = buildVisibleItems cachedItem noBusy snapshot (Set.ofList [ "big" ])
+                let builtByFirst = built.Value
+
+                // Expanding another folder changes the expanded ids and nothing else.
+                let second =
+                    buildVisibleItems cachedItem noBusy snapshot (Set.ofList [ "big"; "small" ])
+
+                let bigFiles (items: FileItem list) =
+                    (items |> List.find (fun item -> item.Name = "big")).Children.Value
+
+                Vitest.expect(builtByFirst).toBe 4
+                // Only the two entries that became visible were built.
+                Vitest.expect(built.Value - builtByFirst).toBe 1
+
+                for before, after in List.zip (bigFiles first) (bigFiles second) do
+                    Vitest.expect(obj.ReferenceEquals(before, after)).toBe true
+        )
+
+        Vitest.test (
             "orders recognized ARC items before other root-level items",
             fun () ->
                 let snapshot =

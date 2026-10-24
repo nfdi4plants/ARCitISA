@@ -12,6 +12,8 @@ type FileTreeSnapshot = {
     CaseInsensitive: bool
     Entries: Map<PathKey, FileEntry>
     Children: Map<PathKey, PathKey[]>
+    /// The same children as entries, in the same order, so a listing needs no lookup per child.
+    ChildEntries: Map<PathKey, FileEntry[]>
     Loaded: Set<PathKey>
 }
 
@@ -31,13 +33,24 @@ let private parentKey (key: PathKey) =
     | -1 -> rootKey
     | index -> PathKey(value.Substring(0, index))
 
+let private compareChildren (left: FileEntry) (right: FileEntry) =
+    match compare (not left.isDirectory) (not right.isDirectory) with
+    | 0 -> PathOrder.compareNames left.name right.name
+    | result -> result
+
+/// The main process lists directories in this order already, so one pass usually replaces the sort.
 let private sortChildren (entries: FileEntry[]) =
-    entries
-    |> Array.sortWith (fun left right ->
-        match compare (not left.isDirectory) (not right.isDirectory) with
-        | 0 -> PathOrder.compareNames left.name right.name
-        | result -> result
-    )
+    let mutable sorted = true
+    let mutable index = 1
+
+    while sorted && index < entries.Length do
+        sorted <- compareChildren entries.[index - 1] entries.[index] <= 0
+        index <- index + 1
+
+    if sorted then
+        entries
+    else
+        entries |> Array.sortWith compareChildren
 
 let private emptySnapshot = {
     Version = 0
@@ -45,6 +58,7 @@ let private emptySnapshot = {
     CaseInsensitive = false
     Entries = Map.empty
     Children = Map.empty
+    ChildEntries = Map.empty
     Loaded = Set.empty
 }
 
@@ -53,19 +67,17 @@ let private buildSnapshot (version: int) (input: FileTreeSnapshotDto) : FileTree
     let keyed = input.entries |> Array.map (fun entry -> toKey entry.path, entry)
     let loaded = input.loadedDirectories |> Array.map toKey |> Set.ofArray
 
-    let grouped =
+    let groupedEntries =
         keyed
         // The root entry has no parent. Without this it would list itself as its own child.
         |> Array.filter (fun (key, _) -> key <> rootKey)
         |> Array.groupBy (fst >> parentKey)
-        |> Array.map (fun (parent, items) ->
-            parent,
-            items
-            |> Array.map snd
-            |> sortChildren
-            |> Array.map (fun entry -> toKey entry.path)
-        )
+        |> Array.map (fun (parent, items) -> parent, items |> Array.map snd |> sortChildren)
         |> Map.ofArray
+
+    let grouped =
+        groupedEntries
+        |> Map.map (fun _ entries -> entries |> Array.map (fun entry -> toKey entry.path))
 
     // A loaded directory without children still needs an entry, so a lookup tells empty from not loaded.
     let children =
@@ -79,12 +91,24 @@ let private buildSnapshot (version: int) (input: FileTreeSnapshotDto) : FileTree
             )
             grouped
 
+    let childEntries =
+        loaded
+        |> Set.fold
+            (fun (state: Map<PathKey, FileEntry[]>) key ->
+                if state.ContainsKey key then
+                    state
+                else
+                    state.Add(key, [||])
+            )
+            groupedEntries
+
     {
         Version = version
         TreeVersion = input.treeVersion
         CaseInsensitive = input.caseInsensitive
         Entries = Map.ofArray keyed
         Children = children
+        ChildEntries = childEntries
         Loaded = loaded
     }
 
@@ -108,6 +132,7 @@ let rec private removeDescendants (snapshot: FileTreeSnapshot) (key: PathKey) : 
     {
         cleared with
             Children = cleared.Children.Remove key
+            ChildEntries = cleared.ChildEntries.Remove key
             Loaded = cleared.Loaded.Remove key
     }
 
@@ -141,33 +166,51 @@ let private applyDirectory
     else
         let sorted = sortChildren childEntries
         let newKeys = sorted |> Array.map (fun entry -> toKey entry.path)
-        let newKeySet = Set.ofArray newKeys
         let oldKeys = snapshot.Children |> Map.tryFind directory |> Option.defaultValue [||]
-        let vanished = oldKeys |> Array.filter (newKeySet.Contains >> not)
+
+        // A directory that was not loaded has no old children, so nothing vanished and every child is new.
+        let vanished =
+            if oldKeys.Length = 0 then
+                [||]
+            else
+                let present = System.Collections.Generic.HashSet<string>()
+
+                for key in newKeys do
+                    present.Add(PathKey.value key) |> ignore
+
+                oldKeys |> Array.filter (fun key -> not (present.Contains(PathKey.value key)))
+
         let mutable current = vanished |> Array.fold removeSubtree snapshot
+        let mutable entries = current.Entries
+        let kept = Array.zeroCreate<FileEntry> sorted.Length
 
-        for key, entry in Array.zip newKeys sorted do
-            match current.Entries |> Map.tryFind key with
-            | Some old when old = entry -> ()
-            | Some old ->
-                if old.isDirectory && not entry.isDirectory then
-                    current <- removeDescendants current key
+        if oldKeys.Length = 0 then
+            for index in 0 .. sorted.Length - 1 do
+                entries <- entries.Add(newKeys.[index], sorted.[index])
+                kept.[index] <- sorted.[index]
+        else
+            for index in 0 .. sorted.Length - 1 do
+                let key = newKeys.[index]
+                let entry = sorted.[index]
 
-                current <- {
-                    current with
-                        Entries = current.Entries.Add(key, entry)
-                }
-            | None ->
-                current <- {
-                    current with
-                        Entries = current.Entries.Add(key, entry)
-                }
+                match entries |> Map.tryFind key with
+                | Some old when old = entry -> kept.[index] <- old
+                | Some old ->
+                    if old.isDirectory && not entry.isDirectory then
+                        current <- removeDescendants { current with Entries = entries } key
+                        entries <- current.Entries
+
+                    entries <- entries.Add(key, entry)
+                    kept.[index] <- entry
+                | None ->
+                    entries <- entries.Add(key, entry)
+                    kept.[index] <- entry
 
         let unchanged =
             vanished.Length = 0
             && oldKeys = newKeys
             && snapshot.Loaded.Contains directory
-            && obj.ReferenceEquals(current.Entries, snapshot.Entries)
+            && obj.ReferenceEquals(entries, snapshot.Entries)
 
         if unchanged then
             snapshot
@@ -176,7 +219,9 @@ let private applyDirectory
                 current with
                     Version = snapshot.Version + 1
                     TreeVersion = treeVersion
+                    Entries = entries
                     Children = current.Children.Add(directory, newKeys)
+                    ChildEntries = current.ChildEntries.Add(directory, kept)
                     Loaded = current.Loaded.Add directory
             }
 
@@ -272,10 +317,9 @@ let isLoaded (snapshot: FileTreeSnapshot) (path: string) : bool =
     snapshot.Loaded.Contains(keyOf snapshot.CaseInsensitive path)
 
 let children (snapshot: FileTreeSnapshot) (path: string) : FileEntry[] =
-    snapshot.Children
+    snapshot.ChildEntries
     |> Map.tryFind (keyOf snapshot.CaseInsensitive path)
     |> Option.defaultValue [||]
-    |> Array.choose (fun key -> snapshot.Entries |> Map.tryFind key)
 
 /// The number of children of a directory, without building the entries. Zero for a directory that is not loaded.
 let childCount (snapshot: FileTreeSnapshot) (path: string) : int =

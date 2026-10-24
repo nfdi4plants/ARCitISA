@@ -227,4 +227,39 @@ Vitest.describe (
             }
         )
 
+        Vitest.test (
+            "does not pull the focus into the tree after a click outside it",
+            fun () -> promise {
+                let files (names: string list) = names |> List.map file
+
+                let initial =
+                    files [
+                        for index in 0..29 -> "row-" + (string index).PadLeft(2, '0')
+                    ]
+
+                let setItems = ref (fun (_: FileItem list) -> ())
+
+                RTL.render (ItemsHarness(initial, (fun setter -> setItems.Value <- setter)))
+                |> ignore
+
+                let row = treeItem "row-02"
+                RTL.fireEvent.custom ("focusIn", row, {| |})
+                // A click on content outside the tree blurs without a target while the row stays mounted.
+                RTL.fireEvent.custom ("focusOut", row, {| relatedTarget = null |})
+                do! Promise.sleep 20
+
+                do!
+                    RTL.act (fun () -> promise {
+                        setItems.Value(
+                            files [
+                                for index in 0..39 -> "new-" + (string index).PadLeft(2, '0')
+                            ]
+                            @ initial
+                        )
+                    })
+
+                let tree = RTL.screen.getByRole ("tree", ByRoleOptions(name = Text "File explorer"))
+                Vitest.expect(Browser.Dom.document.activeElement = (tree :> Browser.Types.Element)).toBe false
+            }
+        )
 )

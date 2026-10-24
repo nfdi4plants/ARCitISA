@@ -10,6 +10,7 @@
     <Compile Include="Types.fs" />
     <Compile Include="IpcReceiver.fs" />
     <Compile Include="MainSyncedState.fs" />
+    <Compile Include="ReferenceCache.fs" />
     <Compile Include="VersionControlApiClient.fs" />
     <Compile Include="GitDiffPresentation.fs" />
     <Compile Include="Context\AppStateContext.fs" />

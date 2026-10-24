@@ -698,6 +698,41 @@ Vitest.describe (
         )
 
         Vitest.test (
+            "a selection that changes while an earlier reveal waits for a folder is revealed too",
+            fun () -> promise {
+                let calls = newCalls ()
+                let ctx = ref None
+                let store = newStore ()
+                let notesAnswer, resolveNotes = deferred<Result<FileTreeDirectoryUpdateDto, exn>> ()
+                let version = ref 10
+
+                let load (path: string) =
+                    version.Value <- version.Value + 1
+
+                    match path with
+                    | "notes" -> notesAnswer
+                    | "notes/2026" ->
+                        JS.Constructors.Promise.resolve (Ok(update version.Value path [ file "notes/2026/a.md" ]))
+                    | _ -> JS.Constructors.Promise.resolve (Ok(update version.Value path [ file "notes/2027/b.md" ]))
+
+                let env =
+                    mount store (apiWith calls load) (Probe(fun value -> ctx.Value <- Some value))
+
+                do! RTL.act (fun () -> promise { env.SetSelection(ArcSelection.forTreePath (Some "notes/2026/a.md")) })
+                do! waitFor (fun () -> calls.Loads.Count = 1)
+                do! RTL.act (fun () -> promise { env.SetSelection(ArcSelection.forTreePath (Some "notes/2027/b.md")) })
+
+                do!
+                    RTL.act (fun () -> promise {
+                        resolveNotes (Ok(update 11 "notes" [ dir "notes/2026"; dir "notes/2027" ]))
+                    })
+
+                do! waitFor (fun () -> ctx.Value.Value.expandedIds.Contains "notes/2027")
+                Vitest.expect(isLoaded store.Snapshot "notes/2027").toBe true
+            }
+        )
+
+        Vitest.test (
             "a stat that lands while an own-write stat is under way does not replace it",
             fun () -> promise {
                 let calls = newCalls ()
