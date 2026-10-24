@@ -68,6 +68,7 @@ type WatcherMergeOutcome =
     | Failed of exn
 
 /// What the focus check compares to notice Git changes made outside the app.
+/// Head is the commit id that HEAD resolves to.
 type GitStateStamp = { Head: string; IndexMtimeMs: float }
 
 /// Finds the git directory of a working tree without starting git. A .git folder is the git directory. A .git file
@@ -102,8 +103,78 @@ let private tryResolveGitDirAsync (root: string) : Fable.Core.JS.Promise<string 
             return raise error
 }
 
+let private tryReadTextFileAsync (path: string) : Fable.Core.JS.Promise<string option> = promise {
+    try
+        let! content = readFileAsync path TextEncoding.Utf8
+        return Some content
+    with error ->
+        if tryGetNodeErrorCode error = Some "ENOENT" then
+            return None
+        else
+            return raise error
+}
+
+let rec firstSomeAsync
+    (candidates: (unit -> Fable.Core.JS.Promise<string option>) list)
+    : Fable.Core.JS.Promise<string option> =
+    promise {
+        match candidates with
+        | [] -> return None
+        | next :: rest ->
+            match! next () with
+            | Some found -> return Some found
+            | None -> return! firstSomeAsync rest
+    }
+
+/// Resolves HEAD to a commit id without starting git. A symbolic HEAD is followed to the loose ref file and then
+/// to packed-refs, in the git directory and in the common directory of a linked worktree. A detached HEAD already
+/// holds the commit id. A ref that cannot be found keeps the HEAD text, which still changes when the branch switches.
+let private readHeadCommitAsync (gitDir: string) : Fable.Core.JS.Promise<string> = promise {
+    let! headText = readFileAsync (join [| gitDir; "HEAD" |]) TextEncoding.Utf8
+    let head = headText.Trim()
+
+    if not (head.StartsWith("ref:", System.StringComparison.Ordinal)) then
+        return head
+    else
+        let refName = head.Substring("ref:".Length).Trim()
+        let! commonText = tryReadTextFileAsync (join [| gitDir; "commondir" |])
+
+        let directories =
+            match commonText with
+            | Some text -> [ gitDir; resolve [| gitDir; text.Trim() |] ]
+            | None -> [ gitDir ]
+
+        let loose =
+            directories
+            |> List.map (fun directory () -> promise {
+                let! content = tryReadTextFileAsync (join [| directory; refName |])
+                return content |> Option.map (fun text -> text.Trim())
+            })
+
+        let packed =
+            directories
+            |> List.map (fun directory () -> promise {
+                let! content = tryReadTextFileAsync (join [| directory; "packed-refs" |])
+
+                return
+                    content
+                    |> Option.bind (fun text ->
+                        text.Split('\n')
+                        |> Array.map (fun line -> line.Trim())
+                        |> Array.tryFind (fun line ->
+                            not (line.StartsWith("#", System.StringComparison.Ordinal))
+                            && line.EndsWith(" " + refName, System.StringComparison.Ordinal)
+                        )
+                        |> Option.map (fun line -> line.Substring(0, line.IndexOf ' '))
+                    )
+            })
+
+        let! found = firstSomeAsync (loose @ packed)
+        return found |> Option.defaultValue head
+}
+
 let private readGitStateStampAsync (gitDir: string) : Fable.Core.JS.Promise<GitStateStamp> = promise {
-    let! head = readFileAsync (join [| gitDir; "HEAD" |]) TextEncoding.Utf8
+    let! head = readHeadCommitAsync gitDir
 
     // A fresh repository has no index file yet.
     let! indexMtimeMs = promise {
@@ -407,7 +478,7 @@ module ArcVaultExtensions =
             | Some index -> index.Snapshot this.isCaseInsensitive
             | None -> {|
                 version = 0
-                state = "notLoaded"
+                state = LargeObjectIndexStatus.NotLoaded
                 caseInsensitive = this.isCaseInsensitive
                 entries = [||]
               |}
@@ -426,9 +497,11 @@ module ArcVaultExtensions =
             this.LargeObjectIndex <- None
             this.GitStateStamp <- None
             this.ResolvedGitDir <- None
+            this.GitStateCheckErrorLogged <- false
 
-        /// Replaces the index with a new one for the current root and builds it in the background.
-        member internal this.StartLargeObjectIndex() =
+        /// Replaces the index with a new one for the current root and builds it in the background. A seed keeps
+        /// the previous ready state and version visible while the new listing runs.
+        member internal this.StartLargeObjectIndex(?seed: Main.LargeObjectIndex.ReadyIndex) =
             this.DisposeLargeObjectIndex()
 
             match this.path with
@@ -439,7 +512,10 @@ module ArcVaultExtensions =
                         (fun () -> this.isCaseInsensitive),
                         (fun message -> swatelogfn this.window.id "%s" message),
                         Main.LargeObjectIndex.DefaultTimeLimitMs,
-                        this.LargeObjectVersionFloor
+                        (match seed with
+                         | Some ready -> ready.Version
+                         | None -> this.LargeObjectVersionFloor),
+                        seed
                     )
 
                 this.LargeObjectIndex <- Some index
@@ -451,7 +527,11 @@ module ArcVaultExtensions =
                     do! this.RecordGitStateStamp index
 
                     match this.LargeObjectIndex with
-                    | Some current when obj.ReferenceEquals(current, index) -> index.EnsureBuilt()
+                    | Some current when obj.ReferenceEquals(current, index) ->
+                        if seed.IsSome then
+                            index.Invalidate()
+                        else
+                            index.EnsureBuilt()
                     | _ -> ()
                 }
                 |> Promise.start
@@ -548,8 +628,24 @@ module ArcVaultExtensions =
                             this.GitStateStamp <- Some stamp
                             this.GitStateCheckErrorLogged <- false
 
-                            if previous.IsSome && previous <> Some stamp then
+                            match previous with
+                            | Some before when before <> stamp ->
+                                let signals =
+                                    [
+                                        if before.Head <> stamp.Head then
+                                            "HEAD"
+                                        if before.IndexMtimeMs <> stamp.IndexMtimeMs then
+                                            "index"
+                                    ]
+                                    |> String.concat " and "
+
+                                swatelogfn
+                                    this.window.id
+                                    "The Git state changed after window focus (%s), so the large object index is rebuilt."
+                                    signals
+
                                 this.InvalidateLargeObjectIndex()
+                            | _ -> ()
                         | _ -> ()
                 with error ->
                     if not this.GitStateCheckErrorLogged then
@@ -582,7 +678,7 @@ module ArcVaultExtensions =
             this.EnqueueFileTreeDirectoriesReconcile [| directoryPath |]
 
         /// Queues one writer job that reconciles the root and every loaded directory, from the root down.
-        /// It makes no LFS call, so entries keep the large-object state they had. An empty tree gets a full scan.
+        /// It makes no LFS call, because the renderer joins LFS state by path from the large object index. An empty tree gets a full scan.
         member this.EnqueueFileTreeRevalidateLoaded() : Fable.Core.JS.Promise<unit> =
             if this.FileTreeWriter.Tree.Count = 0 then
                 this.EnqueueFileTreeScan()
@@ -1604,22 +1700,52 @@ module ArcVaultExtensions =
                     this.CancelFileWatcherRestart()
                     this.ClearPendingFileWatcherState()
 
-                // The listing holds the old root, so it ends before the folder moves.
+                // A running git ls-files can have the ARC folder as its working directory, which blocks the rename on
+                // Windows. The index is canceled and the rename waits (up to 3 s) until that call has returned.
+                let previousIndex = this.LargeObjectIndex
+
+                let previousReady =
+                    previousIndex
+                    |> Option.bind (fun index ->
+                        match index.State with
+                        | Main.LargeObjectIndex.Ready ready -> Some ready
+                        | _ -> None
+                    )
+
                 this.DisposeLargeObjectIndex()
+
+                match previousIndex with
+                | Some index -> do! index.CancelAndWaitAsync 3000
+                | None -> ()
 
                 // A write can start while the watcher stops.
                 let! renameResult =
                     if this.isBusyWriting then
                         promise { return Error(busyWritingError ()) }
                     else
-                        renameOpenArcRootDirectoryOnDisk currentPath newName
+                        promise {
+                            // A queued scan or reconcile would enumerate the folder while it moves.
+                            do! this.FileTreeWriter.Enqueue(fun _ -> promise { return false })
+                            return! renameOpenArcRootDirectoryOnDisk currentPath newName
+                        }
 
                 match renameResult with
                 | Error renameError ->
+                    swatelogfn
+                        this.window.id
+                        "Renaming the ARC folder '%s' to '%s' failed: %s"
+                        currentPath
+                        newName
+                        renameError.Message
+
                     if hadWatcher then
                         this.StartFileWatcher()
 
-                    this.StartLargeObjectIndex()
+                    // The renderer keeps the badges of the previous index while the replacement lists again.
+                    match previousReady with
+                    | Some ready -> this.StartLargeObjectIndex(ready)
+                    | None -> this.StartLargeObjectIndex()
+
                     return Error renameError
                 | Ok renamedPath ->
                     this.path <- Some renamedPath
@@ -1807,7 +1933,7 @@ type ArcVaults() =
     }
 
     member this.OnCloseWindow(window: BrowserWindow, vault: ArcVault, id: int) =
-        // Focus only brings back a missing watcher. The vault checks that nothing else is in flight.
+        // Focus brings back a missing watcher and checks for Git changes made outside the app. Each vault guard checks that nothing else is in flight.
         window.onFocus (fun () ->
             if vault.CanRestartFileWatcherOnFocus then
                 vault.RestartFileWatcherOnFocus()

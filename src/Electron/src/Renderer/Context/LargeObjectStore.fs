@@ -11,7 +11,7 @@ open Swate.Electron.Shared.VersionControlTypes
 
 type LargeObjectSnapshot = {
     Version: int
-    State: string
+    State: LargeObjectIndexStatus
     CaseInsensitive: bool
     ByPathKey: Map<PathKey, ObjectStateDto>
     ByComparisonKey: Map<string, ObjectStateDto>
@@ -21,7 +21,7 @@ module LargeObjectSnapshot =
 
     let empty: LargeObjectSnapshot = {
         Version = 0
-        State = "notLoaded"
+        State = LargeObjectIndexStatus.NotLoaded
         CaseInsensitive = false
         ByPathKey = Map.empty
         ByComparisonKey = Map.empty
@@ -68,7 +68,7 @@ type LargeObjectStore() =
             incoming.version > snapshot.Version
             || (incoming.version = snapshot.Version
                 && incoming.state <> snapshot.State
-                && incoming.state <> "notLoaded")
+                && incoming.state <> LargeObjectIndexStatus.NotLoaded)
 
         if isNewer then
             snapshot <- LargeObjectSnapshot.ofIpc incoming

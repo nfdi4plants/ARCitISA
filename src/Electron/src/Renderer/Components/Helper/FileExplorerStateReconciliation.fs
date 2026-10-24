@@ -1,5 +1,6 @@
 module Renderer.Components.Helper.FileExplorerStateReconciliation
 
+open Feliz
 open Swate.Components.Shared
 open Swate.Electron.Shared.FileIOTypes
 open Swate.Electron.Shared.VersionControlTypes
@@ -114,4 +115,47 @@ let tryGetReloadableSelectedFilePath
             Some(PathHelpers.normalizePath entry.path)
         else
             None
+    )
+
+/// Reloads or clears the open preview after the file tree changed. The effect depends on the tree and on the large
+/// object state of the selected file only, so a push for other files does not reload the preview.
+[<Hook>]
+let useReconcileSelectedPreview
+    (tryFindLfs: string -> ObjectStateDto option)
+    (fileTree: FileEntry[])
+    (selectionPath: string option)
+    (pageState: PageState option)
+    (reloadPreview: string -> (PageState -> PageState) -> unit)
+    (clearPageState: unit -> unit)
+    =
+    // The watcher emits the initial tree too, so only later tree updates refresh the preview.
+    let hasObservedFileTreeUpdateRef = React.useRef false
+
+    let selectedLfsKey =
+        selectionPath
+        |> Option.bind (PathHelpers.normalizePath >> tryFindLfs)
+        |> Option.map (fun state -> $"{state.IsMaterialized}/{state.IsLocallyAvailable}")
+        |> Option.defaultValue ""
+
+    React.useEffect (
+        (fun () ->
+            if hasObservedFileTreeUpdateRef.current then
+                match tryGetDataMapMismatchReload fileTree pageState with
+                | Some(parentPath, requestedView) ->
+                    reloadPreview
+                        parentPath
+                        (function
+                        | PageState.ArcFilePage(nextArcFile, _) -> PageState.ArcFilePage(nextArcFile, requestedView)
+                        | other -> other
+                        )
+                | None when shouldClearPageStateForLfsPointerSelection tryFindLfs fileTree selectionPath pageState ->
+                    clearPageState ()
+                | None ->
+                    match tryGetReloadableSelectedFilePath tryFindLfs fileTree selectionPath pageState with
+                    | None -> ()
+                    | Some selectedPath -> reloadPreview selectedPath id
+            else
+                hasObservedFileTreeUpdateRef.current <- true
+        ),
+        [| box fileTree; box selectedLfsKey |]
     )

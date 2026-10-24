@@ -188,11 +188,22 @@ let private pathExistsAsync (absolutePath: string) : JS.Promise<bool> = promise 
         return! ARCtrl.FileSystemHelper.directoryExistsAsync absolutePath
 }
 
+let private currentNodePlatform () : string =
+    emitJsExpr () "process.platform" |> unbox<string>
+
+/// Delays before each rename attempt. Windows holds folders longer (search indexer, antivirus, file explorer), so it waits up to 4 s.
+let renameRetryDelaysMs (platform: string) : int[] =
+    if String.Equals(platform, "win32", StringComparison.OrdinalIgnoreCase) then
+        [| 0; 100; 300; 1000; 2000; 4000 |]
+    else
+        [| 0; 75; 200; 500 |]
+
 let private renameWithRetriesAsync
+    (platform: string)
     (sourceAbsolutePath: string)
     (targetAbsolutePath: string)
     : JS.Promise<Result<unit, exn>> =
-    let retryDelaysMs = [| 0; 75; 200; 500 |]
+    let retryDelaysMs = renameRetryDelaysMs platform
 
     let isTransientRenameError =
         function
@@ -222,16 +233,19 @@ let private renameWithRetriesAsync
 
     attempt 0
 
-let private mapArcRootRenameDiskError (sourcePath: string) (targetPath: string) (renameError: exn) =
+/// Maps a failed rename to an exception with a readable message that includes the error code.
+/// The message of a raw Node error does not survive the IPC bridge, so the result is always a plain exn.
+let mapArcRootRenameDiskError (sourcePath: string) (targetPath: string) (renameError: exn) =
     match tryGetNodeErrorCode renameError with
-    | Some "EPERM"
-    | Some "EACCES" ->
+    | Some code when code = "EPERM" || code = "EACCES" || code = "EBUSY" ->
         exn
-            $"Cannot rename '{sourcePath}' to '{targetPath}'. Windows reported a permission or file-lock conflict. If the destination already exists, choose a different name and close apps that may be using these paths."
-    | Some "ENOTEMPTY"
-    | Some "EEXIST" -> exn $"Cannot rename '{sourcePath}' to '{targetPath}' because the destination already exists."
-    | Some "ENOENT" -> exn $"Cannot rename '{sourcePath}' because the source path no longer exists on disk."
-    | _ -> renameError
+            $"Cannot rename '{sourcePath}' to '{targetPath}'. The folder is in use or access is denied ({code}). Close apps that may be using these paths, such as a file explorer window or a terminal inside the ARC, and try again."
+    | Some code when code = "ENOTEMPTY" || code = "EEXIST" ->
+        exn $"Cannot rename '{sourcePath}' to '{targetPath}' because the destination already exists ({code})."
+    | Some "ENOENT" -> exn $"Cannot rename '{sourcePath}' because the source path no longer exists on disk (ENOENT)."
+    | code ->
+        let codeText = code |> Option.defaultValue "no error code"
+        exn $"Cannot rename '{sourcePath}' to '{targetPath}': {renameError.Message} ({codeText})."
 
 let tryBuildOpenArcRootRenamePlan arcPath newName : Result<OpenArcRootRenamePlan, exn> =
     let candidateName = newName |> Option.ofObj |> Option.defaultValue String.Empty
@@ -286,7 +300,7 @@ let renameOpenArcRootDirectoryOnDisk arcPath newName : JS.Promise<Result<string,
                             $"Cannot rename '{plan.SourcePath}' to '{plan.TargetPath}' because the destination already exists."
                     )
             else
-                let! renameResult = renameWithRetriesAsync plan.SourcePath plan.TargetPath
+                let! renameResult = renameWithRetriesAsync (currentNodePlatform ()) plan.SourcePath plan.TargetPath
 
                 match renameResult with
                 | Ok() -> return Ok plan.TargetPath
@@ -349,9 +363,6 @@ let loadWindow (window: BrowserWindow) = promise {
 
 let shouldUsePollingByDefault (platform: string) =
     System.String.Equals(platform, "win32", System.StringComparison.OrdinalIgnoreCase)
-
-let private currentNodePlatform () : string =
-    emitJsExpr () "process.platform" |> unbox<string>
 
 /// Chokidar passes cwd-relative paths without telling files from directories, so the shared rule runs as for a file.
 /// Import staging folders stay hidden here only, because they exist for the length of an import.

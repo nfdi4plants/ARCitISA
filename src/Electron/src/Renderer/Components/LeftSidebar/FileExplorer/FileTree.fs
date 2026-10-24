@@ -92,9 +92,6 @@ type FileTree =
         let runFreeLocalLfsCopy relativePath =
             runLfsActionWithActivity "Freeing" Renderer.Components.Helper.GitLfsHelper.runFreeLocalLfsCopy relativePath
 
-        // The file watcher emits the initial tree too; only later tree updates should refresh open previews.
-        let hasObservedFileTreeUpdateRef = React.useRef false
-
         React.useEffect (
             (fun () ->
                 let filePaths = fileStateCtx.state.FileTree |> Array.map (fun entry -> entry.path)
@@ -250,45 +247,13 @@ type FileTree =
             |> Promise.catch (fun exn -> applyReloadError exn.Message)
             |> Promise.start
 
-        React.useEffect (
-            (fun () ->
-                if hasObservedFileTreeUpdateRef.current then
-                    match
-                        FileExplorerStateReconciliation.tryGetDataMapMismatchReload
-                            fileStateCtx.state.FileTree
-                            pageStateCtx.state
-                    with
-                    | Some(parentPath, requestedView) ->
-                        reloadPreviewAfterFileTreeUpdate
-                            parentPath
-                            (function
-                            | Renderer.Types.PageState.ArcFilePage(nextArcFile, _) ->
-                                Renderer.Types.PageState.ArcFilePage(nextArcFile, requestedView)
-                            | pageState -> pageState
-                            )
-                    | None when
-                        FileExplorerStateReconciliation.shouldClearPageStateForLfsPointerSelection
-                            tryFindLfs
-                            fileStateCtx.state.FileTree
-                            fileStateCtx.state.Selection.TreePath
-                            pageStateCtx.state
-                        ->
-                        pageStateCtx.setState None
-                    | None ->
-                        match
-                            FileExplorerStateReconciliation.tryGetReloadableSelectedFilePath
-                                tryFindLfs
-                                fileStateCtx.state.FileTree
-                                fileStateCtx.state.Selection.TreePath
-                                pageStateCtx.state
-                        with
-                        | None -> ()
-                        | Some selectedPath -> reloadPreviewAfterFileTreeUpdate selectedPath id
-                else
-                    hasObservedFileTreeUpdateRef.current <- true
-            ),
-            [| box fileStateCtx.state.FileTree; box tryFindLfs |]
-        )
+        FileExplorerStateReconciliation.useReconcileSelectedPreview
+            tryFindLfs
+            fileStateCtx.state.FileTree
+            fileStateCtx.state.Selection.TreePath
+            pageStateCtx.state
+            reloadPreviewAfterFileTreeUpdate
+            (fun () -> pageStateCtx.setState None)
 
         let handleExpansionChange (item: FileItem) (willExpand: bool) =
             if willExpand then
