@@ -29,6 +29,9 @@ let private emitFileEvent (fake: obj) (eventName: string) (path: string) : unit 
 [<Emit("$0.emit('error', Object.assign(new Error($1), { code: $2 }))")>]
 let private emitError (fake: obj) (message: string) (code: string) : unit = jsNative
 
+[<Emit("$0.emit('error', Object.assign(new Error($1), { code: $2, path: $3 }))")>]
+let private emitErrorAt (fake: obj) (message: string) (code: string) (path: string) : unit = jsNative
+
 [<Emit("$0.closed")>]
 let private isClosed (fake: obj) : bool = jsNative
 
@@ -122,6 +125,17 @@ let private structuralScopeCase (name: string) (usePolling: bool) =
                     do! readyAsync watcher
 
                     try
+                        let watched = watcher.getWatched ()
+
+                        // Chokidar keys the directories relative to the watch root with the native separator.
+                        let watchedAt (relativePath: string) =
+                            let children = watched.item (join (relativePath.Split('/')))
+                            if isNull (box children) then None else Some children
+
+                        Vitest.expect((watchedAt "assays/A1").IsSome).toBe true
+                        Vitest.expect((watchedAt "assays/A1/dataset").IsNone).toBe true
+                        Vitest.expect((watchedAt "studies/S1/resources").IsNone).toBe true
+
                         writePayloadFile arcPath "assays/A1/dataset/data1.txt" "changed"
                         writePayloadFile arcPath "assays/A1/dataset/added.txt" "new"
                         writePayloadFile arcPath "studies/S1/resources/table.csv" "c,d"
@@ -171,6 +185,16 @@ Vitest.describe (
                         let! loadedArc = TestHelpers.loadArcAsync arcPath
                         let vault = newVault arcPath
                         vault.SetArc loadedArc
+                        do! vault.EnqueueFileTreeScan false
+
+                        // The batch has to re-add the entry, so the single reconcile job shows as one publish.
+                        let root = Main.FileTreeCreator.normalizeRootPath arcPath
+
+                        vault.FileTreeWriter.Tree.RemoveSubtree(root + "/studies/S1/isa.study.xlsx")
+                        |> ignore
+
+                        let publishCount = ref 0
+                        vault.FileTreeWriter.Publish <- fun _ -> publishCount.Value <- publishCount.Value + 1
 
                         // A real atomic save writes new bytes, so the replacement comes from an edited copy of the ARC.
                         let alternatePath = join [| dirname arcPath; "alternate" |]
@@ -225,6 +249,8 @@ Vitest.describe (
                         match settled with
                         | Ok count -> Vitest.expect(count).toBe 1
                         | Error error -> raise error
+
+                        Vitest.expect(publishCount.Value).toBe 1
                     })
         )
 
@@ -305,12 +331,14 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "a post-ready error restarts the watcher and refreshes the tree",
+            "a post-ready error restarts the watcher and revalidates the loaded directories",
             fun () ->
                 withTempArc
                     seedEntities
                     (fun arcPath -> promise {
                         let vault = newVault arcPath
+                        do! vault.EnqueueFileTreeScan false
+                        let root = Main.FileTreeCreator.normalizeRootPath arcPath
                         vault.FileWatcherRestartBackoffMs <- [| 20; 40; 60 |]
                         let created = ResizeArray<obj>()
 
@@ -324,6 +352,10 @@ Vitest.describe (
                         let! _ = vault.StartFileWatcherAsync()
                         Vitest.expect(vault.fileWatcherState).toEqual FileWatcherState.Running
 
+                        // The new folder appears while the watcher is down. Only a revalidation finds it.
+                        writePayloadFile arcPath "missed/file.txt" "x"
+                        let scanCountBefore = vault.FileTreeWriter.TreeVersion
+
                         emitError created.[0] "watch failed" "EIO"
                         do! waitUntil "the replacement watcher" 5000 (fun () -> created.Count = 2)
                         Vitest.expect(isClosed created.[0]).toBe true
@@ -334,7 +366,182 @@ Vitest.describe (
                                 5000
                                 (fun () -> vault.fileWatcherState = FileWatcherState.Running)
 
-                        do! waitUntil "the tree refresh" 10000 (fun () -> vault.FileTreeWriter.Tree.Count > 0)
+                        do!
+                            waitUntil
+                                "the revalidated tree"
+                                10000
+                                (fun () -> (vault.FileTreeWriter.Tree.TryFind(root + "/missed/file.txt")).IsSome)
+
+                        Vitest.expect(vault.FileTreeWriter.TreeVersion).toBe (scanCountBefore + 1)
+                        do! waitUntil "the reload to settle" 10000 (fun () -> isWatcherQuiet vault)
+                        do! vault.StopFileWatcher()
+                    })
+        )
+
+        Vitest.test (
+            "a per-path permission error after ready keeps the watcher and is logged once",
+            fun () ->
+                withTempArc
+                    seedEntities
+                    (fun arcPath -> promise {
+                        let vault = newVault arcPath
+                        let fake = createFakeWatcher ()
+                        vault.FileWatcherFactory <- readyShortlyFactory fake
+                        let! _ = vault.StartFileWatcherAsync()
+
+                        emitErrorAt fake "denied" "EPERM" "/arc/locked"
+                        emitErrorAt fake "denied" "EPERM" "/arc/locked"
+                        emitErrorAt fake "denied" "EACCES" "/arc/locked"
+
+                        Vitest.expect(vault.fileWatcherState).toEqual FileWatcherState.Running
+                        Vitest.expect(vault.watcher.IsSome).toBe true
+                        Vitest.expect(isClosed fake).toBe false
+                        Vitest.expect(vault.FileWatcherRestartTimeout.IsNone).toBe true
+                        Vitest.expect(vault.ReportedFileWatcherPermissionErrors.Count).toBe 2
+                        do! vault.StopFileWatcher()
+                    })
+        )
+
+        Vitest.test (
+            "a stop settles a start that still waits for ready",
+            fun () ->
+                withTempArc
+                    seedEntities
+                    (fun arcPath -> promise {
+                        let vault = newVault arcPath
+                        vault.FileWatcherReadinessTimeoutMs <- 60000
+                        let fake = createFakeWatcher ()
+                        vault.FileWatcherFactory <- fun _ _ -> unbox<Chokidar.IWatcher> fake
+
+                        // The outcome is collected through a callback, so the start has begun before the stop runs.
+                        let startOutcome = ref None
+
+                        vault.StartFileWatcherAsync()
+                        |> Promise.iter (fun value -> startOutcome.Value <- Some value)
+
+                        do! vault.StopFileWatcher()
+                        do! waitUntil "the start to settle" 2000 (fun () -> startOutcome.Value.IsSome)
+                        let outcome = startOutcome.Value.Value
+
+                        Vitest
+                            .expect(
+                                match outcome with
+                                | FileWatcherStartOutcome.Stopped -> true
+                                | _ -> false
+                            )
+                            .toBe
+                            true
+
+                        Vitest.expect(vault.fileWatcherState).toEqual FileWatcherState.Stopped
+                        Vitest.expect(vault.watcher.IsNone).toBe true
+                        Vitest.expect(isClosed fake).toBe true
+                    })
+        )
+
+        Vitest.test (
+            "a start failure during initialization schedules a restart that waits for the initial snapshot",
+            fun () ->
+                withTempArc
+                    seedEntities
+                    (fun arcPath -> promise {
+                        let vault = newVault arcPath
+                        vault.isInitializingArc <- true
+                        vault.FileWatcherReadinessTimeoutMs <- 50
+                        vault.FileWatcherRestartBackoffMs <- [| 20; 20; 20 |]
+                        let created = ResizeArray<obj>()
+
+                        vault.FileWatcherFactory <-
+                            fun _ _ ->
+                                let fake = createFakeWatcher ()
+                                created.Add fake
+
+                                if created.Count > 1 then
+                                    JS.setTimeout (fun () -> emitSignal fake "ready") 1 |> ignore
+
+                                unbox<Chokidar.IWatcher> fake
+
+                        do! vault.Startup()
+
+                        Vitest.expect(vault.FileWatcherRestartTimeout.IsSome).toBe true
+
+                        // The timer fires several times while initializing and waits at the same backoff step.
+                        do! Promise.sleep 200
+                        Vitest.expect(created.Count).toBe 1
+                        Vitest.expect(vault.FileWatcherRestartTimeout.IsSome).toBe true
+                        Vitest.expect(vault.FileWatcherRestartAttempt).toBe 1
+
+                        vault.isInitializingArc <- false
+                        do! waitUntil "the restarted watcher" 5000 (fun () -> created.Count = 2)
+
+                        do!
+                            waitUntil
+                                "the running state"
+                                5000
+                                (fun () -> vault.fileWatcherState = FileWatcherState.Running)
+
+                        do! vault.StopFileWatcher()
+                    })
+        )
+
+        Vitest.test (
+            "a restart never revives a stopped vault",
+            fun () ->
+                withTempArc
+                    seedEntities
+                    (fun arcPath -> promise {
+                        let vault = newVault arcPath
+                        do! vault.StopFileWatcher()
+                        vault.ScheduleFileWatcherRestart None
+                        Vitest.expect(vault.FileWatcherRestartTimeout.IsNone).toBe true
+                        Vitest.expect(vault.fileWatcherState).toEqual FileWatcherState.Stopped
+                    })
+        )
+
+        Vitest.test (
+            "no tree snapshot is scanned while the ARC initializes",
+            fun () ->
+                withTempArc
+                    seedEntities
+                    (fun arcPath -> promise {
+                        let vault = newVault arcPath
+                        vault.isInitializingArc <- true
+                        let! snapshot = vault.GetRendererFileTreeSnapshot()
+
+                        Vitest.expect(snapshot.Count).toBe 0
+                        Vitest.expect(vault.FileTreeWriter.Tree.Count).toBe 0
+                    })
+        )
+
+        Vitest.test (
+            "events that arrive while the snapshot is installed stay buffered until the flush",
+            fun () ->
+                withTempArc
+                    seedEntities
+                    (fun arcPath -> promise {
+                        let! loadedArc = TestHelpers.loadArcAsync arcPath
+                        let vault = newVault arcPath
+                        vault.SetArc loadedArc
+                        vault.isInitializingArc <- true
+                        let fake = createFakeWatcher ()
+                        vault.FileWatcherFactory <- readyShortlyFactory fake
+                        let! _ = vault.StartFileWatcherAsync()
+
+                        emitFileEvent fake "change" (join [| arcPath; "studies/S1/isa.study.xlsx" |])
+
+                        let finalized = ref false
+
+                        vault.FinalizeArcInitialization(Main.IndexedFileTree.IndexedFileTree(false))
+                        |> Promise.iter (fun () -> finalized.Value <- true)
+
+                        emitFileEvent fake "change" (join [| arcPath; "assays/A1/isa.assay.xlsx" |])
+
+                        Vitest.expect(vault.BufferedFileWatcherEvents.Count).toBe 2
+                        Vitest.expect(vault.fileWatcherPendingEvents.Count).toBe 0
+
+                        do! waitUntil "the initialization to finish" 5000 (fun () -> finalized.Value)
+
+                        Vitest.expect(vault.BufferedFileWatcherEvents.Count).toBe 0
+                        Vitest.expect(vault.fileWatcherPendingEvents.Count).toBe 2
                         do! waitUntil "the reload to settle" 10000 (fun () -> isWatcherQuiet vault)
                         do! vault.StopFileWatcher()
                     })
@@ -507,6 +714,17 @@ Vitest.describe (
                     )
                     .toBe
                     false
+        )
+
+        Vitest.test (
+            "a candidate path relative to the watch root is judged like an absolute one",
+            fun () ->
+                let root = Main.FileTreeCreator.normalizeRootPath "/arc"
+
+                Vitest.expect(isStructuralFileWatcherPath root "assays/A1/isa.assay.xlsx" None).toBe true
+                Vitest.expect(isStructuralFileWatcherPath root "assays/A1/dataset/data.txt" None).toBe false
+                Vitest.expect(isStructuralFileWatcherPath root "studies/S1/isa.study.xlsx" None).toBe true
+                Vitest.expect(isStructuralFileWatcherPath root "../outside/isa.assay.xlsx" None).toBe false
         )
 
         Vitest.test (

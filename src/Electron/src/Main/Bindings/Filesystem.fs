@@ -36,6 +36,10 @@ type Dirent =
 [<Emit("(typeof $0?.code === 'string' ? $0.code : undefined)")>]
 let tryGetNodeErrorCode (error: exn) : string option = jsNative
 
+/// Returns the path a Node.js system error refers to, when it carries one.
+[<Emit("(typeof $0?.path === 'string' ? $0.path : undefined)")>]
+let tryGetNodeErrorPath (error: exn) : string option = jsNative
+
 [<Import("mkdirSync", "fs")>]
 let mkdirSync (path: string) (options: MkdirOptions) : unit = jsNative
 

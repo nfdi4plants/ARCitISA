@@ -25,11 +25,43 @@ open Main.IPC.FileSystemIO
 open Main.VersionControl
 open VersionControlService.Abstractions
 
-let private refreshVaultFileTree (vault: ArcVault) = promise {
+/// The structural watcher does not see payload folders, so app-initiated file operations update the tree
+/// themselves. This reconciles the parent directory of every absolute path and waits for the writer, so the
+/// renderer finds the path when it asks next.
+let private reconcileParentsOfAbsolutePaths (vault: ArcVault) (absolutePaths: string seq) = promise {
+    let parents =
+        absolutePaths
+        |> Seq.choose PathHelpers.tryGetParentPath
+        |> Seq.distinct
+        |> Seq.toArray
+
+    if parents.Length > 0 then
+        do! vault.EnqueueFileTreeDirectoriesReconcile parents
+}
+
+let private reconcileParentsOfRelativePaths (vault: ArcVault) (relativePaths: string seq) = promise {
     match vault.path with
-    | Some arcPath -> do! vault.EnqueueFileTreeScan true
+    | Some arcPath ->
+        do!
+            relativePaths
+            |> Seq.map (fun relativePath -> Main.Bindings.Path.join [| arcPath; relativePath |])
+            |> reconcileParentsOfAbsolutePaths vault
     | None -> ()
 }
+
+/// Reconciles the parents of the given relative paths after a successful operation and passes the result on.
+let private reconcileAfterSuccess
+    (vault: ArcVault)
+    (relativePaths: string seq)
+    (result: Result<'T, exn>)
+    : JS.Promise<Result<'T, exn>> =
+    promise {
+        match result with
+        | Ok _ -> do! reconcileParentsOfRelativePaths vault relativePaths
+        | Error _ -> ()
+
+        return result
+    }
 
 let private withLoadedArcVault<'T>
     (event: IpcMainInvokeEvent)
@@ -319,7 +351,14 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
             try
                 match tryGetVaultAndArcPath event with
                 | Error error -> return Error error
-                | Ok(_, arcPath) -> return! Main.Notes.NoteScaffolding.ensureNotesFolderAtArcPath arcPath
+                | Ok(vault, arcPath) ->
+                    let! result = Main.Notes.NoteScaffolding.ensureNotesFolderAtArcPath arcPath
+
+                    match result with
+                    | Ok _ -> do! vault.EnqueueFileTreeDirectoriesReconcile [| arcPath |]
+                    | Error _ -> ()
+
+                    return result
             with error ->
                 return Error error
         }
@@ -618,6 +657,12 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
                                                 | Ok ImportExternalFilesResult.Completed -> ()
                                                 | _ -> releaseImportEventOwnership ()
 
+                                                // Partly copied files count too, so the tree is reconciled for every outcome.
+                                                do!
+                                                    importedEvents
+                                                    |> Seq.map _.AbsolutePath
+                                                    |> reconcileParentsOfAbsolutePaths vault
+
                                                 vault.window.setProgressBar -1.0
                                                 return result
                                             })
@@ -792,7 +837,13 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
                     withLoadedArcVault
                         event
                         (fun vault -> promise {
-                            return! ArcFileSystemHelper.createFileSystemItemOnDisk vault.path.Value request
+                            let! created = ArcFileSystemHelper.createFileSystemItemOnDisk vault.path.Value request
+
+                            match created with
+                            | Ok targetPath -> do! reconcileParentsOfRelativePaths vault [ targetPath ]
+                            | Error _ -> ()
+
+                            return created
                         })
             with e ->
                 return Error e
@@ -815,7 +866,10 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
 
                             match! ArcFileSystemHelper.resolveDeletePathRouteAsync arcPath relativePath with
                             | ArcFileSystemHelper.DeletePathRoute.GenericItem _ ->
-                                return! ArcFileSystemHelper.deleteGenericFileSystemItemOnDisk arcPath relativePath
+                                let! deleted =
+                                    ArcFileSystemHelper.deleteGenericFileSystemItemOnDisk arcPath relativePath
+
+                                return! reconcileAfterSuccess vault [ relativePath ] deleted
                             | ArcFileSystemHelper.DeletePathRoute.ArcEntity normalizedRelativePath ->
                                 match vault.arc with
                                 | None -> return Error(arcNotOpenError ())
@@ -886,7 +940,8 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
                                 ArcFileSystemHelper.isGenericRenamePathAsync arcPath request.relativePath
 
                             if isGenericRename then
-                                return! ArcFileSystemHelper.renameGenericFileSystemItemOnDisk arcPath request
+                                let! renamed = ArcFileSystemHelper.renameGenericFileSystemItemOnDisk arcPath request
+                                return! reconcileAfterSuccess vault [ request.relativePath ] renamed
                             else
                                 match vault.arc with
                                 | None -> return Error(arcNotOpenError ())
@@ -915,7 +970,13 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
                     withLoadedArcVault
                         event
                         (fun vault -> promise {
-                            return! ArcFileSystemHelper.moveGenericFileSystemItemOnDisk vault.path.Value request
+                            let! moved = ArcFileSystemHelper.moveGenericFileSystemItemOnDisk vault.path.Value request
+
+                            return!
+                                reconcileAfterSuccess
+                                    vault
+                                    [ request.sourceRelativePath; request.targetRelativePath ]
+                                    moved
                         })
             with e ->
                 return Error e
@@ -968,7 +1029,7 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
 
                                             do! ARCtrl.FileSystemHelper.writeFileTextAsync absolutePath request.content
 
-                                            do! refreshVaultFileTree vault
+                                            do! vault.EnqueueFileTreeDirectoryReconcile directoryPath
                                             return Ok()
                                         | FileContentType.CLI ->
                                             return Error(exn "Direct writing of CLI files is not supported.")

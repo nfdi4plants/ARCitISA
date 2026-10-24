@@ -2,10 +2,12 @@ module ElectronCore.IndexedFileTreeTests
 
 open Fable.Core
 open Main
+open Main.ARCtrlExtensions
 open Main.ArcVault
 open Main.ArcVaultTypes
 open Main.Bindings.Filesystem
 open Main.Bindings.Path
+open Swate.Components.Shared
 open Swate.Electron.Shared.FileIOTypes
 open Vitest
 
@@ -460,6 +462,164 @@ Vitest.describe (
                                 )
                             )
                             .toBe (true)
+                    })
+        )
+)
+
+Vitest.describe (
+    "replaced directories and path keys",
+    fun () ->
+        Vitest.test (
+            "a case-only rename reports the replaced directory as new",
+            fun () ->
+                let tree = IndexedFileTree(true)
+                tree.ReplaceChildren("/arc", [| entry "assays" "/arc" true |]) |> ignore
+
+                tree.ReplaceChildren("/arc/assays", [| entry "A" "/arc/assays" true |])
+                |> ignore
+
+                tree.ReplaceChildren("/arc/assays/A", [| entry "x.txt" "/arc/assays/A" false |])
+                |> ignore
+
+                let changed, newDirectories =
+                    tree.ReplaceChildrenReportingNew("/arc/assays", [| entry "a" "/arc/assays" true |])
+
+                Vitest.expect(changed).toBe (true)
+                Vitest.expect(newDirectories |> Array.map _.path).toEqual ([| "/arc/assays/a" |])
+                Vitest.expect(tree.IsLoaded "/arc/assays/a").toBe (false)
+                Vitest.expect((tree.TryFind "/arc/assays/a/x.txt").IsSome).toBe (false)
+        )
+
+        Vitest.test (
+            "reconcile keeps the content of a folder that was renamed by case only",
+            fun () ->
+                withTempFolder (fun root -> promise {
+                    do! mkdirAsync' (join [| root; "assays"; "A" |])
+                    do! writeAsync (join [| root; "assays"; "A"; "x.txt" |])
+                    let! tree = FileTreeCreator.scanFileTreeAsync root true false
+
+                    do! rmAsync (join [| root; "assays"; "A" |]) (RmOptions(recursive = true, force = true))
+                    do! mkdirAsync' (join [| root; "assays"; "a" |])
+                    do! writeAsync (join [| root; "assays"; "a"; "x.txt" |])
+
+                    let! changed = FileTreeCreator.reconcileFileTreeDirectoryAsync root tree (root + "/assays")
+
+                    Vitest.expect(changed).toBe (true)
+                    Vitest.expect((tree.TryFind(root + "/assays/a/x.txt")).IsSome).toBe (true)
+                    Vitest.expect(tree.IsLoaded(root + "/assays/a")).toBe (true)
+                })
+        )
+
+        Vitest.test (
+            "reconcile loads a directory that replaced a file",
+            fun () ->
+                withTempFolder (fun root -> promise {
+                    do! writeAsync (join [| root; "item" |])
+                    let! tree = FileTreeCreator.scanFileTreeAsync root false false
+
+                    do! rmAsync (join [| root; "item" |]) (RmOptions(force = true))
+                    do! mkdirAsync' (join [| root; "item" |])
+                    do! writeAsync (join [| root; "item"; "inner.txt" |])
+
+                    let! _ = FileTreeCreator.reconcileFileTreeDirectoryAsync root tree root
+
+                    Vitest.expect((tree.TryFind(root + "/item/inner.txt")).IsSome).toBe (true)
+                })
+        )
+
+        Vitest.test (
+            "path keys keep whitespace in names",
+            fun () ->
+                let key (value: string) =
+                    PathKey.ofPath false value |> PathKey.value
+
+                Vitest.expect(key "/arc/data " <> key "/arc/data").toBe (true)
+                Vitest.expect(key "/arc/data/").toBe (key "/arc/data")
+        )
+
+        Vitest.test (
+            "contractWrittenPaths lists deleted paths and rename targets",
+            fun () ->
+                let paths =
+                    ARCtrl.Contract.Contract.createDelete "studies/S1/old.txt"
+                    |> fun deleted ->
+                        contractWrittenPaths [|
+                            deleted
+                            ARCtrl.Contract.Contract.createRename ("assays/A", "assays/B")
+                            ARCtrl.Contract.Contract.createDelete "studies/S1/old.txt"
+                        |]
+
+                Vitest.expect(paths |> String.concat ",").toBe ("studies/S1/old.txt,assays/A,assays/B")
+        )
+)
+
+Vitest.describe (
+    "app-initiated file operations update the tree",
+    fun () ->
+        let withRegisteredVault (windowId: int) (body: ArcVault -> JS.Promise<unit>) =
+            TestHelpers.withTempArcWith
+                "swate-ipc-tree-"
+                "IpcTreeArc"
+                (fun arc -> arc.AddAssay(ARCtrl.ArcAssay("A1")))
+                (fun arcPath -> promise {
+                    do! mkdirAsync' (join [| arcPath; "assays"; "A1"; "dataset" |])
+                    do! writeAsync (join [| arcPath; "assays"; "A1"; "dataset"; "move-me.txt" |])
+                    let vault = TestHelpers.registerVault windowId arcPath
+                    do! vault.LoadArc()
+                    do! vault.EnqueueFileTreeScan false
+
+                    try
+                        do! body vault
+                    finally
+                        ARC_VAULTS.Vaults.Remove windowId |> ignore
+                })
+
+        Vitest.test (
+            "creating a file in a payload folder adds it to the tree",
+            fun () ->
+                withRegisteredVault
+                    71
+                    (fun vault -> promise {
+                        let api = Main.IPC.ArcVaultsApi.api (TestHelpers.ipcEvent 71)
+
+                        let! created =
+                            api.createFileSystemItem {
+                                parentPath = "assays/A1/dataset"
+                                name = "created.txt"
+                                kind = FileSystemItemKind.File
+                            }
+
+                        Vitest.expect(created.IsOk).toBe (true)
+                        let root = FileTreeCreator.normalizeRootPath vault.path.Value
+
+                        Vitest
+                            .expect(
+                                (vault.FileTreeWriter.Tree.TryFind(root + "/assays/A1/dataset/created.txt")).IsSome
+                            )
+                            .toBe (true)
+                    })
+        )
+
+        Vitest.test (
+            "moving a file between payload folders updates both sides",
+            fun () ->
+                withRegisteredVault
+                    72
+                    (fun vault -> promise {
+                        let api = Main.IPC.ArcVaultsApi.api (TestHelpers.ipcEvent 72)
+
+                        let! moved =
+                            api.movePath {
+                                sourceRelativePath = "assays/A1/dataset/move-me.txt"
+                                targetRelativePath = "assays/A1/other/move-me.txt"
+                                overwrite = false
+                            }
+
+                        Vitest.expect(moved.IsOk).toBe (true)
+                        let root = FileTreeCreator.normalizeRootPath vault.path.Value
+                        let tree = vault.FileTreeWriter.Tree
+                        Vitest.expect((tree.TryFind(root + "/assays/A1/dataset/move-me.txt")).IsSome).toBe (false)
+                        Vitest.expect((tree.TryFind(root + "/assays/A1/other/move-me.txt")).IsSome).toBe (true)
                     })
         )
 )

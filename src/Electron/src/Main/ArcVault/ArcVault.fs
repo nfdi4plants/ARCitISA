@@ -47,6 +47,8 @@ type FileWatcherStartOutcome =
     | Ready
     | TimedOut
     | Failed of exn
+    /// The watcher was stopped, replaced or retired while the start was running, so the caller owns nothing.
+    | Stopped
 
 /// Tests shorten this delay to cover timeout behavior without waiting 30 seconds.
 let mutable closeWaitTimeoutMilliseconds = 30000
@@ -128,6 +130,12 @@ type ArcVault(window: BrowserWindow) =
     member val internal FileWatcherEventHandler: (string -> string -> unit) option = None with get, set
     /// Events that arrive while the ARC is initializing. They run after the initial tree snapshot is installed.
     member val internal BufferedFileWatcherEvents: ResizeArray<unit -> unit> = ResizeArray() with get
+    /// True from the end of initialization until the buffered events are flushed. Events keep buffering meanwhile.
+    member val internal IsFlushingBufferedFileWatcherEvents: bool = false with get, set
+    /// Settles the start that still waits for the watcher to become ready. StopFileWatcher calls it.
+    member val internal PendingFileWatcherStart: (FileWatcherStartOutcome -> unit) option = None with get, set
+    /// Permission errors already logged, as code and path. A repeated error stays quiet.
+    member val internal ReportedFileWatcherPermissionErrors: HashSet<string> = HashSet() with get
     member val internal FileWatcherReadinessTimeoutMs: int = 10000 with get, set
     member val internal FileWatcherRestartBackoffMs: int[] = [| 1000; 5000; 30000 |] with get, set
     /// A restarted watcher that stays error-free this long starts its backoff over.
@@ -777,6 +785,7 @@ module ArcVaultExtensions =
         member this.GetRendererFileTreeSnapshot() = promise {
             match this.path with
             | None -> return Dictionary<string, FileEntry>()
+            | Some _ when this.isInitializingArc -> return Dictionary<string, FileEntry>()
             | Some arcPath ->
                 if this.FileTreeWriter.Tree.Count = 0 then
                     do! this.EnqueueFileTreeScan true
@@ -834,7 +843,7 @@ module ArcVaultExtensions =
                             Chokidar.Events.All,
                             fun (eventName: string) (changedPath: string) ->
                                 if isCurrent () then
-                                    if this.isInitializingArc then
+                                    if this.isInitializingArc || this.IsFlushingBufferedFileWatcherEvents then
                                         this.BufferedFileWatcherEvents.Add(fun () ->
                                             if isCurrent () then
                                                 handler eventName changedPath
@@ -851,6 +860,7 @@ module ArcVaultExtensions =
                             let finish (outcome: FileWatcherStartOutcome) =
                                 if not settled.Value then
                                     settled.Value <- true
+                                    this.PendingFileWatcherStart <- None
                                     timeoutId.Value |> Option.iter Fable.Core.JS.clearTimeout
 
                                     match outcome with
@@ -866,6 +876,8 @@ module ArcVaultExtensions =
                                         this.FileWatcherReadinessTimeoutMs
                                 )
 
+                            this.PendingFileWatcherStart <- Some finish
+
                             watcher.on (Chokidar.Events.Ready, (fun () -> finish FileWatcherStartOutcome.Ready))
                             |> ignore
 
@@ -874,7 +886,10 @@ module ArcVaultExtensions =
                                 fun (error: exn) ->
                                     if isCurrent () then
                                         if settled.Value then
-                                            this.OnFileWatcherError(token, error)
+                                            match tryGetNodeErrorCode error with
+                                            | Some code when code = "EPERM" || code = "EACCES" ->
+                                                this.ReportFileWatcherPermissionError(code, error)
+                                            | _ -> this.OnFileWatcherError(token, error)
                                         else
                                             finish (FileWatcherStartOutcome.Failed error)
                             )
@@ -886,12 +901,16 @@ module ArcVaultExtensions =
 
                 promise {
                     let! outcome = startup
+                    let mutable result = outcome
 
                     match outcome with
                     | FileWatcherStartOutcome.Ready ->
                         if this.FileWatcherToken = token then
                             this.fileWatcherState <- FileWatcherState.Running
                             this.ArmFileWatcherStableReset token
+                        else
+                            result <- FileWatcherStartOutcome.Stopped
+                    | FileWatcherStartOutcome.Stopped -> ()
                     | failure ->
                         let reason =
                             match failure with
@@ -907,6 +926,9 @@ module ArcVaultExtensions =
                         | None -> ()
 
                         // A stop that ran in the meantime owns the state.
+                        if this.FileWatcherToken <> token then
+                            result <- FileWatcherStartOutcome.Stopped
+
                         if this.FileWatcherToken = token then
                             this.FileWatcherToken <- token + 1
                             this.watcher <- None
@@ -918,8 +940,15 @@ module ArcVaultExtensions =
                                 swatelogfn this.window.id "Structural file watcher did not start: %s" reason
                                 this.fileWatcherState <- FileWatcherState.Degraded reason
 
-                    return outcome
+                    return result
                 }
+
+        /// Logs a per-path permission error once. The watcher keeps running because the other paths still work.
+        member internal this.ReportFileWatcherPermissionError(code: string, error: exn) =
+            let key = code + "|" + (tryGetNodeErrorPath error |> Option.defaultValue "")
+
+            if this.ReportedFileWatcherPermissionErrors.Add key then
+                swatelogfn this.window.id "Structural file watcher cannot read a path (%s): %s" code error.Message
 
         /// Starts the watcher without waiting for it. The outcome is recorded in fileWatcherState.
         member this.StartFileWatcher(?usePolling: bool) =
@@ -978,7 +1007,16 @@ module ArcVaultExtensions =
                 |> Option.bind tryGetNodeErrorCode
                 |> Option.exists (fun code -> code = "ENOSPC" || code = "EMFILE")
 
-            if this.FileWatcherRestartTimeout.IsSome then
+            let isStopped =
+                this.path.IsNone
+                || this.window.isDestroyed ()
+                || (
+                    match this.fileWatcherState with
+                    | FileWatcherState.Stopped -> true
+                    | _ -> false
+                )
+
+            if isStopped || this.FileWatcherRestartTimeout.IsSome then
                 ()
             elif isResourceLimit && attempt >= steps.Length then
                 let reason = error |> Option.map (fun e -> e.Message) |> Option.defaultValue ""
@@ -1002,33 +1040,38 @@ module ArcVaultExtensions =
                             (fun () ->
                                 this.FileWatcherRestartTimeout <- None
 
-                                promise {
-                                    if
-                                        this.FileWatcherToken = scheduledToken
-                                        && this.watcher.IsNone
-                                        && this.path.IsSome
-                                        && not (this.window.isDestroyed ())
-                                    then
-                                        match! this.StartFileWatcherAsync() with
-                                        | FileWatcherStartOutcome.Ready -> this.EnqueueWatcherResync()
-                                        | FileWatcherStartOutcome.TimedOut -> this.ScheduleFileWatcherRestart None
-                                        | FileWatcherStartOutcome.Failed startError ->
-                                            this.ScheduleFileWatcherRestart(Some startError)
-                                }
-                                |> Promise.catch (fun restartError ->
-                                    swatelogfn
-                                        this.window.id
-                                        "Unable to restart the structural file watcher: %s"
-                                        restartError.Message
-                                )
-                                |> Promise.start
+                                if this.FileWatcherToken <> scheduledToken then
+                                    ()
+                                elif this.isInitializingArc then
+                                    // The initial snapshot is not installed yet. Wait the same step again.
+                                    this.FileWatcherRestartAttempt <- attempt
+                                    this.ScheduleFileWatcherRestart error
+                                else
+                                    promise {
+                                        if
+                                            this.watcher.IsNone && this.path.IsSome && not (this.window.isDestroyed ())
+                                        then
+                                            match! this.StartFileWatcherAsync() with
+                                            | FileWatcherStartOutcome.Ready -> do! this.EnqueueWatcherResync()
+                                            | FileWatcherStartOutcome.TimedOut -> this.ScheduleFileWatcherRestart None
+                                            | FileWatcherStartOutcome.Failed startError ->
+                                                this.ScheduleFileWatcherRestart(Some startError)
+                                            | FileWatcherStartOutcome.Stopped -> ()
+                                    }
+                                    |> Promise.catch (fun restartError ->
+                                        swatelogfn
+                                            this.window.id
+                                            "Unable to restart the structural file watcher: %s"
+                                            restartError.Message
+                                    )
+                                    |> Promise.start
                             )
                             steps.[min attempt (steps.Length - 1)]
                     )
 
         /// Catches up on changes that the watcher missed while it was down. The entity files are merged again
-        /// and the file tree is read anew.
-        member internal this.EnqueueWatcherResync() =
+        /// and the loaded directories of the file tree are revalidated.
+        member internal this.EnqueueWatcherResync() : Fable.Core.JS.Promise<unit> = promise {
             match this.path, this.FileWatcherEventHandler with
             | Some root, Some handle ->
                 let known zone =
@@ -1046,15 +1089,22 @@ module ArcVaultExtensions =
                     let knownIdentifiers = known zone
                     let zoneFolderPath = join [| root; ArcEntityPathRules.zoneFolderName zone |]
 
-                    let onDisk =
-                        if existsSync zoneFolderPath then
-                            readdirSync zoneFolderPath
-                            |> Array.filter (fun name ->
-                                not (name.StartsWith ".") && not (List.contains name knownIdentifiers)
-                            )
-                            |> Array.toList
-                        else
-                            []
+                    let! onDisk = promise {
+                        try
+                            let! names = readdirAsync zoneFolderPath
+
+                            return
+                                names
+                                |> Array.filter (fun name ->
+                                    not (name.StartsWith ".") && not (List.contains name knownIdentifiers)
+                                )
+                                |> Array.toList
+                        with listError ->
+                            match tryGetNodeErrorCode listError with
+                            | Some "ENOENT"
+                            | Some "ENOTDIR" -> return []
+                            | _ -> return raise listError
+                    }
 
                     for identifier in knownIdentifiers @ onDisk do
                         let eventName =
@@ -1068,8 +1118,9 @@ module ArcVaultExtensions =
 
                 handle "change" (join [| root; ARCtrl.ArcPathHelper.InvestigationFileName |])
 
-                this.EnqueueFileTreeScan true |> ignore
+                do! this.EnqueueFileTreeRevalidateLoaded()
             | _ -> ()
+        }
 
         /// True when the window gaining focus should try to bring a missing watcher back.
         member this.CanRestartFileWatcherOnFocus =
@@ -1090,7 +1141,7 @@ module ArcVaultExtensions =
                 this.FileWatcherRestartAttempt <- 0
 
                 match! this.StartFileWatcherAsync() with
-                | FileWatcherStartOutcome.Ready -> this.EnqueueWatcherResync()
+                | FileWatcherStartOutcome.Ready -> do! this.EnqueueWatcherResync()
                 | _ -> ()
         }
 
@@ -1109,7 +1160,14 @@ module ArcVaultExtensions =
             this.CancelFileWatcherRestart()
             this.FileWatcherRestartAttempt <- 0
             this.BufferedFileWatcherEvents.Clear()
+            this.IsFlushingBufferedFileWatcherEvents <- false
             this.FileWatcherEventHandler <- None
+
+            // A start that still waits for the ready signal settles now, so its caller does not wait for the timeout.
+            this.PendingFileWatcherStart
+            |> Option.iter (fun settle -> settle FileWatcherStartOutcome.Stopped)
+
+            this.PendingFileWatcherStart <- None
             let stoppedWatcher = this.watcher
             this.watcher <- None
             this.fileWatcherState <- FileWatcherState.Stopped
@@ -1172,11 +1230,16 @@ module ArcVaultExtensions =
                 swatelogfn
                     this.window.id
                     "The file watcher was not ready in time. The ARC opens without live file watching."
+
+                this.ScheduleFileWatcherRestart None
             | FileWatcherStartOutcome.Failed watcherError ->
                 swatelogfn
                     this.window.id
                     "The file watcher could not start. The ARC opens without live file watching: %s"
                     watcherError.Message
+
+                this.ScheduleFileWatcherRestart(Some watcherError)
+            | FileWatcherStartOutcome.Stopped -> ()
 
             try
                 do! this.LoadArc()
@@ -1192,6 +1255,9 @@ module ArcVaultExtensions =
             | true, _ -> return raise (ArcLoadCancelledException this.window.id)
             | false, None -> return swatefailfn this.window.id "Unable to commit ARC initialization without a path."
             | false, Some normalizedPath ->
+                // Events keep buffering until the tree is installed and the buffer is flushed, so none of them
+                // is applied to the old tree or overtakes an earlier one.
+                this.IsFlushingBufferedFileWatcherEvents <- true
                 this.isInitializingArc <- false
 
                 // The renderer learns the path only once the tree is installed, so a pull on pathChange sees it.
@@ -1204,9 +1270,9 @@ module ArcVaultExtensions =
                                 (fun api -> api.pathChange (Some normalizedPath))
                     )
 
-                // Events that arrived during initialization run now that the snapshot is installed.
                 let bufferedEvents = this.BufferedFileWatcherEvents.ToArray()
                 this.BufferedFileWatcherEvents.Clear()
+                this.IsFlushingBufferedFileWatcherEvents <- false
                 bufferedEvents |> Array.iter (fun applyEvent -> applyEvent ())
 
                 // Every ARC open asks for the prewarm. It does nothing once the diff workers

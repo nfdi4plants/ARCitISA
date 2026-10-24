@@ -220,8 +220,8 @@ let private isMissingDirectoryError (error: exn) =
     | Some "ENOTDIR" -> true
     | _ -> false
 
-/// Interim until the lazy tree (step 4.1): a directory that is new to the tree is scanned right away, so the
-/// tree stays complete. Delete this step when directories load on demand.
+/// A directory that is new to the tree, or that replaced an entry of another name or kind, is scanned right
+/// away so the tree stays complete. Drop this step once directories load on demand.
 let rec private loadNewSubdirectoriesAsync
     (arcRoot: string)
     (tree: IndexedFileTree)
@@ -234,11 +234,10 @@ let rec private loadNewSubdirectoriesAsync
             try
                 let! children = readDirectoryChildrenAsync arcRoot directory.path
 
-                let newChildDirectories =
-                    children
-                    |> Array.filter (fun child -> child.isDirectory && (tree.TryFind child.path).IsNone)
+                let childrenChanged, newChildDirectories =
+                    tree.ReplaceChildrenReportingNew(directory.path, children)
 
-                if tree.ReplaceChildren(directory.path, children) then
+                if childrenChanged then
                     changed <- true
 
                 let! nestedChanged = loadNewSubdirectoriesAsync arcRoot tree newChildDirectories
@@ -262,11 +261,9 @@ let reconcileFileTreeDirectoryAsync
         try
             let! children = readDirectoryChildrenAsync arcRoot directoryPath
 
-            let newDirectories =
-                children
-                |> Array.filter (fun child -> child.isDirectory && (tree.TryFind child.path).IsNone)
+            let childrenChanged, newDirectories =
+                tree.ReplaceChildrenReportingNew(directoryPath, children)
 
-            let childrenChanged = tree.ReplaceChildren(directoryPath, children)
             let! subdirectoriesChanged = loadNewSubdirectoriesAsync arcRoot tree newDirectories
             return childrenChanged || subdirectoriesChanged
         with error when isMissingDirectoryError error ->

@@ -659,9 +659,12 @@ type PathKey = PathKey of string
 
 module PathKey =
 
-    /// Separators, trim and trailing slash, then Unicode NFC, then lower case when the file system ignores case.
+    /// Separators and trailing slash, then Unicode NFC, then lower case when the file system ignores case.
     let ofPath (caseInsensitive: bool) (path: string) : PathKey =
-        let composed = path |> PathHelpers.normalizePath |> PathHelpers.normalizeToNfc
+        // Whitespace is part of a file name, so the key keeps it. normalizePath would trim it.
+        let composed =
+            (PathHelpers.normalizeSeparators path).TrimEnd('/')
+            |> PathHelpers.normalizeToNfc
 
         PathKey(
             if caseInsensitive then
