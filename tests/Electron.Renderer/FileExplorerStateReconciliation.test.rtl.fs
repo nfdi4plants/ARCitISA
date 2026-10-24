@@ -115,3 +115,65 @@ Vitest.test (
         Vitest.expect(clears.Value).toBe 1
     }
 )
+
+Vitest.test (
+    "a download of the second selected pointer reloads that file once",
+    fun () -> promise {
+        let first = "data/p1.bin"
+        let second = "data/p2.bin"
+
+        let tree = [|
+            FileEntry.create ("p1.bin", first, false)
+            FileEntry.create ("p2.bin", second, false)
+        |]
+
+        let pointerLookup (_: string) : ObjectStateDto option = Some { lfsState false with Path = "x" }
+
+        let materializedSecond (path: string) : ObjectStateDto option =
+            if path = second then
+                Some(lfsState true)
+            else
+                Some(lfsState false)
+
+        let reloads = ResizeArray<string>()
+        let clears = ref 0
+        let setProps = ref (fun (_: HarnessProps) -> ())
+
+        RTL.render (
+            Harness(
+                {
+                    Lookup = pointerLookup
+                    FileTree = tree
+                    Selection = first
+                },
+                reloads,
+                clears,
+                (fun setter -> setProps.Value <- setter)
+            )
+        )
+        |> ignore
+
+        // Same key as the first pointer, so only the selection changes.
+        do!
+            RTL.act (fun () -> promise {
+                setProps.Value {
+                    Lookup = pointerLookup
+                    FileTree = tree
+                    Selection = second
+                }
+            })
+
+        Vitest.expect(reloads.Count).toBe 0
+
+        do!
+            RTL.act (fun () -> promise {
+                setProps.Value {
+                    Lookup = materializedSecond
+                    FileTree = tree
+                    Selection = second
+                }
+            })
+
+        Vitest.expect(reloads.ToArray()).toEqual [| second |]
+    }
+)
