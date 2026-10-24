@@ -38,7 +38,8 @@ let private compareChildren (left: FileEntry) (right: FileEntry) =
     | 0 -> PathOrder.compareNames left.name right.name
     | result -> result
 
-/// The main process lists directories in this order already, so one pass usually replaces the sort.
+/// The main process sorts by name only, which matches this order for folders that hold only files or only
+/// directories (the usual case for large folders), so one pass usually replaces the sort.
 let private sortChildren (entries: FileEntry[]) =
     let mutable sorted = true
     let mutable index = 1

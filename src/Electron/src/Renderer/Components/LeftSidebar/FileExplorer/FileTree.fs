@@ -715,8 +715,6 @@ type FileTree =
                             onDirectoryExpansionChange = handleExpansionChange,
                             expandedIds = expansionCtx.expandedIds,
                             onExpandedIdsChange = expansionCtx.setExpandedIds,
-                            onRefreshDirectory =
-                                (fun (item: FileItem) -> item.Path |> Option.iter expansionCtx.refreshDirectory),
                             onContextMenu = createContextMenuItems,
                             getItemIconClass = getItemIconClass,
                             canCreateItem = canCreateFromItem,
