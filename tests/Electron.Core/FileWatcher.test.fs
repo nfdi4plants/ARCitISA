@@ -252,7 +252,7 @@ Vitest.describe (
                         Vitest.expect(vault.BufferedFileWatcherEvents.Count).toBe 1
                         Vitest.expect(vault.fileWatcherPendingEvents.Count).toBe 0
 
-                        vault.FinalizeArcInitialization(Dictionary<string, FileEntry>())
+                        do! vault.FinalizeArcInitialization(Main.IndexedFileTree.IndexedFileTree(false))
 
                         Vitest.expect(vault.BufferedFileWatcherEvents.Count).toBe 0
                         Vitest.expect(vault.fileWatcherPendingEvents.Count).toBe 1
@@ -334,7 +334,7 @@ Vitest.describe (
                                 5000
                                 (fun () -> vault.fileWatcherState = FileWatcherState.Running)
 
-                        do! waitUntil "the tree refresh" 10000 (fun () -> vault.fileTree.Count > 0)
+                        do! waitUntil "the tree refresh" 10000 (fun () -> vault.FileTreeWriter.Tree.Count > 0)
                         do! waitUntil "the reload to settle" 10000 (fun () -> isWatcherQuiet vault)
                         do! vault.StopFileWatcher()
                     })

@@ -78,18 +78,37 @@ type ArcVault(window: BrowserWindow) =
     let mutable watcherDeferralCount = 0
     let mutable watcherEpoch = 0
 
-    let mutable fileTreeUpdateTail: Fable.Core.JS.Promise<unit> =
-        JS.Constructors.Promise.resolve ()
+    let mutable arcPath: string option = None
+
+    let defaultCaseInsensitive =
+        match Main.VersionControl.ProviderComposition.currentPathCaseSensitivity () with
+        | VersionControlService.Abstractions.CaseInsensitive -> true
+        | VersionControlService.Abstractions.CaseSensitive -> false
+
+    /// Every change of the main-process file tree runs through this writer. After a changed job it sends the
+    /// full renderer snapshot through the existing fileTreeUpdate push.
+    let fileTreeWriter =
+        FileTreeWriter(
+            defaultCaseInsensitive,
+            (fun message -> swatelogfn window.id "%s" message),
+            (fun tree ->
+                match arcPath with
+                | Some root ->
+                    let rendererFileTree = toRendererFileTree root tree.Entries
+                    WindowSend.send<IFileTreeRendererApi> window (fun api -> api.fileTreeUpdate rendererFileTree)
+                | None -> ()
+            )
+        )
 
     member val window: BrowserWindow = window with get
-    member val path: string option = None with get, set
+
+    member this.path
+        with get () = arcPath
+        and set (value: string option) = arcPath <- value
 
     /// Whether the file system under the open ARC root ignores case. Starts as the platform default and is
     /// probed when the ARC opens.
-    member val isCaseInsensitive: bool =
-        (match Main.VersionControl.ProviderComposition.currentPathCaseSensitivity () with
-         | VersionControlService.Abstractions.CaseInsensitive -> true
-         | VersionControlService.Abstractions.CaseSensitive -> false) with get, set
+    member val isCaseInsensitive: bool = defaultCaseInsensitive with get, set
 
     member val arc: ARC option = None with get, private set
     // This flag is intentionally coarse and can remain true even if later edits restore the previous logical state.
@@ -99,7 +118,7 @@ type ArcVault(window: BrowserWindow) =
     //I am not sure if performance of calculating changes or precision should be more important. Lets see in the future. Maybe you can add this comment as /// comment on this member?
     /// Dirty marker for unsaved in-memory ARC mutations.
     member val hasUnsavedArcChanges: bool = false with get, private set
-    member val fileTree: Dictionary<string, FileEntry> = Dictionary<string, FileEntry>() with get, set
+    member this.FileTreeWriter = fileTreeWriter
     member val watcher: Chokidar.IWatcher option = None with get, set
 
     /// What the watcher is doing. Unavailable is the "file watching unavailable" state.
@@ -159,10 +178,6 @@ type ArcVault(window: BrowserWindow) =
     member internal this.WatcherEpoch = watcherEpoch
 
     member internal this.IncrementWatcherEpoch() = watcherEpoch <- watcherEpoch + 1
-
-    member internal this.FileTreeUpdateTail
-        with get () = fileTreeUpdateTail
-        and set value = fileTreeUpdateTail <- value
 
     /// Indicates whether the vault is currently busy writing changes to disk.
     /// When a write finishes, watcher ARC merges stay suppressed briefly to cover delayed own-write events.
@@ -288,58 +303,58 @@ module ArcVaultExtensions =
                     this.RefreshHasUnsavedArcChangesFlag()
                     Ok()
 
+        /// Queues a full scan of the ARC folder. The scanned tree replaces the current one.
+        member this.EnqueueFileTreeScan(openSession: bool) : Fable.Core.JS.Promise<unit> =
+            match this.path with
+            | Some arcPath ->
+                let caseInsensitive = this.isCaseInsensitive
+                this.FileTreeWriter.EnqueueReplace(fun () -> scanFileTreeAsync arcPath caseInsensitive openSession)
+            | None -> promise { return () }
+
+        /// Queues a reconcile of one directory, or of its nearest loaded ancestor.
+        member this.EnqueueFileTreeDirectoryReconcile(directoryPath: string) : Fable.Core.JS.Promise<unit> =
+            match this.path with
+            | Some arcPath ->
+                this.FileTreeWriter.Enqueue(fun tree ->
+                    reconcileDirtyDirectoriesAsync
+                        arcPath
+                        tree
+                        (fun directory error ->
+                            swatelogfn
+                                this.window.id
+                                "Unable to reconcile file tree directory '%s': %s"
+                                directory
+                                error.Message
+                        )
+                        [| directoryPath |]
+                )
+            | None -> promise { return () }
+
+        /// Marks the directories of a watcher batch dirty and reconciles them in one writer job.
+        /// A pending-state reset after the call drops the job, so an update queued before it cannot publish the old root.
         member internal this.ApplyWatcherFileTreeEvents(events: ArcVaultFileSystemEvent list) =
-            // Normalize against disk when the queued update reaches the serialized tail, so tree events use apply-time state.
-            // Capture the epoch at the call so an update queued before a pending-state reset cannot publish the old root.
             let capturedWatcherEpoch = this.WatcherEpoch
 
-            let queuedUpdate =
-                this.FileTreeUpdateTail
-                |> Promise.bind (fun () -> promise {
-                    match this.path with
-                    | None -> ()
-                    | Some _ when capturedWatcherEpoch <> this.WatcherEpoch -> ()
-                    | Some arcPath ->
-                        let normalizedEvents = WatcherHelpers.normalizeAgainstDisk events
-                        let mutable nextFileTree = this.fileTree
-                        let mutable hasFileTreeChanges = false
+            let dirtyDirectories =
+                WatcherHelpers.dirtyDirectoriesOfEvents this.isCaseInsensitive events
 
-                        for event in normalizedEvents do
-                            try
-                                if
-                                    WatcherHelpers.eventNameEquals Chokidar.Events.Add event.EventName
-                                    || WatcherHelpers.eventNameEquals Chokidar.Events.Change event.EventName
-                                then
-                                    let! changedFile = getFileEntryWithLfsMetadata arcPath event.AbsolutePath
-                                    nextFileTree <- upsertFileEntry changedFile nextFileTree
-                                    hasFileTreeChanges <- true
-                                elif WatcherHelpers.eventNameEquals Chokidar.Events.AddDir event.EventName then
-                                    let! addedDirectory = getFileEntry event.AbsolutePath
-                                    nextFileTree <- upsertFileEntry addedDirectory nextFileTree
-                                    hasFileTreeChanges <- true
-                                elif
-                                    WatcherHelpers.eventNameEquals Chokidar.Events.Unlink event.EventName
-                                    || (WatcherHelpers.eventNameEquals Chokidar.Events.UnlinkDir event.EventName
-                                        && not (WatcherHelpers.existsSyncWithExactName event.AbsolutePath))
-                                then
-                                    // Normalization above already turned the unlink of an existing file into a change. Directory unlinks
-                                    // stay admitted, so they still need this check.
-                                    nextFileTree <- removePathAndDescendants event.AbsolutePath nextFileTree
-                                    hasFileTreeChanges <- true
-                            with fileTreeError ->
+            this.FileTreeWriter.Enqueue(fun tree -> promise {
+                match this.path with
+                | Some arcPath when capturedWatcherEpoch = this.WatcherEpoch ->
+                    return!
+                        reconcileDirtyDirectoriesAsync
+                            arcPath
+                            tree
+                            (fun directory error ->
                                 swatelogfn
                                     this.window.id
-                                    "Unable to update file tree for watcher event '%s' on '%s': %s"
-                                    event.EventName
-                                    event.RelativePath
-                                    fileTreeError.Message
-
-                        if hasFileTreeChanges && capturedWatcherEpoch = this.WatcherEpoch then
-                            this.SetFileTree(nextFileTree)
-                })
-
-            this.FileTreeUpdateTail <- queuedUpdate |> Promise.catch (fun _ -> ())
-            queuedUpdate
+                                    "Unable to update file tree directory '%s': %s"
+                                    directory
+                                    error.Message
+                            )
+                            dirtyDirectories
+                | _ -> return false
+            })
 
         /// Returns the load error to the import caller when loading fails. The import can then report that its in-memory merge did not happen.
         member this.TryTriggerArcInMemoryMergeOnFileWatcherEvents(events: ArcVaultFileSystemEvent list) = promise {
@@ -685,13 +700,12 @@ module ArcVaultExtensions =
 
                                     match arcFile with
                                     | ArcFiles.DataMap(Some parentInfo, _) ->
-                                        let! refreshedFileTree =
-                                            refreshFileTreeEntry
-                                                arcPath
-                                                (DatamapParentInfo.toPath parentInfo)
-                                                this.fileTree
+                                        let datamapPath = join [| arcPath; DatamapParentInfo.toPath parentInfo |]
 
-                                        this.SetFileTree refreshedFileTree
+                                        match PathHelpers.tryGetParentPath datamapPath with
+                                        | Some parentDirectory ->
+                                            do! this.EnqueueFileTreeDirectoryReconcile parentDirectory
+                                        | None -> ()
                                     | _ -> ()
 
                                     return Ok()
@@ -709,25 +723,14 @@ module ArcVaultExtensions =
             | _ -> return Error(arcNotOpenError ())
         }
 
-        member this.SetFileTree(fileTree: Dictionary<string, FileEntry>) =
-            this.fileTree <- fileTree
-
-            let rendererFileTree =
-                match this.path with
-                | Some arcPath -> toRendererFileTree arcPath fileTree.Values
-                | None -> Dictionary<string, FileEntry>()
-
-            WindowSend.send<IFileTreeRendererApi> this.window (fun api -> api.fileTreeUpdate rendererFileTree)
-
         member this.GetRendererFileTreeSnapshot() = promise {
             match this.path with
             | None -> return Dictionary<string, FileEntry>()
             | Some arcPath ->
-                if this.fileTree.Count = 0 then
-                    let! fileTree = getFileTree arcPath
-                    this.fileTree <- fileTree
+                if this.FileTreeWriter.Tree.Count = 0 then
+                    do! this.EnqueueFileTreeScan true
 
-                return toRendererFileTree arcPath this.fileTree.Values
+                return toRendererFileTree arcPath this.FileTreeWriter.Tree.Entries
         }
 
         member this.LoadArc() = promise {
@@ -1014,19 +1017,7 @@ module ArcVaultExtensions =
 
                 handle "change" (join [| root; ARCtrl.ArcPathHelper.InvestigationFileName |])
 
-                let capturedEpoch = this.WatcherEpoch
-
-                let queuedRefresh =
-                    this.FileTreeUpdateTail
-                    |> Promise.bind (fun () -> promise {
-                        match this.path with
-                        | Some currentRoot when capturedEpoch = this.WatcherEpoch ->
-                            let! refreshedTree = getFileTree currentRoot
-                            this.SetFileTree refreshedTree
-                        | _ -> ()
-                    })
-
-                this.FileTreeUpdateTail <- queuedRefresh |> Promise.catch (fun _ -> ())
+                this.EnqueueFileTreeScan true |> ignore
             | _ -> ()
 
         /// True when the window gaining focus should try to bring a missing watcher back.
@@ -1090,7 +1081,7 @@ module ArcVaultExtensions =
 
             this.isInitializingArc <- false
             this.path <- None
-            this.fileTree.Clear()
+            this.FileTreeWriter.Reset(this.isCaseInsensitive)
 
             try
                 this.ClearArc()
@@ -1112,6 +1103,7 @@ module ArcVaultExtensions =
             | Some arcRoot ->
                 let! isCaseInsensitive = detectCaseInsensitiveAsync arcRoot
                 this.isCaseInsensitive <- isCaseInsensitive
+                this.FileTreeWriter.Reset(isCaseInsensitive)
 
                 swatelogfn
                     this.window.id
@@ -1144,17 +1136,22 @@ module ArcVaultExtensions =
         }
 
         /// Finalizes a prepared ARC after every asynchronous initialization step succeeded.
-        member internal this.FinalizeArcInitialization(fileTree: Dictionary<string, FileEntry>) =
+        member internal this.FinalizeArcInitialization(fileTree: IndexedFileTree) = promise {
             match this.window.isDestroyed (), this.path with
-            | true, _ -> raise (ArcLoadCancelledException this.window.id)
-            | false, None -> swatefailfn this.window.id "Unable to commit ARC initialization without a path."
+            | true, _ -> return raise (ArcLoadCancelledException this.window.id)
+            | false, None -> return swatefailfn this.window.id "Unable to commit ARC initialization without a path."
             | false, Some normalizedPath ->
-                this.fileTree <- fileTree
                 this.isInitializingArc <- false
 
-                WindowSend.send<IPathChangeRendererApi> this.window (fun api -> api.pathChange (Some normalizedPath))
-
-                this.SetFileTree fileTree
+                // The renderer learns the path only once the tree is installed, so a pull on pathChange sees it.
+                do!
+                    this.FileTreeWriter.EnqueueReplace(
+                        (fun () -> promise { return fileTree }),
+                        fun () ->
+                            WindowSend.send<IPathChangeRendererApi>
+                                this.window
+                                (fun api -> api.pathChange (Some normalizedPath))
+                    )
 
                 // Events that arrived during initialization run now that the snapshot is installed.
                 let bufferedEvents = this.BufferedFileWatcherEvents.ToArray()
@@ -1165,6 +1162,7 @@ module ArcVaultExtensions =
                 // started, and a failed prewarm is tried again by the next open. Prewarming never
                 // throws and does not hold up the ARC.
                 Main.VersionControl.TextDiffWorkers.prewarm ()
+        }
 
         member this.OpenARC(path: string) = promise {
             match this.path with
@@ -1251,6 +1249,7 @@ module ArcVaultExtensions =
                     return Error renameError
                 | Ok renamedPath ->
                     this.path <- Some renamedPath
+                    this.FileTreeWriter.Reset(this.isCaseInsensitive)
 
                     match Main.VersionControl.WorkspaceSessionHost.tryCurrent () with
                     | Some host ->
@@ -1286,15 +1285,7 @@ module ArcVaultExtensions =
                                 renamedPath
                                 watcherError.Message
 
-                    try
-                        let! fileTree = getFileTree renamedPath
-                        this.SetFileTree fileTree
-                    with refreshError ->
-                        swatelogfn
-                            this.window.id
-                            "ARC folder was renamed to '%s', but file tree refresh failed: %s"
-                            renamedPath
-                            refreshError.Message
+                    do! this.EnqueueFileTreeScan true
 
                     try
                         WindowSend.send<IPathChangeRendererApi>
@@ -1669,7 +1660,7 @@ type ArcVaults() =
         this.RegisterVaultCore(fun vault -> promise {
             do! vault.OpenARC(path)
             let! fileTree = this.InitializeFileTreeForActiveVault(vault.window.id, vault, path)
-            vault.FinalizeArcInitialization fileTree
+            do! vault.FinalizeArcInitialization fileTree
         })
 
     member private this.ValidateArcRoot(path: string) = promise {
@@ -1699,7 +1690,7 @@ type ArcVaults() =
             let! fileTree = this.InitializeFileTreeForCreatedVault(vault.window.id, vault, path)
 
             try
-                vault.FinalizeArcInitialization fileTree
+                do! vault.FinalizeArcInitialization fileTree
             with ArcLoadCancelledException targetWindowId ->
                 return raise (ArcCreatedButClosedException targetWindowId)
         })
@@ -1754,7 +1745,7 @@ type ArcVaults() =
         | _ -> raise (ArcLoadCancelledException windowId)
 
     member private this.InitializeFileTreeForActiveVault(windowId: int, expectedVault: ArcVault, arcPath: string) = promise {
-        let! fileTreeResult = promise { return! getFileTree arcPath } |> Promise.result
+        let! fileTreeResult = scanFileTreeAsync arcPath expectedVault.isCaseInsensitive true |> Promise.result
 
         this.EnsureVaultIsStillActive(windowId, expectedVault)
 
@@ -1784,7 +1775,7 @@ type ArcVaults() =
                         this.InitializeFileTreeForActiveVault(windowId, vault, arcPath)
 
                 try
-                    vault.FinalizeArcInitialization fileTree
+                    do! vault.FinalizeArcInitialization fileTree
                 with ArcLoadCancelledException targetWindowId when create ->
                     return raise (ArcCreatedButClosedException targetWindowId)
             with error ->

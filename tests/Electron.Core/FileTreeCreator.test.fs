@@ -24,6 +24,11 @@ let private fileTreeCreatorTestOptions = TestOptions(timeout = 20000)
 
 let private normalizeSlashes (path: string) = path.Replace("\\", "/")
 
+let private scanEntries (path: string) (openSession: bool) = promise {
+    let! tree = FileTreeCreator.scanFileTreeAsync path false openSession
+    return tree.Entries |> Seq.toArray
+}
+
 let private createFileEntry name path =
     ({
         name = name
@@ -167,7 +172,7 @@ Vitest.describe (
     "FileTreeCreator LFS metadata",
     fun () ->
         Vitest.test (
-            "getFileEntries annotates materialized and pointer large objects",
+            "scanFileTreeAsync annotates materialized and pointer large objects",
             fileTreeCreatorTestOptions,
             fun () -> promise {
                 do!
@@ -195,7 +200,7 @@ Vitest.describe (
 
                         do! writeUtf8FileAsync pointerFilePath pointerContents
 
-                        let! entries = FileTreeCreator.getFileEntries context.RepoPath true
+                        let! entries = scanEntries context.RepoPath true
 
                         let pointerEntry =
                             entries
@@ -284,57 +289,6 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "getFileEntryWithLfsMetadata enriches a single staged LFS file",
-            fileTreeCreatorTestOptions,
-            fun () -> promise {
-                do!
-                    withTempRepository (fun context -> promise {
-                        let pointerFilePath = join [| context.RepoPath; "single-pointer.psd" |]
-
-                        let! _ = runGitAsync context.RepoPath [| "lfs"; "install"; "--local" |]
-                        let! _ = runGitAsync context.RepoPath [| "lfs"; "track"; "*.psd" |]
-                        do! writeUtf8FileAsync pointerFilePath "Single tracked content.\n"
-                        let! _ = runGitAsync context.RepoPath [| "add"; ".gitattributes"; "single-pointer.psd" |]
-                        ()
-
-                        let! enrichedEntry =
-                            FileTreeCreator.getFileEntryWithLfsMetadata context.RepoPath pointerFilePath
-
-                        Vitest.expect(enrichedEntry.largeObject.IsSome).toBe (true)
-                        let largeObject = enrichedEntry.largeObject |> Option.get
-
-                        Vitest.expect(largeObject.Path).toBe ("single-pointer.psd")
-                        Vitest.expect(largeObject.SizeBytes |> Option.get).toBeGreaterThan (0)
-                        Vitest.expect(largeObject.IsMaterialized).toBe (true)
-                        Vitest.expect(largeObject.IsLocallyAvailable).toBe (true)
-                        expectHexObjectId largeObject
-                    })
-            }
-        )
-
-        Vitest.test (
-            "files absent from large-object listing keep metadata None",
-            fileTreeCreatorTestOptions,
-            fun () -> promise {
-                do!
-                    withTempRepository (fun context -> promise {
-                        let untrackedLfsPath = join [| context.RepoPath; "untracked.psd" |]
-
-                        let! _ = runGitAsync context.RepoPath [| "lfs"; "install"; "--local" |]
-                        let! _ = runGitAsync context.RepoPath [| "lfs"; "track"; "*.psd" |]
-                        do! writeUtf8FileAsync untrackedLfsPath "Untracked file content.\n"
-                        let! _ = runGitAsync context.RepoPath [| "add"; ".gitattributes" |]
-                        ()
-
-                        let! enrichedEntry =
-                            FileTreeCreator.getFileEntryWithLfsMetadata context.RepoPath untrackedLfsPath
-
-                        Vitest.expect(enrichedEntry.largeObject).toEqual (None)
-                    })
-            }
-        )
-
-        Vitest.test (
             "no large objects keeps entries without metadata",
             fileTreeCreatorTestOptions,
             fun () -> promise {
@@ -343,7 +297,7 @@ Vitest.describe (
                         let plainFilePath = join [| context.RepoPath; "plain.txt" |]
                         do! writeUtf8FileAsync plainFilePath "Plain text.\n"
 
-                        let! entries = FileTreeCreator.getFileEntries context.RepoPath true
+                        let! entries = scanEntries context.RepoPath true
 
                         let plainEntry =
                             entries
@@ -438,7 +392,7 @@ Vitest.describe (
                     do! writeUtf8FileAsync (join [| rootPath; ".~$lock.xlsx" |]) "x"
                     do! writeUtf8FileAsync (join [| rootPath; "keep.txt" |]) "x"
 
-                    let! entries = FileTreeCreator.getFileEntries rootPath false
+                    let! entries = scanEntries rootPath false
 
                     let names = entries |> Array.map (fun entry -> entry.name) |> Array.sort
 

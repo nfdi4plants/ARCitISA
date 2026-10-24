@@ -887,7 +887,7 @@ Vitest.describe (
                 try
                     try
                         let api = Main.IPC.IVersionControlApi.api (ipcEvent 65)
-                        vault.fileTree.Clear()
+                        vault.FileTreeWriter.Tree.Clear()
 
                         let! succeeded =
                             api.materializeObject {
@@ -897,7 +897,7 @@ Vitest.describe (
                             }
 
                         expectDtoValue "successful materialization" succeeded |> ignore
-                        Vitest.expect(vault.fileTree.Count).toBe 0
+                        Vitest.expect(vault.FileTreeWriter.Tree.Count).toBe 0
 
                         materializationFails <- true
 
@@ -909,7 +909,7 @@ Vitest.describe (
                             }
 
                         expectDtoFailure "failed materialization" failed |> ignore
-                        Vitest.expect(vault.fileTree.Count).toBeGreaterThan 0
+                        Vitest.expect(vault.FileTreeWriter.Tree.Count).toBeGreaterThan 0
                     with error ->
                         do! cleanup ()
                         return raise error
@@ -1415,7 +1415,7 @@ Vitest.describe (
                     let datasetAbsolutePath = join [| fixture.RepoRoot; datasetPath |]
 
                     let datasetEntry =
-                        vault.fileTree.Values
+                        vault.FileTreeWriter.Tree.Entries
                         |> Seq.tryFind (fun entry ->
                             Swate.Components.Shared.PathHelpers.pathsEqual entry.path datasetAbsolutePath
                         )
