@@ -8,17 +8,6 @@ open Swate.Electron.Shared.FileIOTypes
 
 let LegacyDataMapFileName = "isa_datamap"
 
-/// Maps the Unicode comparison key of each path to its value. Keys shared by several paths are dropped,
-/// because a fallback match on them would pick an arbitrary file.
-let buildComparisonKeyMap (entries: seq<string * 'T>) : Map<string, 'T> =
-    entries
-    |> Seq.groupBy (fun (relativePath, _) -> PathHelpers.normalizeForUnicodeComparison relativePath)
-    |> Seq.choose (fun (comparisonKey, matching) ->
-        match matching |> Seq.toList with
-        | [ (_, value) ] -> Some(comparisonKey, value)
-        | _ -> None
-    )
-    |> Map.ofSeq
 
 let getNonEmptyPathParts (path: string) =
     PathHelpers.normalizePath path

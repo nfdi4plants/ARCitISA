@@ -376,6 +376,50 @@ Vitest.describe (
         )
 
         Vitest.test (
+            "a successful rename keeps the ready state visible while the replacement lists again",
+            fun () ->
+                withTempDirectory (fun parent -> promise {
+                    let root = join [| parent; "arcA" |]
+                    mkdirSync root (MkdirOptions(recursive = true))
+                    let fake = FakeListing()
+                    fake.Entries <- [| entry "a.bin" |]
+                    let! vault, sent = startVault root fake
+                    let versionBefore = vault.GetLargeObjectIndexSnapshot().version
+                    let pushesBefore = sent.Count
+
+                    match! vault.RenameOpenArcRoot "arcB" with
+                    | Error error -> failwith error.Message
+                    | Ok _ -> ()
+
+                    let seeded = vault.GetLargeObjectIndexSnapshot()
+                    Vitest.expect(seeded.state).toBe LargeObjectIndexStatus.Ready
+                    Vitest.expect(seeded.entries.Length).toBe 1
+                    Vitest.expect(seeded.version).toBe versionBefore
+
+                    do! waitUntil "the replacement listing" (fun () -> fake.Count = 2)
+                    do! settle ()
+
+                    // No push after the rename shows the index as not loaded or loading.
+                    let states =
+                        sent
+                        |> Seq.skip pushesBefore
+                        |> Seq.filter isIndexPush
+                        |> Seq.map (fun args -> emitJsExpr args "JSON.stringify($0)": string)
+                        |> Seq.toArray
+
+                    Vitest
+                        .expect(
+                            states
+                            |> Array.exists (fun text -> text.Contains "notLoaded" || text.Contains "loading")
+                        )
+                        .toBe
+                        false
+
+                    vault.DisposeLargeObjectIndex()
+                })
+        )
+
+        Vitest.test (
             "a failed rename keeps the ready state visible while the replacement lists again",
             fun () ->
                 withTempDirectory (fun parent -> promise {

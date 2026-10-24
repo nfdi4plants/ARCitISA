@@ -15,18 +15,10 @@ let private setBridgeProperty name value = window?(name) <- value
 let private clearBridgeProperty name =
     emitJsStatement name "delete window[$0]"
 
-type private PathChange = {|
-    path: string
-    caseInsensitive: bool
-    isRename: bool
-|}
+type private PathChange = {| path: string; isRename: bool |}
 
 let private pathChange (path: string) : PathChange option =
-    Some {|
-        path = path
-        caseInsensitive = false
-        isRename = false
-    |}
+    Some {| path = path; isRename = false |}
 
 let private subscribePathChange handler =
     subscribeProxyReceiver<IPathChangeRendererApi> { pathChange = handler }

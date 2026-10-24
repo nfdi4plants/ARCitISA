@@ -334,6 +334,7 @@ let Main () =
                                 Renderer.Context.AuthStateContext.Provider(
                                     Renderer.Context.LargeObjectStore.LargeObjectStoreProviderWith(
                                         model.ArcRootPath,
+                                        model.ArcRootIsRename,
                                         (fun () -> Api.ipcArcVaultApi.getLargeObjectIndex ()),
                                         Renderer.Context.LfsActivityContext.LfsActivityCtxProvider(
                                             Renderer.Context.FileTreeExpansionContext.FileTreeExpansionCtxProvider(

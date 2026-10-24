@@ -901,7 +901,7 @@ Vitest.describe (
                 try
                     try
                         let api = Main.IPC.IVersionControlApi.api (ipcEvent 65)
-                        vault.FileTreeWriter.Tree.Clear()
+                        vault.FileTreeWriter.Reset vault.isCaseInsensitive
 
                         let! succeeded =
                             api.materializeObject {

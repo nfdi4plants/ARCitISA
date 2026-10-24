@@ -41,17 +41,6 @@ let useFileTreeEntry (path: string option) : FileEntry option =
             | _ -> false
         )
 
-/// The children of a directory. The array stays the same until the directory lists other children or one of
-/// its children changes.
-[<Hook>]
-let useFileTreeChildren (path: string) : FileEntry[] =
-    useFileTreeSelector
-        (fun snapshot -> children snapshot path)
-        (fun left right ->
-            left.Length = right.Length
-            && Array.forall2 (fun a b -> obj.ReferenceEquals(a, b)) left right
-        )
-
 /// Whether the tree has the path (Present), lists its absence (Absent) or has not loaded its parent (Unknown).
 [<Hook>]
 let useFileTreeKnows (path: string option) : KnownState =

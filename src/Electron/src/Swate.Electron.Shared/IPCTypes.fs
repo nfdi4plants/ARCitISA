@@ -110,6 +110,10 @@ type LargeObjectIndexSnapshot = {|
     entries: ObjectStateDto[]
 |}
 
+/// Whether the structural file watcher works. state is running, degraded or unavailable. reason is the error text of
+/// a degraded or unavailable watcher and empty otherwise.
+type FileWatcherStateDto = {| state: string; reason: string |}
+
 /// Structural snapshot of the open ARC's file tree. Paths are ARC-relative and the root is "". loadedDirectories
 /// lists the directories whose children are in entries. treeVersion orders snapshots and updates of one vault.
 type FileTreeSnapshotDto = {|
@@ -117,6 +121,7 @@ type FileTreeSnapshotDto = {|
     entries: FileEntry[]
     loadedDirectories: string[]
     caseInsensitive: bool
+    fileWatcher: FileWatcherStateDto
 |}
 
 /// The current children of one loaded directory.
@@ -285,16 +290,10 @@ type IAuthApi = {
 /// One Way Bridge: Main -> Renderer
 module MainToRendererIpc =
 
-    /// The new ARC root and whether its file system ignores case. isRename is true when the same ARC folder got a
-    /// new name, so ARC-relative state such as expanded folders stays valid. The renderer pulls the file tree after it.
+    /// The new ARC root. isRename is true when the same ARC folder got a new name, so ARC-relative state such as
+    /// expanded folders stays valid. The renderer pulls the file tree after it.
     type IPathChangeRendererApi = {
-        pathChange:
-            {|
-                path: string
-                caseInsensitive: bool
-                isRename: bool
-            |} option
-                -> unit
+        pathChange: {| path: string; isRename: bool |} option -> unit
     }
 
     type IRecentArcsRendererApi = {
@@ -314,6 +313,8 @@ module MainToRendererIpc =
                 mtimeMs: float
             |}
                 -> unit
+        /// The state of the structural file watcher changed. Only unavailable needs a notice.
+        fileWatcherStateChanged: FileWatcherStateDto -> unit
         largeObjectIndexUpdate: LargeObjectIndexSnapshot -> unit
     }
 

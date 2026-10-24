@@ -44,6 +44,21 @@ type FileWatcherState =
     /// Restarts stopped after the last backoff step because the system ran out of watches or file descriptors.
     | Unavailable of reason: string
 
+/// The watcher state as the renderer sees it. Only unavailable asks the user for anything.
+let fileWatcherStateToDto (state: FileWatcherState) : FileWatcherStateDto =
+    match state with
+    | FileWatcherState.Degraded reason -> {|
+        state = "degraded"
+        reason = reason
+      |}
+    | FileWatcherState.Unavailable reason -> {|
+        state = "unavailable"
+        reason = reason
+      |}
+    | FileWatcherState.Stopped
+    | FileWatcherState.Starting
+    | FileWatcherState.Running -> {| state = "running"; reason = "" |}
+
 type FileWatcherStartOutcome =
     | Ready
     | TimedOut
@@ -209,6 +224,7 @@ type ArcVault(window: BrowserWindow) =
     let mutable watcherEpoch = 0
 
     let mutable arcPath: string option = None
+    let mutable fileWatcherStateValue = FileWatcherState.Stopped
 
     let defaultCaseInsensitive =
         match Main.VersionControl.ProviderComposition.currentPathCaseSensitivity () with
@@ -228,7 +244,7 @@ type ArcVault(window: BrowserWindow) =
                     let directories =
                         change.ChangedDirectories
                         |> Array.choose (fun directory ->
-                            match tryGetRepoRelativePathOrRoot root directory, change.Tree.Children directory with
+                            match toTreeRelativePath root directory, change.Tree.Children directory with
                             | Some relativeDirectory, Some children ->
                                 Some {|
                                     directoryPath = relativeDirectory
@@ -270,7 +286,17 @@ type ArcVault(window: BrowserWindow) =
     member val watcher: Chokidar.IWatcher option = None with get, set
 
     /// What the watcher is doing. Unavailable is the "file watching unavailable" state.
-    member val fileWatcherState: FileWatcherState = FileWatcherState.Stopped with get, set
+    member this.fileWatcherState
+        with get () = fileWatcherStateValue
+        and set (value: FileWatcherState) =
+            if value <> fileWatcherStateValue then
+                fileWatcherStateValue <- value
+
+                if not (window.isDestroyed ()) then
+                    WindowSend.send<IFileTreeRendererApi>
+                        window
+                        (fun api -> api.fileWatcherStateChanged (fileWatcherStateToDto value))
+
     /// Identifies the current watcher instance. Listeners capture it and drop events once it has changed.
     member val internal FileWatcherToken: int = 0 with get, set
     member val internal FileWatcherEventHandler: (string -> string -> unit) option = None with get, set
@@ -744,7 +770,9 @@ module ArcVaultExtensions =
             | Some arcPath when this.CanRevalidateFileTree ->
                 let absolute =
                     relativeDirectories
-                    |> Array.map (fun relative -> join [| arcPath; relative |] |> PathHelpers.normalizePath)
+                    |> Array.map (fun relative ->
+                        join [| arcPath; relative |] |> PathHelpers.normalizePathKeepingWhitespace
+                    )
 
                 this.FileTreeWriter.Enqueue(fun tree ->
                     reconcileLoadedDirectoriesAsync
@@ -773,9 +801,11 @@ module ArcVaultExtensions =
                 | Some _ when not this.CanLoadDirectory ->
                     return Error(exn "The ARC is renaming or closing. Try again in a moment.")
                 | Some arcPath ->
-                    let absolute = join [| arcPath; relativeDirectory |] |> PathHelpers.normalizePath
+                    let absolute =
+                        join [| arcPath; relativeDirectory |]
+                        |> PathHelpers.normalizePathKeepingWhitespace
 
-                    match tryGetRepoRelativePathOrRoot arcPath absolute with
+                    match toTreeRelativePath arcPath absolute with
                     | None -> return Error(exn $"The path '{relativeDirectory}' is outside the ARC.")
                     | Some relativePath ->
                         let! outcome =
@@ -808,9 +838,13 @@ module ArcVaultExtensions =
             match this.path with
             | None -> return Error(arcNotOpenError ())
             | Some arcPath ->
-                let absolute = join [| arcPath; relativePath |] |> PathHelpers.normalizePath
+                let absolute =
+                    join [| arcPath; relativePath |] |> PathHelpers.normalizePathKeepingWhitespace
 
-                match tryGetRepoRelativePath arcPath absolute with
+                match
+                    toTreeRelativePath arcPath absolute
+                    |> Option.filter (fun relative -> relative <> "")
+                with
                 | None -> return Error(exn $"The path '{relativePath}' is outside the ARC.")
                 | Some _ ->
                     try
@@ -849,7 +883,10 @@ module ArcVaultExtensions =
                     try
                         let! stats = statAsync absolutePath
 
-                        match tryGetRepoRelativePath root absolutePath with
+                        match
+                            toTreeRelativePath root absolutePath
+                            |> Option.filter (fun relative -> relative <> "")
+                        with
                         | Some relativePath when stats.isFile () ->
                             WindowSend.send<IFileTreeRendererApi>
                                 this.window
@@ -1274,15 +1311,21 @@ module ArcVaultExtensions =
                                     syncArcStaticHashes persistedArc arcLocal
                                     this.RefreshHasUnsavedArcChangesFlag()
 
-                                    match arcFile with
-                                    | ArcFiles.DataMap(Some parentInfo, _) ->
-                                        let datamapPath = join [| arcPath; DatamapParentInfo.toPath parentInfo |]
+                                    // The watcher reports the new file late, or never when it is down. The nearest loaded
+                                    // folder is reconciled now, which loads a new entity folder through the zone rule.
+                                    let addedRelativePath =
+                                        match arcFile with
+                                        | ArcFiles.DataMap(Some parentInfo, _) ->
+                                            Some(DatamapParentInfo.toPath parentInfo)
+                                        | _ -> arcFile.TryGetRelativePath()
 
-                                        match PathHelpers.tryGetParentPath datamapPath with
+                                    match addedRelativePath with
+                                    | Some relativePath ->
+                                        match PathHelpers.tryGetParentPath (join [| arcPath; relativePath |]) with
                                         | Some parentDirectory ->
                                             do! this.EnqueueFileTreeDirectoryReconcile parentDirectory
                                         | None -> ()
-                                    | _ -> ()
+                                    | None -> ()
 
                                     return Ok()
                                 | Error loadErrors ->
@@ -1312,8 +1355,7 @@ module ArcVaultExtensions =
                     this.FileTreeWriter.EnqueueWithResult(fun tree -> promise {
                         let entries = toRendererEntries arcPath tree.Entries
 
-                        let loaded =
-                            tree.LoadedDirectories |> Array.choose (tryGetRepoRelativePathOrRoot arcPath)
+                        let loaded = tree.LoadedDirectories |> Array.choose (toTreeRelativePath arcPath)
 
                         return [||], (entries, loaded)
                     })
@@ -1325,6 +1367,7 @@ module ArcVaultExtensions =
                         entries = entries
                         loadedDirectories = loaded
                         caseInsensitive = this.isCaseInsensitive
+                        fileWatcher = fileWatcherStateToDto this.fileWatcherState
                     |}
                 | Error _ ->
                     // A reset dropped the job. The renderer pulls again when pathChange announces the new tree.
@@ -1333,6 +1376,7 @@ module ArcVaultExtensions =
                         entries = [||]
                         loadedDirectories = [||]
                         caseInsensitive = this.isCaseInsensitive
+                        fileWatcher = fileWatcherStateToDto this.fileWatcherState
                     |}
             | _ ->
                 return {|
@@ -1340,6 +1384,7 @@ module ArcVaultExtensions =
                     entries = [||]
                     loadedDirectories = [||]
                     caseInsensitive = this.isCaseInsensitive
+                    fileWatcher = fileWatcherStateToDto this.fileWatcherState
                 |}
         }
 
@@ -1362,6 +1407,9 @@ module ArcVaultExtensions =
             | Some _, _ -> Fable.Core.JS.Constructors.Promise.resolve FileWatcherStartOutcome.Ready
             | None, None ->
                 Fable.Core.JS.Constructors.Promise.resolve (FileWatcherStartOutcome.Failed(arcNotOpenError ()))
+            // A rename or restart that outlives its window or a close must not leave a watcher behind.
+            | None, Some _ when this.window.isDestroyed () || this.isCloseApproved ->
+                Fable.Core.JS.Constructors.Promise.resolve FileWatcherStartOutcome.Stopped
             | None, Some arcPath ->
                 let previousState = this.fileWatcherState
                 this.FileWatcherToken <- this.FileWatcherToken + 1
@@ -1822,7 +1870,6 @@ module ArcVaultExtensions =
                                     api.pathChange (
                                         Some {|
                                             path = normalizedPath
-                                            caseInsensitive = this.isCaseInsensitive
                                             isRename = false
                                         |}
                                     )
@@ -2003,7 +2050,12 @@ module ArcVaultExtensions =
                                 watcherError.Message
 
                     do! this.EnqueueFileTreeScan()
-                    this.StartLargeObjectIndex()
+
+                    // The index keys are ARC-relative, so the previous index still holds after the rename. It keeps the
+                    // badges in place while the replacement lists again.
+                    match previousReady with
+                    | Some ready -> this.StartLargeObjectIndex(ready)
+                    | None -> this.StartLargeObjectIndex()
 
                     try
                         WindowSend.send<IPathChangeRendererApi>
@@ -2012,7 +2064,6 @@ module ArcVaultExtensions =
                                 api.pathChange (
                                     Some {|
                                         path = renamedPath
-                                        caseInsensitive = this.isCaseInsensitive
                                         isRename = true
                                     |}
                                 )

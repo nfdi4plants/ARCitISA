@@ -290,7 +290,6 @@ type Navbar =
     static member private SaveArcButton() =
 
         let errorCtx = useErrorModalCtx ()
-
         let isSaving, setIsSaving = React.useState false
 
         let hasUnsavedChanges =

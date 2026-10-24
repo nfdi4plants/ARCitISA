@@ -14,7 +14,6 @@ type LargeObjectSnapshot = {
     State: LargeObjectIndexStatus
     CaseInsensitive: bool
     ByPathKey: Map<PathKey, ObjectStateDto>
-    ByComparisonKey: Map<string, ObjectStateDto>
     /// The entries by their path as sent, for the common lookup that finds the path unchanged.
     ByExactPath: System.Collections.Generic.Dictionary<string, ObjectStateDto>
 }
@@ -26,7 +25,6 @@ module LargeObjectSnapshot =
         State = LargeObjectIndexStatus.NotLoaded
         CaseInsensitive = false
         ByPathKey = Map.empty
-        ByComparisonKey = Map.empty
         ByExactPath = System.Collections.Generic.Dictionary()
     }
 
@@ -38,10 +36,6 @@ module LargeObjectSnapshot =
             snapshot.entries
             |> Array.map (fun dto -> PathKey.ofPath snapshot.caseInsensitive dto.Path, dto)
             |> Map.ofArray
-        ByComparisonKey =
-            snapshot.entries
-            |> Array.map (fun dto -> dto.Path, dto)
-            |> buildComparisonKeyMap
         ByExactPath =
             let exact = System.Collections.Generic.Dictionary<string, ObjectStateDto>()
 
@@ -51,7 +45,8 @@ module LargeObjectSnapshot =
             exact
     }
 
-    /// The exact path key wins. The Unicode comparison key finds names that differ only in their normalization form.
+    /// The exact path wins. The path key follows the case rule of the volume and composes Unicode, so a name that
+    /// differs only in its normalization form still finds its entry.
     let tryFind (relativePath: string) (snapshot: LargeObjectSnapshot) : ObjectStateDto option =
         // Most snapshots are empty and most paths are no large object, so keys are built only after an exact miss.
         if snapshot.ByExactPath.Count = 0 then
@@ -59,10 +54,7 @@ module LargeObjectSnapshot =
         else
             match snapshot.ByExactPath.TryGetValue relativePath with
             | true, found -> Some found
-            | false, _ ->
-                match Map.tryFind (PathKey.ofPath snapshot.CaseInsensitive relativePath) snapshot.ByPathKey with
-                | Some found -> Some found
-                | None -> Map.tryFind (PathHelpers.normalizeForUnicodeComparison relativePath) snapshot.ByComparisonKey
+            | false, _ -> Map.tryFind (PathKey.ofPath snapshot.CaseInsensitive relativePath) snapshot.ByPathKey
 
 type LargeObjectStore() =
     let mutable snapshot = LargeObjectSnapshot.empty
@@ -117,10 +109,16 @@ let forwardToActiveStore (snapshot: LargeObjectIndexSnapshot) =
 let LargeObjectStoreCtx = React.createContext<LargeObjectStore> (LargeObjectStore())
 
 /// Owns the store of the open ARC. It pulls the vault's current index on mount and whenever the ARC root changes.
-/// Pushes reach the store through forwardToActiveStore, which is registered before the pull starts.
+/// Pushes reach the store through forwardToActiveStore, which is registered before the pull starts. The index keys are
+/// ARC-relative, so the badges of a renamed ARC folder stay in place while the pull runs. Another root starts empty.
 [<ReactComponent>]
 let LargeObjectStoreProviderWith
-    (arcRootPath: string option, pull: unit -> JS.Promise<Result<LargeObjectIndexSnapshot, exn>>, children: ReactElement) =
+    (
+        arcRootPath: string option,
+        isRename: bool,
+        pull: unit -> JS.Promise<Result<LargeObjectIndexSnapshot, exn>>,
+        children: ReactElement
+    ) =
     let store, _ = React.useState (fun () -> LargeObjectStore())
 
     React.useEffect (
@@ -138,7 +136,9 @@ let LargeObjectStoreProviderWith
 
     React.useEffect (
         (fun () ->
-            store.Clear()
+            if not isRename then
+                store.Clear()
+
             let isCurrent = ref true
 
             if arcRootPath.IsSome then
@@ -173,15 +173,9 @@ let useLargeObjectStore () = React.useContext LargeObjectStoreCtx
 let useLargeObjectLookup () : string -> ObjectStateDto option =
     let store = useLargeObjectStore ()
 
-    let snapshot =
-        React.useSyncExternalStore (
-            (fun (callback: unit -> unit) -> store.Subscribe callback),
-            (fun () -> store.Snapshot)
-        )
+    let subscribe =
+        React.useCallback ((fun (callback: unit -> unit) -> store.Subscribe callback), [| box store |])
+
+    let snapshot = React.useSyncExternalStore (subscribe, (fun () -> store.Snapshot))
 
     React.useMemo ((fun () -> fun (path: string) -> LargeObjectSnapshot.tryFind path snapshot), [| box snapshot |])
-
-[<Hook>]
-let useLargeObject (relativePath: string) : ObjectStateDto option =
-    let lookup = useLargeObjectLookup ()
-    lookup relativePath

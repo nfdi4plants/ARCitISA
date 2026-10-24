@@ -412,3 +412,28 @@ module FileExplorerLogic =
           }
 
         | SelectItem itemId -> { model with SelectedId = Some itemId }
+
+/// The stable callbacks of a tree row. The rows read them through the latest props of the explorer,
+/// so a memoized row calls the current functions even when its own props did not change.
+type TreeRowHandlers = {
+    GetItemIconClass: FileItem -> string option
+    GetItemActions: FileItem -> ContextMenuItem list
+    GetItemStatusAction: FileItem -> ContextMenuItem option
+    CanCreateItem: FileItem -> bool
+    OnCreateItem: (FileItem -> unit) option
+    CanDeleteItem: FileItem -> bool
+    OnDeleteItem: (FileItem -> unit) option
+    /// Selects the file or toggles the directory with the given row id.
+    OnRowClick: string -> unit
+}
+
+type TreeRowProps = {
+    Row: FileExplorerLogic.VisibleRow
+    IsSelected: bool
+    /// Selected rows and the ancestors of the selected row.
+    IsHighlighted: bool
+    IsExpanded: bool
+    Handlers: TreeRowHandlers
+    /// Mirrors truncateOverflowingItemNames of the explorer.
+    TruncateNames: bool
+}

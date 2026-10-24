@@ -25,6 +25,7 @@ let private snapshotOf (entries: FileEntry list) (loaded: string list) =
         caseInsensitive = false
         entries = Array.ofList (FileEntry.create ("arc", "", true) :: entries)
         loadedDirectories = Array.ofList ("" :: loaded)
+        fileWatcher = {| state = "running"; reason = "" |}
     |}
 
     store.Snapshot

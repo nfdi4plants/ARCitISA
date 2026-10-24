@@ -36,6 +36,9 @@ let private withTempFolder (body: string -> JS.Promise<unit>) = promise {
         TestHelpers.removeDirectoryAsync root |> ignore
 }
 
+[<Emit("process.platform === 'win32'")>]
+let private isWindows: bool = jsNative
+
 let private treePaths (tree: IndexedFileTree) =
     tree.Entries |> Seq.map (fun e -> e.path) |> Seq.sort |> Seq.toArray
 
@@ -482,11 +485,12 @@ Vitest.describe (
                 tree.ReplaceChildren("/arc/assays/A", [| entry "x.txt" "/arc/assays/A" false |])
                 |> ignore
 
-                let changed, newDirectories =
+                let changed, newDirectories, replacedLoaded =
                     tree.ReplaceChildrenReportingNew("/arc/assays", [| entry "a" "/arc/assays" true |])
 
                 Vitest.expect(changed).toEqual ([| "/arc/assays" |])
                 Vitest.expect(newDirectories |> Array.map _.path).toEqual ([| "/arc/assays/a" |])
+                Vitest.expect(replacedLoaded |> Array.map _.path).toEqual ([| "/arc/assays/a" |])
                 Vitest.expect(tree.IsLoaded "/arc/assays/a").toBe (false)
                 Vitest.expect((tree.TryFind "/arc/assays/a/x.txt").IsSome).toBe (false)
         )
@@ -1024,6 +1028,177 @@ Vitest.describe (
 
                         Vitest.expect(deleted.IsOk).toBe true
                         Vitest.expect((vault.FileTreeWriter.Tree.TryFind(root + "/assays/A1")).IsSome).toBe false
+                    })
+        )
+)
+
+Vitest.describe (
+    "final review fixes of the main file tree",
+    fun () ->
+        Vitest.test (
+            "reconcile reloads a loaded payload folder that was renamed by case only",
+            fun () ->
+                withTempFolder (fun root -> promise {
+                    let dataset = join [| root; "assays"; "A"; "dataset" |]
+                    do! mkdirAsync' (join [| dataset; "Raw" |])
+                    do! writeAsync (join [| dataset; "Raw"; "x.txt" |])
+                    let! tree = TestHelpers.loadWholeTreeAsync root true
+                    Vitest.expect(tree.IsLoaded(root + "/assays/A/dataset/Raw")).toBe true
+
+                    do! rmAsync (join [| dataset; "Raw" |]) (RmOptions(recursive = true, force = true))
+                    do! mkdirAsync' (join [| dataset; "raw" |])
+                    do! writeAsync (join [| dataset; "raw"; "x.txt" |])
+
+                    let! changed =
+                        FileTreeCreator.reconcileFileTreeDirectoryAsync root tree (root + "/assays/A/dataset")
+
+                    // The folder is loaded again in the same job, so the publish carries its children.
+                    Vitest.expect(tree.IsLoaded(root + "/assays/A/dataset/raw")).toBe true
+                    Vitest.expect((tree.TryFind(root + "/assays/A/dataset/raw/x.txt")).IsSome).toBe true
+
+                    Vitest
+                        .expect(changed)
+                        .toEqual (
+                            [|
+                                root + "/assays/A/dataset"
+                                root + "/assays/A/dataset/raw"
+                            |]
+                        )
+                })
+        )
+
+        Vitest.test (
+            "a folder that became a file reconciles its parent so the file appears",
+            fun () ->
+                withTempFolder (fun root -> promise {
+                    do! mkdirAsync' (join [| root; "item" |])
+                    do! writeAsync (join [| root; "item"; "inner.txt" |])
+                    let! tree = TestHelpers.loadWholeTreeAsync root false
+
+                    do! rmAsync (join [| root; "item" |]) (RmOptions(recursive = true, force = true))
+                    do! writeAsync (join [| root; "item" |])
+
+                    let! changed = FileTreeCreator.reconcileFileTreeDirectoryAsync root tree (root + "/item")
+
+                    Vitest.expect((tree.TryFind(root + "/item")).Value.isDirectory).toBe false
+                    Vitest.expect((tree.TryFind(root + "/item/inner.txt")).IsSome).toBe false
+                    Vitest.expect(changed |> Array.contains root).toBe true
+                })
+        )
+
+        Vitest.test (
+            "the writer merges changed directories with the case rule of its tree",
+            fun () -> promise {
+                let published = ResizeArray<FileTreeChange>()
+                // Built case-insensitive, then reset to the case-sensitive rule that the probe found.
+                let writer = FileTreeWriter(true, ignore, published.Add)
+                writer.Reset false
+
+                do! writer.Enqueue(fun _ -> promise { return [| "/arc/x/Data"; "/arc/x/data" |] })
+
+                Vitest.expect(published.Count).toBe 1
+
+                Vitest
+                    .expect(published.[0].ChangedDirectories |> Array.sort)
+                    .toEqual ([| "/arc/x/Data"; "/arc/x/data" |])
+            }
+        )
+
+        Vitest.test (
+            "a folder name that ends in whitespace keeps it in tree paths",
+            fun () ->
+                let tree = IndexedFileTree(false)
+
+                Vitest
+                    .expect(tree.ReplaceChildren("/arc/data ", [| entry "x.txt" "/arc/data " false |]))
+                    .toEqual ([| "/arc/data " |])
+
+                Vitest
+                    .expect(FileTreeCreator.toTreeRelativePath "/arc" "/arc/assays/data ")
+                    .toEqual (Some "assays/data ")
+
+                Vitest.expect(tree.RemoveSubtree "/arc/data /x.txt").toEqual ([| "/arc/data " |])
+        )
+)
+
+Vitest.describe (
+    "final review fixes of the lazy file tree IPC",
+    fun () ->
+        let withRegisteredArc (windowId: int) (body: ArcVault -> JS.Promise<unit>) =
+            TestHelpers.withTempArcWith
+                "swate-final-tree-"
+                "FinalTreeArc"
+                (fun arc -> arc.AddAssay(ARCtrl.ArcAssay("A1")))
+                (fun arcPath -> promise {
+                    let vault = TestHelpers.registerVault windowId arcPath
+                    do! vault.LoadArc()
+                    do! vault.EnqueueFileTreeScan()
+
+                    try
+                        do! body vault
+                    finally
+                        ARC_VAULTS.Vaults.Remove windowId |> ignore
+                })
+
+        Vitest.test (
+            "AddArcFile puts a new entity folder and its file into the tree and publishes them",
+            fun () ->
+                withRegisteredArc
+                    93
+                    (fun vault -> promise {
+                        let root = FileTreeCreator.normalizeRootPath vault.path.Value
+                        let published = ResizeArray<FileTreeChange>()
+                        vault.FileTreeWriter.Publish <- published.Add
+
+                        let request =
+                            Swate.Electron.Shared.FileIOHelper.FileContentDTO.fromArcFile (
+                                Swate.Components.Shared.ARCtrlHelper.ArcFiles.Assay(ARCtrl.ArcAssay.init "Added")
+                            )
+                            |> Option.get
+
+                        match! vault.AddArcFile request with
+                        | Error error -> failwith error.Message
+                        | Ok() -> ()
+
+                        Vitest.expect(vault.FileTreeWriter.Tree.IsLoaded(root + "/assays/Added")).toBe true
+
+                        Vitest
+                            .expect((vault.FileTreeWriter.Tree.TryFind(root + "/assays/Added/isa.assay.xlsx")).IsSome)
+                            .toBe
+                            true
+
+                        Vitest
+                            .expect(
+                                published
+                                |> Seq.exists (fun change ->
+                                    change.ChangedDirectories |> Array.contains (root + "/assays/Added")
+                                )
+                            )
+                            .toBe
+                            true
+                    })
+        )
+
+        Vitest.test (
+            "a folder name that ends in whitespace loads through loadDirectory",
+            TestOptions(skip = isWindows),
+            fun () ->
+                withRegisteredArc
+                    94
+                    (fun vault -> promise {
+                        let folder = join [| vault.path.Value; "assays"; "A1"; "data " |]
+                        do! mkdirAsync' folder
+                        do! writeAsync (join [| folder; "x.txt" |])
+                        let api = Main.IPC.ArcVaultsApi.api (TestHelpers.ipcEvent 94)
+
+                        let! loaded = api.loadDirectory "assays/A1/data "
+                        let loaded = loaded |> Result.defaultWith (fun error -> failwith error.Message)
+
+                        Vitest.expect(loaded.directories.[0].directoryPath).toBe "assays/A1/data "
+
+                        Vitest
+                            .expect(loaded.directories.[0].children |> Array.map _.path)
+                            .toEqual ([| "assays/A1/data /x.txt" |])
                     })
         )
 )

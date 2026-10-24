@@ -1435,6 +1435,54 @@ Vitest.describe (
         )
 
         Vitest.test (
+            "a file watcher start after the window is gone leaves no watcher behind",
+            fun () ->
+                withTempArc
+                    ignore
+                    (fun arcPath -> promise {
+                        let windowState =
+                            createTestWindow {
+                                testWindowOptions 92 with
+                                    InitiallyDestroyed = true
+                            }
+
+                        let vault = ArcVault(windowState.Window)
+                        vault.path <- Some arcPath
+
+                        let! outcome = vault.StartFileWatcherAsync()
+
+                        Vitest.expect(outcome).toEqual FileWatcherStartOutcome.Stopped
+                        Vitest.expect(vault.watcher.IsNone).toBe true
+                    })
+        )
+
+        Vitest.test (
+            "a change of the watcher state is pushed to the renderer",
+            fun () ->
+                withTempArc
+                    ignore
+                    (fun arcPath -> promise {
+                        let windowState = createTestWindow (testWindowOptions 95)
+                        let vault = ArcVault(windowState.Window)
+                        vault.path <- Some arcPath
+
+                        vault.fileWatcherState <- FileWatcherState.Unavailable "ENOSPC: no watches left"
+                        vault.fileWatcherState <- FileWatcherState.Running
+
+                        let pushes =
+                            windowState.SentMessages
+                            |> Seq.map (fun args -> emitJsExpr args "JSON.stringify($0)": string)
+                            |> Seq.filter (fun text -> text.Contains "fileWatcherStateChanged")
+                            |> Seq.toArray
+
+                        Vitest.expect(pushes.Length).toBe 2
+                        Vitest.expect(pushes.[0].Contains "unavailable").toBe true
+                        Vitest.expect(pushes.[0].Contains "ENOSPC").toBe true
+                        Vitest.expect(pushes.[1].Contains "running").toBe true
+                    })
+        )
+
+        Vitest.test (
             "a tree update queued before a state reset does not publish",
             fun () ->
                 withTempArc

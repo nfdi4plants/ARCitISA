@@ -50,6 +50,7 @@
     <Compile Include="Components\LeftSidebar\FileExplorer\FileTreeRename.fs" />
     <Compile Include="Components\LeftSidebar\FileExplorer\FileTreeDelete.fs" />
     <Compile Include="Components\LeftSidebar\FileExplorer\FileTree.fs" />
+    <Compile Include="Components\LeftSidebar\FileExplorer\FileWatcherNotice.fs" />
     <Compile Include="Components\LeftSidebar\FileExplorer\Main.fs" />
     <Compile Include="Components\LeftSidebar\Git\Types.fs" />
     <Compile Include="Components\LeftSidebar\Git\GitSidebarEmptyState.fs" />

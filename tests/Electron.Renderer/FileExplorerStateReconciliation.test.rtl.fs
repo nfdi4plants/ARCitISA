@@ -55,6 +55,7 @@ let private storeWith (files: string list) =
                    |> List.map (fun path -> FileEntry.create (path.Substring(path.LastIndexOf '/' + 1), path, false)))
             )
         loadedDirectories = [| ""; "data"; "other" |]
+        fileWatcher = {| state = "running"; reason = "" |}
     |}
 
     store
@@ -64,6 +65,7 @@ let private controllerFor (store: FileTreeStore) : FileStateController = {
     fileTreeStore = store
     subscribeFileContentChanged = fun _ -> ignore
     rootChangeIsRename = false
+    fileWatcher = runningFileWatcher
     setSelection = ignore
     updateSelection = ignore
     activeFileImport = None

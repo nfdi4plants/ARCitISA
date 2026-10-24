@@ -80,9 +80,6 @@ let readFileBase64Async (path: string) : JS.Promise<string> =
 [<Import("writeFile", "fs/promises")>]
 let writeFileAsync (path: string) (content: string) (encoding: TextEncoding) : JS.Promise<unit> = jsNative
 
-[<Import("truncate", "fs/promises")>]
-let truncateAsync (path: string) (length: float) : JS.Promise<unit> = jsNative
-
 [<Import("rename", "fs/promises")>]
 let renameAsync (oldPath: string) (newPath: string) : JS.Promise<unit> = jsNative
 
