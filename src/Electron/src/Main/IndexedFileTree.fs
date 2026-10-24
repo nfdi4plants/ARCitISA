@@ -69,10 +69,11 @@ type IndexedFileTree(caseInsensitive: bool) =
     member _.SetRoot(entry: FileEntry) = entries.[keyOf entry.path] <- entry
 
     /// Replaces the direct children of a directory and marks it loaded. Children that disappeared lose their
-    /// subtree. A child with the same name, path and kind keeps its existing instance. Returns whether anything
-    /// changed and the child directories that were inserted or replaced. A replaced directory (for example after a
-    /// case-only rename) has lost its subtree and its loaded mark, so the caller has to load it again.
-    member _.ReplaceChildrenReportingNew(directoryPath: string, children: FileEntry[]) : bool * FileEntry[] =
+    /// subtree. A child with the same name, path and kind keeps its existing instance. Returns the directories
+    /// whose child list changed (the directory itself, or none) and the child directories that were inserted or
+    /// replaced. A replaced directory (for example after a case-only rename) has lost its subtree and its loaded
+    /// mark, so the caller has to load it again.
+    member _.ReplaceChildrenReportingNew(directoryPath: string, children: FileEntry[]) : string[] * FileEntry[] =
         let newDirectories = ResizeArray<FileEntry>()
         let directoryKey = keyOf directoryPath
 
@@ -130,18 +131,25 @@ type IndexedFileTree(caseInsensitive: bool) =
         else
             childKeys.[directoryKey] <- incomingKeys
 
-        changed, newDirectories.ToArray()
+        let changedDirectories =
+            if changed then
+                [| PathHelpers.normalizePath directoryPath |]
+            else
+                [||]
 
-    /// Replaces the direct children of a directory. Returns true when anything changed.
-    member this.ReplaceChildren(directoryPath: string, children: FileEntry[]) : bool =
+        changedDirectories, newDirectories.ToArray()
+
+    /// Replaces the direct children of a directory. Returns the directories whose child list changed.
+    member this.ReplaceChildren(directoryPath: string, children: FileEntry[]) : string[] =
         this.ReplaceChildrenReportingNew(directoryPath, children) |> fst
 
-    /// Removes a path with everything below it, also from the child list of its parent.
-    member _.RemoveSubtree(path: string) : bool =
+    /// Removes a path with everything below it, also from the child list of its parent. Returns the parent
+    /// directory when the path was in the tree, because the child list of the parent changed.
+    member _.RemoveSubtree(path: string) : string[] =
         let key = keyOf path
 
         if not (entries.ContainsKey key) && not (childKeys.ContainsKey key) then
-            false
+            [||]
         else
             removeKeyAndDescendants key
 
@@ -160,22 +168,40 @@ type IndexedFileTree(caseInsensitive: bool) =
                 | false, _ -> ()
             | None -> ()
 
-            true
+            match PathHelpers.tryGetParentPath path with
+            | Some parentPath -> [| parentPath |]
+            | None -> [||]
 
     member _.Clear() =
         entries.Clear()
         childKeys.Clear()
         loadedDirectories.Clear()
 
-/// Runs every main-process change of one vault's tree one after another. TreeVersion grows with each job that
-/// changed the tree, and the publish callback runs once per such job.
-type FileTreeWriter(caseInsensitive: bool, log: string -> unit, publish: IndexedFileTree -> unit) =
+/// Merges lists of changed directories into one list without duplicates.
+let mergeChangedDirectories (caseInsensitive: bool) (lists: string[] seq) : string[] =
+    lists
+    |> Seq.concat
+    |> Seq.distinctBy (fun path -> PathKey.ofPath caseInsensitive path |> PathKey.value)
+    |> Seq.toArray
+
+/// What a changed writer job hands to the publish callback. ChangedDirectories are normalized absolute paths
+/// whose child list changed in the job.
+type FileTreeChange = {
+    Tree: IndexedFileTree
+    TreeVersion: int
+    ChangedDirectories: string[]
+}
+
+/// Runs every main-process change of one vault's tree one after another. A job reports the directories whose
+/// child list changed. TreeVersion grows with each job that reported some and with each full replace. The publish
+/// callback runs once per job that reported directories.
+type FileTreeWriter(caseInsensitive: bool, log: string -> unit, publish: FileTreeChange -> unit) =
     let mutable tree = IndexedFileTree(caseInsensitive)
     let mutable tail: JS.Promise<unit> = JS.Constructors.Promise.resolve ()
     let mutable generation = 0
     let mutable treeVersion = 0
 
-    member val Publish: IndexedFileTree -> unit = publish with get, set
+    member val Publish: FileTreeChange -> unit = publish with get, set
 
     member _.Tree = tree
 
@@ -184,42 +210,72 @@ type FileTreeWriter(caseInsensitive: bool, log: string -> unit, publish: Indexed
     /// Counts the resets. Jobs enqueued before a reset are skipped.
     member _.Generation = generation
 
-    member private this.EnqueueCore
-        (job: IndexedFileTree -> JS.Promise<IndexedFileTree * bool>, beforePublish: (unit -> unit) option)
-        : JS.Promise<unit> =
+    member private this.EnqueueCore<'T>
+        (
+            job: IndexedFileTree -> JS.Promise<IndexedFileTree * string[] * bool * 'T>,
+            beforePublish: (unit -> unit) option
+        ) : JS.Promise<Result<'T * int, exn>> =
         let capturedGeneration = generation
 
-        let run () = promise {
-            if capturedGeneration = generation then
+        let run () : JS.Promise<Result<'T * int, exn>> = promise {
+            if capturedGeneration <> generation then
+                return Error(exn "The file tree was reset before the job ran.")
+            else
                 try
-                    let! (nextTree, changed) = job tree
+                    let! (nextTree, changedDirectories, replaced, result) = job tree
 
                     // A reset during the job retired this tree, so the result is dropped.
-                    if capturedGeneration = generation then
+                    if capturedGeneration <> generation then
+                        return Error(exn "The file tree was reset during the job.")
+                    else
                         tree <- nextTree
 
-                        if changed then
+                        if replaced || changedDirectories.Length > 0 then
                             treeVersion <- treeVersion + 1
                             beforePublish |> Option.iter (fun callback -> callback ())
-                            this.Publish tree
+
+                            if changedDirectories.Length > 0 then
+                                this.Publish {
+                                    Tree = tree
+                                    TreeVersion = treeVersion
+                                    ChangedDirectories = changedDirectories
+                                }
+
+                        return Ok(result, treeVersion)
                 with error ->
                     log $"File tree update failed: {error.Message}"
+                    return Error error
         }
 
         let queued = tail |> Promise.bind run
-        tail <- queued
+        tail <- queued |> Promise.map ignore
         queued
 
-    /// Queues a job that changes the given tree in place. It returns true when it changed the tree.
-    member this.Enqueue(job: IndexedFileTree -> JS.Promise<bool>) : JS.Promise<unit> =
-        this.EnqueueCore((fun current -> job current |> Promise.map (fun changed -> current, changed)), None)
+    /// Queues a job that changes the given tree in place and returns the directories whose child list changed.
+    member this.Enqueue(job: IndexedFileTree -> JS.Promise<string[]>) : JS.Promise<unit> =
+        this.EnqueueCore((fun current -> job current |> Promise.map (fun changed -> current, changed, false, ())), None)
+        |> Promise.map ignore
 
-    /// Queues a full scan. The scanned tree replaces the current one. beforePublish runs after the tree is
-    /// installed and before it is published.
+    /// Like Enqueue, and the job also hands a value back. The result carries the value and the tree version after
+    /// the job. It is an Error when a reset dropped the job or the job threw.
+    member this.EnqueueWithResult<'T>
+        (job: IndexedFileTree -> JS.Promise<string[] * 'T>)
+        : JS.Promise<Result<'T * int, exn>> =
+        this.EnqueueCore(
+            (fun current ->
+                job current
+                |> Promise.map (fun (changed, value) -> current, changed, false, value)
+            ),
+            None
+        )
+
+    /// Queues a full replace. The new tree replaces the current one and TreeVersion grows without a publish,
+    /// because the renderer pulls the snapshot. beforePublish runs after the tree is installed.
     member this.EnqueueReplace
         (scan: unit -> JS.Promise<IndexedFileTree>, ?beforePublish: unit -> unit)
         : JS.Promise<unit> =
-        this.EnqueueCore((fun _ -> scan () |> Promise.map (fun scanned -> scanned, true)), beforePublish)
+        this.EnqueueCore((fun _ -> scan () |> Promise.map (fun scanned -> scanned, [||], true, ())), beforePublish)
+        |> Promise.map ignore
 
     /// Starts over with an empty tree. Jobs that were enqueued earlier will not run.
     member _.Reset(newCaseInsensitive: bool) =

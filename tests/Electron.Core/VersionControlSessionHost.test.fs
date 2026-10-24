@@ -1410,6 +1410,10 @@ Vitest.describe (
 
                     writeText (join [| fixture.RepoRoot; datasetPath |]) (String.replicate 100 "r")
 
+                    // Payload folders load on demand, and the refresh after the save revalidates the loaded ones.
+                    let! datasetLoaded = vault.LoadDirectory "assays/a1/dataset"
+                    Vitest.expect(datasetLoaded.IsOk).toBe true
+
                     let! status = api.getStatus (request "dataset-status")
                     let version = (expectDtoValue "dataset status" status).Value.WorkspaceVersion
 

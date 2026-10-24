@@ -20,6 +20,7 @@ open Swate.Electron.Shared.IPCTypes
 open Swate.Electron.Shared.IPCTypes.IPCTypesHelper
 open Swate.Electron.Shared.IPCTypes.MainToRendererIpc
 open Swate.Electron.Shared.FileIOTypes
+open Swate.Electron.Shared.FileIOHelper
 open ARCtrl
 
 type ArcLoadCancelledException(targetWindowId: int) =
@@ -214,17 +215,29 @@ type ArcVault(window: BrowserWindow) =
         | VersionControlService.Abstractions.CaseInsensitive -> true
         | VersionControlService.Abstractions.CaseSensitive -> false
 
-    /// Every change of the main-process file tree runs through this writer. After a changed job it sends the
-    /// full renderer snapshot through the existing fileTreeUpdate push.
+    /// Every change of the main-process file tree runs through this writer. After a job with changes it sends
+    /// one fileTreeDirectoryUpdate per changed directory, all stamped with the version of the job.
     let fileTreeWriter =
         FileTreeWriter(
             defaultCaseInsensitive,
             (fun message -> swatelogfn window.id "%s" message),
-            (fun tree ->
+            (fun change ->
                 match arcPath with
                 | Some root ->
-                    let rendererFileTree = toRendererFileTree root tree.Entries
-                    WindowSend.send<IFileTreeRendererApi> window (fun api -> api.fileTreeUpdate rendererFileTree)
+                    for directory in change.ChangedDirectories do
+                        match tryGetRepoRelativePathOrRoot root directory, change.Tree.Children directory with
+                        | Some relativeDirectory, Some children ->
+                            let update: FileTreeDirectoryUpdateDto = {|
+                                treeVersion = change.TreeVersion
+                                directoryPath = relativeDirectory
+                                children = toRendererEntries root children
+                            |}
+
+                            WindowSend.send<IFileTreeRendererApi>
+                                window
+                                (fun api -> api.fileTreeDirectoryUpdate update)
+                        // A directory that left the tree has nothing to send. Its parent is in the same change.
+                        | _ -> ()
                 | None -> ()
             )
         )
@@ -457,12 +470,12 @@ module ArcVaultExtensions =
                     this.RefreshHasUnsavedArcChangesFlag()
                     Ok()
 
-        /// Queues a full scan of the ARC folder. The scanned tree replaces the current one.
+        /// Queues a structural scan of the ARC folder. The scanned tree replaces the current one.
         member this.EnqueueFileTreeScan() : Fable.Core.JS.Promise<unit> =
             match this.path with
             | Some arcPath ->
                 let caseInsensitive = this.isCaseInsensitive
-                this.FileTreeWriter.EnqueueReplace(fun () -> scanFileTreeAsync arcPath caseInsensitive)
+                this.FileTreeWriter.EnqueueReplace(fun () -> scanStructuralFileTreeAsync arcPath caseInsensitive)
             | None -> promise { return () }
 
         member private this.PushLargeObjectIndex(index: Main.LargeObjectIndex.LargeObjectIndex) =
@@ -678,7 +691,7 @@ module ArcVaultExtensions =
             this.EnqueueFileTreeDirectoriesReconcile [| directoryPath |]
 
         /// Queues one writer job that reconciles the root and every loaded directory, from the root down.
-        /// It makes no LFS call, because the renderer joins LFS state by path from the large object index. An empty tree gets a full scan.
+        /// It makes no LFS call, because the renderer joins LFS state by path from the large object index. An empty tree gets a structural scan.
         member this.EnqueueFileTreeRevalidateLoaded() : Fable.Core.JS.Promise<unit> =
             if this.FileTreeWriter.Tree.Count = 0 then
                 this.EnqueueFileTreeScan()
@@ -686,7 +699,7 @@ module ArcVaultExtensions =
                 match this.path with
                 | Some arcPath ->
                     this.FileTreeWriter.Enqueue(fun tree ->
-                        reconcileDirtyDirectoriesAsync
+                        reconcileLoadedDirectoriesAsync
                             arcPath
                             tree
                             (fun directory error ->
@@ -699,6 +712,138 @@ module ArcVaultExtensions =
                             tree.LoadedDirectories
                     )
                 | None -> promise { return () }
+
+        /// True when the renderer may ask for a revalidation. During a write, a root rename, an initialization or a
+        /// pending close the tree is about to change anyway, so the request is skipped.
+        member this.CanRevalidateFileTree =
+            this.path.IsSome
+            && not this.isInitializingArc
+            && not this.isBusyWriting
+            && not this.isRenamingArcRoot
+            && not this.isCloseRequestPending
+            && not this.isCloseApproved
+            && not (this.window.isDestroyed ())
+
+        /// Queues one writer job over the given ARC-relative directories. Unloaded directories are skipped.
+        member this.RevalidateDirectories(relativeDirectories: string[]) : Fable.Core.JS.Promise<unit> =
+            match this.path with
+            | Some arcPath when this.CanRevalidateFileTree ->
+                let absolute =
+                    relativeDirectories
+                    |> Array.map (fun relative -> join [| arcPath; relative |] |> PathHelpers.normalizePath)
+
+                this.FileTreeWriter.Enqueue(fun tree ->
+                    reconcileLoadedDirectoriesAsync
+                        arcPath
+                        tree
+                        (fun directory error ->
+                            swatelogfn
+                                this.window.id
+                                "Unable to revalidate file tree directory '%s': %s"
+                                directory
+                                error.Message
+                        )
+                        absolute
+                )
+            | _ -> promise { return () }
+
+        /// Reconciles one ARC-relative directory, loads it when it was not loaded and answers with its current
+        /// children and the writer version after the job, also when nothing changed. A path outside the ARC and
+        /// a missing directory are errors.
+        member this.LoadDirectory
+            (relativeDirectory: string)
+            : Fable.Core.JS.Promise<Result<FileTreeDirectoryUpdateDto, exn>> =
+            promise {
+                match this.path with
+                | None -> return Error(arcNotOpenError ())
+                | Some arcPath ->
+                    let absolute = join [| arcPath; relativeDirectory |] |> PathHelpers.normalizePath
+
+                    match tryGetRepoRelativePathOrRoot arcPath absolute with
+                    | None -> return Error(exn $"The path '{relativeDirectory}' is outside the ARC.")
+                    | Some relativePath ->
+                        let! outcome =
+                            this.FileTreeWriter.EnqueueWithResult(fun tree -> promise {
+                                let! changed = reconcileFileTreeDirectoryAsync arcPath tree absolute
+
+                                match tree.Children absolute with
+                                | Some children -> return changed, Ok(toRendererEntries arcPath children)
+                                | None -> return changed, Error(exn $"The directory '{relativePath}' does not exist.")
+                            })
+
+                        match outcome with
+                        | Error error -> return Error error
+                        | Ok(Error error, _) -> return Error error
+                        | Ok(Ok children, treeVersion) ->
+                            return
+                                Ok {|
+                                    treeVersion = treeVersion
+                                    directoryPath = relativePath
+                                    children = children
+                                |}
+            }
+
+        /// Stats one ARC-relative file. None when it is missing or not a file.
+        member this.StatFile(relativePath: string) : Fable.Core.JS.Promise<Result<FileStatDto option, exn>> = promise {
+            match this.path with
+            | None -> return Error(arcNotOpenError ())
+            | Some arcPath ->
+                let absolute = join [| arcPath; relativePath |] |> PathHelpers.normalizePath
+
+                match tryGetRepoRelativePath arcPath absolute with
+                | None -> return Error(exn $"The path '{relativePath}' is outside the ARC.")
+                | Some _ ->
+                    try
+                        let! stats = statAsync absolute
+
+                        if stats.isFile () then
+                            return
+                                Ok(
+                                    Some {|
+                                        sizeBytes = float stats.size
+                                        mtimeMs = stats.mtimeMs
+                                    |}
+                                )
+                        else
+                            return Ok None
+                    with error ->
+                        match tryGetNodeErrorCode error with
+                        | Some "ENOENT"
+                        | Some "ENOTDIR" -> return Ok None
+                        | _ -> return Error error
+        }
+
+        /// Tells the renderer about files that changed in place. The watcher only sees ARC structure files, so
+        /// payload files never come through here. A file that cannot be stat-ed is skipped.
+        member private this.PublishFileContentChanges(events: ArcVaultFileSystemEvent list) = promise {
+            match this.path with
+            | None -> ()
+            | Some root ->
+                let changedFiles =
+                    events
+                    |> List.filter (fun event -> WatcherHelpers.eventNameEquals Chokidar.Events.Change event.EventName)
+                    |> List.map _.AbsolutePath
+                    |> List.distinctBy (PathKey.ofPath this.isCaseInsensitive)
+
+                for absolutePath in changedFiles do
+                    try
+                        let! stats = statAsync absolutePath
+
+                        match tryGetRepoRelativePath root absolutePath with
+                        | Some relativePath when stats.isFile () ->
+                            WindowSend.send<IFileTreeRendererApi>
+                                this.window
+                                (fun api ->
+                                    api.fileContentChanged {|
+                                        path = relativePath
+                                        sizeBytes = float stats.size
+                                        mtimeMs = stats.mtimeMs
+                                    |}
+                                )
+                        | _ -> ()
+                    with _ ->
+                        ()
+        }
 
         /// Saves the ARC, then reconciles the parent directory of every written path in one writer job.
         member this.SaveArc() : Fable.Core.JS.Promise<Result<unit, exn>> = promise {
@@ -738,23 +883,29 @@ module ArcVaultExtensions =
             then
                 this.InvalidateLargeObjectIndex()
 
-            this.FileTreeWriter.Enqueue(fun tree -> promise {
-                match this.path with
-                | Some arcPath when capturedWatcherEpoch = this.WatcherEpoch ->
-                    return!
-                        reconcileDirtyDirectoriesAsync
-                            arcPath
-                            tree
-                            (fun directory error ->
-                                swatelogfn
-                                    this.window.id
-                                    "Unable to update file tree directory '%s': %s"
-                                    directory
-                                    error.Message
-                            )
-                            dirtyDirectories
-                | _ -> return false
-            })
+            promise {
+                do!
+                    this.FileTreeWriter.Enqueue(fun tree -> promise {
+                        match this.path with
+                        | Some arcPath when capturedWatcherEpoch = this.WatcherEpoch ->
+                            return!
+                                reconcileDirtyDirectoriesAsync
+                                    arcPath
+                                    tree
+                                    (fun directory error ->
+                                        swatelogfn
+                                            this.window.id
+                                            "Unable to update file tree directory '%s': %s"
+                                            directory
+                                            error.Message
+                                    )
+                                    dirtyDirectories
+                        | _ -> return [||]
+                    })
+
+                if capturedWatcherEpoch = this.WatcherEpoch then
+                    do! this.PublishFileContentChanges events
+            }
 
         /// Returns the load error to the import caller when loading fails. The import can then report that its in-memory merge did not happen.
         member this.TryTriggerArcInMemoryMergeOnFileWatcherEvents(events: ArcVaultFileSystemEvent list) = promise {
@@ -1128,15 +1279,29 @@ module ArcVaultExtensions =
             | _ -> return Error(arcNotOpenError ())
         }
 
-        member this.GetRendererFileTreeSnapshot() = promise {
+        /// The structural file tree for the renderer pull. While the ARC initializes the snapshot is empty. The
+        /// renderer pulls again when pathChange announces the installed tree.
+        member this.GetFileTreeSnapshot() : Fable.Core.JS.Promise<FileTreeSnapshotDto> = promise {
             match this.path with
-            | None -> return Dictionary<string, FileEntry>()
-            | Some _ when this.isInitializingArc -> return Dictionary<string, FileEntry>()
-            | Some arcPath ->
+            | Some arcPath when not this.isInitializingArc ->
                 if this.FileTreeWriter.Tree.Count = 0 then
                     do! this.EnqueueFileTreeScan()
 
-                return toRendererFileTree arcPath this.FileTreeWriter.Tree.Entries
+                let tree = this.FileTreeWriter.Tree
+
+                return {|
+                    treeVersion = this.FileTreeWriter.TreeVersion
+                    entries = toRendererEntries arcPath tree.Entries
+                    loadedDirectories = tree.LoadedDirectories |> Array.choose (tryGetRepoRelativePathOrRoot arcPath)
+                    caseInsensitive = this.isCaseInsensitive
+                |}
+            | _ ->
+                return {|
+                    treeVersion = this.FileTreeWriter.TreeVersion
+                    entries = [||]
+                    loadedDirectories = [||]
+                    caseInsensitive = this.isCaseInsensitive
+                |}
         }
 
         member this.LoadArc() = promise {
@@ -1614,7 +1779,14 @@ module ArcVaultExtensions =
                         fun () ->
                             WindowSend.send<IPathChangeRendererApi>
                                 this.window
-                                (fun api -> api.pathChange (Some normalizedPath))
+                                (fun api ->
+                                    api.pathChange (
+                                        Some {|
+                                            path = normalizedPath
+                                            caseInsensitive = this.isCaseInsensitive
+                                        |}
+                                    )
+                                )
                     )
 
                 let bufferedEvents = this.BufferedFileWatcherEvents.ToArray()
@@ -1725,7 +1897,7 @@ module ArcVaultExtensions =
                     else
                         promise {
                             // A queued scan or reconcile would enumerate the folder while it moves.
-                            do! this.FileTreeWriter.Enqueue(fun _ -> promise { return false })
+                            do! this.FileTreeWriter.Enqueue(fun _ -> promise { return [||] })
 
                             // A write can start while the queue drains.
                             if this.isBusyWriting then
@@ -1796,7 +1968,14 @@ module ArcVaultExtensions =
                     try
                         WindowSend.send<IPathChangeRendererApi>
                             this.window
-                            (fun api -> api.pathChange (Some renamedPath))
+                            (fun api ->
+                                api.pathChange (
+                                    Some {|
+                                        path = renamedPath
+                                        caseInsensitive = this.isCaseInsensitive
+                                    |}
+                                )
+                            )
                     with notifyError ->
                         swatelogfn
                             this.window.id
@@ -2256,7 +2435,9 @@ type ArcVaults() =
         | _ -> raise (ArcLoadCancelledException windowId)
 
     member private this.InitializeFileTreeForActiveVault(windowId: int, expectedVault: ArcVault, arcPath: string) = promise {
-        let! fileTreeResult = scanFileTreeAsync arcPath expectedVault.isCaseInsensitive |> Promise.result
+        let! fileTreeResult =
+            scanStructuralFileTreeAsync arcPath expectedVault.isCaseInsensitive
+            |> Promise.result
 
         this.EnsureVaultIsStillActive(windowId, expectedVault)
 

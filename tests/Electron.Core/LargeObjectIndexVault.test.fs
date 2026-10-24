@@ -530,7 +530,7 @@ bbbb refs/heads/main
 
                     let drain =
                         vault.FileTreeWriter.Enqueue(fun _ ->
-                            Promise.create (fun resolve _ -> release.Value <- fun () -> resolve false)
+                            Promise.create (fun resolve _ -> release.Value <- fun () -> resolve [||])
                         )
 
                     let renaming = vault.RenameOpenArcRoot "arcB"

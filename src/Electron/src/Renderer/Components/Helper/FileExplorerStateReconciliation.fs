@@ -13,10 +13,14 @@ let containsPath (paths: string seq) (relativePath: string) =
     paths
     |> Seq.exists (fun path -> PathHelpers.pathsEqual (PathHelpers.normalizePath path) normalizedTargetPath)
 
-let isSelectionMissing (paths: string seq) (selectionPath: string option) =
+/// A selection is missing only when its parent directory is loaded and does not list it. A path below a directory
+/// that is not loaded is unknown, and the selection stays.
+let isSelectionMissing (snapshot: Renderer.Context.FileTreeStore.FileTreeSnapshot) (selectionPath: string option) =
     selectionPath
     |> Option.map PathHelpers.normalizePath
-    |> Option.exists (fun selectedPath -> containsPath paths selectedPath |> not)
+    |> Option.exists (fun selectedPath ->
+        Renderer.Context.FileTreeStore.knows snapshot selectedPath = Renderer.Context.FileTreeStore.Absent
+    )
 
 let private resetsWhenSelectionIsRemoved =
     function

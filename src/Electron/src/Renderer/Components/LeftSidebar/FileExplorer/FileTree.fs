@@ -94,10 +94,10 @@ type FileTree =
 
         React.useEffect (
             (fun () ->
-                let filePaths = fileStateCtx.state.FileTree |> Array.map (fun entry -> entry.path)
-
                 if
-                    FileExplorerStateReconciliation.isSelectionMissing filePaths fileStateCtx.state.Selection.TreePath
+                    FileExplorerStateReconciliation.isSelectionMissing
+                        fileStateCtx.state.TreeSnapshot
+                        fileStateCtx.state.Selection.TreePath
                 then
                     fileStateCtx.setSelection ArcSelection.empty
 
@@ -107,10 +107,46 @@ type FileTree =
                         pageStateCtx.setState None
             ),
             [|
-                box fileStateCtx.state.FileTree
+                box fileStateCtx.state.TreeSnapshot
                 box fileStateCtx.state.Selection.TreePath
                 box pageStateCtx.state
             |]
+        )
+
+        // The explorer reports its expanded ids here. The loader keeps them usable while the tree changes.
+        let expandedIds, setExpandedIds = React.useStateWithUpdater<Set<string>> Set.empty
+
+        let requestDirectoryLoad =
+            Renderer.Context.ExpandedDirectoryLoader.useExpandedDirectoryLoader (
+                fileStateCtx.fileTreeStore,
+                fileStateCtx.state.TreeSnapshot,
+                expandedIds,
+                setExpandedIds,
+                (fun path -> Api.ipcArcVaultApi.loadDirectory path)
+            )
+
+        // Selecting a path expands the directories above it. Unloaded ones then load through the loader.
+        React.useEffect (
+            (fun () ->
+                match fileStateCtx.state.Selection.TreePath |> Option.map PathHelpers.normalizePath with
+                | Some selectedPath ->
+                    let segments = selectedPath.Split('/')
+
+                    let ancestors =
+                        [ 1 .. segments.Length - 1 ]
+                        |> List.map (fun count -> String.concat "/" segments.[.. count - 1])
+                        |> Set.ofList
+
+                    if not ancestors.IsEmpty then
+                        setExpandedIds (fun current ->
+                            if Set.isSubset ancestors current then
+                                current
+                            else
+                                Set.union current ancestors
+                        )
+                | None -> ()
+            ),
+            [| box fileStateCtx.state.Selection.TreePath |]
         )
 
         let treeEntries =
@@ -170,6 +206,7 @@ type FileTree =
                                     |> Option.map _.Label
                         }
                     )
+                    (Renderer.Context.FileTreeStore.isLoaded fileStateCtx.state.TreeSnapshot)
                     reconciledMaterializedState.Paths
                     parent
                     true
@@ -258,7 +295,9 @@ type FileTree =
         let handleExpansionChange (item: FileItem) (willExpand: bool) =
             if willExpand then
                 match item.Path with
-                | Some path -> setMaterializedState (fun _ -> materialize path reconciledMaterializedState)
+                | Some path ->
+                    setMaterializedState (fun _ -> materialize path reconciledMaterializedState)
+                    requestDirectoryLoad path
                 | None -> ()
 
         let openDialog dialog =
@@ -609,6 +648,8 @@ type FileTree =
                             initialItems = visibleItems,
                             onItemClick = openPreview false,
                             onDirectoryExpansionChange = handleExpansionChange,
+                            expandedIds = expandedIds,
+                            onExpandedIdsChange = (fun ids -> setExpandedIds (fun _ -> ids)),
                             onContextMenu = createContextMenuItems,
                             getItemIconClass = getItemIconClass,
                             canCreateItem = canCreateFromItem rootPath,

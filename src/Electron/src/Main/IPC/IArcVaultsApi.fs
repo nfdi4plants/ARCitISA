@@ -63,6 +63,13 @@ let private reconcileAfterSuccess
         return result
     }
 
+/// The entity folder (zone folder plus identifier) that holds a path. The entity operations reconcile its parent,
+/// the zone folder, because a renamed or deleted entity changes the child list of the zone.
+let private entityFolderOf (relativePath: string) =
+    (PathHelpers.normalizeRelativePath relativePath).Split([| '/' |], StringSplitOptions.RemoveEmptyEntries)
+    |> Array.truncate 2
+    |> String.concat "/"
+
 let private withLoadedArcVault<'T>
     (event: IpcMainInvokeEvent)
     (operation: ArcVault -> JS.Promise<Result<'T, exn>>)
@@ -703,7 +710,7 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
             with e ->
                 return Error e
         }
-    getFileTree =
+    getFileTreeSnapshot =
         fun () -> promise {
             try
                 let windowId = windowIdFromIpcEvent event
@@ -711,8 +718,43 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
                 match ARC_VAULTS.TryGetVault(windowId) with
                 | None -> return Error(exn $"The ARC for window id {windowId} should exist")
                 | Some vault ->
-                    let! fileTree = vault.GetRendererFileTreeSnapshot()
-                    return Ok fileTree
+                    let! snapshot = vault.GetFileTreeSnapshot()
+                    return Ok snapshot
+            with e ->
+                return Error e
+        }
+    loadDirectory =
+        fun (relativePath: string) -> promise {
+            try
+                let windowId = windowIdFromIpcEvent event
+
+                match ARC_VAULTS.TryGetVault(windowId) with
+                | None -> return Error(exn $"The ARC for window id {windowId} should exist")
+                | Some vault -> return! vault.LoadDirectory relativePath
+            with e ->
+                return Error e
+        }
+    revalidateDirectories =
+        fun (relativePaths: string[]) -> promise {
+            try
+                let windowId = windowIdFromIpcEvent event
+
+                match ARC_VAULTS.TryGetVault(windowId) with
+                | None -> return Error(exn $"The ARC for window id {windowId} should exist")
+                | Some vault ->
+                    do! vault.RevalidateDirectories relativePaths
+                    return Ok()
+            with e ->
+                return Error e
+        }
+    statFile =
+        fun (relativePath: string) -> promise {
+            try
+                let windowId = windowIdFromIpcEvent event
+
+                match ARC_VAULTS.TryGetVault(windowId) with
+                | None -> return Error(exn $"The ARC for window id {windowId} should exist")
+                | Some vault -> return! vault.StatFile relativePath
             with e ->
                 return Error e
         }
@@ -749,11 +791,7 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
                     match vault.path with
                     | None -> return Error(arcNotOpenError ())
                     | Some arcPath ->
-                        if vault.FileTreeWriter.Tree.Count = 0 then
-                            do! vault.EnqueueFileTreeScan()
-
-                        let fileEntries = vault.FileTreeWriter.Tree.Entries |> Seq.toArray
-
+                        let! fileEntries = Main.NoteSearchReader.scanNoteEntriesAsync arcPath
                         let! notes = Main.NoteSearchReader.readNotes arcPath fileEntries
                         return Ok(notes |> Array.map NoteSearchNoteDto.ofNote)
             with e ->
@@ -899,6 +937,12 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
                                                 | Ok deletedArc ->
                                                     vault.SetArc deletedArc
                                                     vault.RefreshHasUnsavedArcChangesFlag()
+                                                    // The watcher reports this late, so the zone folder is reconciled here.
+                                                    do!
+                                                        reconcileParentsOfRelativePaths vault [
+                                                            entityFolderOf normalizedRelativePath
+                                                        ]
+
                                                     return Ok()
                                             })
                             | ArcFileSystemHelper.DeletePathRoute.DataMap normalizedDataMapPath ->
@@ -968,6 +1012,15 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
                                                 | Ok renamedArc ->
                                                     vault.SetArc renamedArc
                                                     vault.RefreshHasUnsavedArcChangesFlag()
+
+                                                    // The watcher reports this late. The zone folder shows the new
+                                                    // entity folder, and the zone rule loads its direct children.
+                                                    do!
+                                                        reconcileParentsOfRelativePaths vault [
+                                                            request.relativePath
+                                                            entityFolderOf request.relativePath
+                                                        ]
+
                                                     return Ok()
                                             })
                         })

@@ -370,7 +370,7 @@ Vitest.describe (
                             waitUntil
                                 "the revalidated tree"
                                 10000
-                                (fun () -> (vault.FileTreeWriter.Tree.TryFind(root + "/missed/file.txt")).IsSome)
+                                (fun () -> (vault.FileTreeWriter.Tree.TryFind(root + "/missed")).IsSome)
 
                         Vitest.expect(vault.FileTreeWriter.TreeVersion).toBe (scanCountBefore + 1)
                         do! waitUntil "the reload to settle" 10000 (fun () -> isWatcherQuiet vault)
@@ -505,9 +505,9 @@ Vitest.describe (
                     (fun arcPath -> promise {
                         let vault = newVault arcPath
                         vault.isInitializingArc <- true
-                        let! snapshot = vault.GetRendererFileTreeSnapshot()
+                        let! snapshot = vault.GetFileTreeSnapshot()
 
-                        Vitest.expect(snapshot.Count).toBe 0
+                        Vitest.expect(snapshot.entries.Length).toBe 0
                         Vitest.expect(vault.FileTreeWriter.Tree.Count).toBe 0
                     })
         )

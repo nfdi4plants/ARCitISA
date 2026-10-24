@@ -110,6 +110,25 @@ type LargeObjectIndexSnapshot = {|
     entries: ObjectStateDto[]
 |}
 
+/// Structural snapshot of the open ARC's file tree. Paths are ARC-relative and the root is "". loadedDirectories
+/// lists the directories whose children are in entries. treeVersion orders snapshots and updates of one vault.
+type FileTreeSnapshotDto = {|
+    treeVersion: int
+    entries: FileEntry[]
+    loadedDirectories: string[]
+    caseInsensitive: bool
+|}
+
+/// The current children of one loaded directory, stamped with the tree version they belong to.
+type FileTreeDirectoryUpdateDto = {|
+    treeVersion: int
+    directoryPath: string
+    children: FileEntry[]
+|}
+
+/// Size and modification time of one file, as stat reports them.
+type FileStatDto = {| sizeBytes: float; mtimeMs: float |}
+
 /// Two Way Bridge: Renderer <-> Main
 type IArcVaultsApi = {
     /// Open ARC via folder dialog. Main decides: current window / new window / focus existing.
@@ -132,7 +151,14 @@ type IArcVaultsApi = {
     tryImportExternalFiles: ImportExternalFilesRequest -> JS.Promise<Result<ImportExternalFilesResult, exn>>
     cancelImportExternalFiles: string -> JS.Promise<Result<unit, exn>>
     getActiveFileImport: unit -> JS.Promise<Result<ActiveFileImportState option, exn>>
-    getFileTree: unit -> JS.Promise<Result<System.Collections.Generic.Dictionary<string, FileEntry>, exn>>
+    /// Pulls the structural file tree of the open ARC. Other directories load through loadDirectory.
+    getFileTreeSnapshot: unit -> JS.Promise<Result<FileTreeSnapshotDto, exn>>
+    /// Reconciles one directory (ARC-relative path), loads it when needed and answers with its current children.
+    loadDirectory: string -> JS.Promise<Result<FileTreeDirectoryUpdateDto, exn>>
+    /// Reconciles the given loaded directories and publishes the ones that changed. Unloaded ones are skipped.
+    revalidateDirectories: string[] -> JS.Promise<Result<unit, exn>>
+    /// Stats one ARC-relative file. None when it is missing or not a file.
+    statFile: string -> JS.Promise<Result<FileStatDto option, exn>>
     /// Pulls the current large object index of the vault. A vault without an index answers notLoaded with no entries.
     getLargeObjectIndex: unit -> JS.Promise<Result<LargeObjectIndexSnapshot, exn>>
     pathExists: string -> JS.Promise<Result<bool, exn>>
@@ -253,7 +279,15 @@ type IAuthApi = {
 /// One Way Bridge: Main -> Renderer
 module MainToRendererIpc =
 
-    type IPathChangeRendererApi = { pathChange: string option -> unit }
+    /// The new ARC root and whether its file system ignores case. The renderer pulls the file tree after it.
+    type IPathChangeRendererApi = {
+        pathChange:
+            {|
+                path: string
+                caseInsensitive: bool
+            |} option
+                -> unit
+    }
 
     type IRecentArcsRendererApi = {
         recentARCsUpdate: ARCPointer[] -> unit
@@ -264,7 +298,14 @@ module MainToRendererIpc =
     }
 
     type IFileTreeRendererApi = {
-        fileTreeUpdate: System.Collections.Generic.Dictionary<string, FileEntry> -> unit
+        fileTreeDirectoryUpdate: FileTreeDirectoryUpdateDto -> unit
+        fileContentChanged:
+            {|
+                path: string
+                sizeBytes: float
+                mtimeMs: float
+            |}
+                -> unit
         largeObjectIndexUpdate: LargeObjectIndexSnapshot -> unit
     }
 

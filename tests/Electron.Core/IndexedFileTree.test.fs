@@ -47,9 +47,9 @@ Vitest.describe (
             fun () ->
                 let tree = IndexedFileTree(false)
                 let child = entry "a.txt" "/arc" false
-                Vitest.expect(tree.ReplaceChildren("/arc", [| child |])).toBe (true)
+                Vitest.expect(tree.ReplaceChildren("/arc", [| child |])).toEqual ([| "/arc" |])
                 let stored = (tree.TryFind "/arc/a.txt").Value
-                Vitest.expect(tree.ReplaceChildren("/arc", [| { child with path = child.path } |])).toBe (false)
+                Vitest.expect(tree.ReplaceChildren("/arc", [| { child with path = child.path } |])).toEqual ([||])
                 Vitest.expect(obj.ReferenceEquals((tree.TryFind "/arc/a.txt").Value, stored)).toBe (true)
         )
 
@@ -66,7 +66,7 @@ Vitest.describe (
                 tree.ReplaceChildren("/arc/dir/inner", [| entry "deep.txt" "/arc/dir/inner" false |])
                 |> ignore
 
-                Vitest.expect(tree.ReplaceChildren("/arc", [| entry "keep.txt" "/arc" false |])).toBe (true)
+                Vitest.expect(tree.ReplaceChildren("/arc", [| entry "keep.txt" "/arc" false |])).toEqual ([| "/arc" |])
                 Vitest.expect(treePaths tree).toEqual ([| "/arc/keep.txt" |])
                 Vitest.expect(tree.IsLoaded "/arc/dir").toBe (false)
         )
@@ -114,7 +114,7 @@ Vitest.describe (
                     do! mkdirAsync' (join [| root; "old"; "inner" |])
                     do! writeAsync (join [| root; "old"; "inner"; "f.txt" |])
 
-                    let! tree = FileTreeCreator.scanFileTreeAsync root false
+                    let! tree = TestHelpers.loadWholeTreeAsync root false
                     Vitest.expect((tree.TryFind(root + "/old/inner/f.txt")).IsSome).toBe (true)
 
                     do! rmAsync (join [| root; "old" |]) (RmOptions(recursive = true, force = true))
@@ -124,22 +124,15 @@ Vitest.describe (
 
                     let! changed = FileTreeCreator.reconcileFileTreeDirectoryAsync root tree root
 
-                    Vitest.expect(changed).toBe (true)
+                    Vitest.expect(changed).toEqual ([| root |])
 
-                    Vitest
-                        .expect(treePaths tree)
-                        .toEqual (
-                            [|
-                                root
-                                root + "/added.txt"
-                                root + "/fresh"
-                                root + "/fresh/nested"
-                                root + "/fresh/nested/n.txt"
-                            |]
-                        )
+                    // A new payload folder is an entry of its parent and stays unloaded.
+                    Vitest.expect(treePaths tree).toEqual ([| root; root + "/added.txt"; root + "/fresh" |])
+
+                    Vitest.expect(tree.IsLoaded(root + "/fresh")).toBe (false)
 
                     let! unchanged = FileTreeCreator.reconcileFileTreeDirectoryAsync root tree root
-                    Vitest.expect(unchanged).toBe (false)
+                    Vitest.expect(unchanged).toEqual ([||])
                 })
         )
 
@@ -149,12 +142,12 @@ Vitest.describe (
                 withTempFolder (fun root -> promise {
                     do! mkdirAsync' (join [| root; "gone" |])
                     do! writeAsync (join [| root; "gone"; "f.txt" |])
-                    let! tree = FileTreeCreator.scanFileTreeAsync root false
+                    let! tree = TestHelpers.loadWholeTreeAsync root false
 
                     do! rmAsync (join [| root; "gone" |]) (RmOptions(recursive = true, force = true))
                     let! changed = FileTreeCreator.reconcileFileTreeDirectoryAsync root tree (root + "/gone")
 
-                    Vitest.expect(changed).toBe (true)
+                    Vitest.expect(changed).toEqual ([| root |])
                     Vitest.expect(treePaths tree).toEqual ([| root |])
                 })
         )
@@ -168,7 +161,7 @@ Vitest.describe (
                     do! writeAsync (join [| root; "~$x.xlsx" |])
                     do! writeAsync (join [| root; "keep.txt" |])
 
-                    let! scanned = FileTreeCreator.scanFileTreeAsync root false
+                    let! scanned = TestHelpers.loadWholeTreeAsync root false
                     let reconciled = IndexedFileTree(false)
                     let! _ = FileTreeCreator.reconcileFileTreeDirectoryAsync root reconciled root
 
@@ -182,10 +175,9 @@ Vitest.describe (
     "FileTreeWriter",
     fun () ->
         let createWriter () =
-            let published = ResizeArray<string[]>()
+            let published = ResizeArray<FileTreeChange>()
 
-            let writer =
-                FileTreeWriter(false, ignore, (fun tree -> published.Add(treePaths tree)))
+            let writer = FileTreeWriter(false, ignore, published.Add)
 
             writer, published
 
@@ -199,7 +191,7 @@ Vitest.describe (
                     writer.Enqueue(fun _ -> promise {
                         do! Promise.sleep delay
                         order.Add id
-                        return changed
+                        return (if changed then [| "/arc" |] else [||])
                     })
 
                 let first = job 1 60 true
@@ -220,12 +212,12 @@ Vitest.describe (
             fun () -> promise {
                 let writer, _ = createWriter ()
                 let mutable ran = false
-                do! writer.Enqueue(fun _ -> promise { return (failwith "boom": bool) })
+                do! writer.Enqueue(fun _ -> promise { return (failwith "boom": string[]) })
 
                 do!
                     writer.Enqueue(fun _ -> promise {
                         ran <- true
-                        return true
+                        return [| "/arc" |]
                     })
 
                 Vitest.expect(ran).toBe (true)
@@ -243,13 +235,13 @@ Vitest.describe (
                 let running =
                     writer.Enqueue(fun _ -> promise {
                         do! gate
-                        return true
+                        return [| "/arc" |]
                     })
 
                 let later =
                     writer.Enqueue(fun _ -> promise {
                         laterRan <- true
-                        return true
+                        return [| "/arc" |]
                     })
 
                 writer.Reset false
@@ -274,7 +266,7 @@ Vitest.describe (
 
                     let slowScan =
                         writer.EnqueueReplace(fun () -> promise {
-                            let! stale = FileTreeCreator.scanFileTreeAsync root false
+                            let! stale = TestHelpers.loadWholeTreeAsync root false
                             signalScanned ()
                             do! Promise.sleep 150
                             return stale
@@ -291,8 +283,11 @@ Vitest.describe (
 
                     let expected = [| root; root + "/a.txt"; root + "/b.txt" |]
                     Vitest.expect(treePaths writer.Tree).toEqual (expected)
-                    Vitest.expect(published.Count).toBe 2
-                    Vitest.expect(published.[1]).toEqual (expected)
+                    // The replace bumps the version without a publish, so only the reconcile publishes.
+                    Vitest.expect(writer.TreeVersion).toBe 2
+                    Vitest.expect(published.Count).toBe 1
+                    Vitest.expect(published.[0].TreeVersion).toBe 2
+                    Vitest.expect(published.[0].ChangedDirectories).toEqual ([| root |])
                 })
         )
 )
@@ -438,6 +433,12 @@ Vitest.describe (
                         let! vault = openVault arcPath
                         let root = FileTreeCreator.normalizeRootPath arcPath
                         let tree = vault.FileTreeWriter.Tree
+
+                        // The payload folders are not loaded by the structural scan.
+                        for folder in [ "dataset"; "dataset/sub"; "dataset/old"; "dataset/keep" ] do
+                            let! loaded = vault.LoadDirectory $"assays/A1/{folder}"
+                            Vitest.expect(loaded.IsOk).toBe (true)
+
                         let keptBefore = tree.TryFind(root + "/assays/A1/dataset/keep/kept.txt")
                         Vitest.expect(keptBefore.IsSome).toBe (true)
 
@@ -484,7 +485,7 @@ Vitest.describe (
                 let changed, newDirectories =
                     tree.ReplaceChildrenReportingNew("/arc/assays", [| entry "a" "/arc/assays" true |])
 
-                Vitest.expect(changed).toBe (true)
+                Vitest.expect(changed).toEqual ([| "/arc/assays" |])
                 Vitest.expect(newDirectories |> Array.map _.path).toEqual ([| "/arc/assays/a" |])
                 Vitest.expect(tree.IsLoaded "/arc/assays/a").toBe (false)
                 Vitest.expect((tree.TryFind "/arc/assays/a/x.txt").IsSome).toBe (false)
@@ -496,7 +497,7 @@ Vitest.describe (
                 withTempFolder (fun root -> promise {
                     do! mkdirAsync' (join [| root; "assays"; "A" |])
                     do! writeAsync (join [| root; "assays"; "A"; "x.txt" |])
-                    let! tree = FileTreeCreator.scanFileTreeAsync root true
+                    let! tree = TestHelpers.loadWholeTreeAsync root true
 
                     do! rmAsync (join [| root; "assays"; "A" |]) (RmOptions(recursive = true, force = true))
                     do! mkdirAsync' (join [| root; "assays"; "a" |])
@@ -504,18 +505,18 @@ Vitest.describe (
 
                     let! changed = FileTreeCreator.reconcileFileTreeDirectoryAsync root tree (root + "/assays")
 
-                    Vitest.expect(changed).toBe (true)
+                    Vitest.expect(changed |> Array.sort).toEqual ([| root + "/assays"; root + "/assays/a" |])
                     Vitest.expect((tree.TryFind(root + "/assays/a/x.txt")).IsSome).toBe (true)
                     Vitest.expect(tree.IsLoaded(root + "/assays/a")).toBe (true)
                 })
         )
 
         Vitest.test (
-            "reconcile loads a directory that replaced a file",
+            "a directory that replaced a file becomes an unloaded entry",
             fun () ->
                 withTempFolder (fun root -> promise {
                     do! writeAsync (join [| root; "item" |])
-                    let! tree = FileTreeCreator.scanFileTreeAsync root false
+                    let! tree = TestHelpers.loadWholeTreeAsync root false
 
                     do! rmAsync (join [| root; "item" |]) (RmOptions(force = true))
                     do! mkdirAsync' (join [| root; "item" |])
@@ -523,7 +524,8 @@ Vitest.describe (
 
                     let! _ = FileTreeCreator.reconcileFileTreeDirectoryAsync root tree root
 
-                    Vitest.expect((tree.TryFind(root + "/item/inner.txt")).IsSome).toBe (true)
+                    Vitest.expect((tree.TryFind(root + "/item")).Value.isDirectory).toBe (true)
+                    Vitest.expect(tree.IsLoaded(root + "/item")).toBe (false)
                 })
         )
 
@@ -581,6 +583,8 @@ Vitest.describe (
                     71
                     (fun vault -> promise {
                         let api = Main.IPC.ArcVaultsApi.api (TestHelpers.ipcEvent 71)
+                        let! loaded = api.loadDirectory "assays/A1/dataset"
+                        Vitest.expect(loaded.IsOk).toBe (true)
 
                         let! created =
                             api.createFileSystemItem {
@@ -607,6 +611,8 @@ Vitest.describe (
                     72
                     (fun vault -> promise {
                         let api = Main.IPC.ArcVaultsApi.api (TestHelpers.ipcEvent 72)
+                        let! loaded = api.loadDirectory "assays/A1/dataset"
+                        Vitest.expect(loaded.IsOk).toBe (true)
 
                         let! moved =
                             api.movePath {
@@ -619,7 +625,404 @@ Vitest.describe (
                         let root = FileTreeCreator.normalizeRootPath vault.path.Value
                         let tree = vault.FileTreeWriter.Tree
                         Vitest.expect((tree.TryFind(root + "/assays/A1/dataset/move-me.txt")).IsSome).toBe (false)
+                        // The new target folder is an entry of the entity folder and loads on demand.
+                        Vitest.expect((tree.TryFind(root + "/assays/A1/other")).IsSome).toBe (true)
+                        Vitest.expect(tree.IsLoaded(root + "/assays/A1/other")).toBe (false)
+
+                        let! otherLoaded = api.loadDirectory "assays/A1/other"
+                        Vitest.expect(otherLoaded.IsOk).toBe (true)
                         Vitest.expect((tree.TryFind(root + "/assays/A1/other/move-me.txt")).IsSome).toBe (true)
+                    })
+        )
+)
+
+Vitest.describe (
+    "structural file tree",
+    fun () ->
+        Vitest.test (
+            "the structural scan loads the root, zone folders and entity folders only",
+            fun () ->
+                withTempFolder (fun root -> promise {
+                    do! mkdirAsync' (join [| root; "assays"; "A1"; "dataset"; "deep" |])
+                    do! mkdirAsync' (join [| root; "studies"; "S1" |])
+                    do! mkdirAsync' (join [| root; "notes"; "2026" |])
+                    do! writeAsync (join [| root; "assays"; "A1"; "isa.assay.xlsx" |])
+                    do! writeAsync (join [| root; "assays"; "A1"; "dataset"; "raw.bin" |])
+                    do! writeAsync (join [| root; "isa.investigation.xlsx" |])
+
+                    let! tree = FileTreeCreator.scanStructuralFileTreeAsync root false
+
+                    let loaded = tree.LoadedDirectories |> Array.sort
+
+                    Vitest
+                        .expect(loaded)
+                        .toEqual (
+                            [|
+                                root
+                                root + "/assays"
+                                root + "/assays/A1"
+                                root + "/studies"
+                                root + "/studies/S1"
+                            |]
+                        )
+
+                    // The payload folder is an entry of its entity folder. Nothing below it is known.
+                    Vitest.expect((tree.TryFind(root + "/assays/A1/dataset")).IsSome).toBe (true)
+                    Vitest.expect((tree.TryFind(root + "/assays/A1/dataset/raw.bin")).IsSome).toBe (false)
+                    Vitest.expect((tree.TryFind(root + "/notes")).IsSome).toBe (true)
+                    Vitest.expect(tree.IsLoaded(root + "/notes")).toBe (false)
+                })
+        )
+
+        Vitest.test (
+            "a new entity folder gets its direct children and a new payload folder stays unloaded",
+            fun () ->
+                withTempFolder (fun root -> promise {
+                    do! mkdirAsync' (join [| root; "assays"; "A1" |])
+                    let! tree = FileTreeCreator.scanStructuralFileTreeAsync root false
+
+                    do! mkdirAsync' (join [| root; "assays"; "A2"; "dataset" |])
+                    do! writeAsync (join [| root; "assays"; "A2"; "isa.assay.xlsx" |])
+                    do! writeAsync (join [| root; "assays"; "A2"; "dataset"; "raw.bin" |])
+
+                    let! changed = FileTreeCreator.reconcileFileTreeDirectoryAsync root tree (root + "/assays")
+
+                    Vitest.expect(tree.IsLoaded(root + "/assays/A2")).toBe (true)
+                    Vitest.expect((tree.TryFind(root + "/assays/A2/isa.assay.xlsx")).IsSome).toBe (true)
+                    Vitest.expect((tree.TryFind(root + "/assays/A2/dataset")).IsSome).toBe (true)
+                    Vitest.expect(tree.IsLoaded(root + "/assays/A2/dataset")).toBe (false)
+                    Vitest.expect((tree.TryFind(root + "/assays/A2/dataset/raw.bin")).IsSome).toBe (false)
+                    Vitest.expect(changed |> Array.sort).toEqual ([| root + "/assays"; root + "/assays/A2" |])
+                })
+        )
+
+        Vitest.test (
+            "a new zone folder loads together with its entity folders",
+            fun () ->
+                withTempFolder (fun root -> promise {
+                    let! tree = FileTreeCreator.scanStructuralFileTreeAsync root false
+                    do! mkdirAsync' (join [| root; "workflows"; "W1" |])
+                    do! writeAsync (join [| root; "workflows"; "W1"; "isa.workflow.xlsx" |])
+
+                    let! _ = FileTreeCreator.reconcileFileTreeDirectoryAsync root tree root
+
+                    Vitest.expect(tree.IsLoaded(root + "/workflows")).toBe (true)
+                    Vitest.expect(tree.IsLoaded(root + "/workflows/W1")).toBe (true)
+                    Vitest.expect((tree.TryFind(root + "/workflows/W1/isa.workflow.xlsx")).IsSome).toBe (true)
+                })
+        )
+
+        Vitest.test (
+            "a writer job publishes the changed directories once, including the parent of a removed directory",
+            fun () ->
+                withTempFolder (fun root -> promise {
+                    do! mkdirAsync' (join [| root; "sub"; "gone" |])
+                    let! scanned = TestHelpers.loadWholeTreeAsync root false
+                    let published = ResizeArray<FileTreeChange>()
+                    let writer = FileTreeWriter(false, ignore, published.Add)
+                    do! writer.EnqueueReplace(fun () -> promise { return scanned })
+
+                    // The replace bumps the version and publishes nothing.
+                    Vitest.expect(writer.TreeVersion).toBe 1
+                    Vitest.expect(published.Count).toBe 0
+
+                    do! rmAsync (join [| root; "sub"; "gone" |]) (RmOptions(recursive = true, force = true))
+                    do! writeAsync (join [| root; "added.txt" |])
+
+                    do!
+                        writer.Enqueue(fun tree ->
+                            FileTreeCreator.reconcileDirtyDirectoriesAsync
+                                root
+                                tree
+                                (fun _ error -> failwith error.Message)
+                                [| root; root + "/sub/gone" |]
+                        )
+
+                    Vitest.expect(published.Count).toBe 1
+                    Vitest.expect(published.[0].TreeVersion).toBe 2
+                    Vitest.expect(published.[0].ChangedDirectories |> Array.sort).toEqual ([| root; root + "/sub" |])
+                })
+        )
+)
+
+Vitest.describe (
+    "lazy file tree IPC",
+    fun () ->
+        let withRegisteredArc (windowId: int) (body: ArcVault -> JS.Promise<unit>) =
+            TestHelpers.withTempArcWith
+                "swate-lazy-tree-"
+                "LazyTreeArc"
+                (fun arc -> arc.AddAssay(ARCtrl.ArcAssay("A1")))
+                (fun arcPath -> promise {
+                    do! mkdirAsync' (join [| arcPath; "assays"; "A1"; "dataset"; "sub" |])
+                    do! writeAsync (join [| arcPath; "assays"; "A1"; "dataset"; "raw.txt" |])
+                    let vault = TestHelpers.registerVault windowId arcPath
+                    do! vault.LoadArc()
+                    do! vault.EnqueueFileTreeScan()
+
+                    try
+                        do! body vault
+                    finally
+                        ARC_VAULTS.Vaults.Remove windowId |> ignore
+                })
+
+        Vitest.test (
+            "the snapshot lists the loaded directories with ARC-relative paths",
+            fun () ->
+                withRegisteredArc
+                    81
+                    (fun vault -> promise {
+                        let api = Main.IPC.ArcVaultsApi.api (TestHelpers.ipcEvent 81)
+
+                        match! api.getFileTreeSnapshot () with
+                        | Error error -> failwith error.Message
+                        | Ok snapshot ->
+                            Vitest.expect(snapshot.treeVersion).toBe vault.FileTreeWriter.TreeVersion
+                            Vitest.expect(snapshot.loadedDirectories |> Array.contains "").toBe true
+                            Vitest.expect(snapshot.loadedDirectories |> Array.contains "assays/A1").toBe true
+                            Vitest.expect(snapshot.loadedDirectories |> Array.contains "assays/A1/dataset").toBe false
+
+                            Vitest
+                                .expect(snapshot.entries |> Array.exists (fun e -> e.path = "assays/A1/dataset"))
+                                .toBe
+                                true
+
+                            Vitest.expect(snapshot.entries |> Array.exists (fun e -> e.path = "")).toBe true
+                    })
+        )
+
+        Vitest.test (
+            "loadDirectory loads a payload folder and answers again for a loaded folder with unchanged children",
+            fun () ->
+                withRegisteredArc
+                    82
+                    (fun vault -> promise {
+                        let api = Main.IPC.ArcVaultsApi.api (TestHelpers.ipcEvent 82)
+                        let publishedUpdates = ResizeArray<FileTreeChange>()
+                        vault.FileTreeWriter.Publish <- publishedUpdates.Add
+
+                        let names (update: Swate.Electron.Shared.IPCTypes.FileTreeDirectoryUpdateDto) =
+                            update.children |> Array.map _.path
+
+                        let! first = api.loadDirectory "assays/A1/dataset"
+                        let first = first |> Result.defaultWith (fun error -> failwith error.Message)
+
+                        Vitest.expect(first.directoryPath).toBe "assays/A1/dataset"
+
+                        Vitest
+                            .expect(names first)
+                            .toEqual (
+                                [|
+                                    "assays/A1/dataset/.gitkeep"
+                                    "assays/A1/dataset/raw.txt"
+                                    "assays/A1/dataset/sub"
+                                |]
+                            )
+
+                        Vitest.expect(first.treeVersion).toBe vault.FileTreeWriter.TreeVersion
+                        Vitest.expect(publishedUpdates.Count).toBe 1
+
+                        let! second = api.loadDirectory "assays/A1/dataset"
+                        let second = second |> Result.defaultWith (fun error -> failwith error.Message)
+
+                        Vitest.expect(names second).toEqual (names first)
+                        Vitest.expect(second.treeVersion).toBe first.treeVersion
+                        Vitest.expect(publishedUpdates.Count).toBe 1
+                    })
+        )
+
+        Vitest.test (
+            "loadDirectory reports a missing directory and a path outside the ARC as errors",
+            fun () ->
+                withRegisteredArc
+                    83
+                    (fun _ -> promise {
+                        let api = Main.IPC.ArcVaultsApi.api (TestHelpers.ipcEvent 83)
+                        let! missing = api.loadDirectory "assays/A1/nothing"
+                        let! outside = api.loadDirectory "../elsewhere"
+                        Vitest.expect(missing.IsError).toBe true
+                        Vitest.expect(outside.IsError).toBe true
+                    })
+        )
+
+        Vitest.test (
+            "revalidateDirectories publishes only changed directories and skips unloaded ones",
+            fun () ->
+                withRegisteredArc
+                    84
+                    (fun vault -> promise {
+                        let api = Main.IPC.ArcVaultsApi.api (TestHelpers.ipcEvent 84)
+                        let root = FileTreeCreator.normalizeRootPath vault.path.Value
+                        let! _ = api.loadDirectory "assays/A1/dataset"
+                        let! _ = api.loadDirectory "assays/A1/dataset/sub"
+
+                        let published = ResizeArray<FileTreeChange>()
+                        vault.FileTreeWriter.Publish <- published.Add
+
+                        do!
+                            writeAsync (
+                                join [|
+                                    vault.path.Value
+                                    "assays"
+                                    "A1"
+                                    "dataset"
+                                    "second.txt"
+                                |]
+                            )
+
+                        do! mkdirAsync' (join [| vault.path.Value; "elsewhere" |])
+
+                        let! result =
+                            api.revalidateDirectories [|
+                                ""
+                                "assays/A1/dataset"
+                                "assays/A1/dataset/sub"
+                                "elsewhere"
+                            |]
+
+                        Vitest.expect(result.IsOk).toBe true
+                        Vitest.expect(published.Count).toBe 1
+
+                        // The new root entry "elsewhere" changes the root too.
+                        Vitest
+                            .expect(published.[0].ChangedDirectories |> Array.sort)
+                            .toEqual ([| root; root + "/assays/A1/dataset" |])
+
+                        Vitest.expect(vault.FileTreeWriter.Tree.IsLoaded(root + "/elsewhere")).toBe false
+                    })
+        )
+
+        Vitest.test (
+            "revalidateDirectories does nothing while a write is running",
+            fun () ->
+                withRegisteredArc
+                    85
+                    (fun vault -> promise {
+                        let api = Main.IPC.ArcVaultsApi.api (TestHelpers.ipcEvent 85)
+                        let! _ = api.loadDirectory "assays/A1/dataset"
+                        let gate, release = TestHelpers.deferred ()
+                        let write = vault.WithBusyWritingScope(fun () -> gate)
+
+                        do!
+                            writeAsync (
+                                join [|
+                                    vault.path.Value
+                                    "assays"
+                                    "A1"
+                                    "dataset"
+                                    "late.txt"
+                                |]
+                            )
+
+                        let! result = api.revalidateDirectories [| "assays/A1/dataset" |]
+
+                        Vitest.expect(result.IsOk).toBe true
+
+                        Vitest
+                            .expect(
+                                (vault.FileTreeWriter.Tree.TryFind(
+                                    FileTreeCreator.normalizeRootPath vault.path.Value
+                                    + "/assays/A1/dataset/late.txt"
+                                ))
+                                    .IsSome
+                            )
+                            .toBe
+                            false
+
+                        release ()
+                        do! write
+                    })
+        )
+
+        Vitest.test (
+            "statFile answers size and time for a file and None for a folder or a missing file",
+            fun () ->
+                withRegisteredArc
+                    86
+                    (fun _ -> promise {
+                        let api = Main.IPC.ArcVaultsApi.api (TestHelpers.ipcEvent 86)
+
+                        match! api.statFile "assays/A1/dataset/raw.txt" with
+                        | Ok(Some stat) ->
+                            Vitest.expect(stat.sizeBytes).toBe 1.0
+                            Vitest.expect(stat.mtimeMs > 0.0).toBe true
+                        | other -> failwith $"Unexpected stat result: {other}"
+
+                        let! folder = api.statFile "assays/A1/dataset"
+                        let! missing = api.statFile "assays/A1/dataset/none.txt"
+                        let! outside = api.statFile "../x"
+                        Vitest.expect(folder).toEqual (Ok None)
+                        Vitest.expect(missing).toEqual (Ok None)
+                        Vitest.expect(outside.IsError).toBe true
+                    })
+        )
+
+        Vitest.test (
+            "readNotes finds a nested note without scanning the file tree",
+            fun () ->
+                withRegisteredArc
+                    87
+                    (fun vault -> promise {
+                        let noteFolder = join [| vault.path.Value; "notes"; "2026-04-27"; "nested" |]
+                        do! mkdirAsync' noteFolder
+
+                        do!
+                            writeFileAsync
+                                (join [| noteFolder; "note.md" |])
+                                "---\ntitle: Nested note\ndate: 2026-04-27T00:00:00.0000000\n---\n\nBody\n"
+                                TextEncoding.Utf8
+
+                        let treeCountBefore = vault.FileTreeWriter.Tree.Count
+                        let versionBefore = vault.FileTreeWriter.TreeVersion
+                        let api = Main.IPC.ArcVaultsApi.api (TestHelpers.ipcEvent 87)
+
+                        match! api.readNotes () with
+                        | Error error -> failwith error.Message
+                        | Ok notes ->
+                            Vitest.expect(notes.Length).toBe 1
+                            Vitest.expect(notes.[0].RelativePath).toBe "notes/2026-04-27/nested/note.md"
+
+                        Vitest.expect(vault.FileTreeWriter.Tree.Count).toBe treeCountBefore
+                        Vitest.expect(vault.FileTreeWriter.TreeVersion).toBe versionBefore
+                    })
+        )
+
+        Vitest.test (
+            "an entity rename is visible in the tree when the handler returns",
+            fun () ->
+                withRegisteredArc
+                    88
+                    (fun vault -> promise {
+                        let api = Main.IPC.ArcVaultsApi.api (TestHelpers.ipcEvent 88)
+                        let root = FileTreeCreator.normalizeRootPath vault.path.Value
+
+                        let! renamed =
+                            api.renamePath {
+                                relativePath = "assays/A1"
+                                newName = "A2"
+                            }
+
+                        Vitest.expect(renamed.IsOk).toBe true
+                        let tree = vault.FileTreeWriter.Tree
+                        Vitest.expect((tree.TryFind(root + "/assays/A1")).IsSome).toBe false
+                        Vitest.expect(tree.IsLoaded(root + "/assays/A2")).toBe true
+                        Vitest.expect((tree.TryFind(root + "/assays/A2/isa.assay.xlsx")).IsSome).toBe true
+                    })
+        )
+
+        Vitest.test (
+            "an entity delete is visible in the tree when the handler returns",
+            fun () ->
+                withRegisteredArc
+                    89
+                    (fun vault -> promise {
+                        let api = Main.IPC.ArcVaultsApi.api (TestHelpers.ipcEvent 89)
+                        let root = FileTreeCreator.normalizeRootPath vault.path.Value
+
+                        let! deleted = api.deletePath "assays/A1"
+
+                        Vitest.expect(deleted.IsOk).toBe true
+                        Vitest.expect((vault.FileTreeWriter.Tree.TryFind(root + "/assays/A1")).IsSome).toBe false
                     })
         )
 )

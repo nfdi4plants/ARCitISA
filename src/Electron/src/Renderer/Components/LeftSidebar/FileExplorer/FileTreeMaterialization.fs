@@ -74,8 +74,11 @@ let private rootItemSortKey (node: FileTreeNode) =
     | "runs" -> 0, 6, ""
     | _ -> 1, System.Int32.MaxValue, node.name.ToLowerInvariant()
 
+/// isLoaded tells whether the tree has loaded the children of a directory path. An unloaded directory gets no
+/// children, so the explorer shows it as expandable. A loaded directory without children is known to be empty.
 let rec toMaterializedFileItemTree
     (createItem: FileTreeNode -> FileItem)
+    (isLoaded: string -> bool)
     (materializedDirectoryPaths: Set<string>)
     (parent: FileTreeNode)
     (isRoot: bool)
@@ -87,7 +90,9 @@ let rec toMaterializedFileItemTree
             materializedDirectoryPaths.Contains normalizedParentPath
 
         let children =
-            if isDirectoryMaterialized then
+            if not (isLoaded normalizedParentPath) then
+                None
+            elif isDirectoryMaterialized then
                 let childNodes =
                     if isRoot then
                         parent.children.Values |> Seq.sortBy rootItemSortKey
@@ -95,7 +100,9 @@ let rec toMaterializedFileItemTree
                         parent.children.Values :> seq<FileTreeNode>
 
                 childNodes
-                |> Seq.map (fun parent -> toMaterializedFileItemTree createItem materializedDirectoryPaths parent false)
+                |> Seq.map (fun parent ->
+                    toMaterializedFileItemTree createItem isLoaded materializedDirectoryPaths parent false
+                )
                 |> List.ofSeq
                 |> Some
 

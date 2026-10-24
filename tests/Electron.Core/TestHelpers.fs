@@ -197,3 +197,24 @@ let registerVault (windowId: int) (arcPath: string) =
     |> ignore
 
     vault
+
+/// Loads every directory below the root, which gives the deep tree that the lazy scan leaves out.
+let loadWholeTreeAsync (root: string) (caseInsensitive: bool) : JS.Promise<IndexedFileTree> = promise {
+    let! tree = Main.FileTreeCreator.scanStructuralFileTreeAsync root caseInsensitive
+
+    let unloadedDirectories () =
+        tree.Entries
+        |> Seq.filter (fun entry -> entry.isDirectory && not (tree.IsLoaded entry.path))
+        |> Seq.toArray
+
+    let mutable pending = unloadedDirectories ()
+
+    while pending.Length > 0 do
+        for directory in pending do
+            let! _ = Main.FileTreeCreator.reconcileFileTreeDirectoryAsync root tree directory.path
+            ()
+
+        pending <- unloadedDirectories ()
+
+    return tree
+}
