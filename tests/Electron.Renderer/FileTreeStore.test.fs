@@ -27,6 +27,7 @@ let private snapshotInput version caseInsensitive : FileTreeSnapshotDto = {|
         file "src/b.txt"
     |]
     loadedDirectories = [| ""; "src"; "src/inner" |]
+    fileWatcher = {| state = "running"; reason = "" |}
 |}
 
 /// One writer job can change several directories, and the update lists all of them with one version.
@@ -188,6 +189,24 @@ Vitest.describe (
         )
 
         Vitest.test (
+            "a folder that gets another spelling loses its old content and loaded mark",
+            fun () ->
+                // The snapshot ignores case, so src/inner and src/Inner are the same folder with another spelling.
+                let store = loadedStore ()
+                Vitest.expect(isLoaded store.Snapshot "src/inner").toBe true
+
+                store.ApplyDirectoryUpdate(update 6 "src" [| dir "src/Inner"; file "src/b.txt" |])
+
+                Vitest.expect(isLoaded store.Snapshot "src/Inner").toBe false
+                Vitest.expect((tryFind store.Snapshot "src/inner/x.txt").IsNone).toBe true
+
+                // The update of the renamed folder follows with its children.
+                store.ApplyDirectoryUpdate(update 6 "src/Inner" [| file "src/Inner/x.txt" |])
+                Vitest.expect(isLoaded store.Snapshot "src/Inner").toBe true
+                Vitest.expect((tryFind store.Snapshot "src/inner/x.txt").IsSome).toBe true
+        )
+
+        Vitest.test (
             "keeps the previous instance of a structurally equal child",
             fun () ->
                 let store = loadedStore ()
@@ -234,6 +253,7 @@ Vitest.describe (
                         file "Data/y.txt"
                     |]
                     loadedDirectories = [| ""; "src" |]
+                    fileWatcher = {| state = "running"; reason = "" |}
                 |}
 
                 let snapshot = store.Snapshot

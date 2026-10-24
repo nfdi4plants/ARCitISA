@@ -17,6 +17,10 @@ module PathHelpers =
     let normalizePath (path: string) =
         normalizeSeparators path |> fun normalized -> normalized.Trim().TrimEnd('/')
 
+    /// Normalizes separators and removes trailing slashes without trimming whitespace, because a folder name can
+    /// end in whitespace on Linux and macOS. The file tree uses it for the paths it keys and sends.
+    let normalizePathKeepingWhitespace (path: string) = (normalizeSeparators path).TrimEnd('/')
+
     /// Normalizes separators and trims surrounding whitespace and leading or trailing slashes.
     let normalizeRelativePath (path: string) =
         normalizeSeparators path |> fun normalized -> normalized.Trim('/').Trim()
@@ -94,6 +98,16 @@ module PathHelpers =
 
     let tryGetParentPath (path: string) =
         let normalizedPath = normalizePath path
+        let separatorIndex = normalizedPath.LastIndexOf('/')
+
+        if separatorIndex < 0 then
+            None
+        else
+            Some(normalizedPath.Substring(0, separatorIndex))
+
+    /// The parent of a path like tryGetParentPath, without trimming whitespace.
+    let tryGetParentPathKeepingWhitespace (path: string) =
+        let normalizedPath = normalizePathKeepingWhitespace path
         let separatorIndex = normalizedPath.LastIndexOf('/')
 
         if separatorIndex < 0 then

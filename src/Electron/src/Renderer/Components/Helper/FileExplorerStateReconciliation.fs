@@ -14,11 +14,6 @@ open Swate.Components.Page.ArcFileEditor.Types
 /// that is not loaded is unknown, and the selection stays.
 let isKnownAbsent (known: KnownState) = known = Absent
 
-let isSelectionMissing (snapshot: FileTreeSnapshot) (selectionPath: string option) =
-    selectionPath
-    |> Option.map PathHelpers.normalizePath
-    |> Option.exists (fun selectedPath -> isKnownAbsent (knows snapshot selectedPath))
-
 let private resetsWhenSelectionIsRemoved =
     function
     | PageState.ArcFilePage _

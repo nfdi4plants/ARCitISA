@@ -15,14 +15,10 @@ open Swate.Electron.Shared.FileIOTypes
 let eventNameEquals (expected: Chokidar.Events) (actual: string) =
     String.Equals(actual, expected.ToString(), StringComparison.OrdinalIgnoreCase)
 
-/// Returns a check whether a child of the directory exists with exactly its name, so a case-only rename
-/// counts as gone. The directory is listed once, on the first check of a path that exists.
-let existsSyncWithExactNameIn (directoryPath: string) =
-    let names = lazy HashSet<string>(readdirSync directoryPath)
-    fun (path: string) -> existsSync path && names.Value.Contains(basename path)
-
+/// Whether the path exists with exactly its name, so a case-only rename counts as gone. The directory is listed
+/// only when the path exists.
 let existsSyncWithExactName (path: string) =
-    existsSyncWithExactNameIn (dirname path) path
+    existsSync path && Array.contains (basename path) (readdirSync (dirname path))
 
 /// Builds an ARC-root-relative watcher event from the raw chokidar payload.
 let buildWatcherEvent (arcPath: string) (eventName: string) (path: string) =

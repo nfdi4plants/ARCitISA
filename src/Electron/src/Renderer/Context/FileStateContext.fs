@@ -32,6 +32,8 @@ type FileStateController = {
     subscribeFileContentChanged: (FileContentStamp -> unit) -> (unit -> unit)
     /// True when the last pathChange renamed the open ARC folder, so ARC-relative state stays valid.
     rootChangeIsRename: bool
+    /// Whether the structural file watcher of the open ARC works.
+    fileWatcher: FileWatcherStateDto
     setSelection: ArcSelection -> unit
     updateSelection: (ArcSelection -> ArcSelection) -> unit
     activeFileImport: ActiveFileImportState option
@@ -40,6 +42,8 @@ type FileStateController = {
     cancelFileImport: unit -> JS.Promise<Result<unit, exn>>
 }
 
+let runningFileWatcher: FileWatcherStateDto = {| state = "running"; reason = "" |}
+
 let FileStateCtx =
     React.createContext<FileStateController> (
         {
@@ -47,6 +51,7 @@ let FileStateCtx =
             fileTreeStore = FileTreeStore()
             subscribeFileContentChanged = fun _ -> ignore
             rootChangeIsRename = false
+            fileWatcher = runningFileWatcher
             setSelection = ignore
             updateSelection = ignore
             activeFileImport = None
@@ -89,6 +94,7 @@ let FileStateCtxProviderWithSnapshots
     let isFilePickerOpenRef = React.useRef false
     let isCancellingFileImport, setIsCancellingFileImport = React.useState false
     let store, _ = React.useState (fun () -> FileTreeStore())
+    let fileWatcher, setFileWatcher = React.useState runningFileWatcher
     // Counts the pulls. A result that belongs to an older pull or an older root is dropped.
     let requestCounter = React.useRef 0
     let previousRootRef = React.useRef (None: string option)
@@ -115,6 +121,7 @@ let FileStateCtxProviderWithSnapshots
 
                             for listener in contentListeners.current.ToArray() do
                                 listener stamp
+                    fileWatcherStateChanged = setFileWatcher
                     largeObjectIndexUpdate = Renderer.Context.LargeObjectStore.forwardToActiveStore
                 }
 
@@ -133,6 +140,7 @@ let FileStateCtxProviderWithSnapshots
 
                 if not hasRoot then
                     store.Reset()
+                    setFileWatcher runningFileWatcher
                 else
                     store.BeginLoad()
 
@@ -148,6 +156,7 @@ let FileStateCtxProviderWithSnapshots
                         | Ok snapshot ->
                             if isCurrent () then
                                 store.ApplySnapshot snapshot
+                                setFileWatcher snapshot.fileWatcher
                         | Error error -> fail error.Message
                     }
                     |> Promise.catch (fun error -> fail error.Message)
@@ -263,6 +272,7 @@ let FileStateCtxProviderWithSnapshots
                 fileTreeStore = store
                 subscribeFileContentChanged = subscribeFileContentChanged
                 rootChangeIsRename = source.isRename
+                fileWatcher = fileWatcher
                 setSelection = fun selection -> setSelectionState (fun _ -> selection |> ArcSelection.normalize)
                 updateSelection =
                     fun update ->
@@ -276,6 +286,7 @@ let FileStateCtxProviderWithSnapshots
                 box fileState
                 box store
                 box source.isRename
+                box fileWatcher
                 box source.arcRootPath
                 box activeFileImport.state
                 box isCancellingFileImport

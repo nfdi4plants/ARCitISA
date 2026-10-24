@@ -85,19 +85,42 @@ let detectCaseInsensitiveAsync (arcRoot: string) : JS.Promise<bool> =
 
     detectCaseInsensitiveWithAsync defaultCaseInsensitive readdirAsync lstatForProbeAsync arcRoot
 
+/// The ARC-relative path of an absolute path inside the root, "" for the root itself, and None for a path outside
+/// the root or one with traversal segments. A name that ends in whitespace keeps it, unlike in the helpers that trim.
+let toTreeRelativePath (repoRoot: string) (absolutePath: string) : string option =
+    let root = PathHelpers.normalizePathKeepingWhitespace repoRoot
+    let path = PathHelpers.normalizePathKeepingWhitespace absolutePath
+
+    if String.IsNullOrEmpty root || String.IsNullOrEmpty path then
+        None
+    elif String.Equals(path, root, StringComparison.OrdinalIgnoreCase) then
+        Some ""
+    elif path.StartsWith(root + "/", StringComparison.OrdinalIgnoreCase) then
+        let relative = path.Substring(root.Length + 1)
+
+        if
+            String.IsNullOrEmpty relative
+            || PathHelpers.containsPathTraversalSegments relative
+        then
+            None
+        else
+            Some relative
+    else
+        None
+
 /// Converts tree entries to the entries the renderer sees. Paths become ARC-relative and the root is "".
 /// Entries outside the ARC root are dropped.
 let toRendererEntries (repoRoot: string) (entries: seq<FileEntry>) : FileEntry[] =
     entries
     |> Seq.choose (fun entry ->
-        tryGetRepoRelativePathOrRoot repoRoot entry.path
+        toTreeRelativePath repoRoot entry.path
         |> Option.map (fun relativePath -> { entry with path = relativePath })
     )
     |> Seq.toArray
 
 let private relativeToRoot (arcRoot: string) (fullPath: string) =
-    let root = PathHelpers.normalizePath arcRoot
-    (PathHelpers.normalizePath fullPath).Substring(root.Length).TrimStart('/')
+    let root = PathHelpers.normalizePathKeepingWhitespace arcRoot
+    (PathHelpers.normalizePathKeepingWhitespace fullPath).Substring(root.Length).TrimStart('/')
 
 /// Lists the direct children of one directory with a single readdir. Inventory ignore rules apply and no
 /// Git LFS call is made.
@@ -184,32 +207,59 @@ let rec private loadStructuralAsync
 /// subtree. A new child directory stays unloaded, except a new zone folder under the root and a new entity folder
 /// inside a zone folder, which load their structure so the structural invariant holds for changes made outside the
 /// app. Returns the directories whose child list changed.
-let reconcileFileTreeDirectoryAsync
+let rec reconcileFileTreeDirectoryAsync
     (arcRoot: string)
     (tree: IndexedFileTree)
     (directoryPath: string)
     : JS.Promise<string[]> =
     promise {
-        try
-            let! children = readDirectoryChildrenAsync arcRoot directoryPath
+        let! attempt = promise {
+            try
+                let! children = readDirectoryChildrenAsync arcRoot directoryPath
 
-            let changed, newDirectories =
-                tree.ReplaceChildrenReportingNew(directoryPath, children)
+                let changed, newDirectories, replacedLoaded =
+                    tree.ReplaceChildrenReportingNew(directoryPath, children)
 
-            let mutable all = [ changed ]
+                let mutable all = [ changed ]
 
-            match structuralRole arcRoot tree.CaseInsensitive directoryPath with
-            | RootFolder
-            | ZoneFolder ->
-                for directory in newDirectories do
-                    let! loaded = loadStructuralAsync arcRoot tree directory.path
-                    all <- loaded :: all
-            | EntityFolder
-            | PayloadFolder -> ()
+                match structuralRole arcRoot tree.CaseInsensitive directoryPath with
+                | RootFolder
+                | ZoneFolder ->
+                    for directory in newDirectories do
+                        let! loaded = loadStructuralAsync arcRoot tree directory.path
+                        all <- loaded :: all
+                | EntityFolder
+                | PayloadFolder -> ()
 
-            return mergeChangedDirectories tree.CaseInsensitive all
-        with error when isMissingDirectoryError error ->
-            return tree.RemoveSubtree directoryPath
+                // A directory that was loaded and got another spelling lost its subtree. The renderer expects its
+                // children in the same update, so it loads again here whatever its place in the structure.
+                for directory in replacedLoaded do
+                    if not (tree.IsLoaded directory.path) then
+                        try
+                            let! reloaded = readDirectoryChildrenAsync arcRoot directory.path
+                            all <- tree.ReplaceChildren(directory.path, reloaded) :: all
+                        with error when isMissingDirectoryError error ->
+                            ()
+
+                return Ok(mergeChangedDirectories tree.CaseInsensitive all)
+            with error when isMissingDirectoryError error ->
+                return Error error
+        }
+
+        match attempt with
+        | Ok changed -> return changed
+        | Error error ->
+            let removed = tree.RemoveSubtree directoryPath
+
+            // A folder that became a file leaves a listing in its parent that has to show the file.
+            if tryGetNodeErrorCode error = Some "ENOTDIR" then
+                match PathHelpers.tryGetParentPathKeepingWhitespace directoryPath with
+                | Some parent when tree.IsLoaded parent ->
+                    let! parentChanged = reconcileFileTreeDirectoryAsync arcRoot tree parent
+                    return mergeChangedDirectories tree.CaseInsensitive [ removed; parentChanged ]
+                | _ -> return removed
+            else
+                return removed
     }
 
 /// Scans the structure of the ARC folder: the root, every existing zone folder and every entity folder inside a
@@ -288,7 +338,7 @@ let reconcileDirtyDirectoriesAsync
         elif tree.IsLoaded path then
             Some path
         else
-            match PathHelpers.tryGetParentPath path with
+            match PathHelpers.tryGetParentPathKeepingWhitespace path with
             | Some parent -> nearestLoaded parent
             | None -> None
 

@@ -102,6 +102,41 @@ let private debounceMs = 300
 let private minRevalidationGapMs = 2000.0
 let private recentDirectoryLimit = 64
 
+/// The directories a window focus revalidates: the root, every loaded zone folder and entity folder, then the
+/// most recently loaded other directories up to a limit. The structure always comes first, because it holds the
+/// entities that outside changes touch most. Each directory appears once.
+let focusRevalidationDirectories (snapshot: FileTreeSnapshot) (recentlyLoaded: string list) : string[] =
+    let zoneKeys =
+        ArcEntityPathRules.allAddZones
+        |> List.map (ArcEntityPathRules.zoneFolderName >> PathKey.ofPath snapshot.CaseInsensitive)
+        |> Set.ofList
+
+    let loadedPaths =
+        snapshot.Loaded
+        |> Seq.choose (fun key -> snapshot.Entries |> Map.tryFind key)
+        |> Seq.map _.path
+        |> Seq.filter (fun path -> path <> "")
+        |> Seq.toList
+
+    let isStructural (path: string) =
+        let segments = path.Split('/')
+
+        (segments.Length = 1 || segments.Length = 2)
+        && zoneKeys.Contains(PathKey.ofPath snapshot.CaseInsensitive segments.[0])
+
+    let structural =
+        loadedPaths
+        |> List.filter isStructural
+        |> List.sortBy (fun path -> path.Split('/').Length, path)
+
+    let others =
+        (recentlyLoaded |> List.filter (isLoaded snapshot)) @ loadedPaths
+        |> List.filter (isStructural >> not)
+        |> List.distinct
+        |> List.truncate recentDirectoryLimit
+
+    ("" :: structural @ others) |> List.distinct |> List.toArray
+
 [<ReactComponent>]
 let FileTreeExpansionCtxProvider (api: FileTreeExpansionApi, children: ReactElement) =
     let arcRootPath = Renderer.Context.AppStateContext.useAppStateCtx ()
@@ -374,7 +409,8 @@ let FileTreeExpansionCtxProvider (api: FileTreeExpansionApi, children: ReactElem
                                         OwnWrite = ownWrite
                                     }
                                 )
-                            | Ok None when isMounted.current -> setContentStamp None
+                            | Ok None when isMounted.current && selectionRef.current = Some path ->
+                                setContentStamp None
                             | _ -> ()
                         finally
                             if ownWrite then
@@ -456,17 +492,7 @@ let FileTreeExpansionCtxProvider (api: FileTreeExpansionApi, children: ReactElem
                     isRevalidating.current <- true
                     let snapshot = store.Snapshot
 
-                    let recent = recentLoads.current |> List.filter (isLoaded snapshot)
-
-                    let others =
-                        snapshot.Loaded
-                        |> Seq.choose (fun key -> snapshot.Entries |> Map.tryFind key)
-                        |> Seq.map _.path
-                        |> Seq.filter (fun path -> path <> "" && not (List.contains path recent))
-                        |> Seq.toList
-
-                    let directories =
-                        "" :: (recent @ others |> List.truncate recentDirectoryLimit) |> List.toArray
+                    let directories = focusRevalidationDirectories snapshot recentLoads.current
 
                     promise {
                         try

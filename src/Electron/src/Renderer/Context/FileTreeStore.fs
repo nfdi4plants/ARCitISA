@@ -197,7 +197,9 @@ let private applyDirectory
                 match entries |> Map.tryFind key with
                 | Some old when old = entry -> kept.[index] <- old
                 | Some old ->
-                    if old.isDirectory && not entry.isDirectory then
+                    // A folder that became a file or got another spelling (a case-only rename) is another folder
+                    // now. Its old content and loaded mark go, and the update that follows loads it again.
+                    if old.isDirectory && (not entry.isDirectory || old.path <> entry.path) then
                         current <- removeDescendants { current with Entries = entries } key
                         entries <- current.Entries
 

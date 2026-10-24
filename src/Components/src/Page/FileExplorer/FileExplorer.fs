@@ -7,6 +7,26 @@ open Fable.Core.JsInterop
 open Feliz
 
 
+module private FileExplorerTypes =
+
+    /// The props the stable row handlers read at call time. The component refreshes it on every render.
+    type Latest = {
+        Rows: FileExplorerLogic.VisibleRow[]
+        ExpandedIds: Set<string>
+        IsExpansionControlled: bool
+        IsSelectionControlled: bool
+        OnItemClick: (FileItem -> unit) option
+        OnDirectoryExpansionChange: (FileItem -> bool -> unit) option
+        OnExpandedIdsChange: (Set<string> -> unit) option
+        GetItemIconClass: FileItem -> string option
+        GetItemActions: FileItem -> Swate.Components.Page.FileExplorer.Types.ContextMenuItem list
+        GetItemStatusAction: FileItem -> Swate.Components.Page.FileExplorer.Types.ContextMenuItem option
+        CanCreateItem: FileItem -> bool
+        OnCreateItem: (FileItem -> unit) option
+        CanDeleteItem: FileItem -> bool
+        OnDeleteItem: (FileItem -> unit) option
+    }
+
 module private FileExplorerHelper =
 
     [<Emit("$0.focus({ preventScroll: true })")>]
@@ -113,24 +133,6 @@ module private FileExplorerHelper =
             onContextMenu |> Option.map (fun fn -> fn item) |> Option.defaultValue []
 
         defaultItems @ customItems
-
-    /// The props the stable row handlers read at call time. The component refreshes it on every render.
-    type Latest = {
-        Rows: FileExplorerLogic.VisibleRow[]
-        ExpandedIds: Set<string>
-        IsExpansionControlled: bool
-        IsSelectionControlled: bool
-        OnItemClick: (FileItem -> unit) option
-        OnDirectoryExpansionChange: (FileItem -> bool -> unit) option
-        OnExpandedIdsChange: (Set<string> -> unit) option
-        GetItemIconClass: FileItem -> string option
-        GetItemActions: FileItem -> Swate.Components.Page.FileExplorer.Types.ContextMenuItem list
-        GetItemStatusAction: FileItem -> Swate.Components.Page.FileExplorer.Types.ContextMenuItem option
-        CanCreateItem: FileItem -> bool
-        OnCreateItem: (FileItem -> unit) option
-        CanDeleteItem: FileItem -> bool
-        OnDeleteItem: (FileItem -> unit) option
-    }
 
 // ---------------------------------------------------------------------------
 [<Mangle(false); Erase>]
@@ -251,7 +253,7 @@ type FileExplorer =
             [| box selectedId; box (not selectedPath.IsEmpty) |]
         )
 
-        let currentLatest: FileExplorerHelper.Latest = {
+        let currentLatest: FileExplorerTypes.Latest = {
             Rows = rows
             ExpandedIds = expandedIds
             IsExpansionControlled = isExpansionControlled
@@ -500,8 +502,7 @@ type FileExplorer =
 
                         match trigger, containerRef.current with
                         | Some trigger, Some container when container.contains (trigger) ->
-                            let trigger = trigger :?> Browser.Types.HTMLElement
-                            let itemId: string = !!trigger?dataset?fileItemId
+                            let itemId = trigger.getAttribute "data-file-item-id"
 
                             match findRowItem itemId with
                             | Some item ->
@@ -537,9 +538,7 @@ type FileExplorer =
                                 let target = event.target :?> Browser.Types.HTMLElement
 
                                 match target.closest ("[data-file-item-id]") with
-                                | Some row ->
-                                    let itemId: string = !!(row :?> Browser.Types.HTMLElement)?dataset?fileItemId
-                                    focusedRowId.current <- Some itemId
+                                | Some row -> focusedRowId.current <- Some(row.getAttribute "data-file-item-id")
                                 | None -> ()
                             )
 

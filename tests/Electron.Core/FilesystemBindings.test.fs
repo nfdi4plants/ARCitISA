@@ -36,7 +36,7 @@ Vitest.describe (
 )
 
 Vitest.describe (
-    "existsSyncWithExactNameIn",
+    "existsSyncWithExactName",
     fun () ->
         Vitest.test (
             "accepts only children that exist with exactly the checked name",
@@ -46,8 +46,7 @@ Vitest.describe (
                 try
                     do! writeFileAsync (join [| directoryPath; "Sample.csv" |]) "sample" TextEncoding.Utf8
 
-                    let existsWithExactName =
-                        Main.WatcherHelpers.existsSyncWithExactNameIn directoryPath
+                    let existsWithExactName = Main.WatcherHelpers.existsSyncWithExactName
 
                     Vitest.expect(existsWithExactName (join [| directoryPath; "Sample.csv" |])).toBe true
                     // A case-only difference counts as gone, also on case-insensitive file systems.
@@ -74,13 +73,16 @@ let private withPreviewFile (name: string) (content: string) (check: string -> J
         return raise error
 }
 
+[<Import("truncate", "fs/promises")>]
+let private truncateFileAsync (path: string) (length: float) : JS.Promise<unit> = jsNative
+
 /// A sparse file of the given size. The bytes are zeros and the test never reads them.
 let private withSizedPreviewFile (name: string) (sizeBytes: float) (check: string -> JS.Promise<unit>) =
     withPreviewFile
         name
         ""
         (fun path -> promise {
-            do! truncateAsync path sizeBytes
+            do! truncateFileAsync path sizeBytes
             do! check path
         })
 

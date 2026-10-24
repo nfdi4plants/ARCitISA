@@ -72,9 +72,13 @@ type IndexedFileTree(caseInsensitive: bool) =
     /// subtree. A child with the same name, path and kind keeps its existing instance. Returns the directories
     /// whose child list changed (the directory itself, or none) and the child directories that were inserted or
     /// replaced. A replaced directory (for example after a case-only rename) has lost its subtree and its loaded
-    /// mark, so the caller has to load it again.
-    member _.ReplaceChildrenReportingNew(directoryPath: string, children: FileEntry[]) : string[] * FileEntry[] =
+    /// mark. The third array lists the replaced directories that were loaded before, so the caller can load them
+    /// again in the same job.
+    member _.ReplaceChildrenReportingNew
+        (directoryPath: string, children: FileEntry[])
+        : string[] * FileEntry[] * FileEntry[] =
         let newDirectories = ResizeArray<FileEntry>()
+        let replacedLoaded = ResizeArray<FileEntry>()
         let directoryKey = keyOf directoryPath
 
         let incoming =
@@ -108,6 +112,8 @@ type IndexedFileTree(caseInsensitive: bool) =
                 ->
                 ()
             | true, existing ->
+                let wasLoaded = existing.isDirectory && loadedDirectories.Contains key
+
                 if existing.isDirectory then
                     removeKeyAndDescendants key
 
@@ -116,6 +122,9 @@ type IndexedFileTree(caseInsensitive: bool) =
 
                 if child.isDirectory then
                     newDirectories.Add child
+
+                    if wasLoaded then
+                        replacedLoaded.Add child
             | false, _ ->
                 entries.[key] <- child
                 changed <- true
@@ -133,15 +142,18 @@ type IndexedFileTree(caseInsensitive: bool) =
 
         let changedDirectories =
             if changed then
-                [| PathHelpers.normalizePath directoryPath |]
+                [|
+                    PathHelpers.normalizePathKeepingWhitespace directoryPath
+                |]
             else
                 [||]
 
-        changedDirectories, newDirectories.ToArray()
+        changedDirectories, newDirectories.ToArray(), replacedLoaded.ToArray()
 
     /// Replaces the direct children of a directory. Returns the directories whose child list changed.
     member this.ReplaceChildren(directoryPath: string, children: FileEntry[]) : string[] =
-        this.ReplaceChildrenReportingNew(directoryPath, children) |> fst
+        let changed, _, _ = this.ReplaceChildrenReportingNew(directoryPath, children)
+        changed
 
     /// Removes a path with everything below it, also from the child list of its parent. Returns the parent
     /// directory when the path was in the tree, because the child list of the parent changed.
@@ -153,7 +165,7 @@ type IndexedFileTree(caseInsensitive: bool) =
         else
             removeKeyAndDescendants key
 
-            match PathHelpers.tryGetParentPath path with
+            match PathHelpers.tryGetParentPathKeepingWhitespace path with
             | Some parentPath ->
                 let parentKey = keyOf parentPath
 
@@ -168,20 +180,15 @@ type IndexedFileTree(caseInsensitive: bool) =
                 | false, _ -> ()
             | None -> ()
 
-            match PathHelpers.tryGetParentPath path with
+            match PathHelpers.tryGetParentPathKeepingWhitespace path with
             | Some parentPath -> [| parentPath |]
             | None -> [||]
-
-    member _.Clear() =
-        entries.Clear()
-        childKeys.Clear()
-        loadedDirectories.Clear()
 
 /// Merges lists of changed directories into one list without duplicates, ordered from the root down: by depth,
 /// then by PathOrder. A parent therefore comes before its children.
 let mergeChangedDirectories (caseInsensitive: bool) (lists: string[] seq) : string[] =
     let depth (path: string) =
-        (PathHelpers.normalizePath path).Split('/').Length
+        (PathHelpers.normalizePathKeepingWhitespace path).Split('/').Length
 
     lists
     |> Seq.concat
@@ -216,9 +223,6 @@ type FileTreeWriter(caseInsensitive: bool, log: string -> unit, publish: FileTre
 
     member _.TreeVersion = treeVersion
 
-    /// Counts the resets. Jobs enqueued before a reset are skipped.
-    member _.Generation = generation
-
     member private this.EnqueueCore<'T>
         (
             job: IndexedFileTree -> JS.Promise<IndexedFileTree * string[] * bool * 'T>,
@@ -247,7 +251,9 @@ type FileTreeWriter(caseInsensitive: bool, log: string -> unit, publish: FileTre
                                 this.Publish {
                                     Tree = tree
                                     TreeVersion = treeVersion
-                                    ChangedDirectories = mergeChangedDirectories caseInsensitive [ changedDirectories ]
+                                    // The tree decides the case rule, because Reset installs the probed flag.
+                                    ChangedDirectories =
+                                        mergeChangedDirectories tree.CaseInsensitive [ changedDirectories ]
                                 }
 
                         return Ok(result, treeVersion)

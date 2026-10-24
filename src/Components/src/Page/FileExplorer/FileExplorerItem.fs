@@ -483,31 +483,6 @@ type FileExplorerItem =
             ]
         ]
 
-/// The stable callbacks of a tree row. The rows read them through the latest props of the explorer,
-/// so a memoized row calls the current functions even when its own props did not change.
-type TreeRowHandlers = {
-    GetItemIconClass: FileItem -> string option
-    GetItemActions: FileItem -> ContextMenuItem list
-    GetItemStatusAction: FileItem -> ContextMenuItem option
-    CanCreateItem: FileItem -> bool
-    OnCreateItem: (FileItem -> unit) option
-    CanDeleteItem: FileItem -> bool
-    OnDeleteItem: (FileItem -> unit) option
-    /// Selects the file or toggles the directory with the given row id.
-    OnRowClick: string -> unit
-}
-
-type TreeRowProps = {
-    Row: FileExplorerLogic.VisibleRow
-    IsSelected: bool
-    /// Selected rows and the ancestors of the selected row.
-    IsHighlighted: bool
-    IsExpanded: bool
-    Handlers: TreeRowHandlers
-    /// Mirrors truncateOverflowingItemNames of the explorer.
-    TruncateNames: bool
-}
-
 module TreeRow =
 
     /// Compares every field of the item except the children. The row only needs to know whether
@@ -536,6 +511,9 @@ module TreeRow =
     [<Literal>]
     let IndentPerLevel = 16
 
+    // This is a module-level React.memo with its own areEqual, not a static member. A memoized static member
+    // would compare every prop by reference, but a row has to ignore the children of its item and compare the
+    // rest of the item by value. The rows rely on this to skip renders while the explorer re-renders.
     let Render =
         React.memo (
             (fun (props: TreeRowProps) ->

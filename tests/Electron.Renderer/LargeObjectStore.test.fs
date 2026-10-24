@@ -70,7 +70,17 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "finds an NFD name through the comparison key of the NFC name",
+            "does not give Data.csv the state of data.csv on a case-sensitive file system",
+            fun () ->
+                let store = LargeObjectStore()
+                store.Apply(snapshot 1 LargeObjectIndexStatus.Ready false [| entry "data.csv" |])
+
+                Vitest.expect(pathOf (store.TryFind "Data.csv")).toEqual None
+                Vitest.expect(pathOf (store.TryFind "data.csv")).toEqual (Some "data.csv")
+        )
+
+        Vitest.test (
+            "finds an NFD name through the path key of the NFC name",
             fun () ->
                 let nfc = "Messung_ä.csv"
                 let nfd = "Messung_ä.csv"
@@ -81,7 +91,7 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "does not match a path through a comparison key that two entries share",
+            "keeps two entries that differ only in case apart on a case-sensitive file system",
             fun () ->
                 let store = LargeObjectStore()
                 store.Apply(snapshot 1 LargeObjectIndexStatus.Ready false [| entry "data.csv"; entry "Data.csv" |])

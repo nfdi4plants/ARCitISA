@@ -191,9 +191,6 @@ type LargeObjectIndex
     new(listObjects, isCaseInsensitive, log, timeLimitMs) =
         LargeObjectIndex(listObjects, isCaseInsensitive, log, timeLimitMs, 0, None)
 
-    static member Create(listObjects, isCaseInsensitive, log) =
-        LargeObjectIndex(listObjects, isCaseInsensitive, log, DefaultTimeLimitMs, 0, None)
-
     member _.State = state
     member _.Version = version
 

@@ -60,6 +60,7 @@ let private newStore () =
             file "readme.md"
         |]
         loadedDirectories = [| "" |]
+        fileWatcher = {| state = "running"; reason = "" |}
     |}
 
     store
@@ -142,6 +143,7 @@ let private Host
                 fileTreeStore = store
                 subscribeFileContentChanged = subscribe
                 rootChangeIsRename = isRename
+                fileWatcher = runningFileWatcher
                 setSelection = setSelection
                 updateSelection = ignore
                 activeFileImport = None
@@ -313,9 +315,9 @@ Vitest.describe (
                 // Before the folders load, the path is unknown and not missing.
                 Vitest
                     .expect(
-                        Renderer.Components.Helper.FileExplorerStateReconciliation.isSelectionMissing
-                            store.Snapshot
-                            (Some selected)
+                        Renderer.Components.Helper.FileExplorerStateReconciliation.isKnownAbsent (
+                            knows store.Snapshot selected
+                        )
                     )
                     .toBe
                     false
@@ -329,9 +331,9 @@ Vitest.describe (
 
                 Vitest
                     .expect(
-                        Renderer.Components.Helper.FileExplorerStateReconciliation.isSelectionMissing
-                            store.Snapshot
-                            (Some selected)
+                        Renderer.Components.Helper.FileExplorerStateReconciliation.isKnownAbsent (
+                            knows store.Snapshot selected
+                        )
                     )
                     .toBe
                     false
@@ -411,6 +413,7 @@ Vitest.describe (
                             caseInsensitive = false
                             entries = [| FileEntry.create ("arc", "", true); dir "data" |]
                             loadedDirectories = [| "" |]
+                            fileWatcher = {| state = "running"; reason = "" |}
                         |}
                     })
 
@@ -437,6 +440,7 @@ Vitest.describe (
                         dir "assays/A1/dataset"
                     |]
                     loadedDirectories = [| ""; "assays"; "assays/A1" |]
+                    fileWatcher = {| state = "running"; reason = "" |}
                 |}
 
                 store.ApplySnapshot(snapshot 1)
@@ -501,6 +505,7 @@ Vitest.describe (
                             caseInsensitive = false
                             entries = [| FileEntry.create ("other", "", true); dir "data" |]
                             loadedDirectories = [| "" |]
+                            fileWatcher = {| state = "running"; reason = "" |}
                         |}
                     })
 
@@ -577,6 +582,7 @@ Vitest.describe (
                             caseInsensitive = false
                             entries = [| FileEntry.create ("arc", "", true); dir "data" |]
                             loadedDirectories = [| "" |]
+                            fileWatcher = {| state = "running"; reason = "" |}
                         |}
                     })
 
@@ -600,6 +606,7 @@ Vitest.describe (
                         dir "Assays/a"
                     |]
                     loadedDirectories = [| ""; "Assays" |]
+                    fileWatcher = {| state = "running"; reason = "" |}
                 |}
 
                 let plan = planExpansion store.Snapshot (set [ "assays"; "assays/A" ])
@@ -685,6 +692,7 @@ Vitest.describe (
                             caseInsensitive = false
                             entries = [| FileEntry.create ("arc", "", true); dir "notes" |]
                             loadedDirectories = [| "" |]
+                            fileWatcher = {| state = "running"; reason = "" |}
                         |}
                     })
 
@@ -730,6 +738,73 @@ Vitest.describe (
                 do! waitFor (fun () -> ctx.Value.Value.expandedIds.Contains "notes/2027")
                 Vitest.expect(isLoaded store.Snapshot "notes/2027").toBe true
             }
+        )
+
+        Vitest.test (
+            "a late stat answer of an earlier selection does not clear the stamp of the current one",
+            fun () -> promise {
+                let calls = newCalls ()
+                let lateNone, finishLateNone = deferred<Result<FileStatDto option, exn>> ()
+                let ctx = ref None
+
+                let baseApi =
+                    apiWith calls (fun _ -> JS.Constructors.Promise.resolve (Error(exn "unused")))
+
+                let api = {
+                    baseApi with
+                        statFile =
+                            fun path ->
+                                if path = "first.md" then
+                                    lateNone
+                                else
+                                    JS.Constructors.Promise.resolve (Ok(Some {| sizeBytes = 5.0; mtimeMs = 7.0 |}))
+                }
+
+                let env = mount (newStore ()) api (Probe(fun value -> ctx.Value <- Some value))
+                do! RTL.act (fun () -> promise { env.SetSelection(ArcSelection.forTreePath (Some "first.md")) })
+                do! RTL.act (fun () -> promise { env.SetSelection(ArcSelection.forTreePath (Some "second.md")) })
+                do! waitFor (fun () -> ctx.Value.Value.contentStamp.IsSome)
+
+                do! RTL.act (fun () -> promise { finishLateNone (Ok None) })
+                do! Promise.sleep 20
+                Vitest.expect(ctx.Value.Value.contentStamp.Value.Path).toBe "second.md"
+            }
+        )
+
+        Vitest.test (
+            "a focus revalidates the structure and the most recent folders once each",
+            fun () ->
+                let payload = [
+                    for index in 0..69 -> "assays/A1/dir-" + (string index).PadLeft(2, '0')
+                ]
+
+                let store = FileTreeStore()
+                store.BeginLoad()
+
+                store.ApplySnapshot {|
+                    treeVersion = 1
+                    caseInsensitive = false
+                    entries =
+                        Array.ofList (
+                            [
+                                FileEntry.create ("arc", "", true)
+                                dir "assays"
+                                dir "assays/A1"
+                                dir "notes"
+                            ]
+                            @ (payload |> List.map dir)
+                        )
+                    loadedDirectories = Array.ofList ([ ""; "assays"; "assays/A1"; "notes" ] @ payload)
+                    fileWatcher = {| state = "running"; reason = "" |}
+                |}
+
+                let directories =
+                    focusRevalidationDirectories store.Snapshot [ "assays/A1/dir-69"; "assays" ]
+
+                Vitest.expect(directories |> Array.take 3).toEqual [| ""; "assays"; "assays/A1" |]
+                Vitest.expect(directories.[3]).toBe "assays/A1/dir-69"
+                Vitest.expect(directories.Length).toBe (3 + 64)
+                Vitest.expect((directories |> Array.distinct).Length).toBe directories.Length
         )
 
         Vitest.test (
@@ -839,11 +914,10 @@ Vitest.describe (
 )
 
 [<ReactComponent>]
-let private SelectorProbe (path: string, onValues: FileEntry option * FileEntry[] * KnownState -> unit) =
+let private SelectorProbe (path: string, onValues: FileEntry option * KnownState -> unit) =
     let entry = useFileTreeEntry (Some path)
-    let childEntries = useFileTreeChildren "data"
     let known = useFileTreeKnows (Some path)
-    onValues (entry, childEntries, known)
+    onValues (entry, known)
     Html.none
 
 Vitest.describe (
@@ -854,7 +928,7 @@ Vitest.describe (
             fun () -> promise {
                 let store = newStore ()
                 store.ApplyDirectoryUpdate(update 2 "data" [ file "data/a.txt"; file "data/b.txt" ])
-                let seen = ResizeArray<FileEntry option * FileEntry[] * KnownState>()
+                let seen = ResizeArray<FileEntry option * KnownState>()
                 let calls = newCalls ()
 
                 mount
@@ -863,23 +937,22 @@ Vitest.describe (
                     (SelectorProbe("data/a.txt", seen.Add))
                 |> ignore
 
-                let entry, childEntries, _ = seen.[seen.Count - 1]
+                let entry, known = seen.[seen.Count - 1]
 
                 do! RTL.act (fun () -> promise { store.ApplyDirectoryUpdate(update 3 "notes" [ file "notes/x.md" ]) })
 
-                let entryAfter, childrenAfter, _ = seen.[seen.Count - 1]
+                let entryAfter, knownAfter = seen.[seen.Count - 1]
                 Vitest.expect(obj.ReferenceEquals(entry.Value, entryAfter.Value)).toBe true
-                Vitest.expect(obj.ReferenceEquals(childEntries, childrenAfter)).toBe true
+                Vitest.expect(obj.ReferenceEquals(known, knownAfter)).toBe true
 
-                // A change inside the folder replaces its children and keeps the untouched entry.
+                // A change inside the folder keeps the untouched entry.
                 do!
                     RTL.act (fun () -> promise {
                         store.ApplyDirectoryUpdate(update 4 "data" [ file "data/a.txt"; file "data/c.txt" ])
                     })
 
-                let entryLater, childrenLater, _ = seen.[seen.Count - 1]
+                let entryLater, _ = seen.[seen.Count - 1]
                 Vitest.expect(obj.ReferenceEquals(entry.Value, entryLater.Value)).toBe true
-                Vitest.expect(obj.ReferenceEquals(childEntries, childrenLater)).toBe false
             }
         )
 )

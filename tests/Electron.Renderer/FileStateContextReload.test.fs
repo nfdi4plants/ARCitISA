@@ -79,6 +79,7 @@ let private createSnapshot (treeVersion: int) : FileTreeSnapshotDto = {|
         dirEntry "assays/assay-1/dataset"
     |]
     loadedDirectories = [| ""; "assays"; "assays/assay-1" |]
+    fileWatcher = {| state = "running"; reason = "" |}
 |}
 
 let private source (arcRootPath: string option) (changeVersion: int) : FileTreeSource = {
@@ -127,6 +128,7 @@ Vitest.describe (
 
                                 fun () -> disposeCalled <- true
                             "fileContentChanged" ==> noopSubscription
+                            "fileWatcherStateChanged" ==> noopSubscription
                             "largeObjectIndexUpdate" ==> noopSubscription
                         ])
 
@@ -209,6 +211,7 @@ Vitest.describe (
                                 fileTreeDisposeCalled <- false
                                 fun () -> fileTreeDisposeCalled <- true
                             "fileContentChanged" ==> noopSubscription
+                            "fileWatcherStateChanged" ==> noopSubscription
                             "largeObjectIndexUpdate" ==> noopSubscription
                         ])
 
@@ -251,38 +254,19 @@ Vitest.describe (
     "File explorer state reconciliation",
     fun () ->
         Vitest.test (
-            "isSelectionMissing clears a known-absent selection and keeps an unknown one",
+            "a selection is missing only when the tree knows it is absent",
             fun () ->
                 let store = FileTreeStore()
                 store.BeginLoad()
                 store.ApplySnapshot(createSnapshot 1)
 
-                // assays/assay-1 is loaded and lists no assay-b. The dataset folder is not loaded.
-                Vitest
-                    .expect(
-                        FileExplorerStateReconciliation.isSelectionMissing
-                            store.Snapshot
-                            (Some "assays/assay-1/missing.txt")
-                    )
-                    .toBe (true)
+                let missing (path: string) =
+                    FileExplorerStateReconciliation.isKnownAbsent (knows store.Snapshot path)
 
-                Vitest
-                    .expect(
-                        FileExplorerStateReconciliation.isSelectionMissing
-                            store.Snapshot
-                            (Some "assays/assay-1/dataset/deep/file.txt")
-                    )
-                    .toBe (false)
-
-                Vitest
-                    .expect(
-                        FileExplorerStateReconciliation.isSelectionMissing
-                            store.Snapshot
-                            (Some "assays/assay-1/isa.assay.xlsx")
-                    )
-                    .toBe (false)
-
-                Vitest.expect(FileExplorerStateReconciliation.isSelectionMissing store.Snapshot None).toBe (false)
+                // assays/assay-1 is loaded and lists no missing.txt. The dataset folder is not loaded.
+                Vitest.expect(missing "assays/assay-1/missing.txt").toBe true
+                Vitest.expect(missing "assays/assay-1/dataset/deep/file.txt").toBe false
+                Vitest.expect(missing "assays/assay-1/isa.assay.xlsx").toBe false
         )
 
         Vitest.test (
@@ -661,6 +645,8 @@ let private snapshotWithMarker (treeVersion: int) (marker: string) : FileTreeSna
 type private MountedProvider = {
     Render: FileTreeSource -> FileTreeSnapshotLoader -> unit
     Publish: FileTreeDirectoryUpdateDto -> unit
+    PublishWatcher: FileWatcherStateDto -> unit
+    WatcherState: unit -> string option
     Paths: unit -> string[]
     Dispose: unit -> unit
 }
@@ -669,6 +655,7 @@ let private mountProvider () : MountedProvider =
     let treeBridge = bridgeName "IFileTreeRendererApi"
     let importBridge = bridgeName "IFileImportRendererApi"
     let listener = ref (fun (_: FileTreeDirectoryUpdateDto) -> ())
+    let watcherListener = ref (fun (_: FileWatcherStateDto) -> ())
     let latest = ref (None: FileStateController option)
 
     setBridgeProperty
@@ -679,6 +666,10 @@ let private mountProvider () : MountedProvider =
                 listener.Value <- callback
                 fun () -> listener.Value <- ignore
             "fileContentChanged" ==> noopSubscription
+            "fileWatcherStateChanged"
+            ==> fun (callback: FileWatcherStateDto -> unit) ->
+                watcherListener.Value <- callback
+                fun () -> watcherListener.Value <- ignore
             "largeObjectIndexUpdate" ==> noopSubscription
         ])
 
@@ -700,6 +691,8 @@ let private mountProvider () : MountedProvider =
                     )
                 )
         Publish = fun update -> listener.Value update
+        PublishWatcher = fun state -> watcherListener.Value state
+        WatcherState = fun () -> latest.Value |> Option.map (fun controller -> controller.fileWatcher.state)
         Paths =
             fun () ->
                 latest.Value
@@ -861,6 +854,35 @@ Vitest.describe (
 
                     mounted.Render (source (Some "arc-c") 3) ok
                     do! waitForEffect (fun () -> mounted.Paths().Length > 0)
+                finally
+                    mounted.Dispose()
+            }
+        )
+
+        Vitest.test (
+            "keeps the watcher state of the snapshot and of later pushes",
+            fun () -> promise {
+                let mounted = mountProvider ()
+
+                let unavailable: FileWatcherStateDto = {|
+                    state = "unavailable"
+                    reason = "ENOSPC"
+                |}
+
+                try
+                    mounted.Render
+                        (source (Some "arc") 1)
+                        (fun () ->
+                            okSnapshot {|
+                                createSnapshot 1 with
+                                    fileWatcher = unavailable
+                            |}
+                        )
+
+                    do! waitForEffect (fun () -> mounted.WatcherState() = Some "unavailable")
+
+                    mounted.PublishWatcher {| state = "running"; reason = "" |}
+                    do! waitForEffect (fun () -> mounted.WatcherState() = Some "running")
                 finally
                     mounted.Dispose()
             }

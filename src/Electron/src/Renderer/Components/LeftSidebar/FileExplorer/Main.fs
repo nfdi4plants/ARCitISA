@@ -89,6 +89,7 @@ type Main =
     static member Main() =
         let pageStateCtx = Renderer.Context.PageStateContext.usePageStateCtx ()
         let appStateCtx = Renderer.Context.AppStateContext.useAppStateCtx ()
+        let fileStateCtx = Renderer.Context.FileStateContext.useFileStateCtx ()
         let errorModalCtx = useErrorModalCtx ()
         let arcNameContextMenuRef = React.useElementRef ()
 
@@ -164,6 +165,7 @@ type Main =
                             )
                         ]
                     ]
+                    FileWatcherNotice.FileWatcherNotice(fileStateCtx.fileWatcher)
                     Html.div [
                         prop.testId "left-sidebar-file-explorer-tree"
                         prop.className "swt:flex-1 swt:min-h-0 swt:overflow-x-auto swt:[scrollbar-gutter:stable]"

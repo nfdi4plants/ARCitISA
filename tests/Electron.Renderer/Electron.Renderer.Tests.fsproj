@@ -17,6 +17,7 @@
     <Compile Include="FileTreePerformance.test.fs" />
     <Compile Include="FileTreeContextMenu.test.fs" />
     <Compile Include="FileTreeContextMenu.test.rtl.fs" />
+    <Compile Include="FileWatcherNotice.test.rtl.fs" />
     <Compile Include="FileTreeDeleteWorkflow.test.fs" />
     <Compile Include="FileTreeRenameWorkflow.test.fs" />
     <Compile Include="FileTreeFreeLfsModal.test.rtl.fs" />

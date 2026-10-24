@@ -31,6 +31,7 @@ let private rootSnapshot: Swate.Electron.Shared.IPCTypes.FileTreeSnapshotDto = {
         FileEntry.create ("README.md", "README.md", false)
     |]
     loadedDirectories = [| "" |]
+    fileWatcher = {| state = "running"; reason = "" |}
 |}
 
 let private timed (label: string) (action: unit -> unit) =
