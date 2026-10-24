@@ -192,6 +192,9 @@ type LargeObjectIndex
         LargeObjectIndex(listObjects, isCaseInsensitive, log, timeLimitMs, 0, None)
 
     member _.State = state
+
+    /// True while a listing runs.
+    member _.IsListing = running
     member _.Version = version
 
     /// Starts a listing when the index was never built. Later calls are no-ops.

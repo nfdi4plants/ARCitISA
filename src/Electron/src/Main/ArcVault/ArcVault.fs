@@ -62,19 +62,20 @@ let fileWatcherStateToDto (state: FileWatcherState) : FileWatcherStateDto =
         reason = ""
       |}
 
-/// A Git LFS pointer file is a few lines of text, far below this size.
-let private lfsPointerSizeLimit = 1024.0
-
-/// Whether the file on disk disagrees with the indexed state of its large object. An index that lists the object as
-/// materialized expects the file to have the object size, and one that lists a pointer expects a small file.
-/// A checkout or pull made outside the app changes the working files and nothing in the Git metadata that the
-/// focus check reads, so this size comparison is the signal for it.
+/// Whether the file on disk disagrees with the indexed state of its large object. Git LFS lists an object as checked
+/// out only when the file has the object size. A materialized entry whose file has another size is stale, and so is
+/// a pointer entry whose file has the object size. A pointer entry with any other size stays as it is, because a
+/// locally modified file keeps that state however often the index is rebuilt. A checkout or pull made outside the
+/// app changes the working files and nothing in the Git metadata that the focus check reads, so this size
+/// comparison is the signal for it.
 let lfsContentMismatch (isMaterialized: bool) (indexedSize: float option) (fileSize: float) : bool =
-    if isMaterialized then
-        indexedSize |> Option.exists (fun expected -> fileSize <> expected)
-    else
-        fileSize > lfsPointerSizeLimit
-        || indexedSize |> Option.exists (fun expected -> fileSize = expected)
+    indexedSize
+    |> Option.exists (fun expected ->
+        if isMaterialized then
+            fileSize <> expected
+        else
+            fileSize = expected
+    )
 
 /// The size of a file, or None when it is gone or not a file.
 let private statFileSize (path: string) : Fable.Core.JS.Promise<float option> = promise {
@@ -360,6 +361,9 @@ type ArcVault(window: BrowserWindow) =
     member val internal LargeObjectInvalidationDebounceMs: int = 500 with get, set
 
     /// Reads the size of a file for the content check of the large object index. Tests replace it to count calls.
+    /// True while a content check of the large objects runs, so checks do not overlap.
+    member val internal LfsContentCheckRunning: bool = false with get, set
+
     member val internal LargeObjectContentStat: string -> Fable.Core.JS.Promise<float option> =
         statFileSize with get, set
 
@@ -800,54 +804,75 @@ module ArcVaultExtensions =
 
         /// Compares the large objects of the index that sit directly in the given ARC-relative directories with their
         /// files. A mismatch means that content changed outside the app, for example by git lfs checkout or pull,
-        /// and invalidates the index once. Only the files of those directories are stat-ed, a few at a time.
+        /// and invalidates the index once. Only the files of those directories are stat-ed, a few at a time. The check
+        /// stays out of the way of a rebuild that is pending or running, and one check runs at a time.
         member private this.CheckLfsContentOf(relativeDirectories: string[]) : Fable.Core.JS.Promise<unit> = promise {
+            let isRebuildUnderWay (index: Main.LargeObjectIndex.LargeObjectIndex) =
+                this.LargeObjectInvalidationTimeout.IsSome || index.IsListing
+
             match this.path, this.LargeObjectIndex with
-            | Some root, Some index ->
+            | Some root, Some index when not this.LfsContentCheckRunning && not (isRebuildUnderWay index) ->
                 match index.State with
                 | Main.LargeObjectIndex.LargeObjectIndexState.Ready ready ->
-                    let caseInsensitive = this.isCaseInsensitive
+                    this.LfsContentCheckRunning <- true
 
-                    let directoryKeys =
-                        relativeDirectories |> Array.map (PathKey.ofPath caseInsensitive) |> Set.ofArray
+                    try
+                        let caseInsensitive = this.isCaseInsensitive
 
-                    let parentKeyOf (path: string) =
-                        match path.LastIndexOf '/' with
-                        | -1 -> PathKey.ofPath caseInsensitive ""
-                        | position -> PathKey.ofPath caseInsensitive (path.Substring(0, position))
+                        let directoryKeys =
+                            relativeDirectories |> Array.map (PathKey.ofPath caseInsensitive) |> Set.ofArray
 
-                    let candidates =
-                        ready.Entries
-                        |> Array.filter (fun entry -> directoryKeys.Contains(parentKeyOf entry.Path))
+                        let parentKeyOf (path: string) =
+                            match path.LastIndexOf '/' with
+                            | -1 -> PathKey.ofPath caseInsensitive ""
+                            | position -> PathKey.ofPath caseInsensitive (path.Substring(0, position))
 
-                    let mutable mismatch = false
-                    let mutable position = 0
+                        let candidates =
+                            ready.Entries
+                            |> Array.filter (fun entry -> directoryKeys.Contains(parentKeyOf entry.Path))
 
-                    while not mismatch && position < candidates.Length && this.CanRevalidateFileTree do
-                        let group =
-                            candidates |> Array.skip position |> Array.truncate lfsContentStatConcurrency
+                        let mutable mismatch = false
+                        let mutable position = 0
 
-                        position <- position + group.Length
+                        while not mismatch && position < candidates.Length && this.CanRevalidateFileTree do
+                            let group =
+                                candidates |> Array.skip position |> Array.truncate lfsContentStatConcurrency
 
-                        let! sizes =
-                            group
-                            |> Array.map (fun entry ->
-                                this.LargeObjectContentStat(join [| root; entry.Path |])
-                                |> Promise.map (fun size -> entry, size)
-                            )
-                            |> Promise.all
+                            position <- position + group.Length
 
-                        mismatch <-
-                            sizes
-                            |> Array.exists (fun (entry, size) ->
-                                size |> Option.exists (lfsContentMismatch entry.IsMaterialized entry.SizeBytes)
-                            )
+                            let! sizes =
+                                group
+                                |> Array.map (fun entry ->
+                                    this.LargeObjectContentStat(join [| root; entry.Path |])
+                                    |> Promise.map (fun size -> entry, size)
+                                )
+                                |> Promise.all
 
-                    match this.LargeObjectIndex with
-                    | Some current when mismatch && obj.ReferenceEquals(current, index) ->
-                        swatelogfn this.window.id "Large object index invalidated by the lfs content signal."
-                        this.InvalidateLargeObjectIndex()
-                    | _ -> ()
+                            mismatch <-
+                                sizes
+                                |> Array.exists (fun (entry, size) ->
+                                    size |> Option.exists (lfsContentMismatch entry.IsMaterialized entry.SizeBytes)
+                                )
+
+                        // The result counts only for the index state that was checked. A rebuild that started or
+                        // finished meanwhile has seen the files itself.
+                        let sameReadyState =
+                            match this.LargeObjectIndex with
+                            | Some current when obj.ReferenceEquals(current, index) ->
+                                match current.State with
+                                | Main.LargeObjectIndex.LargeObjectIndexState.Ready now ->
+                                    now.Version = ready.Version && not (isRebuildUnderWay current)
+                                | _ -> false
+                            | _ -> false
+
+                        if mismatch && sameReadyState then
+                            swatelogfn
+                                this.window.id
+                                "A Git LFS file no longer matches the large object index after window focus, so the index is rebuilt."
+
+                            this.InvalidateLargeObjectIndex()
+                    finally
+                        this.LfsContentCheckRunning <- false
                 | _ -> ()
             | _ -> ()
         }

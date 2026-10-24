@@ -479,13 +479,134 @@ Vitest.describe (
         )
 
         Vitest.test (
+            "a locally modified file that the index keeps listing as a pointer causes no listing on any focus",
+            fun () ->
+                withTempDirectory (fun root -> promise {
+                    mkdirSync (join [| root; "data" |]) (MkdirOptions(recursive = true))
+                    // The object has 2048 bytes. The working file was overwritten with 3000 bytes.
+                    TestHelpers.writeText (join [| root; "data"; "big.bin" |]) (String.replicate 3000 "x")
+                    let fake = FakeListing()
+
+                    fake.Entries <- [|
+                        {
+                            entry "data/big.bin" with
+                                SizeBytes = Some 2048.0
+                        }
+                    |]
+
+                    let! vault, _ = startVault root fake
+                    let stats = ResizeArray<string>()
+                    vault.LargeObjectContentStat <- countingStat stats
+
+                    do! vault.RevalidateDirectories [| "data" |]
+                    do! waitUntil "the first content check" (fun () -> stats.Count = 1)
+                    do! settle ()
+                    do! vault.RevalidateDirectories [| "data" |]
+                    do! waitUntil "the second content check" (fun () -> stats.Count = 2)
+                    do! settle ()
+
+                    Vitest.expect(fake.Count).toBe 1
+                    vault.DisposeLargeObjectIndex()
+                })
+        )
+
+        Vitest.test (
+            "a file that reaches its object size causes one listing and then settles",
+            fun () ->
+                withTempDirectory (fun root -> promise {
+                    mkdirSync (join [| root; "data" |]) (MkdirOptions(recursive = true))
+                    let file = join [| root; "data"; "big.bin" |]
+
+                    TestHelpers.writeText
+                        file
+                        "version https://git-lfs.github.com/spec/v1
+"
+
+                    let fake = FakeListing()
+
+                    fake.Entries <- [|
+                        {
+                            entry "data/big.bin" with
+                                SizeBytes = Some 3000.0
+                        }
+                    |]
+
+                    let! vault, _ = startVault root fake
+                    let stats = ResizeArray<string>()
+                    vault.LargeObjectContentStat <- countingStat stats
+
+                    do! vault.RevalidateDirectories [| "data" |]
+                    do! waitUntil "the first check" (fun () -> stats.Count = 1)
+                    do! settle ()
+                    Vitest.expect(fake.Count).toBe 1
+
+                    // git lfs checkout writes the content, and the next listing reports the file as checked out.
+                    TestHelpers.writeText file (String.replicate 3000 "x")
+
+                    fake.Entries <- [|
+                        {
+                            entry "data/big.bin" with
+                                SizeBytes = Some 3000.0
+                                IsMaterialized = true
+                        }
+                    |]
+
+                    do! vault.RevalidateDirectories [| "data" |]
+                    do! waitUntil "the second listing" (fun () -> fake.Count = 2)
+                    do! settle ()
+                    do! vault.RevalidateDirectories [| "data" |]
+                    do! settle ()
+
+                    Vitest.expect(fake.Count).toBe 2
+                    vault.DisposeLargeObjectIndex()
+                })
+        )
+
+        Vitest.test (
+            "a mismatch found while a rebuild is already listing adds no second listing",
+            fun () ->
+                withTempDirectory (fun root -> promise {
+                    mkdirSync (join [| root; "data" |]) (MkdirOptions(recursive = true))
+                    TestHelpers.writeText (join [| root; "data"; "big.bin" |]) (String.replicate 5000 "x")
+                    let fake = FakeListing()
+
+                    fake.Entries <- [|
+                        {
+                            entry "data/big.bin" with
+                                SizeBytes = Some 5000.0
+                        }
+                    |]
+
+                    let! vault, _ = startVault root fake
+                    let stats = ResizeArray<string>()
+                    vault.LargeObjectContentStat <- countingStat stats
+
+                    // The Git state check of the same focus started a rebuild, and its listing is still under way.
+                    fake.Gated <- true
+                    vault.InvalidateLargeObjectIndex()
+                    do! waitUntil "the rebuild listing" (fun () -> fake.Count = 2)
+
+                    do! vault.RevalidateDirectories [| "data" |]
+                    do! settle ()
+                    fake.Pending.[0](Ok fake.Entries)
+                    do! settle ()
+
+                    Vitest.expect(fake.Count).toBe 2
+                    Vitest.expect(stats.Count).toBe 0
+                    vault.DisposeLargeObjectIndex()
+                })
+        )
+
+        Vitest.test (
             "the content rule compares materialized files with the object size and pointers with the pointer size",
             fun () ->
                 Vitest.expect(lfsContentMismatch true (Some 5000.0) 5000.0).toBe false
                 Vitest.expect(lfsContentMismatch true (Some 5000.0) 130.0).toBe true
                 Vitest.expect(lfsContentMismatch false (Some 5000.0) 130.0).toBe false
                 Vitest.expect(lfsContentMismatch false (Some 5000.0) 5000.0).toBe true
-                Vitest.expect(lfsContentMismatch false None 4096.0).toBe true
+                // A locally modified file keeps the state Git LFS reports for it, whatever its size is.
+                Vitest.expect(lfsContentMismatch false (Some 2048.0) 3000.0).toBe false
+                Vitest.expect(lfsContentMismatch false None 4096.0).toBe false
                 Vitest.expect(lfsContentMismatch true None 10.0).toBe false
         )
 
