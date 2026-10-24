@@ -716,6 +716,17 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
             with e ->
                 return Error e
         }
+    getLargeObjectIndex =
+        fun () -> promise {
+            try
+                let windowId = windowIdFromIpcEvent event
+
+                match ARC_VAULTS.TryGetVault(windowId) with
+                | None -> return Error(exn $"The ARC for window id {windowId} should exist")
+                | Some vault -> return Ok(vault.GetLargeObjectIndexSnapshot())
+            with e ->
+                return Error e
+        }
     pathExists =
         fun (relativePath: string) ->
             runLoadedArcPathAction

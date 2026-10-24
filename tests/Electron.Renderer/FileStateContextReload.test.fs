@@ -74,6 +74,9 @@ let private fileImportApi loadActiveImport = {
     cancelImport = fun _ -> JS.Constructors.Promise.resolve (Ok())
 }
 
+/// Subscribes to nothing and returns a disposer that does nothing.
+let private noopSubscription: obj = emitJsExpr () "(() => () => {})"
+
 Vitest.describe (
     "FileStateContext reload hydration",
     fun () ->
@@ -103,6 +106,7 @@ Vitest.describe (
                                 listenerRegistered <- true
 
                                 fun () -> disposeCalled <- true
+                            "largeObjectIndexUpdate" ==> noopSubscription
                         ])
 
                     setBridgeProperty
@@ -181,6 +185,7 @@ Vitest.describe (
                             ==> fun (_: Dictionary<string, FileEntry> -> unit) ->
                                 fileTreeDisposeCalled <- false
                                 fun () -> fileTreeDisposeCalled <- true
+                            "largeObjectIndexUpdate" ==> noopSubscription
                         ])
 
                     setBridgeProperty

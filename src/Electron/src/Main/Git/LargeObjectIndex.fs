@@ -4,6 +4,7 @@ open Fable.Core
 open Main.Bindings.PromiseRace
 open Main.VersionControl
 open Swate.Components.Shared
+open Swate.Electron.Shared.IPCTypes
 open Swate.Electron.Shared.VersionControlTypes
 open VersionControlService.Abstractions
 
@@ -210,24 +211,19 @@ type LargeObjectIndex
         listeners.Add listener
         fun () -> listeners.Remove listener |> ignore
 
-    member _.Snapshot
-        ()
-        : {|
-              version: int
-              state: string
-              entries: ObjectStateDto[]
-          |}
-        =
-        let name, entries =
+    /// The vault flag is the fallback while no index is ready.
+    member _.Snapshot(vaultCaseInsensitive: bool) : LargeObjectIndexSnapshot =
+        let name, caseInsensitive, entries =
             match state with
-            | NotLoaded -> "notLoaded", [||]
-            | Loading -> "loading", [||]
-            | Ready index -> "ready", index.ByPathKey |> Map.toArray |> Array.map snd
-            | Unavailable _ -> "unavailable", [||]
+            | NotLoaded -> "notLoaded", vaultCaseInsensitive, [||]
+            | Loading -> "loading", vaultCaseInsensitive, [||]
+            | Ready index -> "ready", index.CaseInsensitive, index.ByPathKey |> Map.toArray |> Array.map snd
+            | Unavailable _ -> "unavailable", vaultCaseInsensitive, [||]
 
         {|
             version = version
             state = name
+            caseInsensitive = caseInsensitive
             entries = entries
         |}
 
