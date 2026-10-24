@@ -236,7 +236,7 @@ let private withMutatingSessionUsingRefreshPredicate
                         let! result = withSession operationName event operationId true operation mapValue
 
                         if shouldRefresh result then
-                            do! vault.EnqueueFileTreeScan false
+                            do! vault.EnqueueFileTreeRevalidateLoaded()
 
                         return result
                     })
@@ -627,7 +627,7 @@ let api (event: IpcMainInvokeEvent) : IVersionControlApi = {
                                 )
 
                             if resultChangedState result then
-                                do! vault.EnqueueFileTreeScan false
+                                do! vault.EnqueueFileTreeRevalidateLoaded()
 
                             return result
                         })

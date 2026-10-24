@@ -311,8 +311,8 @@ module ArcVaultExtensions =
                 this.FileTreeWriter.EnqueueReplace(fun () -> scanFileTreeAsync arcPath caseInsensitive openSession)
             | None -> promise { return () }
 
-        /// Queues a reconcile of one directory, or of its nearest loaded ancestor.
-        member this.EnqueueFileTreeDirectoryReconcile(directoryPath: string) : Fable.Core.JS.Promise<unit> =
+        /// Queues one writer job that reconciles several directories, each through its nearest loaded ancestor.
+        member this.EnqueueFileTreeDirectoriesReconcile(directoryPaths: string[]) : Fable.Core.JS.Promise<unit> =
             match this.path with
             | Some arcPath ->
                 this.FileTreeWriter.Enqueue(fun tree ->
@@ -326,9 +326,55 @@ module ArcVaultExtensions =
                                 directory
                                 error.Message
                         )
-                        [| directoryPath |]
+                        directoryPaths
                 )
             | None -> promise { return () }
+
+        /// Queues a reconcile of one directory, or of its nearest loaded ancestor.
+        member this.EnqueueFileTreeDirectoryReconcile(directoryPath: string) : Fable.Core.JS.Promise<unit> =
+            this.EnqueueFileTreeDirectoriesReconcile [| directoryPath |]
+
+        /// Queues one writer job that reconciles the root and every loaded directory, from the root down.
+        /// It makes no LFS call, so entries keep the large-object state they had. An empty tree gets a full scan.
+        member this.EnqueueFileTreeRevalidateLoaded() : Fable.Core.JS.Promise<unit> =
+            if this.FileTreeWriter.Tree.Count = 0 then
+                this.EnqueueFileTreeScan false
+            else
+                match this.path with
+                | Some arcPath ->
+                    this.FileTreeWriter.Enqueue(fun tree ->
+                        reconcileDirtyDirectoriesAsync
+                            arcPath
+                            tree
+                            (fun directory error ->
+                                swatelogfn
+                                    this.window.id
+                                    "Unable to revalidate file tree directory '%s': %s"
+                                    directory
+                                    error.Message
+                            )
+                            tree.LoadedDirectories
+                    )
+                | None -> promise { return () }
+
+        /// Saves the ARC, then reconciles the parent directory of every written path in one writer job.
+        member this.SaveArc() : Fable.Core.JS.Promise<Result<unit, exn>> = promise {
+            match! this.WriteArc() with
+            | Error saveError -> return Error saveError
+            | Ok writtenPaths ->
+                match this.path with
+                | None -> return Error(arcNotOpenError ())
+                | Some arcPath ->
+                    let parents =
+                        writtenPaths
+                        |> Array.choose (fun relativePath ->
+                            PathHelpers.tryGetParentPath (join [| arcPath; relativePath |])
+                        )
+                        |> Array.distinct
+
+                    do! this.EnqueueFileTreeDirectoriesReconcile parents
+                    return Ok()
+        }
 
         /// Marks the directories of a watcher batch dirty and reconciles them in one writer job.
         /// A pending-state reset after the call drops the job, so an update queued before it cannot publish the old root.
@@ -654,7 +700,9 @@ module ArcVaultExtensions =
                     Ok()
 
         /// Writes the active in-memory ARC scaffold to disk without touching unmanaged files such as notes.
-        member this.WriteArc() : Fable.Core.JS.Promise<Result<unit, exn>> = promise {
+        /// Returns the ARC-relative paths the save wrote. GetUpdateContracts updates the stored static hashes,
+        /// so the contracts are read once and both written and listed from that one array.
+        member this.WriteArc() : Fable.Core.JS.Promise<Result<string[], exn>> = promise {
             match this.isBusyWriting, this.path, this.arc with
             | true, _, _ ->
                 return Error(exn "ARCitISA is still saving another change. Please wait a moment and try again.")
@@ -662,11 +710,14 @@ module ArcVaultExtensions =
                 return!
                     this.WithBusyWritingScope(fun () -> promise {
                         try
-                            match! arc.TryUpdateAsyncSwate(arcPath) with
+                            let contracts = arc.GetUpdateContractsSwate()
+                            let writtenPaths = contractWrittenPaths contracts
+
+                            match! ARCtrl.Contract.fullFillContractBatchAsync arcPath contracts with
                             | Error errors -> return Error(exn (PathHelpers.formatContractErrors errors))
                             | Ok _ ->
                                 this.RefreshHasUnsavedArcChangesFlag()
-                                return Ok()
+                                return Ok writtenPaths
                         with e ->
                             return Error(exn $"Failed to persist ARC to disk: {e.Message}")
                     })
@@ -1420,7 +1471,7 @@ type ArcVaults() =
 
                     match persistResult with
                     | Error saveError -> return Error saveError
-                    | Ok() ->
+                    | Ok _ ->
                         vault.isCloseApproved <- true
                         vault.window.close ()
                         return Ok()

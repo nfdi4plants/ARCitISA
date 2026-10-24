@@ -351,3 +351,115 @@ Vitest.describe (
                 })
         )
 )
+
+Vitest.describe (
+    "SaveArc and EnqueueFileTreeRevalidateLoaded",
+    fun () ->
+        let withTempArc = TestHelpers.withTempArcWith "swate-indexed-save-" "IndexedSaveArc"
+
+        let openVault (arcPath: string) = promise {
+            let vault = ArcVault(TestHelpers.testWindow ())
+            vault.path <- Some arcPath
+            do! vault.LoadArc()
+            do! vault.EnqueueFileTreeScan false
+            return vault
+        }
+
+        Vitest.test (
+            "WriteArc lists the file of a renamed study",
+            fun () ->
+                withTempArc
+                    (fun arc -> arc.AddStudy(ARCtrl.ArcStudy("S1")))
+                    (fun arcPath -> promise {
+                        let! vault = openVault arcPath
+                        vault.arc.Value.RenameStudy("S1", "S2")
+
+                        match! vault.WriteArc() with
+                        | Error error -> failwith error.Message
+                        | Ok paths -> Vitest.expect(paths |> Array.contains "studies/S2/isa.study.xlsx").toBe (true)
+
+                        let! exists =
+                            TestHelpers.pathExistsAsync (join [| arcPath; "studies"; "S2"; "isa.study.xlsx" |])
+
+                        Vitest.expect(exists).toBe (true)
+                    })
+        )
+
+        Vitest.test (
+            "SaveArc adds the renamed study to the tree without a full scan",
+            fun () ->
+                withTempArc
+                    (fun arc -> arc.AddStudy(ARCtrl.ArcStudy("S1")))
+                    (fun arcPath -> promise {
+                        let! vault = openVault arcPath
+                        let root = FileTreeCreator.normalizeRootPath arcPath
+                        let tree = vault.FileTreeWriter.Tree
+                        let investigationBefore = tree.TryFind(root + "/isa.investigation.xlsx")
+                        Vitest.expect(investigationBefore.IsSome).toBe (true)
+
+                        let mutable publishCount = 0
+                        vault.FileTreeWriter.Publish <- fun _ -> publishCount <- publishCount + 1
+                        vault.arc.Value.RenameStudy("S1", "S2")
+
+                        match! vault.SaveArc() with
+                        | Error error -> failwith error.Message
+                        | Ok() -> ()
+
+                        Vitest.expect((tree.TryFind(root + "/studies/S2/isa.study.xlsx")).IsSome).toBe (true)
+                        Vitest.expect(publishCount).toBe 1
+
+                        Vitest
+                            .expect(
+                                obj.ReferenceEquals(
+                                    (tree.TryFind(root + "/isa.investigation.xlsx")).Value,
+                                    investigationBefore.Value
+                                )
+                            )
+                            .toBe (true)
+                    })
+        )
+
+        Vitest.test (
+            "revalidating the loaded directories finds deep changes with one publish",
+            fun () ->
+                withTempArc
+                    (fun arc -> arc.AddAssay(ARCtrl.ArcAssay("A1")))
+                    (fun arcPath -> promise {
+                        let dataset = join [| arcPath; "assays"; "A1"; "dataset" |]
+                        do! mkdirAsync' (join [| dataset; "sub" |])
+                        do! mkdirAsync' (join [| dataset; "old" |])
+                        do! mkdirAsync' (join [| dataset; "keep" |])
+                        do! writeAsync (join [| dataset; "sub"; "first.txt" |])
+                        do! writeAsync (join [| dataset; "old"; "gone.txt" |])
+                        do! writeAsync (join [| dataset; "keep"; "kept.txt" |])
+
+                        let! vault = openVault arcPath
+                        let root = FileTreeCreator.normalizeRootPath arcPath
+                        let tree = vault.FileTreeWriter.Tree
+                        let keptBefore = tree.TryFind(root + "/assays/A1/dataset/keep/kept.txt")
+                        Vitest.expect(keptBefore.IsSome).toBe (true)
+
+                        let mutable publishCount = 0
+                        vault.FileTreeWriter.Publish <- fun _ -> publishCount <- publishCount + 1
+
+                        do! writeAsync (join [| dataset; "sub"; "second.txt" |])
+                        do! rmAsync (join [| dataset; "old" |]) (RmOptions(recursive = true, force = true))
+
+                        do! vault.EnqueueFileTreeRevalidateLoaded()
+
+                        Vitest.expect((tree.TryFind(root + "/assays/A1/dataset/sub/second.txt")).IsSome).toBe (true)
+                        Vitest.expect((tree.TryFind(root + "/assays/A1/dataset/old")).IsSome).toBe (false)
+                        Vitest.expect((tree.TryFind(root + "/assays/A1/dataset/old/gone.txt")).IsSome).toBe (false)
+                        Vitest.expect(publishCount).toBe 1
+
+                        Vitest
+                            .expect(
+                                obj.ReferenceEquals(
+                                    (tree.TryFind(root + "/assays/A1/dataset/keep/kept.txt")).Value,
+                                    keptBefore.Value
+                                )
+                            )
+                            .toBe (true)
+                    })
+        )
+)
