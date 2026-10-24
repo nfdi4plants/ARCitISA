@@ -25,6 +25,7 @@ type Stats =
     abstract member isFile: unit -> bool
     abstract member isSymbolicLink: unit -> bool
     abstract member size: float
+    abstract member mtimeMs: float
 
 type Dirent =
     abstract member name: string

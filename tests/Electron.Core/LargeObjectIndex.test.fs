@@ -78,8 +78,8 @@ Vitest.describe (
                 do! settle ()
                 Vitest.expect(fake.Calls.Count).toBe 2
                 Vitest.expect(index.Version).toBe 2
-                Vitest.expect(index.Snapshot().state).toBe "ready"
-                Vitest.expect(index.Snapshot().entries.Length).toBe 2
+                Vitest.expect((index.Snapshot false).state).toBe "ready"
+                Vitest.expect((index.Snapshot false).entries.Length).toBe 2
             }
         )
 

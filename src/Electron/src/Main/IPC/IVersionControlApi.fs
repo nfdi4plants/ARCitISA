@@ -237,6 +237,7 @@ let private withMutatingSessionUsingRefreshPredicate
 
                         if shouldRefresh result then
                             do! vault.EnqueueFileTreeRevalidateLoaded()
+                            vault.InvalidateLargeObjectIndex()
 
                         return result
                     })
@@ -628,6 +629,7 @@ let api (event: IpcMainInvokeEvent) : IVersionControlApi = {
 
                             if resultChangedState result then
                                 do! vault.EnqueueFileTreeRevalidateLoaded()
+                                vault.InvalidateLargeObjectIndex()
 
                             return result
                         })

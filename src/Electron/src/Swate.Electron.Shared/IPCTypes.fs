@@ -94,6 +94,15 @@ type IValidationPackageIPC = {
     getAllPackages: unit -> JS.Promise<Result<ValidationPackageDTO[], exn>>
 }
 
+/// State of the large object index of a vault. state is notLoaded, loading, ready or unavailable. entries is empty
+/// unless the state is ready. caseInsensitive is the flag the paths of the entries were keyed with.
+type LargeObjectIndexSnapshot = {|
+    version: int
+    state: string
+    caseInsensitive: bool
+    entries: ObjectStateDto[]
+|}
+
 /// Two Way Bridge: Renderer <-> Main
 type IArcVaultsApi = {
     /// Open ARC via folder dialog. Main decides: current window / new window / focus existing.
@@ -117,6 +126,8 @@ type IArcVaultsApi = {
     cancelImportExternalFiles: string -> JS.Promise<Result<unit, exn>>
     getActiveFileImport: unit -> JS.Promise<Result<ActiveFileImportState option, exn>>
     getFileTree: unit -> JS.Promise<Result<System.Collections.Generic.Dictionary<string, FileEntry>, exn>>
+    /// Pulls the current large object index of the vault. A vault without an index answers notLoaded with no entries.
+    getLargeObjectIndex: unit -> JS.Promise<Result<LargeObjectIndexSnapshot, exn>>
     pathExists: string -> JS.Promise<Result<bool, exn>>
     openFile: string -> JS.Promise<Result<FileContentDTO, exn>>
     openArcFolderInFileExplorer: unit -> JS.Promise<Result<unit, exn>>
@@ -247,6 +258,7 @@ module MainToRendererIpc =
 
     type IFileTreeRendererApi = {
         fileTreeUpdate: System.Collections.Generic.Dictionary<string, FileEntry> -> unit
+        largeObjectIndexUpdate: LargeObjectIndexSnapshot -> unit
     }
 
     type IFileImportRendererApi = {
