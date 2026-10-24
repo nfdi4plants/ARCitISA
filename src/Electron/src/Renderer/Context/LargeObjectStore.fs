@@ -15,6 +15,8 @@ type LargeObjectSnapshot = {
     CaseInsensitive: bool
     ByPathKey: Map<PathKey, ObjectStateDto>
     ByComparisonKey: Map<string, ObjectStateDto>
+    /// The entries by their path as sent, for the common lookup that finds the path unchanged.
+    ByExactPath: System.Collections.Generic.Dictionary<string, ObjectStateDto>
 }
 
 module LargeObjectSnapshot =
@@ -25,6 +27,7 @@ module LargeObjectSnapshot =
         CaseInsensitive = false
         ByPathKey = Map.empty
         ByComparisonKey = Map.empty
+        ByExactPath = System.Collections.Generic.Dictionary()
     }
 
     let ofIpc (snapshot: LargeObjectIndexSnapshot) : LargeObjectSnapshot = {
@@ -39,13 +42,27 @@ module LargeObjectSnapshot =
             snapshot.entries
             |> Array.map (fun dto -> dto.Path, dto)
             |> buildComparisonKeyMap
+        ByExactPath =
+            let exact = System.Collections.Generic.Dictionary<string, ObjectStateDto>()
+
+            for dto in snapshot.entries do
+                exact.[dto.Path] <- dto
+
+            exact
     }
 
     /// The exact path key wins. The Unicode comparison key finds names that differ only in their normalization form.
     let tryFind (relativePath: string) (snapshot: LargeObjectSnapshot) : ObjectStateDto option =
-        match Map.tryFind (PathKey.ofPath snapshot.CaseInsensitive relativePath) snapshot.ByPathKey with
-        | Some found -> Some found
-        | None -> Map.tryFind (PathHelpers.normalizeForUnicodeComparison relativePath) snapshot.ByComparisonKey
+        // Most snapshots are empty and most paths are no large object, so keys are built only after an exact miss.
+        if snapshot.ByExactPath.Count = 0 then
+            None
+        else
+            match snapshot.ByExactPath.TryGetValue relativePath with
+            | true, found -> Some found
+            | false, _ ->
+                match Map.tryFind (PathKey.ofPath snapshot.CaseInsensitive relativePath) snapshot.ByPathKey with
+                | Some found -> Some found
+                | None -> Map.tryFind (PathHelpers.normalizeForUnicodeComparison relativePath) snapshot.ByComparisonKey
 
 type LargeObjectStore() =
     let mutable snapshot = LargeObjectSnapshot.empty
@@ -76,7 +93,11 @@ type LargeObjectStore() =
 
     /// Forgets the state of the previous ARC root.
     member _.Clear() =
-        if snapshot <> LargeObjectSnapshot.empty then
+        if
+            snapshot.ByExactPath.Count > 0
+            || snapshot.Version <> 0
+            || snapshot.State <> LargeObjectIndexStatus.NotLoaded
+        then
             snapshot <- LargeObjectSnapshot.empty
             notify ()
 

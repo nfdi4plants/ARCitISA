@@ -14,7 +14,9 @@
     <Compile Include="FileSystemHelper.test.fs" />
     <Compile Include="FileTreeFileTargetWorkflow.test.fs" />
     <Compile Include="FileTreeMaterialization.test.fs" />
+    <Compile Include="FileTreePerformance.test.fs" />
     <Compile Include="FileTreeContextMenu.test.fs" />
+    <Compile Include="FileTreeContextMenu.test.rtl.fs" />
     <Compile Include="FileTreeDeleteWorkflow.test.fs" />
     <Compile Include="FileTreeRenameWorkflow.test.fs" />
     <Compile Include="FileTreeFreeLfsModal.test.rtl.fs" />

@@ -68,7 +68,14 @@ and private buildItem
     else
         // The collapsed row keeps its own label and acts on the deepest directory.
         let deepest = deepestOfSameNameChain snapshot entry
-        let item = createItem { deepest with name = entry.name }
+        // The entry itself keeps its identity, so a row cache finds it. Only a collapsed chain needs a renamed copy.
+        let shown =
+            if obj.ReferenceEquals(deepest, entry) then
+                entry
+            else
+                { deepest with name = entry.name }
+
+        let item = createItem shown
         let path = deepest.path
 
         let itemChildren =
@@ -82,6 +89,36 @@ and private buildItem
                 None
 
         { item with Children = itemChildren }
+
+/// Applies overlay to every folder row of the list, also inside expanded folders. A list without a changed row
+/// comes back as the same instance, so memoized rows and lists stay equal.
+let rec overlayDirectories (overlay: FileItem -> FileItem) (items: FileItem list) : FileItem list =
+    if items |> List.forall (fun item -> not item.IsDirectory) then
+        items
+    else
+        let overlaid =
+            items
+            |> List.map (fun item ->
+                if not item.IsDirectory then
+                    item
+                else
+                    let changed = overlay item
+
+                    match changed.Children with
+                    | Some children ->
+                        let next = overlayDirectories overlay children
+
+                        if obj.ReferenceEquals(next, children) then
+                            changed
+                        else
+                            { changed with Children = Some next }
+                    | None -> changed
+            )
+
+        if List.forall2 (fun a b -> obj.ReferenceEquals(a, b)) items overlaid then
+            items
+        else
+            overlaid
 
 /// Builds the items of the root's children. Only expanded directories are walked, so the cost follows the visible
 /// rows. An unloaded directory gets no children (it can expand), a loaded empty one gets an empty list.

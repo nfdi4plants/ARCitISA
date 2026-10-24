@@ -558,6 +558,25 @@ type FileExplorer =
 
                                 if movedOutside then
                                     focusedRowId.current <- None
+                                elif isNull next then
+                                    // A click on content outside the tree also blurs without a target. The row stays
+                                    // tracked only when it is gone by the end of the task, which means it was removed.
+                                    let blurred = event.target :?> Browser.Types.HTMLElement
+
+                                    Browser.Dom.window.setTimeout (
+                                        (fun () ->
+                                            let active = Browser.Dom.document.activeElement
+
+                                            if
+                                                Browser.Dom.document.body.contains (blurred :> Browser.Types.Node)
+                                                && (isNull active
+                                                    || active = (Browser.Dom.document.body :> Browser.Types.Element))
+                                            then
+                                                focusedRowId.current <- None
+                                        ),
+                                        0
+                                    )
+                                    |> ignore
                             )
                             prop.className listClassName
                             prop.style [

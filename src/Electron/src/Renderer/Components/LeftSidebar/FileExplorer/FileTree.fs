@@ -125,31 +125,27 @@ type FileTree =
         let withBusy =
             Renderer.Context.LfsActivityContext.LfsActivityState.withBusyChildren lfsActivityByPath
 
+        // Entries are immutable and keep their instance while unchanged, so the base row of an entry is built once.
+        // A new large object snapshot gets a new cache, because the rows carry that state.
+        let itemCache =
+            React.useMemo (
+                (fun () -> Renderer.ReferenceCache.ReferenceCache<FileEntry, FileItem>()),
+                [| box tryFindLfs |]
+            )
+
         let createFileItem (entry: FileEntry) =
-            let item = Helper.createItem tryFindLfs entry
+            let baseItem = itemCache.GetOrAdd(entry, Helper.createItem tryFindLfs)
 
-            let loadState =
-                if entry.isDirectory then
-                    expansionCtx.loadStates
-                    |> Map.tryFind (PathKey.ofPath snapshot.CaseInsensitive entry.path)
-                else
-                    None
-
-            {
-                item with
-                    LfsActivity = lfsActivityByPath |> Map.tryFind entry.path |> Option.map _.Label
-                    // A folder shows its load: an ellipsis icon while it loads and the error tone after a failure
-                    // until the next expand retries it.
-                    Icon =
-                        match loadState with
-                        | Some Renderer.Context.FileTreeExpansionContext.Loading -> FileItemIcon.MoreHorizontal
-                        | _ -> item.Icon
-                    IconTone =
-                        match loadState with
-                        | Some(Renderer.Context.FileTreeExpansionContext.Failed _) -> Some FileItemIconTone.Error
-                        | Some Renderer.Context.FileTreeExpansionContext.Loading -> Some FileItemIconTone.Info
-                        | None -> item.IconTone
-            }
+            // Only the entries with a running action get a copy.
+            if lfsActivityByPath.IsEmpty then
+                baseItem
+            else
+                match Map.tryFind entry.path lfsActivityByPath with
+                | Some activity -> {
+                    baseItem with
+                        LfsActivity = Some activity.Label
+                  }
+                | None -> baseItem
 
         let rootEntry = Renderer.Context.FileTreeStore.tryFind snapshot ""
 
@@ -172,9 +168,53 @@ type FileTree =
                 [|
                     box snapshot
                     box expansionCtx.expandedIds
-                    box expansionCtx.loadStates
                     box tryFindLfs
                     box lfsActivityByPath
+                |]
+            )
+
+        // A folder shows its load: an ellipsis icon while it loads and the error tone after a failure until the
+        // next expand retries it. The overlay copies the folder rows with a state and leaves every other row alone,
+        // so a change of the load states does not rebuild the items.
+        let fileItem =
+            React.useMemo (
+                (fun () ->
+                    if expansionCtx.loadStates.IsEmpty then
+                        fileItem
+                    else
+                        fileItem
+                        |> Option.map (fun root -> {
+                            root with
+                                Children =
+                                    root.Children
+                                    |> Option.map (
+                                        FileTreeMaterialization.overlayDirectories (fun item ->
+                                            match item.Path with
+                                            | None -> item
+                                            | Some path ->
+                                                match
+                                                    Map.tryFind
+                                                        (PathKey.ofPath snapshot.CaseInsensitive path)
+                                                        expansionCtx.loadStates
+                                                with
+                                                | Some Renderer.Context.FileTreeExpansionContext.Loading -> {
+                                                    item with
+                                                        Icon = FileItemIcon.MoreHorizontal
+                                                        IconTone = Some FileItemIconTone.Info
+                                                  }
+                                                | Some(Renderer.Context.FileTreeExpansionContext.Failed _) -> {
+                                                    item with
+                                                        IconTone = Some FileItemIconTone.Error
+                                                  }
+                                                | None -> item
+                                        )
+                                    )
+                        })
+                ),
+                [|
+                    box fileItem
+                    box expansionCtx.loadStates
+                    box snapshot.CaseInsensitive
                 |]
             )
 
@@ -553,6 +593,7 @@ type FileTree =
             runToggleLfsMark = runToggleLfsMark
             runDownloadLfsFile = runDownloadLfsFile
             runFreeLocalLfsCopy = requestFreeLocalLfsCopy
+            refreshDirectory = (fun (item: FileItem) -> item.Path |> Option.iter expansionCtx.refreshDirectory)
             lfsActivePaths = lfsActivePaths
         }
 

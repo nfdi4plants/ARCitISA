@@ -233,7 +233,7 @@ let FileTreeExpansionCtxProvider (api: FileTreeExpansionApi, children: ReactElem
 
     /// Loads the folders above the reveal target one after another and expands them. A folder whose answer is held
     /// back (a pull is running) leaves the target in place, and the next store change runs this again.
-    let reveal () =
+    let rec reveal () =
         match revealTarget.current with
         | Some path when not isRevealing.current ->
             isRevealing.current <- true
@@ -292,6 +292,11 @@ let FileTreeExpansionCtxProvider (api: FileTreeExpansionApi, children: ReactElem
                             revealTarget.current <- None
                 finally
                     isRevealing.current <- false
+
+                // A selection that changed while this pass waited for a folder has its own pass now.
+                match revealTarget.current with
+                | Some next when next <> path && isMounted.current -> reveal ()
+                | _ -> ()
             }
             |> Promise.catch ignore
             |> Promise.start
