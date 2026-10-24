@@ -82,8 +82,7 @@ let FileStateCtxProviderWithSnapshots
                 fun setFileTree ->
                     Renderer.IpcReceiver.subscribeProxyReceiver<IFileTreeRendererApi> {
                         fileTreeUpdate = fileTreeFromDictionary >> setFileTree
-                        // The M3 renderer step fills this in.
-                        largeObjectIndexUpdate = ignore
+                        largeObjectIndexUpdate = Renderer.Context.LargeObjectStore.forwardToActiveStore
                     }
             onError = fun ex -> console.error ("Failed to load file tree snapshot.", ex.Message)
             dependencies = [||]

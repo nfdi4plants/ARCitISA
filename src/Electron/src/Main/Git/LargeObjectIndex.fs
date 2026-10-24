@@ -4,6 +4,7 @@ open Fable.Core
 open Main.Bindings.PromiseRace
 open Main.VersionControl
 open Swate.Components.Shared
+open Swate.Electron.Shared.FileIOHelper
 open Swate.Electron.Shared.IPCTypes
 open Swate.Electron.Shared.VersionControlTypes
 open VersionControlService.Abstractions
@@ -23,18 +24,6 @@ type LargeObjectIndexState =
     | Loading
     | Ready of ReadyIndex
     | Unavailable of reason: string
-
-/// Maps the Unicode comparison key of each path to its object. Keys shared by several paths are dropped,
-/// because a fallback match on them would pick an arbitrary file.
-let buildComparisonKeyMap (entries: seq<string * ObjectStateDto>) : Map<string, ObjectStateDto> =
-    entries
-    |> Seq.groupBy (fun (relativePath, _) -> PathHelpers.normalizeForUnicodeComparison relativePath)
-    |> Seq.choose (fun (comparisonKey, matchingObjects) ->
-        match matchingObjects |> Seq.toList with
-        | [ (_, largeObject) ] -> Some(comparisonKey, largeObject)
-        | _ -> None
-    )
-    |> Map.ofSeq
 
 /// Lists the LFS objects of a repository through its version-control session. The session is opened when
 /// it is not hosted yet.
@@ -75,10 +64,11 @@ type LargeObjectIndex
         listObjects: OperationContext -> JS.Promise<Result<ObjectStateDto[], string>>,
         isCaseInsensitive: unit -> bool,
         log: string -> unit,
-        timeLimitMs: int
+        timeLimitMs: int,
+        startVersion: int
     ) =
     let mutable state = NotLoaded
-    let mutable version = 0
+    let mutable version = startVersion
     let mutable running = false
     let mutable dirty = false
     let mutable disposed = false
@@ -181,8 +171,12 @@ type LargeObjectIndex
         }
         |> ignore
 
+    /// Starts at version 0.
+    new(listObjects, isCaseInsensitive, log, timeLimitMs) =
+        LargeObjectIndex(listObjects, isCaseInsensitive, log, timeLimitMs, 0)
+
     static member Create(listObjects, isCaseInsensitive, log) =
-        LargeObjectIndex(listObjects, isCaseInsensitive, log, DefaultTimeLimitMs)
+        LargeObjectIndex(listObjects, isCaseInsensitive, log, DefaultTimeLimitMs, 0)
 
     member _.State = state
     member _.Version = version

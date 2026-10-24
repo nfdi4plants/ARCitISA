@@ -750,7 +750,7 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
                     | None -> return Error(arcNotOpenError ())
                     | Some arcPath ->
                         if vault.FileTreeWriter.Tree.Count = 0 then
-                            do! vault.EnqueueFileTreeScan true
+                            do! vault.EnqueueFileTreeScan()
 
                         let fileEntries = vault.FileTreeWriter.Tree.Entries |> Seq.toArray
 

@@ -8,6 +8,18 @@ open Swate.Electron.Shared.FileIOTypes
 
 let LegacyDataMapFileName = "isa_datamap"
 
+/// Maps the Unicode comparison key of each path to its value. Keys shared by several paths are dropped,
+/// because a fallback match on them would pick an arbitrary file.
+let buildComparisonKeyMap (entries: seq<string * 'T>) : Map<string, 'T> =
+    entries
+    |> Seq.groupBy (fun (relativePath, _) -> PathHelpers.normalizeForUnicodeComparison relativePath)
+    |> Seq.choose (fun (comparisonKey, matching) ->
+        match matching |> Seq.toList with
+        | [ (_, value) ] -> Some(comparisonKey, value)
+        | _ -> None
+    )
+    |> Map.ofSeq
+
 let getNonEmptyPathParts (path: string) =
     PathHelpers.normalizePath path
     |> fun p -> p.Split('/', StringSplitOptions.RemoveEmptyEntries)
@@ -135,13 +147,7 @@ let private insertFileTreeEntry (root: FileTreeNode) (rootPath: string) (entry: 
                     let newPath = parts.[0..index] |> String.concat "/"
 
                     let newNode =
-                        FileTreeNode.create (
-                            part,
-                            (if isLast then entry.isDirectory else true),
-                            newPath,
-                            Dictionary(),
-                            entry.largeObject
-                        )
+                        FileTreeNode.create (part, (if isLast then entry.isDirectory else true), newPath, Dictionary())
 
                     node.children.Add(part, newNode)
                     newNode
@@ -179,7 +185,7 @@ let toFileTreeNode (fileEntries: FileEntry[]) =
             fileEntries
             |> Array.find (fun fileEntry -> PathHelpers.normalizePath fileEntry.path = rootPath)
 
-        FileTreeNode.create (rootEntry.name, rootEntry.isDirectory, rootPath, Dictionary(), rootEntry.largeObject)
+        FileTreeNode.create (rootEntry.name, rootEntry.isDirectory, rootPath, Dictionary())
 
     adaptedFileEntries
     |> Array.iter (fun fileEntry -> insertFileTreeEntry rootElement rootPath fileEntry)

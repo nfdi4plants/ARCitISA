@@ -85,92 +85,6 @@ let detectCaseInsensitiveAsync (arcRoot: string) : JS.Promise<bool> =
 
     detectCaseInsensitiveWithAsync defaultCaseInsensitive readdirAsync lstatForProbeAsync arcRoot
 
-let private tryListLargeObjects
-    (repoRoot: string)
-    (openSession: bool)
-    : Fable.Core.JS.Promise<Map<string, ObjectStateDto>> =
-    promise {
-        try
-            let context = OperationContext.detached "file-tree-objects"
-            let host = WorkspaceSessionHost.get ()
-
-            let! hostedSession =
-                if openSession then
-                    promise {
-                        let! opened = host.OpenSession(repoRoot, context) |> Async.StartAsPromise
-
-                        return
-                            match opened with
-                            | Succeeded outcome
-                            | PartiallySucceeded(outcome, _) -> Some outcome.Value
-                            | Failed _ -> None
-                    }
-                else
-                    promise { return host.TryGetSession repoRoot }
-
-            match hostedSession with
-            | None -> return Map.empty
-            | Some hosted ->
-                match hosted.Session.ObjectMaterialization with
-                | None -> return Map.empty
-                | Some materialization ->
-                    let! listed = materialization.ListObjects context |> Async.StartAsPromise
-
-                    match listed with
-                    | Succeeded outcome
-                    | PartiallySucceeded(outcome, _) ->
-                        return
-                            outcome.Value
-                            |> Array.map (fun (objectState: ObjectState) ->
-                                let dto = Mappings.objectState objectState
-                                dto.Path, dto
-                            )
-                            |> Map.ofArray
-                    | Failed _ -> return Map.empty
-        with _ ->
-            return Map.empty
-    }
-
-let private withFileEntryLfsMetadata
-    (repoRoot: string)
-    (largeObjectsByRelativePath: Map<string, ObjectStateDto>)
-    (largeObjectsByComparisonKey: Map<string, ObjectStateDto>)
-    (entry: FileEntry)
-    : FileEntry =
-    if entry.isDirectory then
-        entry
-    else
-        match tryGetRepoRelativePath repoRoot entry.path with
-        | Some relativePath ->
-            let normalizedRelativePath = PathHelpers.normalizeSeparators relativePath
-
-            let largeObject =
-                match Map.tryFind normalizedRelativePath largeObjectsByRelativePath with
-                | Some largeObject -> Some largeObject
-                | None ->
-                    normalizedRelativePath
-                    |> PathHelpers.normalizeForUnicodeComparison
-                    |> fun comparisonKey -> Map.tryFind comparisonKey largeObjectsByComparisonKey
-
-            { entry with largeObject = largeObject }
-        | None -> { entry with largeObject = None }
-
-let private buildLargeObjectsByComparisonKey (largeObjectsByRelativePath: Map<string, ObjectStateDto>) =
-    largeObjectsByRelativePath
-    |> Map.toSeq
-    |> Main.LargeObjectIndex.buildComparisonKeyMap
-
-let withFileEntriesLfsMetadata
-    (repoRoot: string)
-    (largeObjectsByRelativePath: Map<string, ObjectStateDto>)
-    (entries: FileEntry[])
-    : FileEntry[] =
-    let largeObjectsByComparisonKey =
-        buildLargeObjectsByComparisonKey largeObjectsByRelativePath
-
-    entries
-    |> Array.map (withFileEntryLfsMetadata repoRoot largeObjectsByRelativePath largeObjectsByComparisonKey)
-
 /// Build the renderer snapshot using ARC-relative dictionary keys and FileEntry paths.
 let toRendererFileTree (repoRoot: string) (entries: seq<FileEntry>) : Dictionary<string, FileEntry> =
     let rendererFileTree = Dictionary<string, FileEntry>()
@@ -203,7 +117,7 @@ let readDirectoryChildrenAsync (arcRoot: string) (directoryPath: string) : JS.Pr
             if isIgnoredInventoryEntry name (relativeToRoot arcRoot fullPath) isDirectory then
                 None
             else
-                Some(FileEntry.create (name, fullPath, isDirectory, None))
+                Some(FileEntry.create (name, fullPath, isDirectory))
         )
         |> Array.sortWith (fun left right -> PathOrder.compareNames left.name right.name)
 }
@@ -265,14 +179,13 @@ let reconcileFileTreeDirectoryAsync
     }
 
 /// Scans the whole ARC folder into a tree with every directory loaded. The root entry is the ARC folder itself.
-/// LFS metadata is attached once per scan.
-let scanFileTreeAsync (arcRoot: string) (caseInsensitive: bool) (openSession: bool) : JS.Promise<IndexedFileTree> = promise {
+let scanFileTreeAsync (arcRoot: string) (caseInsensitive: bool) : JS.Promise<IndexedFileTree> = promise {
     let repoRoot = normalizeRootPath arcRoot
     let tree = IndexedFileTree(caseInsensitive)
 
     let! rootStats = statAsync repoRoot
     let rootIsDirectory = rootStats.isDirectory ()
-    tree.SetRoot(FileEntry.create (basename repoRoot, repoRoot, rootIsDirectory, None))
+    tree.SetRoot(FileEntry.create (basename repoRoot, repoRoot, rootIsDirectory))
 
     if rootIsDirectory then
         let listed = ResizeArray<string * FileEntry[]>()
@@ -288,17 +201,8 @@ let scanFileTreeAsync (arcRoot: string) (caseInsensitive: bool) (openSession: bo
                 if child.isDirectory then
                     pending.Push child.path
 
-        let! largeObjectsByRelativePath = tryListLargeObjects repoRoot openSession
-
-        let largeObjectsByComparisonKey =
-            buildLargeObjectsByComparisonKey largeObjectsByRelativePath
-
         for (directoryPath, children) in listed do
-            let withMetadata =
-                children
-                |> Array.map (withFileEntryLfsMetadata repoRoot largeObjectsByRelativePath largeObjectsByComparisonKey)
-
-            tree.ReplaceChildren(directoryPath, withMetadata) |> ignore
+            tree.ReplaceChildren(directoryPath, children) |> ignore
 
     return tree
 }

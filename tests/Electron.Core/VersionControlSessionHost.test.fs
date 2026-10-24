@@ -1414,17 +1414,17 @@ Vitest.describe (
                     let attributes = git fixture.RepoRoot [ "cat-file"; "-p"; "HEAD:.gitattributes" ]
                     let datasetAbsolutePath = join [| fixture.RepoRoot; datasetPath |]
 
-                    let datasetEntry =
-                        vault.FileTreeWriter.Tree.Entries
-                        |> Seq.tryFind (fun entry ->
-                            Swate.Components.Shared.PathHelpers.pathsEqual entry.path datasetAbsolutePath
-                        )
-                        |> Option.defaultWith (fun () -> failwith "The refreshed file tree omitted the dataset file.")
+                    // The refreshed tree must still list the file.
+                    vault.FileTreeWriter.Tree.Entries
+                    |> Seq.tryFind (fun entry ->
+                        Swate.Components.Shared.PathHelpers.pathsEqual entry.path datasetAbsolutePath
+                    )
+                    |> Option.defaultWith (fun () -> failwith "The refreshed file tree omitted the dataset file.")
+                    |> ignore
 
                     Vitest.expect(datasetContent.StartsWith("version https://git-lfs.github.com/spec/v1")).toBe true
 
                     Vitest.expect(attributes.Contains(datasetPath)).toBe true
-                    Vitest.expect(datasetEntry.largeObject.IsSome).toBe true
                 })
         )
 

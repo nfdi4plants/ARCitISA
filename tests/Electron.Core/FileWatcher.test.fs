@@ -185,7 +185,7 @@ Vitest.describe (
                         let! loadedArc = TestHelpers.loadArcAsync arcPath
                         let vault = newVault arcPath
                         vault.SetArc loadedArc
-                        do! vault.EnqueueFileTreeScan false
+                        do! vault.EnqueueFileTreeScan()
 
                         // The batch has to re-add the entry, so the single reconcile job shows as one publish.
                         let root = Main.FileTreeCreator.normalizeRootPath arcPath
@@ -337,7 +337,7 @@ Vitest.describe (
                     seedEntities
                     (fun arcPath -> promise {
                         let vault = newVault arcPath
-                        do! vault.EnqueueFileTreeScan false
+                        do! vault.EnqueueFileTreeScan()
                         let root = Main.FileTreeCreator.normalizeRootPath arcPath
                         vault.FileWatcherRestartBackoffMs <- [| 20; 40; 60 |]
                         let created = ResizeArray<obj>()

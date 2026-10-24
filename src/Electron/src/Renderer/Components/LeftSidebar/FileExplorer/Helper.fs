@@ -180,7 +180,10 @@ let isArcEntityFolderViewOpen
         || PathHelpers.pathsEqual selectedPath $"{PathHelpers.normalizePath folderPath}/{workbookName}"
     | _ -> false
 
-let createItem (node: FileTreeNode) : FileItem =
+let createItem
+    (tryFindLfs: string -> Swate.Electron.Shared.VersionControlTypes.ObjectStateDto option)
+    (node: FileTreeNode)
+    : FileItem =
     let item =
         if node.isDirectory then
             FileTree.createFolder node.name (Some node.path) (folderIcon node.path)
@@ -188,7 +191,7 @@ let createItem (node: FileTreeNode) : FileItem =
             FileTree.createFile node.name (Some node.path) (fileIcon node.path)
 
     { item with Id = node.path }
-    |> Renderer.Components.FileExplorerLfs.withFileTreeNodeLfsState node
+    |> Renderer.Components.FileExplorerLfs.withFileTreeNodeLfsState tryFindLfs node
 
 let arcCreateKinds = [
     {
