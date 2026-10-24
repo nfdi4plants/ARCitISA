@@ -69,8 +69,11 @@ type IndexedFileTree(caseInsensitive: bool) =
     member _.SetRoot(entry: FileEntry) = entries.[keyOf entry.path] <- entry
 
     /// Replaces the direct children of a directory and marks it loaded. Children that disappeared lose their
-    /// subtree. A child with the same name, path and kind keeps its existing instance. Returns true when anything changed.
-    member _.ReplaceChildren(directoryPath: string, children: FileEntry[]) : bool =
+    /// subtree. A child with the same name, path and kind keeps its existing instance. Returns whether anything
+    /// changed and the child directories that were inserted or replaced. A replaced directory (for example after a
+    /// case-only rename) has lost its subtree and its loaded mark, so the caller has to load it again.
+    member _.ReplaceChildrenReportingNew(directoryPath: string, children: FileEntry[]) : bool * FileEntry[] =
+        let newDirectories = ResizeArray<FileEntry>()
         let directoryKey = keyOf directoryPath
 
         let incoming =
@@ -109,9 +112,15 @@ type IndexedFileTree(caseInsensitive: bool) =
 
                 entries.[key] <- child
                 changed <- true
+
+                if child.isDirectory then
+                    newDirectories.Add child
             | false, _ ->
                 entries.[key] <- child
                 changed <- true
+
+                if child.isDirectory then
+                    newDirectories.Add child
 
         if not (sameKeys previousKeys incomingKeys) then
             changed <- true
@@ -121,7 +130,11 @@ type IndexedFileTree(caseInsensitive: bool) =
         else
             childKeys.[directoryKey] <- incomingKeys
 
-        changed
+        changed, newDirectories.ToArray()
+
+    /// Replaces the direct children of a directory. Returns true when anything changed.
+    member this.ReplaceChildren(directoryPath: string, children: FileEntry[]) : bool =
+        this.ReplaceChildrenReportingNew(directoryPath, children) |> fst
 
     /// Removes a path with everything below it, also from the child list of its parent.
     member _.RemoveSubtree(path: string) : bool =

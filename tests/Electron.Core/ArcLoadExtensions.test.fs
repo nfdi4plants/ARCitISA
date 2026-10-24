@@ -145,6 +145,34 @@ Vitest.describe (
         )
 
         Vitest.test (
+            "treats an entity directory that vanished after the zone listing as absent",
+            fun () -> promise {
+                let vanishedPath =
+                    PathHelpers.normalizePath (join [| "C:/arc"; "assays"; "vanished" |])
+
+                let readDirectory path _ =
+                    let normalizedPath = PathHelpers.normalizePath path
+
+                    if normalizedPath = PathHelpers.normalizePath "C:/arc" then
+                        JS.Constructors.Promise.resolve [| directory "assays" |]
+                    elif normalizedPath = PathHelpers.normalizePath (join [| "C:/arc"; "assays" |]) then
+                        JS.Constructors.Promise.resolve [| directory "vanished"; directory "kept" |]
+                    elif normalizedPath = vanishedPath then
+                        JS.Constructors.Promise.Create(fun _ reject ->
+                            reject (createObj [ "code" ==> "ENOENT"; "message" ==> "gone" ] |> unbox<exn>)
+                        )
+                    elif normalizedPath.EndsWith "kept" then
+                        JS.Constructors.Promise.resolve [| file "isa.assay.xlsx" |]
+                    else
+                        JS.Constructors.Promise.resolve [||]
+
+                let! paths = discoverStructuralArcFilePathsWithAsync readDirectory "C:/arc"
+
+                Vitest.expect(paths).toEqual [| "assays/kept/isa.assay.xlsx" |]
+            }
+        )
+
+        Vitest.test (
             "propagates an entity directory read failure",
             fun () -> promise {
                 let entityPath =

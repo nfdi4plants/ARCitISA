@@ -98,7 +98,16 @@ module ArcLoadExtensions =
                 entityDirectories
                 |> Array.map (fun entity -> promise {
                     let entityPath = join [| entity.ZonePath; entity.EntityName |]
-                    let! metadataEntries = readDirectory entityPath (ReaddirOptions(withFileTypes = true))
+                    // An entity folder that vanished after the zone listing counts as absent.
+                    let! metadataEntries = promise {
+                        try
+                            return! readDirectory entityPath (ReaddirOptions(withFileTypes = true))
+                        with readError ->
+                            match tryGetNodeErrorCode readError with
+                            | Some "ENOENT"
+                            | Some "ENOTDIR" -> return [||]
+                            | _ -> return raise readError
+                    }
 
                     let allowedFileNames = [|
                         ArcEntityPathRules.zoneEntityFileName entity.Zone
@@ -259,7 +268,8 @@ module ArcLoadExtensions =
     type ARC with
 
         /// Hotfix for #619, not fixed in the consumed ARCtrl 3.0.0-beta.12.
-        /// Mirrors ARC.tryLoadAsync, but discovers metadata files structurally instead of walking the whole ARC.
+        /// Mirrors ARC.tryLoadAsync. It lists the root, the zone folders and the entity folders to find the
+        /// metadata files, and never reads payload folders.
         static member LoadAsyncSwate(arcPath: string) = promise {
             let! discoveredPaths = discoverStructuralArcFilePathsWithAsync readdirWithTypesAsync arcPath
             let! paths = migrateLegacyDataMapPathsAsync arcPath discoveredPaths
