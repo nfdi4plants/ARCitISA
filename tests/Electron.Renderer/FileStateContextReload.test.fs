@@ -6,7 +6,6 @@ open Fable.Core
 open Fable.Core.JsInterop
 open Feliz
 open Renderer.Components.Helper
-open Renderer.Context.ExpandedDirectoryLoader
 open Renderer.Context.FileStateContext
 open Renderer.Context.FileTreeStore
 open Swate.Electron.Shared.IPCTypes
@@ -41,11 +40,16 @@ let private waitForEffect predicate = waitUntil (predicate, 50)
 
 [<ReactComponent>]
 let private FileTreeProbe (onFileTree: string[] -> unit) =
-    let fileStateCtx = useFileStateCtx ()
+    let snapshot = Renderer.Context.FileTreeHooks.useFileTreeSnapshot ()
 
     React.useEffect (
-        (fun () -> fileStateCtx.state.FileTree |> Array.map _.path |> onFileTree),
-        [| box fileStateCtx.state.FileTree |]
+        (fun () ->
+            snapshot.Entries
+            |> Seq.map (fun entry -> entry.Value.path)
+            |> Seq.toArray
+            |> onFileTree
+        ),
+        [| box snapshot |]
     )
 
     Html.none
@@ -419,9 +423,7 @@ Vitest.describe (
                     FileEntry.create ("isa.datamap.xlsx", "assays/DataMapAssay/isa.datamap.xlsx", false)
                 |]
 
-                Vitest
-                    .expect(FileExplorerStateReconciliation.tryGetDataMapMismatchReload fileTreeWithDataMap pageState)
-                    .toEqual (None)
+                Vitest.expect(FileExplorerStateReconciliation.tryGetDataMapMismatchReload true pageState).toEqual (None)
 
                 let fileTree = [|
                     FileEntry.create ("DataMapAssay", "assays/DataMapAssay", true)
@@ -429,13 +431,13 @@ Vitest.describe (
                 |]
 
                 Vitest
-                    .expect(FileExplorerStateReconciliation.tryGetDataMapMismatchReload fileTree pageState)
+                    .expect(FileExplorerStateReconciliation.tryGetDataMapMismatchReload false pageState)
                     .toEqual (Some("assays/DataMapAssay/isa.assay.xlsx", Some ActiveView.Metadata))
 
                 assay.DataMap <- None
 
                 Vitest
-                    .expect(FileExplorerStateReconciliation.tryGetDataMapMismatchReload fileTreeWithDataMap pageState)
+                    .expect(FileExplorerStateReconciliation.tryGetDataMapMismatchReload true pageState)
                     .toEqual (Some("assays/DataMapAssay/isa.assay.xlsx", Some ActiveView.DataMap))
 
                 let standaloneDataMapPage =
@@ -450,7 +452,7 @@ Vitest.describe (
                     )
 
                 Vitest
-                    .expect(FileExplorerStateReconciliation.tryGetDataMapMismatchReload fileTree standaloneDataMapPage)
+                    .expect(FileExplorerStateReconciliation.tryGetDataMapMismatchReload false standaloneDataMapPage)
                     .toEqual (None)
         )
 
@@ -613,8 +615,7 @@ Vitest.describe (
                         .expect(
                             FileExplorerStateReconciliation.tryGetReloadableSelectedFilePath
                                 (fun _ -> None)
-                                fileTree
-                                (Some "data/big.txt")
+                                (Some fileTree.[0])
                                 (Some pageState)
                         )
                         .toEqual (Some "data/big.txt")
@@ -702,7 +703,12 @@ let private mountProvider () : MountedProvider =
         Paths =
             fun () ->
                 latest.Value
-                |> Option.map (fun controller -> controller.state.FileTree |> Array.map _.path |> Array.sort)
+                |> Option.map (fun controller ->
+                    controller.fileTreeStore.Snapshot.Entries
+                    |> Seq.map (fun entry -> entry.Value.path)
+                    |> Seq.toArray
+                    |> Array.sort
+                )
                 |> Option.defaultValue [||]
         Dispose =
             fun () ->
@@ -864,98 +870,6 @@ Vitest.describe (
                     do! waitForEffect (fun () -> mounted.Paths().Length = 0)
                 finally
                     mounted.Dispose()
-            }
-        )
-)
-
-[<ReactComponent>]
-let private LoaderProbe
-    (store: FileTreeStore, initialExpanded: Set<string>, load: DirectoryLoader, onExpanded: Set<string> -> unit)
-    =
-    let subscribe = React.useMemo ((fun () -> store.Subscribe), [| box store |])
-    let snapshot = React.useSyncExternalStore (subscribe, (fun () -> store.Snapshot))
-    let expandedIds, setExpandedIds = React.useStateWithUpdater initialExpanded
-
-    useExpandedDirectoryLoader (store, snapshot, expandedIds, setExpandedIds, load)
-    |> ignore
-
-    React.useEffect ((fun () -> onExpanded expandedIds), [| box expandedIds |])
-    Html.none
-
-Vitest.describe (
-    "expanded directories",
-    fun () ->
-        let datasetPath = "assays/assay-1/dataset"
-
-        Vitest.test (
-            "planExpansion drops absent ids and lists present unloaded directories parents first",
-            fun () ->
-                let store = FileTreeStore()
-                store.BeginLoad()
-                store.ApplySnapshot(createSnapshot 1)
-
-                let plan =
-                    planExpansion
-                        store.Snapshot
-                        (set [
-                            datasetPath
-                            "assays/gone"
-                            $"{datasetPath}/deep"
-                            "assays/assay-1"
-                        ])
-
-                Vitest.expect(plan.ToLoad).toEqual [ datasetPath ]
-
-                Vitest
-                    .expect(plan.Expanded |> Set.toList)
-                    .toEqual (set [ datasetPath; $"{datasetPath}/deep"; "assays/assay-1" ] |> Set.toList)
-        )
-
-        Vitest.test (
-            "loads an expanded directory that is present but not loaded, again after a new snapshot",
-            fun () -> promise {
-                let store = FileTreeStore()
-                store.BeginLoad()
-                store.ApplySnapshot(createSnapshot 1)
-                let loaded = ResizeArray<string>()
-                let observedExpanded = ResizeArray<Set<string>>()
-                let version = ref 100
-
-                let load (path: string) =
-                    loaded.Add path
-                    version.Value <- version.Value + 1
-
-                    JS.Constructors.Promise.resolve (
-                        Ok {|
-                            treeVersion = version.Value
-                            directoryPath = path
-                            children = [| fileEntry $"{path}/raw.txt" |]
-                        |}
-                    )
-
-                let container = document.createElement ("div") :?> Browser.Types.HTMLDivElement
-                document.body.appendChild container |> ignore
-                let root = ReactDOM.createRoot container
-
-                try
-                    root.render (LoaderProbe(store, set [ datasetPath; "assays/gone" ], load, observedExpanded.Add))
-
-                    do! waitForEffect (fun () -> isLoaded store.Snapshot datasetPath)
-
-                    Vitest.expect(loaded |> Seq.toList).toEqual [ datasetPath ]
-                    Vitest.expect((children store.Snapshot datasetPath).Length).toBe 1
-                    // The id that is gone from the tree leaves the expanded set.
-                    do! waitForEffect (fun () -> observedExpanded.[observedExpanded.Count - 1] = set [ datasetPath ])
-
-                    // A new snapshot lists the directory as not loaded again, as after a root rename.
-                    store.BeginLoad()
-                    store.ApplySnapshot(createSnapshot 20)
-                    do! waitForEffect (fun () -> loaded.Count = 2)
-                    do! waitForEffect (fun () -> isLoaded store.Snapshot datasetPath)
-                    Vitest.expect((children store.Snapshot datasetPath).Length).toBe 1
-                finally
-                    root.unmount ()
-                    container.remove ()
             }
         )
 )

@@ -26,20 +26,6 @@ module FileEntryExtensions =
             isDirectory = isDirectory
         }
 
-type FileTreeNode = {
-    name: string
-    isDirectory: bool
-    path: string
-    children: Dictionary<string, FileTreeNode>
-} with
-
-    static member create(name: string, isDirectory: bool, path: string, children: Dictionary<string, FileTreeNode>) = {
-        name = name
-        isDirectory = isDirectory
-        path = path
-        children = children
-    }
-
 [<RequireQualifiedAccess; StringEnum>]
 type FileContentType =
     | JSON

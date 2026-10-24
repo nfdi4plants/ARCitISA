@@ -11,22 +11,23 @@ open Renderer
 open Renderer.Context.FileTreeStore
 
 type FileState = {
-    /// The loaded part of the file tree as a flat list. Directories that are not loaded have no children here.
-    FileTree: FileEntry[]
-    /// The snapshot FileTree was built from, for questions about what is loaded and what is known.
-    TreeSnapshot: FileTreeSnapshot
     Selection: ArcSelection
 } with
 
-    static member init() : FileState = {
-        FileTree = [||]
-        TreeSnapshot = FileTreeStore().Snapshot
-        Selection = ArcSelection.empty
-    }
+    static member init() : FileState = { Selection = ArcSelection.empty }
+
+/// Size and modification time of one file, as of the last stat or the last change push.
+type FileContentStamp = {
+    Path: string
+    SizeBytes: float
+    MtimeMs: float
+}
 
 type FileStateController = {
     state: FileState
     fileTreeStore: FileTreeStore
+    /// Calls the listener for every fileContentChanged push. Returns the function that removes the listener.
+    subscribeFileContentChanged: (FileContentStamp -> unit) -> (unit -> unit)
     fileTreeIsLoading: bool
     refreshFileTree: unit -> unit
     setSelection: ArcSelection -> unit
@@ -42,6 +43,7 @@ let FileStateCtx =
         {
             state = FileState.init ()
             fileTreeStore = FileTreeStore()
+            subscribeFileContentChanged = fun _ -> ignore
             fileTreeIsLoading = true
             refreshFileTree = ignore
             setSelection = ignore
@@ -90,6 +92,7 @@ let FileStateCtxProviderWithSnapshots
     // Counts the pulls. A result that belongs to an older pull or an older root is dropped.
     let requestCounter = React.useRef 0
     let previousRootRef = React.useRef (None: string option)
+    let contentListeners = React.useRef (ResizeArray<FileContentStamp -> unit>())
     // The pull reads the loader through a ref, so it stays stable and still uses the loader of the latest commit.
     let loaderRef = React.useRef loadFileTreeSnapshot
     React.useLayoutEffect (fun () -> loaderRef.current <- loadFileTreeSnapshot)
@@ -101,7 +104,16 @@ let FileStateCtxProviderWithSnapshots
             let dispose =
                 Renderer.IpcReceiver.subscribeProxyReceiver<IFileTreeRendererApi> {
                     fileTreeDirectoryUpdate = store.ApplyDirectoryUpdate
-                    fileContentChanged = ignore
+                    fileContentChanged =
+                        fun change ->
+                            let stamp = {
+                                Path = change.path
+                                SizeBytes = change.sizeBytes
+                                MtimeMs = change.mtimeMs
+                            }
+
+                            for listener in contentListeners.current.ToArray() do
+                                listener stamp
                     largeObjectIndexUpdate = Renderer.Context.LargeObjectStore.forwardToActiveStore
                 }
 
@@ -168,27 +180,17 @@ let FileStateCtxProviderWithSnapshots
         |]
     )
 
-    // A stable subscribe function, so React does not resubscribe on every render.
-    let subscribe = React.useMemo ((fun () -> store.Subscribe), [| box store |])
-    let snapshot = React.useSyncExternalStore (subscribe, (fun () -> store.Snapshot))
-
-    // The flat list for consumers that have not moved to the store yet. Map values come in path order, so a
-    // parent always comes before its children.
-    let fileTree =
-        React.useMemo (
-            (fun () -> snapshot.Entries |> Seq.map (fun entry -> entry.Value) |> Seq.toArray),
-            [| box snapshot |]
+    let subscribeFileContentChanged =
+        React.useCallback (
+            (fun (listener: FileContentStamp -> unit) ->
+                contentListeners.current.Add listener
+                fun () -> contentListeners.current.Remove listener |> ignore
+            ),
+            [||]
         )
 
     let fileState =
-        React.useMemo (
-            (fun _ -> {
-                FileTree = fileTree
-                TreeSnapshot = snapshot
-                Selection = selection
-            }),
-            [| box fileTree; box selection |]
-        )
+        React.useMemo ((fun _ -> { Selection = selection }), [| box selection |])
 
     let activeFileImport =
         Renderer.MainSyncedState.useMainSyncedState {
@@ -262,6 +264,7 @@ let FileStateCtxProviderWithSnapshots
             (fun _ -> {
                 state = fileState
                 fileTreeStore = store
+                subscribeFileContentChanged = subscribeFileContentChanged
                 fileTreeIsLoading = fileTreeIsLoading
                 refreshFileTree = fun () -> pull source.arcRootPath.IsSome
                 setSelection = fun selection -> setSelectionState (fun _ -> selection |> ArcSelection.normalize)

@@ -20,7 +20,7 @@ let private mapLfsSize (sizeBytes: float option) =
     size, (size |> Option.map FileTree.formatSize)
 
 /// Folders never carry large object state. Files get it from the lookup by their ARC-relative path.
-let getFileTreeNodeLfsState (tryFindLfs: string -> ObjectStateDto option) (node: FileTreeNode) : FileTreeNodeLfsState =
+let getFileTreeNodeLfsState (tryFindLfs: string -> ObjectStateDto option) (node: FileEntry) : FileTreeNodeLfsState =
     let largeObject = if node.isDirectory then None else tryFindLfs node.path
     let lfsSize, lfsSizeFormatted = mapLfsSize (largeObject |> Option.bind _.SizeBytes)
 
@@ -34,7 +34,7 @@ let getFileTreeNodeLfsState (tryFindLfs: string -> ObjectStateDto option) (node:
 
 let withFileTreeNodeLfsState
     (tryFindLfs: string -> ObjectStateDto option)
-    (node: FileTreeNode)
+    (node: FileEntry)
     (item: FileItem)
     : FileItem =
     let lfsState = getFileTreeNodeLfsState tryFindLfs node

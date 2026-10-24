@@ -1,7 +1,10 @@
 module ElectronRenderer.FileExplorerStateReconciliationRtlTests
 
+open Fable.Core
 open Feliz
 open Renderer.Components.Helper
+open Renderer.Context.FileStateContext
+open Renderer.Context.FileTreeStore
 open Renderer.Types
 open Swate.Electron.Shared.FileIOTypes
 open Swate.Electron.Shared.VersionControlTypes
@@ -11,12 +14,11 @@ Vitest.afterEach (fun () -> RTL.cleanup ())
 
 type private HarnessProps = {
     Lookup: string -> ObjectStateDto option
-    FileTree: FileEntry[]
     Selection: string
+    Stamp: FileContentStamp option
 }
 
 let private selectedPath = "data/note.md"
-let private fileTree = [| FileEntry.create ("note.md", selectedPath, false) |]
 
 let private lfsState (isMaterialized: bool) : ObjectStateDto = {
     Path = selectedPath
@@ -26,92 +28,165 @@ let private lfsState (isMaterialized: bool) : ObjectStateDto = {
     ObjectId = None
 }
 
-[<ReactComponent>]
-let private Harness
-    (initial: HarnessProps, reloads: ResizeArray<string>, clears: int ref, expose: (HarnessProps -> unit) -> unit)
-    =
-    let props, setProps = React.useState initial
-    expose setProps
+let private stamp (path: string) (mtimeMs: float) : FileContentStamp option =
+    Some {
+        Path = path
+        SizeBytes = 10.0
+        MtimeMs = mtimeMs
+    }
 
+/// A store with the root, a data folder that holds the given files and an unrelated folder.
+let private storeWith (files: string list) =
+    let store = FileTreeStore()
+    store.BeginLoad()
+
+    store.ApplySnapshot {|
+        treeVersion = 1
+        caseInsensitive = false
+        entries =
+            Array.ofList (
+                [
+                    FileEntry.create ("arc", "", true)
+                    FileEntry.create ("data", "data", true)
+                    FileEntry.create ("other", "other", true)
+                ]
+                @ (files
+                   |> List.map (fun path -> FileEntry.create (path.Substring(path.LastIndexOf '/' + 1), path, false)))
+            )
+        loadedDirectories = [| ""; "data"; "other" |]
+    |}
+
+    store
+
+let private controllerFor (store: FileTreeStore) : FileStateController = {
+    state = FileState.init ()
+    fileTreeStore = store
+    subscribeFileContentChanged = fun _ -> ignore
+    fileTreeIsLoading = false
+    refreshFileTree = ignore
+    setSelection = ignore
+    updateSelection = ignore
+    activeFileImport = None
+    isCancellingFileImport = false
+    importExternalFiles = fun _ -> JS.Constructors.Promise.resolve (Ok())
+    cancelFileImport = fun () -> JS.Constructors.Promise.resolve (Ok())
+}
+
+[<ReactComponent>]
+let private ProbeHost (props: HarnessProps, reloads: ResizeArray<string>, clears: int ref) =
     FileExplorerStateReconciliation.useReconcileSelectedPreview
         props.Lookup
-        props.FileTree
         (Some props.Selection)
         (Some PageState.UnknownPage)
+        props.Stamp
         (fun path _ -> reloads.Add path)
         (fun () -> clears.Value <- clears.Value + 1)
 
     Html.none
 
+[<ReactComponent>]
+let private Harness
+    (
+        store: FileTreeStore,
+        initial: HarnessProps,
+        reloads: ResizeArray<string>,
+        clears: int ref,
+        expose: (HarnessProps -> unit) -> unit
+    ) =
+    let props, setProps = React.useState initial
+    expose setProps
+
+    FileStateCtx.Provider(controllerFor store, ProbeHost(props, reloads, clears))
+
+let private render store props reloads clears =
+    let setProps = ref (fun (_: HarnessProps) -> ())
+
+    RTL.render (Harness(store, props, reloads, clears, (fun setter -> setProps.Value <- setter)))
+    |> ignore
+
+    fun next -> RTL.act (fun () -> promise { setProps.Value next })
+
+let private noLfs (_: string) : ObjectStateDto option = None
+
 Vitest.test (
-    "the selected preview reloads only when the tree or the LFS state of the selected file changes",
+    "the selected preview reloads only for changes of the selected file, its LFS state or its content stamp",
     fun () -> promise {
+        let store = storeWith [ selectedPath; "other/x.txt" ]
         let reloads = ResizeArray<string>()
         let clears = ref 0
-        let setProps = ref (fun (_: HarnessProps) -> ())
 
-        RTL.render (
-            Harness(
-                {
-                    Lookup = fun _ -> None
-                    FileTree = fileTree
-                    Selection = selectedPath
-                },
-                reloads,
-                clears,
-                (fun setter -> setProps.Value <- setter)
-            )
-        )
-        |> ignore
+        let initial = {
+            Lookup = noLfs
+            Selection = selectedPath
+            Stamp = stamp selectedPath 1.0
+        }
+
+        let update = render store initial reloads clears
 
         // A new lookup that answers the same for the selected file, like the one after an unrelated push.
+        do! update { initial with Lookup = fun _ -> None }
+        Vitest.expect(reloads.Count).toBe 0
+
+        // A directory update for an unrelated folder keeps the selected entry instance.
         do!
             RTL.act (fun () -> promise {
-                setProps.Value {
-                    Lookup = fun _ -> None
-                    FileTree = fileTree
-                    Selection = selectedPath
-                }
+                store.ApplyDirectoryUpdate {|
+                    treeVersion = 2
+                    directoryPath = "other"
+                    children = [| FileEntry.create ("y.txt", "other/y.txt", false) |]
+                |}
             })
 
         Vitest.expect(reloads.Count).toBe 0
         Vitest.expect(clears.Value).toBe 0
 
+        // A changed content stamp of the selected file reloads it once.
         do!
-            RTL.act (fun () -> promise {
-                setProps.Value {
-                    Lookup = fun path -> if path = selectedPath then Some(lfsState false) else None
-                    FileTree = fileTree
-                    Selection = selectedPath
-                }
-            })
+            update {
+                initial with
+                    Stamp = stamp selectedPath 2.0
+            }
 
-        Vitest.expect(clears.Value).toBe 1
-        Vitest.expect(reloads.Count).toBe 0
+        Vitest.expect(reloads.ToArray()).toEqual [| selectedPath |]
 
+        // The same stamp again does nothing.
         do!
-            RTL.act (fun () -> promise {
-                setProps.Value {
-                    Lookup = fun path -> if path = selectedPath then Some(lfsState true) else None
-                    FileTree = fileTree
-                    Selection = selectedPath
-                }
-            })
+            update {
+                initial with
+                    Stamp = stamp selectedPath 2.0
+                    Lookup = fun _ -> None
+            }
 
         Vitest.expect(reloads.Count).toBe 1
-        Vitest.expect(reloads.[0]).toBe selectedPath
+
+        do!
+            update {
+                initial with
+                    Stamp = stamp selectedPath 2.0
+                    Lookup = fun path -> if path = selectedPath then Some(lfsState false) else None
+            }
+
+        Vitest.expect(clears.Value).toBe 1
+        Vitest.expect(reloads.Count).toBe 1
+
+        do!
+            update {
+                initial with
+                    Stamp = stamp selectedPath 2.0
+                    Lookup = fun path -> if path = selectedPath then Some(lfsState true) else None
+            }
+
+        Vitest.expect(reloads.Count).toBe 2
 
         // Selecting another file changes the key, but the click opens that file itself.
         do!
-            RTL.act (fun () -> promise {
-                setProps.Value {
-                    Lookup = fun _ -> None
-                    FileTree = fileTree
+            update {
+                initial with
                     Selection = "data/other.bin"
-                }
-            })
+                    Stamp = None
+            }
 
-        Vitest.expect(reloads.Count).toBe 1
+        Vitest.expect(reloads.Count).toBe 2
         Vitest.expect(clears.Value).toBe 1
     }
 )
@@ -121,11 +196,7 @@ Vitest.test (
     fun () -> promise {
         let first = "data/p1.bin"
         let second = "data/p2.bin"
-
-        let tree = [|
-            FileEntry.create ("p1.bin", first, false)
-            FileEntry.create ("p2.bin", second, false)
-        |]
+        let store = storeWith [ first; second ]
 
         let pointerLookup (_: string) : ObjectStateDto option = Some { lfsState false with Path = "x" }
 
@@ -137,42 +208,25 @@ Vitest.test (
 
         let reloads = ResizeArray<string>()
         let clears = ref 0
-        let setProps = ref (fun (_: HarnessProps) -> ())
 
-        RTL.render (
-            Harness(
-                {
-                    Lookup = pointerLookup
-                    FileTree = tree
-                    Selection = first
-                },
-                reloads,
-                clears,
-                (fun setter -> setProps.Value <- setter)
-            )
-        )
-        |> ignore
+        let initial = {
+            Lookup = pointerLookup
+            Selection = first
+            Stamp = None
+        }
+
+        let update = render store initial reloads clears
 
         // Same key as the first pointer, so only the selection changes.
-        do!
-            RTL.act (fun () -> promise {
-                setProps.Value {
-                    Lookup = pointerLookup
-                    FileTree = tree
-                    Selection = second
-                }
-            })
-
+        do! update { initial with Selection = second }
         Vitest.expect(reloads.Count).toBe 0
 
         do!
-            RTL.act (fun () -> promise {
-                setProps.Value {
-                    Lookup = materializedSecond
-                    FileTree = tree
-                    Selection = second
-                }
-            })
+            update {
+                Lookup = materializedSecond
+                Selection = second
+                Stamp = None
+            }
 
         Vitest.expect(reloads.ToArray()).toEqual [| second |]
     }
