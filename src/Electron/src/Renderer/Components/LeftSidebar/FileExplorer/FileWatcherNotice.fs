@@ -7,7 +7,7 @@ open Swate.Electron.Shared.IPCTypes
 /// through Refresh folder. A watcher that works, or that is restarting by itself, shows nothing.
 [<ReactComponent>]
 let FileWatcherNotice (watcher: FileWatcherStateDto) =
-    if watcher.state <> "unavailable" then
+    if watcher.state <> FileWatcherStatus.Unavailable then
         Html.none
     else
         // The error text of the system names the limit. Linux ends the watcher with ENOSPC when the inotify

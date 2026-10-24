@@ -27,7 +27,10 @@ let private snapshotInput version caseInsensitive : FileTreeSnapshotDto = {|
         file "src/b.txt"
     |]
     loadedDirectories = [| ""; "src"; "src/inner" |]
-    fileWatcher = {| state = "running"; reason = "" |}
+    fileWatcher = {|
+        state = FileWatcherStatus.Running
+        reason = ""
+    |}
 |}
 
 /// One writer job can change several directories, and the update lists all of them with one version.
@@ -253,7 +256,10 @@ Vitest.describe (
                         file "Data/y.txt"
                     |]
                     loadedDirectories = [| ""; "src" |]
-                    fileWatcher = {| state = "running"; reason = "" |}
+                    fileWatcher = {|
+                        state = FileWatcherStatus.Running
+                        reason = ""
+                    |}
                 |}
 
                 let snapshot = store.Snapshot

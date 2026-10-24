@@ -21,7 +21,7 @@ Vitest.test (
         RTL.render (
             Harness(
                 {|
-                    state = "unavailable"
+                    state = FileWatcherStatus.Unavailable
                     reason = "ENOSPC: System limit for number of file watchers reached"
                 |},
                 (fun setter -> setState.Value <- setter)
@@ -34,7 +34,14 @@ Vitest.test (
         Vitest.expect(notice.textContent.Contains "Refresh folder").toBe true
         Vitest.expect(notice.textContent.Contains "fs.inotify.max_user_watches").toBe true
 
-        do! RTL.act (fun () -> promise { setState.Value {| state = "running"; reason = "" |} })
+        do!
+            RTL.act (fun () -> promise {
+                setState.Value {|
+                    state = FileWatcherStatus.Running
+                    reason = ""
+                |}
+            })
+
         Vitest.expect((RTL.screen.queryByTestId "file-watcher-unavailable").IsNone).toBe true
     }
 )
@@ -47,7 +54,7 @@ Vitest.test (
         RTL.render (
             Harness(
                 {|
-                    state = "degraded"
+                    state = FileWatcherStatus.Degraded
                     reason = "boom"
                 |},
                 (fun setter -> setState.Value <- setter)
@@ -60,7 +67,7 @@ Vitest.test (
         do!
             RTL.act (fun () -> promise {
                 setState.Value {|
-                    state = "unavailable"
+                    state = FileWatcherStatus.Unavailable
                     reason = "EMFILE: too many open files"
                 |}
             })

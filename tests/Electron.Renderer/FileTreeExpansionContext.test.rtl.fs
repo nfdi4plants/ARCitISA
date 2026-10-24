@@ -60,7 +60,10 @@ let private newStore () =
             file "readme.md"
         |]
         loadedDirectories = [| "" |]
-        fileWatcher = {| state = "running"; reason = "" |}
+        fileWatcher = {|
+            state = FileWatcherStatus.Running
+            reason = ""
+        |}
     |}
 
     store
@@ -413,7 +416,10 @@ Vitest.describe (
                             caseInsensitive = false
                             entries = [| FileEntry.create ("arc", "", true); dir "data" |]
                             loadedDirectories = [| "" |]
-                            fileWatcher = {| state = "running"; reason = "" |}
+                            fileWatcher = {|
+                                state = FileWatcherStatus.Running
+                                reason = ""
+                            |}
                         |}
                     })
 
@@ -440,7 +446,10 @@ Vitest.describe (
                         dir "assays/A1/dataset"
                     |]
                     loadedDirectories = [| ""; "assays"; "assays/A1" |]
-                    fileWatcher = {| state = "running"; reason = "" |}
+                    fileWatcher = {|
+                        state = FileWatcherStatus.Running
+                        reason = ""
+                    |}
                 |}
 
                 store.ApplySnapshot(snapshot 1)
@@ -505,7 +514,10 @@ Vitest.describe (
                             caseInsensitive = false
                             entries = [| FileEntry.create ("other", "", true); dir "data" |]
                             loadedDirectories = [| "" |]
-                            fileWatcher = {| state = "running"; reason = "" |}
+                            fileWatcher = {|
+                                state = FileWatcherStatus.Running
+                                reason = ""
+                            |}
                         |}
                     })
 
@@ -582,7 +594,10 @@ Vitest.describe (
                             caseInsensitive = false
                             entries = [| FileEntry.create ("arc", "", true); dir "data" |]
                             loadedDirectories = [| "" |]
-                            fileWatcher = {| state = "running"; reason = "" |}
+                            fileWatcher = {|
+                                state = FileWatcherStatus.Running
+                                reason = ""
+                            |}
                         |}
                     })
 
@@ -606,7 +621,10 @@ Vitest.describe (
                         dir "Assays/a"
                     |]
                     loadedDirectories = [| ""; "Assays" |]
-                    fileWatcher = {| state = "running"; reason = "" |}
+                    fileWatcher = {|
+                        state = FileWatcherStatus.Running
+                        reason = ""
+                    |}
                 |}
 
                 let plan = planExpansion store.Snapshot (set [ "assays"; "assays/A" ])
@@ -692,7 +710,10 @@ Vitest.describe (
                             caseInsensitive = false
                             entries = [| FileEntry.create ("arc", "", true); dir "notes" |]
                             loadedDirectories = [| "" |]
-                            fileWatcher = {| state = "running"; reason = "" |}
+                            fileWatcher = {|
+                                state = FileWatcherStatus.Running
+                                reason = ""
+                            |}
                         |}
                     })
 
@@ -795,7 +816,10 @@ Vitest.describe (
                             @ (payload |> List.map dir)
                         )
                     loadedDirectories = Array.ofList ([ ""; "assays"; "assays/A1"; "notes" ] @ payload)
-                    fileWatcher = {| state = "running"; reason = "" |}
+                    fileWatcher = {|
+                        state = FileWatcherStatus.Running
+                        reason = ""
+                    |}
                 |}
 
                 let directories =

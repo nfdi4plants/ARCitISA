@@ -79,7 +79,10 @@ let private createSnapshot (treeVersion: int) : FileTreeSnapshotDto = {|
         dirEntry "assays/assay-1/dataset"
     |]
     loadedDirectories = [| ""; "assays"; "assays/assay-1" |]
-    fileWatcher = {| state = "running"; reason = "" |}
+    fileWatcher = {|
+        state = FileWatcherStatus.Running
+        reason = ""
+    |}
 |}
 
 let private source (arcRootPath: string option) (changeVersion: int) : FileTreeSource = {
@@ -563,7 +566,7 @@ type private MountedProvider = {
     Render: FileTreeSource -> FileTreeSnapshotLoader -> unit
     Publish: FileTreeDirectoryUpdateDto -> unit
     PublishWatcher: FileWatcherStateDto -> unit
-    WatcherState: unit -> string option
+    WatcherState: unit -> FileWatcherStatus option
     Paths: unit -> string[]
     Dispose: unit -> unit
 }
@@ -782,7 +785,7 @@ Vitest.describe (
                 let mounted = mountProvider ()
 
                 let unavailable: FileWatcherStateDto = {|
-                    state = "unavailable"
+                    state = FileWatcherStatus.Unavailable
                     reason = "ENOSPC"
                 |}
 
@@ -796,10 +799,14 @@ Vitest.describe (
                             |}
                         )
 
-                    do! waitForEffect (fun () -> mounted.WatcherState() = Some "unavailable")
+                    do! waitForEffect (fun () -> mounted.WatcherState() = Some FileWatcherStatus.Unavailable)
 
-                    mounted.PublishWatcher {| state = "running"; reason = "" |}
-                    do! waitForEffect (fun () -> mounted.WatcherState() = Some "running")
+                    mounted.PublishWatcher {|
+                        state = FileWatcherStatus.Running
+                        reason = ""
+                    |}
+
+                    do! waitForEffect (fun () -> mounted.WatcherState() = Some FileWatcherStatus.Running)
                 finally
                     mounted.Dispose()
             }

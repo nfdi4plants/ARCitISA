@@ -4,6 +4,7 @@ open Renderer.Components.LeftSidebar.FileExplorer.FileTreeMaterialization
 open Renderer.Context.FileTreeStore
 open Swate.Components.Page.FileExplorer.Types
 open Swate.Electron.Shared.FileIOTypes
+open Swate.Electron.Shared.IPCTypes
 open Vitest
 
 let private nameOf (path: string) =
@@ -25,7 +26,10 @@ let private snapshotOf (entries: FileEntry list) (loaded: string list) =
         caseInsensitive = false
         entries = Array.ofList (FileEntry.create ("arc", "", true) :: entries)
         loadedDirectories = Array.ofList ("" :: loaded)
-        fileWatcher = {| state = "running"; reason = "" |}
+        fileWatcher = {|
+            state = FileWatcherStatus.Running
+            reason = ""
+        |}
     |}
 
     store.Snapshot

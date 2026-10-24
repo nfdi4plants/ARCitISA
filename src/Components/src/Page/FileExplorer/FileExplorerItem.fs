@@ -511,9 +511,8 @@ module TreeRow =
     [<Literal>]
     let IndentPerLevel = 16
 
-    // This is a module-level React.memo with its own areEqual, not a static member. A memoized static member
-    // would compare every prop by reference, but a row has to ignore the children of its item and compare the
-    // rest of the item by value. The rows rely on this to skip renders while the explorer re-renders.
+    // A row skips its render when only the children of its item changed, and it compares the rest of the item by
+    // value. A [<ReactMemoComponent>] static member compares props by reference, so it cannot express this areEqual.
     let Render =
         React.memo (
             (fun (props: TreeRowProps) ->

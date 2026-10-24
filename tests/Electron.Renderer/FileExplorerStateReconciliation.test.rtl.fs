@@ -8,6 +8,7 @@ open Renderer.Context.FileTreeStore
 open Renderer.Types
 open Swate.Electron.Shared.FileIOTypes
 open Swate.Electron.Shared.VersionControlTypes
+open Swate.Electron.Shared.IPCTypes
 open Vitest
 
 Vitest.afterEach (fun () -> RTL.cleanup ())
@@ -55,7 +56,10 @@ let private storeWith (files: string list) =
                    |> List.map (fun path -> FileEntry.create (path.Substring(path.LastIndexOf '/' + 1), path, false)))
             )
         loadedDirectories = [| ""; "data"; "other" |]
-        fileWatcher = {| state = "running"; reason = "" |}
+        fileWatcher = {|
+            state = FileWatcherStatus.Running
+            reason = ""
+        |}
     |}
 
     store
