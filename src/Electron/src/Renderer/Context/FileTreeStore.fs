@@ -55,6 +55,8 @@ let private buildSnapshot (version: int) (input: FileTreeSnapshotDto) : FileTree
 
     let grouped =
         keyed
+        // The root entry has no parent. Without this it would list itself as its own child.
+        |> Array.filter (fun (key, _) -> key <> rootKey)
         |> Array.groupBy (fst >> parentKey)
         |> Array.map (fun (parent, items) ->
             parent,
@@ -251,6 +253,13 @@ let children (snapshot: FileTreeSnapshot) (path: string) : FileEntry[] =
     |> Map.tryFind (keyOf snapshot.CaseInsensitive path)
     |> Option.defaultValue [||]
     |> Array.choose (fun key -> snapshot.Entries |> Map.tryFind key)
+
+/// The number of children of a directory, without building the entries. Zero for a directory that is not loaded.
+let childCount (snapshot: FileTreeSnapshot) (path: string) : int =
+    snapshot.Children
+    |> Map.tryFind (keyOf snapshot.CaseInsensitive path)
+    |> Option.map (fun keys -> keys.Length)
+    |> Option.defaultValue 0
 
 /// Present when the entry is in the tree. Absent when its parent directory is loaded and does not list it.
 /// Unknown when the parent is not loaded. The root has no entry and reports Unknown.

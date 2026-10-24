@@ -5,22 +5,19 @@ open Swate.Components.Shared
 open Swate.Electron.Shared.FileIOTypes
 open Swate.Electron.Shared.VersionControlTypes
 open Renderer.Types
+open Renderer.Context.FileStateContext
+open Renderer.Context.FileTreeHooks
+open Renderer.Context.FileTreeStore
 open Swate.Components.Page.ArcFileEditor.Types
-
-let containsPath (paths: string seq) (relativePath: string) =
-    let normalizedTargetPath = PathHelpers.normalizePath relativePath
-
-    paths
-    |> Seq.exists (fun path -> PathHelpers.pathsEqual (PathHelpers.normalizePath path) normalizedTargetPath)
 
 /// A selection is missing only when its parent directory is loaded and does not list it. A path below a directory
 /// that is not loaded is unknown, and the selection stays.
-let isSelectionMissing (snapshot: Renderer.Context.FileTreeStore.FileTreeSnapshot) (selectionPath: string option) =
+let isKnownAbsent (known: KnownState) = known = Absent
+
+let isSelectionMissing (snapshot: FileTreeSnapshot) (selectionPath: string option) =
     selectionPath
     |> Option.map PathHelpers.normalizePath
-    |> Option.exists (fun selectedPath ->
-        Renderer.Context.FileTreeStore.knows snapshot selectedPath = Renderer.Context.FileTreeStore.Absent
-    )
+    |> Option.exists (fun selectedPath -> isKnownAbsent (knows snapshot selectedPath))
 
 let private resetsWhenSelectionIsRemoved =
     function
@@ -36,15 +33,13 @@ let private resetsWhenSelectionIsRemoved =
 let shouldResetPageStateAfterSelectionRemoval (pageState: PageState option) =
     pageState |> Option.exists resetsWhenSelectionIsRemoved
 
-let tryGetDataMapMismatchReload (fileTree: FileEntry[]) (pageState: PageState option) =
+/// treeHasDataMap tells whether the tree lists the DataMap file of the entity that the open page belongs to.
+let tryGetDataMapMismatchReload (treeHasDataMap: bool) (pageState: PageState option) =
     match pageState with
     | Some(PageState.ArcFilePage(ArcFiles.DataMap _, _)) -> None
     | Some(PageState.ArcFilePage(arcFile, requestedView)) ->
         match arcFile.TryGetDataMapParentInfo() with
         | Some parentInfo ->
-            let treeHasDataMap =
-                containsPath (fileTree |> Array.map _.path) (DatamapParentInfo.toPath parentInfo)
-
             let pageHasDataMap = arcFile.TryGetDataMap().IsSome
 
             if treeHasDataMap = pageHasDataMap then
@@ -86,34 +81,23 @@ let private shouldReloadSelectedFile tryFindLfs pageState entry =
         | Some state -> reloadsWhenSelectedFileChanges state
         | None -> isCheckedOutLfsFile tryFindLfs entry
 
-let private tryFindSelectedFileEntry (fileTree: FileEntry[]) (selectionPath: string option) =
-    selectionPath
-    |> Option.map PathHelpers.normalizePath
-    |> Option.bind (fun selectedPath ->
-        fileTree
-        |> Array.tryFind (fun entry ->
-            not entry.isDirectory
-            && PathHelpers.pathsEqual (PathHelpers.normalizePath entry.path) selectedPath
-        )
-    )
+let private asFileEntry (selected: FileEntry option) =
+    selected |> Option.filter (fun entry -> not entry.isDirectory)
 
 let shouldClearPageStateForLfsPointerSelection
     (tryFindLfs: string -> ObjectStateDto option)
-    (fileTree: FileEntry[])
-    (selectionPath: string option)
+    (selected: FileEntry option)
     (pageState: PageState option)
     =
     pageState |> Option.exists resetsWhenSelectionIsRemoved
-    && (tryFindSelectedFileEntry fileTree selectionPath
-        |> Option.exists (isPointerLfsFile tryFindLfs))
+    && (asFileEntry selected |> Option.exists (isPointerLfsFile tryFindLfs))
 
 let tryGetReloadableSelectedFilePath
     (tryFindLfs: string -> ObjectStateDto option)
-    (fileTree: FileEntry[])
-    (selectionPath: string option)
+    (selected: FileEntry option)
     (pageState: PageState option)
     =
-    tryFindSelectedFileEntry fileTree selectionPath
+    asFileEntry selected
     |> Option.bind (fun entry ->
         if shouldReloadSelectedFile tryFindLfs pageState entry then
             Some(PathHelpers.normalizePath entry.path)
@@ -121,19 +105,42 @@ let tryGetReloadableSelectedFilePath
             None
     )
 
-/// Reloads or clears the open preview after the file tree changed. The effect depends on the tree and on the large
-/// object state of the selected file only, so a push for other files does not reload the preview.
+type private PreviewRun = {
+    Selection: string option
+    Entry: FileEntry option
+    DataMapPresent: bool
+    LfsKey: string
+    StampKey: string
+}
+
+/// Reloads or clears the open preview after something it shows changed. The effect depends on the selected entry,
+/// the DataMap file of the open entity, the large object state of the selected file and its content stamp, so a
+/// directory update for other paths does not reload the preview.
 [<Hook>]
 let useReconcileSelectedPreview
     (tryFindLfs: string -> ObjectStateDto option)
-    (fileTree: FileEntry[])
     (selectionPath: string option)
     (pageState: PageState option)
+    (contentStamp: FileContentStamp option)
     (reloadPreview: string -> (PageState -> PageState) -> unit)
     (clearPageState: unit -> unit)
     =
-    // The watcher emits the initial tree too, so the first run only records. Later runs compare with the previous one.
-    let lastRunRef = React.useRef<(FileEntry[] * string option * string) option> None
+    let normalizedSelection = selectionPath |> Option.map PathHelpers.normalizePath
+    let selectedEntry = useFileTreeEntry normalizedSelection
+
+    let dataMapPath =
+        match pageState with
+        | Some(PageState.ArcFilePage(arcFile, _)) ->
+            arcFile.TryGetDataMapParentInfo()
+            |> Option.map (DatamapParentInfo.toPath >> PathHelpers.normalizePath)
+        | _ -> None
+
+    let dataMapPresent =
+        match useFileTreeKnows dataMapPath with
+        | Present _ -> true
+        | _ -> false
+
+    let lastRunRef = React.useRef<PreviewRun option> None
 
     let selectedLfsKey =
         selectionPath
@@ -141,21 +148,44 @@ let useReconcileSelectedPreview
         |> Option.map (fun state -> $"{state.IsMaterialized}/{state.IsLocallyAvailable}")
         |> Option.defaultValue ""
 
+    let stampKey =
+        contentStamp
+        |> Option.filter (fun stamp -> Some stamp.Path = normalizedSelection)
+        |> Option.map (fun stamp -> $"{stamp.SizeBytes}/{stamp.MtimeMs}")
+        |> Option.defaultValue ""
+
     React.useEffect (
         (fun () ->
             let previous = lastRunRef.current
-            lastRunRef.current <- Some(fileTree, selectionPath, selectedLfsKey)
 
-            // A selection change only records the new values, because the click opens that file itself.
+            lastRunRef.current <-
+                Some {
+                    Selection = selectionPath
+                    Entry = selectedEntry
+                    DataMapPresent = dataMapPresent
+                    LfsKey = selectedLfsKey
+                    StampKey = stampKey
+                }
+
+            // The first run only records. A selection change records too, because the click opens that file itself.
+            // The first stamp of a selection is the baseline, only a later stamp that differs counts as a change.
             let shouldAct =
                 match previous with
                 | None -> false
-                | Some(previousTree, previousSelection, previousKey) ->
-                    not (obj.ReferenceEquals(previousTree, fileTree))
-                    || (previousSelection = selectionPath && previousKey <> selectedLfsKey)
+                | Some run ->
+                    run.Selection = selectionPath
+                    && (not (
+                            match run.Entry, selectedEntry with
+                            | None, None -> true
+                            | Some a, Some b -> obj.ReferenceEquals(a, b)
+                            | _ -> false
+                        )
+                        || run.DataMapPresent <> dataMapPresent
+                        || run.LfsKey <> selectedLfsKey
+                        || (run.StampKey <> "" && run.StampKey <> stampKey))
 
             if shouldAct then
-                match tryGetDataMapMismatchReload fileTree pageState with
+                match tryGetDataMapMismatchReload dataMapPresent pageState with
                 | Some(parentPath, requestedView) ->
                     reloadPreview
                         parentPath
@@ -163,12 +193,18 @@ let useReconcileSelectedPreview
                         | PageState.ArcFilePage(nextArcFile, _) -> PageState.ArcFilePage(nextArcFile, requestedView)
                         | other -> other
                         )
-                | None when shouldClearPageStateForLfsPointerSelection tryFindLfs fileTree selectionPath pageState ->
+                | None when shouldClearPageStateForLfsPointerSelection tryFindLfs selectedEntry pageState ->
                     clearPageState ()
                 | None ->
-                    match tryGetReloadableSelectedFilePath tryFindLfs fileTree selectionPath pageState with
+                    match tryGetReloadableSelectedFilePath tryFindLfs selectedEntry pageState with
                     | None -> ()
                     | Some selectedPath -> reloadPreview selectedPath id
         ),
-        [| box fileTree; box selectionPath; box selectedLfsKey |]
+        [|
+            box selectionPath
+            box selectedEntry
+            box dataMapPresent
+            box selectedLfsKey
+            box stampKey
+        |]
     )

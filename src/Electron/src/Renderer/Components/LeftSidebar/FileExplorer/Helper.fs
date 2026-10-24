@@ -182,7 +182,7 @@ let isArcEntityFolderViewOpen
 
 let createItem
     (tryFindLfs: string -> Swate.Electron.Shared.VersionControlTypes.ObjectStateDto option)
-    (node: FileTreeNode)
+    (node: FileEntry)
     : FileItem =
     let item =
         if node.isDirectory then

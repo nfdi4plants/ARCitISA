@@ -290,6 +290,10 @@ type Navbar =
     static member private SaveArcButton() =
 
         let errorCtx = useErrorModalCtx ()
+
+        let expansionCtx =
+            Renderer.Context.FileTreeExpansionContext.useFileTreeExpansionCtx ()
+
         let isSaving, setIsSaving = React.useState false
 
         let hasUnsavedChanges =
@@ -321,7 +325,7 @@ type Navbar =
                 promise {
                     try
                         match! Api.ipcArcVaultApi.saveArcFile () with
-                        | Ok _ -> ()
+                        | Ok _ -> expansionCtx.refreshContentStamp ()
                         | Error ex ->
                             errorCtx.enqueue (ErrorModalRequest.create (ex.Message, title = "Error saving ARC"))
                     finally

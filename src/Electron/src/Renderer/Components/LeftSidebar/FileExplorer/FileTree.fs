@@ -46,6 +46,17 @@ type FileTree =
         let pageStateCtx = Renderer.Context.PageStateContext.usePageStateCtx ()
         let appStateCtx = Renderer.Context.AppStateContext.useAppStateCtx ()
         let fileStateCtx = Renderer.Context.FileStateContext.useFileStateCtx ()
+
+        let expansionCtx =
+            Renderer.Context.FileTreeExpansionContext.useFileTreeExpansionCtx ()
+
+        let snapshot = Renderer.Context.FileTreeHooks.useFileTreeSnapshot ()
+
+        let selectionKnown =
+            Renderer.Context.FileTreeHooks.useFileTreeKnows (
+                fileStateCtx.state.Selection.TreePath |> Option.map PathHelpers.normalizePath
+            )
+
         let gitStateCtx = Renderer.Context.GitStateContext.useGitStateCtx ()
 
         let errorModal = useErrorModalCtx ()
@@ -78,8 +89,7 @@ type FileTree =
             (relativePath: string)
             : JS.Promise<Result<unit, string>> =
             let entry =
-                fileStateCtx.state.FileTree
-                |> Array.tryFind (fun entry -> PathHelpers.pathsEqual entry.path relativePath)
+                Renderer.Context.FileTreeStore.tryFind fileStateCtx.fileTreeStore.Snapshot relativePath
 
             lfsActivityCtx.run activity entry runAction relativePath
 
@@ -94,11 +104,7 @@ type FileTree =
 
         React.useEffect (
             (fun () ->
-                if
-                    FileExplorerStateReconciliation.isSelectionMissing
-                        fileStateCtx.state.TreeSnapshot
-                        fileStateCtx.state.Selection.TreePath
-                then
+                if FileExplorerStateReconciliation.isKnownAbsent selectionKnown then
                     fileStateCtx.setSelection ArcSelection.empty
 
                     if
@@ -107,109 +113,60 @@ type FileTree =
                         pageStateCtx.setState None
             ),
             [|
-                box fileStateCtx.state.TreeSnapshot
+                box selectionKnown
                 box fileStateCtx.state.Selection.TreePath
                 box pageStateCtx.state
             |]
         )
 
-        // The explorer reports its expanded ids here. The loader keeps them usable while the tree changes.
-        let expandedIds, setExpandedIds = React.useStateWithUpdater<Set<string>> Set.empty
+        let withBusy =
+            Renderer.Context.LfsActivityContext.LfsActivityState.withBusyChildren lfsActivityByPath
 
-        let requestDirectoryLoad =
-            Renderer.Context.ExpandedDirectoryLoader.useExpandedDirectoryLoader (
-                fileStateCtx.fileTreeStore,
-                fileStateCtx.state.TreeSnapshot,
-                expandedIds,
-                setExpandedIds,
-                (fun path -> Api.ipcArcVaultApi.loadDirectory path)
-            )
+        let createFileItem (entry: FileEntry) =
+            let item = Helper.createItem tryFindLfs entry
 
-        // Selecting a path expands the directories above it. Unloaded ones then load through the loader.
-        React.useEffect (
-            (fun () ->
-                match fileStateCtx.state.Selection.TreePath |> Option.map PathHelpers.normalizePath with
-                | Some selectedPath ->
-                    let segments = selectedPath.Split('/')
+            let loadState =
+                if entry.isDirectory then
+                    expansionCtx.loadStates
+                    |> Map.tryFind (PathKey.ofPath snapshot.CaseInsensitive entry.path)
+                else
+                    None
 
-                    let ancestors =
-                        [ 1 .. segments.Length - 1 ]
-                        |> List.map (fun count -> String.concat "/" segments.[.. count - 1])
-                        |> Set.ofList
+            {
+                item with
+                    LfsActivity = lfsActivityByPath |> Map.tryFind entry.path |> Option.map _.Label
+                    // The folder row shows a failed load with the error tone until the next expand retries it.
+                    IconTone =
+                        match loadState with
+                        | Some(Renderer.Context.FileTreeExpansionContext.Failed _) -> Some FileItemIconTone.Error
+                        | _ -> item.IconTone
+            }
 
-                    if not ancestors.IsEmpty then
-                        setExpandedIds (fun current ->
-                            if Set.isSubset ancestors current then
-                                current
-                            else
-                                Set.union current ancestors
-                        )
-                | None -> ()
-            ),
-            [| box fileStateCtx.state.Selection.TreePath |]
-        )
-
-        let treeEntries =
-            React.useMemo (
-                (fun () ->
-                    Renderer.Context.LfsActivityContext.LfsActivityState.withBusyEntries
-                        lfsActivityByPath
-                        fileStateCtx.state.FileTree
-                ),
-                [| box fileStateCtx.state.FileTree; box lfsActivityByPath |]
-            )
-
-        let fileTree: FileTreeNode option =
-            React.useMemo (
-                (fun () ->
-                    match treeEntries with
-                    | [||] -> None
-                    | _ -> treeEntries |> toFileTreeNode |> collapseSingleChildSameName |> Some
-                ),
-                [| box treeEntries |]
-            )
-
-        let materializedState, setMaterializedState =
-            React.useStateWithUpdater FileTreeMaterialization.empty
-
-        let reconciledMaterializedState =
-            reconcileMaterializedState arcScopeId fileStateCtx.state.Selection.TreePath fileTree materializedState
-
-        React.useEffect (
-            (fun () ->
-                setMaterializedState (fun current ->
-                    if reconciledMaterializedState = current then
-                        current
-                    else
-                        reconciledMaterializedState
-                )
-            ),
-            [|
-                box arcScopeId
-                box fileTree
-                box fileStateCtx.state.Selection.TreePath
-            |]
-        )
+        let rootEntry = Renderer.Context.FileTreeStore.tryFind snapshot ""
 
         let fileItem =
-            fileTree
-            |> Option.map (fun parent ->
-                FileTreeMaterialization.toMaterializedFileItemTree
-                    (fun node ->
-                        let item = Helper.createItem tryFindLfs node
-
-                        {
-                            item with
-                                LfsActivity =
-                                    item.Path
-                                    |> Option.bind (fun path -> Map.tryFind path lfsActivityByPath)
-                                    |> Option.map _.Label
-                        }
-                    )
-                    (Renderer.Context.FileTreeStore.isLoaded fileStateCtx.state.TreeSnapshot)
-                    reconciledMaterializedState.Paths
-                    parent
-                    true
+            React.useMemo (
+                (fun () ->
+                    rootEntry
+                    |> Option.map (fun root -> {
+                        createFileItem root with
+                            Children =
+                                Some(
+                                    FileTreeMaterialization.buildVisibleItems
+                                        createFileItem
+                                        withBusy
+                                        snapshot
+                                        expansionCtx.expandedIds
+                                )
+                    })
+                ),
+                [|
+                    box snapshot
+                    box expansionCtx.expandedIds
+                    box expansionCtx.loadStates
+                    box tryFindLfs
+                    box lfsActivityByPath
+                |]
             )
 
         let applyPreviewResult itemName result =
@@ -286,18 +243,16 @@ type FileTree =
 
         FileExplorerStateReconciliation.useReconcileSelectedPreview
             tryFindLfs
-            fileStateCtx.state.FileTree
             fileStateCtx.state.Selection.TreePath
             pageStateCtx.state
+            expansionCtx.contentStamp
             reloadPreviewAfterFileTreeUpdate
             (fun () -> pageStateCtx.setState None)
 
         let handleExpansionChange (item: FileItem) (willExpand: bool) =
             if willExpand then
                 match item.Path with
-                | Some path ->
-                    setMaterializedState (fun _ -> materialize path reconciledMaterializedState)
-                    requestDirectoryLoad path
+                | Some path -> expansionCtx.expandDirectory path
                 | None -> ()
 
         let openDialog dialog =
@@ -323,7 +278,7 @@ type FileTree =
         let requestRenameItem =
             FileTreeRenameWorkflow.requestRenameItem (Option.iter (RenameDialog >> openDialog)) errorModal.enqueue
 
-        let rootPath = fileTree |> Option.map (fun (tree: FileTreeNode) -> tree.path)
+        let rootPath = rootEntry |> Option.map (fun root -> root.path)
 
         let canCreateFromItem path item =
             match path with
@@ -400,8 +355,18 @@ type FileTree =
 
         let createArcEntry kind (identifier: string) =
             if not isDialogBusy then
+                // The entity files sit directly in the loaded entity folders of the zone folder.
                 let existingPaths =
-                    fileStateCtx.state.FileTree |> Array.map (fun entry -> entry.path)
+                    let current = fileStateCtx.fileTreeStore.Snapshot
+
+                    arcCreateKinds
+                    |> List.tryFind (fun config -> config.Kind = kind)
+                    |> Option.map (fun config ->
+                        Renderer.Context.FileTreeStore.children current config.FolderName
+                        |> Array.collect (fun entity -> Renderer.Context.FileTreeStore.children current entity.path)
+                        |> Array.map _.path
+                    )
+                    |> Option.defaultValue [||]
 
                 match tryBuildArcCreateDraft kind identifier existingPaths with
                 | Error errorMessage -> applyCreateError errorMessage
@@ -489,8 +454,7 @@ type FileTree =
             |> Promise.start
 
         let tryFindDataMapItemByPath path =
-            fileStateCtx.state.FileTree
-            |> Array.tryFind (fun entry -> PathHelpers.pathsEqual entry.path path)
+            Renderer.Context.FileTreeStore.tryFind fileStateCtx.fileTreeStore.Snapshot path
             |> Option.map (fun entry ->
                 let item =
                     Swate.Components.Page.FileExplorer.Types.FileTree.createFile
@@ -648,8 +612,10 @@ type FileTree =
                             initialItems = visibleItems,
                             onItemClick = openPreview false,
                             onDirectoryExpansionChange = handleExpansionChange,
-                            expandedIds = expandedIds,
-                            onExpandedIdsChange = (fun ids -> setExpandedIds (fun _ -> ids)),
+                            expandedIds = expansionCtx.expandedIds,
+                            onExpandedIdsChange = expansionCtx.setExpandedIds,
+                            onRefreshDirectory =
+                                (fun (item: FileItem) -> item.Path |> Option.iter expansionCtx.refreshDirectory),
                             onContextMenu = createContextMenuItems,
                             getItemIconClass = getItemIconClass,
                             canCreateItem = canCreateFromItem rootPath,

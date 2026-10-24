@@ -17,7 +17,8 @@
     <Compile Include="Context\PageStateContext.fs" />
     <Compile Include="Context\FileTreeStore.fs" />
     <Compile Include="Context\FileStateContext.fs" />
-    <Compile Include="Context\ExpandedDirectoryLoader.fs" />
+    <Compile Include="Context\FileTreeHooks.fs" />
+    <Compile Include="Context\FileTreeExpansionContext.fs" />
     <Compile Include="Context\AuthStateContext.fs" />
     <Compile Include="Context\GitWorkflow.fs" />
     <Compile Include="Context\GitStateContext.fs" />

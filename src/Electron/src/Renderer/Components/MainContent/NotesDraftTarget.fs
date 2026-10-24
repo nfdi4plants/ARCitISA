@@ -22,9 +22,22 @@ let NotesDraftTarget () =
     let pageStateCtx = Renderer.Context.PageStateContext.usePageStateCtx ()
     let fileStateCtx = Renderer.Context.FileStateContext.useFileStateCtx ()
 
+    let store = fileStateCtx.fileTreeStore
+
+    let studyFolders =
+        Renderer.Context.FileTreeHooks.useFileTreeChildren ARCtrl.ArcPathHelper.StudiesFolderName
+
+    let assayFolders =
+        Renderer.Context.FileTreeHooks.useFileTreeChildren ARCtrl.ArcPathHelper.AssaysFolderName
+
+    // The entity files sit directly in the entity folders of the zone folders, which the tree always loads.
     let availableNotesTargets =
         React.useMemo (
             (fun _ ->
+                let entityFiles =
+                    Array.append studyFolders assayFolders
+                    |> Array.collect (fun folder -> Renderer.Context.FileTreeStore.children store.Snapshot folder.path)
+
                 createAvailableArcEntityTargets
                     [
                         (ARCtrl.ArcPathHelper.StudiesFolderName,
@@ -40,9 +53,9 @@ let NotesDraftTarget () =
                              Kind = NotesTargetKind.Assay
                          })
                     ]
-                    fileStateCtx.state.FileTree
+                    entityFiles
             ),
-            [| box fileStateCtx.state.FileTree |]
+            [| box studyFolders; box assayFolders; box store |]
         )
 
     let setSubmitState isSubmitting error =

@@ -336,24 +336,31 @@ let Main () =
                                         model.ArcRootPath,
                                         (fun () -> Api.ipcArcVaultApi.getLargeObjectIndex ()),
                                         Renderer.Context.LfsActivityContext.LfsActivityCtxProvider(
-                                            Renderer.Context.GitStateContext.GitStateCtxProvider(
-                                                Swate
-                                                    .Components
-                                                    .Composite
-                                                    .AnnotationTable
-                                                    .AnnotationTableContextProvider
-                                                    .AnnotationTableContextProvider(
-                                                        Layout.Main(
-                                                            children =
-                                                                React.Fragment [|
-                                                                    children
-                                                                    CloseWindowController.CloseWindowController()
-                                                                |],
-                                                            navbar = Renderer.Components.Navbar.Main(),
-                                                            ?leftSidebar = leftSidebar,
-                                                            leftActions = leftActions
+                                            Renderer.Context.FileTreeExpansionContext.FileTreeExpansionCtxProvider(
+                                                {
+                                                    loadDirectory = Api.ipcArcVaultApi.loadDirectory
+                                                    revalidateDirectories = Api.ipcArcVaultApi.revalidateDirectories
+                                                    statFile = Api.ipcArcVaultApi.statFile
+                                                },
+                                                Renderer.Context.GitStateContext.GitStateCtxProvider(
+                                                    Swate
+                                                        .Components
+                                                        .Composite
+                                                        .AnnotationTable
+                                                        .AnnotationTableContextProvider
+                                                        .AnnotationTableContextProvider(
+                                                            Layout.Main(
+                                                                children =
+                                                                    React.Fragment [|
+                                                                        children
+                                                                        CloseWindowController.CloseWindowController()
+                                                                    |],
+                                                                navbar = Renderer.Components.Navbar.Main(),
+                                                                ?leftSidebar = leftSidebar,
+                                                                leftActions = leftActions
+                                                            )
                                                         )
-                                                    )
+                                                )
                                             )
                                         )
                                     )
