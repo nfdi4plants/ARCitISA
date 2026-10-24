@@ -85,18 +85,15 @@ let detectCaseInsensitiveAsync (arcRoot: string) : JS.Promise<bool> =
 
     detectCaseInsensitiveWithAsync defaultCaseInsensitive readdirAsync lstatForProbeAsync arcRoot
 
-/// Build the renderer snapshot using ARC-relative dictionary keys and FileEntry paths.
-let toRendererFileTree (repoRoot: string) (entries: seq<FileEntry>) : Dictionary<string, FileEntry> =
-    let rendererFileTree = Dictionary<string, FileEntry>()
-
+/// Converts tree entries to the entries the renderer sees. Paths become ARC-relative and the root is "".
+/// Entries outside the ARC root are dropped.
+let toRendererEntries (repoRoot: string) (entries: seq<FileEntry>) : FileEntry[] =
     entries
-    |> Seq.iter (fun entry ->
-        match tryGetRepoRelativePathOrRoot repoRoot entry.path with
-        | Some relativePath -> rendererFileTree.[relativePath] <- { entry with path = relativePath }
-        | None -> ()
+    |> Seq.choose (fun entry ->
+        tryGetRepoRelativePathOrRoot repoRoot entry.path
+        |> Option.map (fun relativePath -> { entry with path = relativePath })
     )
-
-    rendererFileTree
+    |> Seq.toArray
 
 let private relativeToRoot (arcRoot: string) (fullPath: string) =
     let root = PathHelpers.normalizePath arcRoot
@@ -128,58 +125,97 @@ let private isMissingDirectoryError (error: exn) =
     | Some "ENOTDIR" -> true
     | _ -> false
 
-/// A directory that is new to the tree, or that replaced an entry of another name or kind, is scanned right
-/// away so the tree stays complete. Drop this step once directories load on demand.
-let rec private loadNewSubdirectoriesAsync
+let private zoneFolderNames =
+    ArcEntityPathRules.allAddZones |> List.map ArcEntityPathRules.zoneFolderName
+
+/// Where a directory sits in the ARC structure: the root, a zone folder (studies, assays, workflows, runs) or an
+/// entity folder inside a zone. Everything else is a payload directory.
+type private StructuralRole =
+    | RootFolder
+    | ZoneFolder
+    | EntityFolder
+    | PayloadFolder
+
+let private structuralRole (arcRoot: string) (caseInsensitive: bool) (directoryPath: string) =
+    let segments =
+        (relativeToRoot arcRoot directoryPath).Split([| '/' |], StringSplitOptions.RemoveEmptyEntries)
+
+    let isZoneName (name: string) =
+        let key = PathKey.ofPath caseInsensitive name
+
+        zoneFolderNames
+        |> List.exists (fun zone -> PathKey.ofPath caseInsensitive zone = key)
+
+    match segments.Length with
+    | 0 -> RootFolder
+    | 1 when isZoneName segments.[0] -> ZoneFolder
+    | 2 when isZoneName segments.[0] -> EntityFolder
+    | _ -> PayloadFolder
+
+/// Loads a directory the structure wants loaded: zone folders with their entity folders, and entity folders. Other
+/// directories stay unloaded. Returns the directories whose child list changed.
+let rec private loadStructuralAsync
     (arcRoot: string)
     (tree: IndexedFileTree)
-    (newDirectories: FileEntry[])
-    : JS.Promise<bool> =
+    (directoryPath: string)
+    : JS.Promise<string[]> =
     promise {
-        let mutable changed = false
-
-        for directory in newDirectories do
+        match structuralRole arcRoot tree.CaseInsensitive directoryPath with
+        | RootFolder
+        | PayloadFolder -> return [||]
+        | role ->
             try
-                let! children = readDirectoryChildrenAsync arcRoot directory.path
+                let! children = readDirectoryChildrenAsync arcRoot directoryPath
+                let changed = tree.ReplaceChildren(directoryPath, children)
+                let mutable all = [ changed ]
 
-                let childrenChanged, newChildDirectories =
-                    tree.ReplaceChildrenReportingNew(directory.path, children)
+                if role = ZoneFolder then
+                    for child in children do
+                        if child.isDirectory then
+                            let! nested = loadStructuralAsync arcRoot tree child.path
+                            all <- nested :: all
 
-                if childrenChanged then
-                    changed <- true
-
-                let! nestedChanged = loadNewSubdirectoriesAsync arcRoot tree newChildDirectories
-
-                if nestedChanged then
-                    changed <- true
+                return mergeChangedDirectories tree.CaseInsensitive all
             with error when isMissingDirectoryError error ->
-                ()
-
-        return changed
+                return [||]
     }
 
 /// Reads one directory and applies its children to the tree. A directory that no longer exists loses its
-/// subtree. Returns true when the tree changed.
+/// subtree. A new child directory stays unloaded, except a new zone folder under the root and a new entity folder
+/// inside a zone folder, which load their structure so the structural invariant holds for changes made outside the
+/// app. Returns the directories whose child list changed.
 let reconcileFileTreeDirectoryAsync
     (arcRoot: string)
     (tree: IndexedFileTree)
     (directoryPath: string)
-    : JS.Promise<bool> =
+    : JS.Promise<string[]> =
     promise {
         try
             let! children = readDirectoryChildrenAsync arcRoot directoryPath
 
-            let childrenChanged, newDirectories =
+            let changed, newDirectories =
                 tree.ReplaceChildrenReportingNew(directoryPath, children)
 
-            let! subdirectoriesChanged = loadNewSubdirectoriesAsync arcRoot tree newDirectories
-            return childrenChanged || subdirectoriesChanged
+            let mutable all = [ changed ]
+
+            match structuralRole arcRoot tree.CaseInsensitive directoryPath with
+            | RootFolder
+            | ZoneFolder ->
+                for directory in newDirectories do
+                    let! loaded = loadStructuralAsync arcRoot tree directory.path
+                    all <- loaded :: all
+            | EntityFolder
+            | PayloadFolder -> ()
+
+            return mergeChangedDirectories tree.CaseInsensitive all
         with error when isMissingDirectoryError error ->
             return tree.RemoveSubtree directoryPath
     }
 
-/// Scans the whole ARC folder into a tree with every directory loaded. The root entry is the ARC folder itself.
-let scanFileTreeAsync (arcRoot: string) (caseInsensitive: bool) : JS.Promise<IndexedFileTree> = promise {
+/// Scans the structure of the ARC folder: the root, every existing zone folder and every entity folder inside a
+/// zone are loaded. Other directories are entries of their loaded parent and stay unloaded. The root entry is the
+/// ARC folder itself.
+let scanStructuralFileTreeAsync (arcRoot: string) (caseInsensitive: bool) : JS.Promise<IndexedFileTree> = promise {
     let repoRoot = normalizeRootPath arcRoot
     let tree = IndexedFileTree(caseInsensitive)
 
@@ -188,69 +224,76 @@ let scanFileTreeAsync (arcRoot: string) (caseInsensitive: bool) : JS.Promise<Ind
     tree.SetRoot(FileEntry.create (basename repoRoot, repoRoot, rootIsDirectory))
 
     if rootIsDirectory then
-        let listed = ResizeArray<string * FileEntry[]>()
-        let pending = Stack<string>()
-        pending.Push repoRoot
+        let! children = readDirectoryChildrenAsync repoRoot repoRoot
+        tree.ReplaceChildren(repoRoot, children) |> ignore
 
-        while pending.Count > 0 do
-            let directoryPath = pending.Pop()
-            let! children = readDirectoryChildrenAsync repoRoot directoryPath
-            listed.Add((directoryPath, children))
-
-            for child in children do
-                if child.isDirectory then
-                    pending.Push child.path
-
-        for (directoryPath, children) in listed do
-            tree.ReplaceChildren(directoryPath, children) |> ignore
+        for child in children do
+            if child.isDirectory then
+                let! _ = loadStructuralAsync repoRoot tree child.path
+                ()
 
     return tree
 }
 
-/// Reconciles directories that a writer marked dirty, from the root downwards. A directory the tree has not
-/// loaded is replaced by its nearest loaded ancestor. One failing directory is reported to onError and does not
-/// stop the others. Returns true when any reconcile changed the tree.
-let reconcileDirtyDirectoriesAsync
+/// Reconciles the given directories that the tree has loaded, from the root downwards. A directory that is not
+/// loaded is skipped. One failing directory is reported to onError and does not stop the others. Returns the
+/// directories whose child list changed.
+let reconcileLoadedDirectoriesAsync
     (arcRoot: string)
     (tree: IndexedFileTree)
     (onError: string -> exn -> unit)
     (directories: string[])
-    : JS.Promise<bool> =
+    : JS.Promise<string[]> =
     promise {
-        let rootKey = PathKey.ofPath tree.CaseInsensitive arcRoot |> PathKey.value
-
-        let isInsideRoot (path: string) =
-            let key = PathKey.ofPath tree.CaseInsensitive path |> PathKey.value
-            key = rootKey || key.StartsWith(rootKey + "/")
-
-        let rec nearestLoaded (path: string) =
-            if not (isInsideRoot path) then
-                None
-            elif tree.IsLoaded path then
-                Some path
-            else
-                match PathHelpers.tryGetParentPath path with
-                | Some parent -> nearestLoaded parent
-                | None -> None
-
         let depth (path: string) =
             (PathHelpers.normalizePath path).Split('/').Length
 
         let ordered = directories |> Array.sortBy depth
         let reconciled = HashSet<string>()
-        let mutable changed = false
+        let mutable all: string[] list = []
 
         for directory in ordered do
-            match nearestLoaded directory with
-            | Some target when reconciled.Add(PathKey.ofPath tree.CaseInsensitive target |> PathKey.value) ->
+            // The check runs per directory, because an earlier reconcile can drop a later one from the tree.
+            if
+                tree.IsLoaded directory
+                && reconciled.Add(PathKey.ofPath tree.CaseInsensitive directory |> PathKey.value)
+            then
                 try
-                    let! directoryChanged = reconcileFileTreeDirectoryAsync arcRoot tree target
-
-                    if directoryChanged then
-                        changed <- true
+                    let! changed = reconcileFileTreeDirectoryAsync arcRoot tree directory
+                    all <- changed :: all
                 with error ->
-                    onError target error
-            | _ -> ()
+                    onError directory error
 
-        return changed
+        return mergeChangedDirectories tree.CaseInsensitive all
     }
+
+/// Reconciles directories that a writer marked dirty, from the root downwards. A directory the tree has not
+/// loaded is replaced by its nearest loaded ancestor. One failing directory is reported to onError and does not
+/// stop the others. Returns the directories whose child list changed.
+let reconcileDirtyDirectoriesAsync
+    (arcRoot: string)
+    (tree: IndexedFileTree)
+    (onError: string -> exn -> unit)
+    (directories: string[])
+    : JS.Promise<string[]> =
+    let rootKey = PathKey.ofPath tree.CaseInsensitive arcRoot |> PathKey.value
+
+    let isInsideRoot (path: string) =
+        let key = PathKey.ofPath tree.CaseInsensitive path |> PathKey.value
+        key = rootKey || key.StartsWith(rootKey + "/")
+
+    let rec nearestLoaded (path: string) =
+        if not (isInsideRoot path) then
+            None
+        elif tree.IsLoaded path then
+            Some path
+        else
+            match PathHelpers.tryGetParentPath path with
+            | Some parent -> nearestLoaded parent
+            | None -> None
+
+    // Resolved up front. A loaded directory can only vanish during the run, and reconcileLoadedDirectoriesAsync
+    // checks again before each directory.
+    let targets = directories |> Array.choose nearestLoaded
+
+    reconcileLoadedDirectoriesAsync arcRoot tree onError targets

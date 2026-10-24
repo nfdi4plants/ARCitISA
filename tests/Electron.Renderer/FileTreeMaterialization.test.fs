@@ -17,7 +17,7 @@ let private directoryNode (name: string) (path: string) (children: FileTreeNode 
 
     FileTreeNode.create (name, true, path, childrenByName)
 
-let private toFileItemTree materializedDirectoryPaths node =
+let private toFileItemTreeWith isLoaded materializedDirectoryPaths node =
     toMaterializedFileItemTree
         (fun node ->
             let item =
@@ -28,9 +28,13 @@ let private toFileItemTree materializedDirectoryPaths node =
 
             { item with Id = node.path }
         )
+        isLoaded
         materializedDirectoryPaths
         node
         true
+
+let private toFileItemTree materializedDirectoryPaths node =
+    toFileItemTreeWith (fun _ -> true) materializedDirectoryPaths node
 
 Vitest.describe (
     "Electron file-tree materialization",
@@ -59,6 +63,20 @@ Vitest.describe (
 
                 Vitest.expect(item.Children.IsNone).toBe (true)
                 Vitest.expect(item.IsExpanded).toBe (false)
+        )
+
+        Vitest.test (
+            "an unloaded directory has unknown children and a loaded empty one has none",
+            fun () ->
+                let unloaded = directoryNode "data" "arc/data" []
+                let loadedEmpty = directoryNode "empty" "arc/empty" []
+                let isLoaded path = path = "arc/empty"
+
+                let unloadedItem = toFileItemTreeWith isLoaded (Set.singleton "arc/data") unloaded
+                let emptyItem = toFileItemTreeWith isLoaded Set.empty loadedEmpty
+
+                Vitest.expect(unloadedItem.Children.IsNone).toBe (true)
+                Vitest.expect(emptyItem.Children).toEqual (Some [])
         )
 
         Vitest.test (

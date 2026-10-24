@@ -49,7 +49,7 @@ let private writeUtf8FileAsync (path: string) (content: string) : Fable.Core.JS.
 }
 
 let private scanEntries (path: string) = promise {
-    let! tree = FileTreeCreator.scanFileTreeAsync path false
+    let! tree = TestHelpers.loadWholeTreeAsync path false
     return tree.Entries |> Seq.toArray
 }
 

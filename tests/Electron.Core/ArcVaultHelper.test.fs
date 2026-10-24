@@ -1369,6 +1369,36 @@ Vitest.describe (
         )
 
         Vitest.test (
+            "a watcher change event of a structural file pushes its size and time",
+            fun () ->
+                withTempArc
+                    ignore
+                    (fun arcPath -> promise {
+                        let windowState = createTestWindow (testWindowOptions 90)
+                        let vault = ArcVault(windowState.Window)
+                        vault.path <- Some arcPath
+                        do! vault.EnqueueFileTreeScan()
+
+                        do!
+                            vault.ApplyWatcherFileTreeEvents [
+                                watcherEvent arcPath "change" "isa.investigation.xlsx"
+                                watcherEvent arcPath "add" "isa.investigation.xlsx"
+                            ]
+
+                        let contentMessages =
+                            windowState.SentMessages
+                            |> Seq.map (fun args -> emitJsExpr args "JSON.stringify($0)": string)
+                            |> Seq.filter (fun text -> text.Contains "fileContentChanged")
+                            |> Seq.toArray
+
+                        Vitest.expect(contentMessages.Length).toBe 1
+                        Vitest.expect(contentMessages.[0].Contains "isa.investigation.xlsx").toBe true
+                        Vitest.expect(contentMessages.[0].Contains "sizeBytes").toBe true
+                        Vitest.expect(contentMessages.[0].Contains "mtimeMs").toBe true
+                    })
+        )
+
+        Vitest.test (
             "a tree update queued before a state reset does not publish",
             fun () ->
                 withTempArc
@@ -1390,7 +1420,7 @@ Vitest.describe (
                         // The update waits behind the tail while the pending state is reset.
                         vault.FileTreeWriter.Enqueue(fun _ -> promise {
                             do! tailGate
-                            return false
+                            return [||]
                         })
                         |> ignore
 
@@ -1465,7 +1495,7 @@ let private isPathChangeMessage (args: obj array) =
     args.Length > 0 && (string args.[0]).Contains("pathChange")
 
 let private isFileTreeMessage (args: obj array) =
-    args.Length > 0 && (string args.[0]).Contains("fileTreeUpdate")
+    args.Length > 0 && (string args.[0]).Contains("fileTreeDirectoryUpdate")
 
 Vitest.describe (
     "ArcVaultHelper",
@@ -2159,11 +2189,11 @@ Vitest.describe (
                                     if isPathChangeMessage args then Some index else None
                                 )
 
-                            let treeMessageIndex = messages |> Array.findIndex isFileTreeMessage
 
+                            // The renderer pulls the snapshot after pathChange, so no tree push follows.
                             Vitest.expect(pathMessageIndexes.Length).toBe (1)
                             Vitest.expect(wasReadyAtPathPublication).toBe (true)
-                            Vitest.expect(pathMessageIndexes.[0] < treeMessageIndex).toBe (true)
+                            Vitest.expect(messages |> Array.exists isFileTreeMessage).toBe (false)
                         }
 
                         return! withAsyncCleanup cleanup operation

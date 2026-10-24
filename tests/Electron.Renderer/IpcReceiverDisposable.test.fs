@@ -15,6 +15,17 @@ let private setBridgeProperty name value = window?(name) <- value
 let private clearBridgeProperty name =
     emitJsStatement name "delete window[$0]"
 
+type private PathChange = {|
+    path: string
+    caseInsensitive: bool
+|}
+
+let private pathChange (path: string) : PathChange option =
+    Some {|
+        path = path
+        caseInsensitive = false
+    |}
+
 let private subscribePathChange handler =
     subscribeProxyReceiver<IPathChangeRendererApi> { pathChange = handler }
 
@@ -31,7 +42,7 @@ let rec private waitUntil (predicate: unit -> bool, attempts: int) = promise {
 let private waitForEffect predicate = waitUntil (predicate, 50)
 
 [<ReactComponent>]
-let private PathChangeHookProbe (marker: string, onPathChange: string -> string option -> unit) =
+let private PathChangeHookProbe (marker: string, onPathChange: string -> PathChange option -> unit) =
     useProxyReceiver<IPathChangeRendererApi> ((fun () -> { pathChange = onPathChange marker }), [| box marker |])
 
     Html.none
@@ -42,7 +53,7 @@ Vitest.describe (
         Vitest.test (
             "pathChange listener receives events until disposed and dispose is idempotent",
             fun () ->
-                let mutable callback: (string option -> unit) option = None
+                let mutable callback: (PathChange option -> unit) option = None
                 let mutable removeCount = 0
                 let mutable received: string list = []
 
@@ -53,7 +64,7 @@ Vitest.describe (
                         name
                         (createObj [
                             "pathChange"
-                            ==> fun (listener: string option -> unit) ->
+                            ==> fun (listener: PathChange option -> unit) ->
                                 callback <- Some listener
 
                                 fun () ->
@@ -62,15 +73,17 @@ Vitest.describe (
                         ])
 
                     let dispose =
-                        subscribePathChange (fun path -> received <- (path |> Option.defaultValue "<none>") :: received)
+                        subscribePathChange (fun path ->
+                            received <- (path |> Option.map _.path |> Option.defaultValue "<none>") :: received
+                        )
 
                     Vitest.expect(callback.IsSome).toBe (true)
 
-                    callback.Value(Some "before-dispose")
+                    callback.Value(pathChange "before-dispose")
                     dispose ()
                     dispose ()
 
-                    callback |> Option.iter (fun listener -> listener (Some "after-dispose"))
+                    callback |> Option.iter (fun listener -> listener (pathChange "after-dispose"))
 
                     Vitest.expect(List.length received).toBe (1)
                     Vitest.expect(List.head received).toBe ("before-dispose")
@@ -82,7 +95,7 @@ Vitest.describe (
         Vitest.test (
             "useProxyReceiver registers on mount, re-registers on dependency change, and disposes on unmount",
             fun () -> promise {
-                let activeCallbacks = ResizeArray<string option -> unit>()
+                let activeCallbacks = ResizeArray<PathChange option -> unit>()
                 let mutable removeCount = 0
                 let mutable received: string list = []
 
@@ -97,7 +110,7 @@ Vitest.describe (
                         name
                         (createObj [
                             "pathChange"
-                            ==> fun (listener: string option -> unit) ->
+                            ==> fun (listener: PathChange option -> unit) ->
                                 activeCallbacks.Add listener
 
                                 fun () ->
@@ -105,22 +118,22 @@ Vitest.describe (
                                     activeCallbacks.Remove listener |> ignore
                         ])
 
-                    let onPathChange marker path =
-                        let value = path |> Option.defaultValue "<none>"
+                    let onPathChange marker (path: PathChange option) =
+                        let value = path |> Option.map _.path |> Option.defaultValue "<none>"
                         received <- $"{marker}:{value}" :: received
 
                     root.render (PathChangeHookProbe("first", onPathChange))
                     do! waitForEffect (fun () -> activeCallbacks.Count = 1)
 
                     Vitest.expect(activeCallbacks.Count).toBe (1)
-                    activeCallbacks[0](Some "before")
+                    activeCallbacks[0](pathChange "before")
 
                     root.render (PathChangeHookProbe("second", onPathChange))
                     do! waitForEffect (fun () -> removeCount = 1 && activeCallbacks.Count = 1)
 
                     Vitest.expect(removeCount).toBe (1)
                     Vitest.expect(activeCallbacks.Count).toBe (1)
-                    activeCallbacks[0](Some "after")
+                    activeCallbacks[0](pathChange "after")
 
                     root.unmount ()
                     rootUnmounted <- true

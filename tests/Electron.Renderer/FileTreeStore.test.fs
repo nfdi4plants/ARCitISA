@@ -3,6 +3,7 @@ module ElectronRenderer.FileTreeStoreTests
 open Renderer.Context.FileTreeStore
 open Swate.Components.Shared
 open Swate.Electron.Shared.FileIOTypes
+open Swate.Electron.Shared.IPCTypes
 open Vitest
 
 let private nameOf (path: string) =
@@ -14,7 +15,7 @@ let private file path =
 let private dir path =
     FileEntry.create (nameOf path, path, true)
 
-let private snapshotInput version caseInsensitive : FileTreeSnapshotInput = {
+let private snapshotInput version caseInsensitive : FileTreeSnapshotDto = {|
     treeVersion = version
     caseInsensitive = caseInsensitive
     entries = [|
@@ -26,13 +27,13 @@ let private snapshotInput version caseInsensitive : FileTreeSnapshotInput = {
         file "src/b.txt"
     |]
     loadedDirectories = [| ""; "src"; "src/inner" |]
-}
+|}
 
-let private update version directory children : FileTreeDirectoryUpdateInput = {
+let private update version directory children : FileTreeDirectoryUpdateDto = {|
     treeVersion = version
     directoryPath = directory
     children = children
-}
+|}
 
 let private loadedStore () =
     let store = FileTreeStore()
@@ -163,7 +164,7 @@ Vitest.describe (
                 let store = FileTreeStore()
                 store.BeginLoad()
 
-                store.ApplySnapshot {
+                store.ApplySnapshot {|
                     treeVersion = 1
                     caseInsensitive = false
                     entries = [|
@@ -173,7 +174,7 @@ Vitest.describe (
                         file "Data/y.txt"
                     |]
                     loadedDirectories = [| ""; "src" |]
-                }
+                |}
 
                 let snapshot = store.Snapshot
 

@@ -2,20 +2,7 @@ module Renderer.Context.FileTreeStore
 
 open Swate.Components.Shared
 open Swate.Electron.Shared.FileIOTypes
-
-/// Local stand-ins for the IPC shapes the main process sends. They move to the shared IPC types in step 4.1.
-type FileTreeSnapshotInput = {
-    treeVersion: int
-    entries: FileEntry[]
-    loadedDirectories: string[]
-    caseInsensitive: bool
-}
-
-type FileTreeDirectoryUpdateInput = {
-    treeVersion: int
-    directoryPath: string
-    children: FileEntry[]
-}
+open Swate.Electron.Shared.IPCTypes
 
 /// Immutable view of the tree. Version is the store's own change counter and serves as React identity.
 /// TreeVersion is the writer version of the last change that reached this snapshot.
@@ -61,7 +48,7 @@ let private emptySnapshot = {
     Loaded = Set.empty
 }
 
-let private buildSnapshot (version: int) (input: FileTreeSnapshotInput) : FileTreeSnapshot =
+let private buildSnapshot (version: int) (input: FileTreeSnapshotDto) : FileTreeSnapshot =
     let toKey = keyOf input.caseInsensitive
     let keyed = input.entries |> Array.map (fun entry -> toKey entry.path, entry)
     let loaded = input.loadedDirectories |> Array.map toKey |> Set.ofArray
@@ -131,7 +118,7 @@ let private removeSubtree (snapshot: FileTreeSnapshot) (key: PathKey) : FileTree
     }
 
 /// Returns the same instance when the update changes nothing.
-let private applyUpdate (snapshot: FileTreeSnapshot) (update: FileTreeDirectoryUpdateInput) : FileTreeSnapshot =
+let private applyUpdate (snapshot: FileTreeSnapshot) (update: FileTreeDirectoryUpdateDto) : FileTreeSnapshot =
     let toKey = keyOf snapshot.CaseInsensitive
     let directory = toKey update.directoryPath
 
@@ -190,7 +177,7 @@ type FileTreeStore() =
     // The newest writer version seen, including updates that changed nothing.
     let mutable lastTreeVersion = -1
     let mutable loading = false
-    let mutable buffer: FileTreeDirectoryUpdateInput list = []
+    let mutable buffer: FileTreeDirectoryUpdateDto list = []
     let listeners = ResizeArray<unit -> unit>()
 
     let notify () =
@@ -207,7 +194,7 @@ type FileTreeStore() =
         loading <- true
         buffer <- []
 
-    member _.ApplySnapshot(input: FileTreeSnapshotInput) =
+    member _.ApplySnapshot(input: FileTreeSnapshotDto) =
         let mutable next = buildSnapshot (snapshot.Version + 1) input
         lastTreeVersion <- input.treeVersion
 
@@ -229,7 +216,20 @@ type FileTreeStore() =
         loading <- false
         buffer <- []
 
-    member _.ApplyDirectoryUpdate(update: FileTreeDirectoryUpdateInput) =
+    /// Drops everything, for a closed ARC or a new root whose snapshot is not here yet.
+    member _.Reset() =
+        loading <- false
+        buffer <- []
+        lastTreeVersion <- -1
+
+        snapshot <- {
+            emptySnapshot with
+                Version = snapshot.Version + 1
+        }
+
+        notify ()
+
+    member _.ApplyDirectoryUpdate(update: FileTreeDirectoryUpdateDto) =
         if loading then
             buffer <- update :: buffer
         elif update.treeVersion > lastTreeVersion then
