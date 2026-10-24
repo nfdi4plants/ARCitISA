@@ -360,10 +360,10 @@ type ArcVault(window: BrowserWindow) =
     /// Invalidations within this window cause one listing.
     member val internal LargeObjectInvalidationDebounceMs: int = 500 with get, set
 
-    /// Reads the size of a file for the content check of the large object index. Tests replace it to count calls.
     /// True while a content check of the large objects runs, so checks do not overlap.
     member val internal LfsContentCheckRunning: bool = false with get, set
 
+    /// Reads the size of a file for the content check of the large object index. Tests replace it to count calls.
     member val internal LargeObjectContentStat: string -> Fable.Core.JS.Promise<float option> =
         statFileSize with get, set
 
