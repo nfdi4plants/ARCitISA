@@ -4137,7 +4137,7 @@ Vitest.describe (
 
                         match! vault.WriteArc() with
                         | Error error -> failwith error.Message
-                        | Ok() -> ()
+                        | Ok _ -> ()
 
                         let! rootNoteAfterSave = readFileAsync rootNotePath TextEncoding.Utf8
                         let! studyNoteAfterSave = readFileAsync studyNotePath TextEncoding.Utf8

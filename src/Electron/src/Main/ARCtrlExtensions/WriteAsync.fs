@@ -9,6 +9,16 @@ open Main.Notes.NoteConstants
 [<AutoOpen>]
 module ArcWriteExtensions =
 
+    /// The distinct ARC-relative paths a contract batch touches. A rename contract also touches its target.
+    let contractWrittenPaths (contracts: Contract[]) : string[] =
+        contracts
+        |> Array.collect (fun contract ->
+            match contract.Operation, contract.DTO with
+            | Operation.RENAME, Some(DTO.Text targetPath) -> [| contract.Path; targetPath |]
+            | _ -> [| contract.Path |]
+        )
+        |> Array.distinct
+
     let private notesReadmeContract =
         let path = ArcPathHelper.combine NotesRootFolderName NotesReadmeFileName
         Contract.createCreate (path, DTOType.PlainText, DTO.Text NotesReadmeContent)
@@ -164,6 +174,3 @@ module ArcWriteExtensions =
         member this.GetUpdateContractsSwate(?skipUpdateFS: bool) =
             this.GetUpdateContracts(?skipUpdateFS = skipUpdateFS)
             |> Array.filter (isUnmanagedPlainTextCreateContract >> not)
-
-        member this.TryUpdateAsyncSwate(arcPath: string) =
-            this.GetUpdateContractsSwate() |> fullFillContractBatchAsync arcPath

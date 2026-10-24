@@ -42,6 +42,16 @@ type IndexedFileTree(caseInsensitive: bool) =
         | true, entry -> Some entry
         | false, _ -> None
 
+    /// Display paths of the loaded directories.
+    member _.LoadedDirectories: string[] =
+        loadedDirectories
+        |> Seq.choose (fun key ->
+            match entries.TryGetValue key with
+            | true, entry -> Some entry.path
+            | false, _ -> None
+        )
+        |> Seq.toArray
+
     member _.IsLoaded(directoryPath: string) =
         loadedDirectories.Contains(keyOf directoryPath)
 
