@@ -217,6 +217,8 @@ type ArcVault(window: BrowserWindow) =
     /// The Git state at the start of the last listing or at the previous focus check. None when it could not be read.
     member val internal GitStateStamp: GitStateStamp option = None with get, set
     member val internal ResolvedGitDir: (string * string) option = None with get, set
+    /// The next index starts here, so versions never fall below what the renderer has applied.
+    member val internal LargeObjectVersionFloor: int = 0 with get, set
     member val internal GitStateCheckErrorLogged: bool = false with get, set
 
     /// Creates the file watcher. Tests replace it to observe or fake the watcher.
@@ -385,11 +387,11 @@ module ArcVaultExtensions =
                     Ok()
 
         /// Queues a full scan of the ARC folder. The scanned tree replaces the current one.
-        member this.EnqueueFileTreeScan(openSession: bool) : Fable.Core.JS.Promise<unit> =
+        member this.EnqueueFileTreeScan() : Fable.Core.JS.Promise<unit> =
             match this.path with
             | Some arcPath ->
                 let caseInsensitive = this.isCaseInsensitive
-                this.FileTreeWriter.EnqueueReplace(fun () -> scanFileTreeAsync arcPath caseInsensitive openSession)
+                this.FileTreeWriter.EnqueueReplace(fun () -> scanFileTreeAsync arcPath caseInsensitive)
             | None -> promise { return () }
 
         member private this.PushLargeObjectIndex(index: Main.LargeObjectIndex.LargeObjectIndex) =
@@ -414,7 +416,13 @@ module ArcVaultExtensions =
         member this.DisposeLargeObjectIndex() =
             this.LargeObjectInvalidationTimeout |> Option.iter Fable.Core.JS.clearTimeout
             this.LargeObjectInvalidationTimeout <- None
-            this.LargeObjectIndex |> Option.iter (fun index -> index.Dispose())
+
+            this.LargeObjectIndex
+            |> Option.iter (fun index ->
+                this.LargeObjectVersionFloor <- max this.LargeObjectVersionFloor (index.Version + 1)
+                index.Dispose()
+            )
+
             this.LargeObjectIndex <- None
             this.GitStateStamp <- None
             this.ResolvedGitDir <- None
@@ -430,7 +438,8 @@ module ArcVaultExtensions =
                         (fun context -> this.LargeObjectListing root context),
                         (fun () -> this.isCaseInsensitive),
                         (fun message -> swatelogfn this.window.id "%s" message),
-                        Main.LargeObjectIndex.DefaultTimeLimitMs
+                        Main.LargeObjectIndex.DefaultTimeLimitMs,
+                        this.LargeObjectVersionFloor
                     )
 
                 this.LargeObjectIndex <- Some index
@@ -576,7 +585,7 @@ module ArcVaultExtensions =
         /// It makes no LFS call, so entries keep the large-object state they had. An empty tree gets a full scan.
         member this.EnqueueFileTreeRevalidateLoaded() : Fable.Core.JS.Promise<unit> =
             if this.FileTreeWriter.Tree.Count = 0 then
-                this.EnqueueFileTreeScan false
+                this.EnqueueFileTreeScan()
             else
                 match this.path with
                 | Some arcPath ->
@@ -1029,7 +1038,7 @@ module ArcVaultExtensions =
             | Some _ when this.isInitializingArc -> return Dictionary<string, FileEntry>()
             | Some arcPath ->
                 if this.FileTreeWriter.Tree.Count = 0 then
-                    do! this.EnqueueFileTreeScan true
+                    do! this.EnqueueFileTreeScan()
 
                 return toRendererFileTree arcPath this.FileTreeWriter.Tree.Entries
         }
@@ -1650,7 +1659,7 @@ module ArcVaultExtensions =
                                 renamedPath
                                 watcherError.Message
 
-                    do! this.EnqueueFileTreeScan true
+                    do! this.EnqueueFileTreeScan()
                     this.StartLargeObjectIndex()
 
                     try
@@ -2116,7 +2125,7 @@ type ArcVaults() =
         | _ -> raise (ArcLoadCancelledException windowId)
 
     member private this.InitializeFileTreeForActiveVault(windowId: int, expectedVault: ArcVault, arcPath: string) = promise {
-        let! fileTreeResult = scanFileTreeAsync arcPath expectedVault.isCaseInsensitive true |> Promise.result
+        let! fileTreeResult = scanFileTreeAsync arcPath expectedVault.isCaseInsensitive |> Promise.result
 
         this.EnsureVaultIsStillActive(windowId, expectedVault)
 

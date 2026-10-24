@@ -913,7 +913,7 @@ Vitest.describe (
                         let vault = ArcVault(TestHelpers.testWindow ())
                         vault.path <- Some arcPath
 
-                        do! vault.EnqueueFileTreeScan false
+                        do! vault.EnqueueFileTreeScan()
 
                         let firstPath = join [| arcPath; "tree-first.txt" |]
                         let secondPath = join [| arcPath; "tree-second.txt" |]
@@ -1239,7 +1239,7 @@ Vitest.describe (
                         let vault = ArcVault(TestHelpers.testWindow ())
                         vault.path <- Some arcPath
                         vault.SetArc loadedArc
-                        do! vault.EnqueueFileTreeScan false
+                        do! vault.EnqueueFileTreeScan()
 
                         let! diskArc = TestHelpers.loadArcAsync arcPath
                         diskArc.GetAssay("DiskAssay").Title <- Some "Changed on disk"
@@ -1351,7 +1351,7 @@ Vitest.describe (
                         let vault = ArcVault(TestHelpers.testWindow ())
                         vault.path <- Some arcPath
 
-                        do! vault.EnqueueFileTreeScan false
+                        do! vault.EnqueueFileTreeScan()
 
                         let filePath = join [| arcPath; "tree-kept.txt" |]
                         do! writeWatcherTextFileAsync filePath "kept"
@@ -1377,7 +1377,7 @@ Vitest.describe (
                         let vault = ArcVault(TestHelpers.testWindow ())
                         vault.path <- Some arcPath
 
-                        do! vault.EnqueueFileTreeScan false
+                        do! vault.EnqueueFileTreeScan()
 
                         let filePath = join [| arcPath; "tree-reset.txt" |]
                         do! writeWatcherTextFileAsync filePath "reset"

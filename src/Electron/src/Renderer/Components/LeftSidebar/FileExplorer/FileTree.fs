@@ -64,6 +64,7 @@ type FileTree =
         let isDialogBusy, setIsDialogBusy = React.useState false
 
         let lfsActivityCtx = Renderer.Context.LfsActivityContext.useLfsActivityCtx ()
+        let tryFindLfs = Renderer.Context.LargeObjectStore.useLargeObjectLookup ()
         let lfsActivityByPath = lfsActivityCtx.activities
         let lfsActivePaths = lfsActivityByPath |> Map.toList |> List.map fst
         // The delete confirmation reads the paths through this ref, so it sees the actions that
@@ -162,7 +163,7 @@ type FileTree =
             |> Option.map (fun parent ->
                 FileTreeMaterialization.toMaterializedFileItemTree
                     (fun node ->
-                        let item = Helper.createItem node
+                        let item = Helper.createItem tryFindLfs node
 
                         {
                             item with
@@ -267,6 +268,7 @@ type FileTree =
                             )
                     | None when
                         FileExplorerStateReconciliation.shouldClearPageStateForLfsPointerSelection
+                            tryFindLfs
                             fileStateCtx.state.FileTree
                             fileStateCtx.state.Selection.TreePath
                             pageStateCtx.state
@@ -275,6 +277,7 @@ type FileTree =
                     | None ->
                         match
                             FileExplorerStateReconciliation.tryGetReloadableSelectedFilePath
+                                tryFindLfs
                                 fileStateCtx.state.FileTree
                                 fileStateCtx.state.Selection.TreePath
                                 pageStateCtx.state
@@ -284,7 +287,7 @@ type FileTree =
                 else
                     hasObservedFileTreeUpdateRef.current <- true
             ),
-            [| box fileStateCtx.state.FileTree |]
+            [| box fileStateCtx.state.FileTree; box tryFindLfs |]
         )
 
         let handleExpansionChange (item: FileItem) (willExpand: bool) =

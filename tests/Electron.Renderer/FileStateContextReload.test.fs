@@ -57,12 +57,12 @@ let private FileImportProbe (onImport: ActiveFileImportState option -> unit) =
 
 let private createSnapshot () =
     let snapshot = Dictionary<string, FileEntry>()
-    snapshot.Add("", FileEntry.create ("arc", "", true, None))
-    snapshot.Add("assays", FileEntry.create ("assays", "assays", true, None))
+    snapshot.Add("", FileEntry.create ("arc", "", true))
+    snapshot.Add("assays", FileEntry.create ("assays", "assays", true))
 
     snapshot.Add(
         "assays/assay-1/isa.assay.xlsx",
-        FileEntry.create ("isa.assay.xlsx", "assays/assay-1/isa.assay.xlsx", false, None)
+        FileEntry.create ("isa.assay.xlsx", "assays/assay-1/isa.assay.xlsx", false)
     )
 
     snapshot
@@ -383,7 +383,7 @@ Vitest.describe (
                     Some(RendererPageState.ArcFilePage(ArcFiles.Assay assay, Some ActiveView.DataMap))
 
                 let fileTreeWithDataMap = [|
-                    FileEntry.create ("isa.datamap.xlsx", "assays/DataMapAssay/isa.datamap.xlsx", false, None)
+                    FileEntry.create ("isa.datamap.xlsx", "assays/DataMapAssay/isa.datamap.xlsx", false)
                 |]
 
                 Vitest
@@ -391,8 +391,8 @@ Vitest.describe (
                     .toEqual (None)
 
                 let fileTree = [|
-                    FileEntry.create ("DataMapAssay", "assays/DataMapAssay", true, None)
-                    FileEntry.create ("isa.assay.xlsx", "assays/DataMapAssay/isa.assay.xlsx", false, None)
+                    FileEntry.create ("DataMapAssay", "assays/DataMapAssay", true)
+                    FileEntry.create ("isa.assay.xlsx", "assays/DataMapAssay/isa.assay.xlsx", false)
                 |]
 
                 Vitest
@@ -569,9 +569,7 @@ Vitest.describe (
         Vitest.test (
             "tryGetReloadableSelectedFilePath reloads a no-preview page like an unknown page",
             fun () ->
-                let fileTree = [|
-                    FileEntry.create ("big.txt", "data/big.txt", false, None)
-                |]
+                let fileTree = [| FileEntry.create ("big.txt", "data/big.txt", false) |]
 
                 for pageState in
                     [
@@ -581,6 +579,7 @@ Vitest.describe (
                     Vitest
                         .expect(
                             FileExplorerStateReconciliation.tryGetReloadableSelectedFilePath
+                                (fun _ -> None)
                                 fileTree
                                 (Some "data/big.txt")
                                 (Some pageState)

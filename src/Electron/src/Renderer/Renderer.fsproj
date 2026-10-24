@@ -13,6 +13,7 @@
     <Compile Include="VersionControlApiClient.fs" />
     <Compile Include="GitDiffPresentation.fs" />
     <Compile Include="Context\AppStateContext.fs" />
+    <Compile Include="Context\LargeObjectStore.fs" />
     <Compile Include="Context\PageStateContext.fs" />
     <Compile Include="Context\FileStateContext.fs" />
     <Compile Include="Context\AuthStateContext.fs" />

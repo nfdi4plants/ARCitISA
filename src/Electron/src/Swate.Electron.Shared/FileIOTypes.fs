@@ -8,7 +8,6 @@ type FileEntry = {
     name: string
     isDirectory: bool
     path: string
-    largeObject: ObjectStateDto option
 }
 
 [<AutoOpen>]
@@ -21,39 +20,25 @@ module FileEntryExtensions =
 
     type FileEntry with
 
-        static member create
-            (name: string, path: string, isDirectory: bool, ?largeObject: ObjectStateDto option)
-            : FileEntry =
-            {
-                name = name
-                path = path
-                isDirectory = isDirectory
-                largeObject = defaultArg largeObject None
-            }
+        static member create(name: string, path: string, isDirectory: bool) : FileEntry = {
+            name = name
+            path = path
+            isDirectory = isDirectory
+        }
 
 type FileTreeNode = {
     name: string
     isDirectory: bool
     path: string
-    largeObject: ObjectStateDto option
     children: Dictionary<string, FileTreeNode>
 } with
 
-    static member create
-        (
-            name: string,
-            isDirectory: bool,
-            path: string,
-            children: Dictionary<string, FileTreeNode>,
-            ?largeObject: ObjectStateDto option
-        ) =
-        {
-            name = name
-            isDirectory = isDirectory
-            path = path
-            largeObject = defaultArg largeObject None
-            children = children
-        }
+    static member create(name: string, isDirectory: bool, path: string, children: Dictionary<string, FileTreeNode>) = {
+        name = name
+        isDirectory = isDirectory
+        path = path
+        children = children
+    }
 
 [<RequireQualifiedAccess; StringEnum>]
 type FileContentType =

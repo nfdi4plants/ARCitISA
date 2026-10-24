@@ -114,29 +114,6 @@ Vitest.describe (
     "FileIOHelper.toFileTreeNode LFS metadata",
     fun () ->
         Vitest.test (
-            "preserves Git LFS ls-files metadata from FileEntry to root FileTreeNode",
-            fun () ->
-                let largeObject: ObjectStateDto = {
-                    Path = "arc/sample.bin"
-                    SizeBytes = Some 2048.0
-                    IsMaterialized = false
-                    IsLocallyAvailable = false
-                    ObjectId = Some "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-                }
-
-                let rootEntry: FileEntry = {
-                    name = "arc"
-                    isDirectory = true
-                    path = "C:/arc"
-                    largeObject = Some largeObject
-                }
-
-                let rootNode = toFileTreeNode [| rootEntry |]
-
-                Vitest.expect(rootNode.largeObject).toEqual (Some largeObject)
-        )
-
-        Vitest.test (
             "keeps root-level generic files and folders as root children",
             fun () ->
                 let entries = [|

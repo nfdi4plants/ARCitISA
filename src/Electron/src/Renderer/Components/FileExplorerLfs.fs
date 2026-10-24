@@ -3,6 +3,7 @@ module Renderer.Components.FileExplorerLfs
 open Swate.Components.Primitive.ErrorModal.Types
 open Swate.Components.Page.FileExplorer.Types
 open Swate.Electron.Shared.FileIOTypes
+open Swate.Electron.Shared.VersionControlTypes
 
 module FileExplorerGitLfsHelper = Swate.Components.Page.FileExplorer.FileExplorerGitLfsHelper
 
@@ -18,20 +19,25 @@ let private mapLfsSize (sizeBytes: float option) =
     let size = sizeBytes |> Option.map int64
     size, (size |> Option.map FileTree.formatSize)
 
-let getFileTreeNodeLfsState (node: FileTreeNode) : FileTreeNodeLfsState =
-    let lfsSize, lfsSizeFormatted =
-        mapLfsSize (node.largeObject |> Option.bind _.SizeBytes)
+/// Folders never carry large object state. Files get it from the lookup by their ARC-relative path.
+let getFileTreeNodeLfsState (tryFindLfs: string -> ObjectStateDto option) (node: FileTreeNode) : FileTreeNodeLfsState =
+    let largeObject = if node.isDirectory then None else tryFindLfs node.path
+    let lfsSize, lfsSizeFormatted = mapLfsSize (largeObject |> Option.bind _.SizeBytes)
 
     {
-        IsLFS = node.largeObject |> Option.map (fun _ -> true)
-        IsLFSPointer = node.largeObject |> Option.map (fun info -> not info.IsMaterialized)
-        Downloaded = node.largeObject |> Option.map _.IsLocallyAvailable
+        IsLFS = largeObject |> Option.map (fun _ -> true)
+        IsLFSPointer = largeObject |> Option.map (fun info -> not info.IsMaterialized)
+        Downloaded = largeObject |> Option.map _.IsLocallyAvailable
         Size = lfsSize
         SizeFormatted = lfsSizeFormatted
     }
 
-let withFileTreeNodeLfsState (node: FileTreeNode) (item: FileItem) : FileItem =
-    let lfsState = getFileTreeNodeLfsState node
+let withFileTreeNodeLfsState
+    (tryFindLfs: string -> ObjectStateDto option)
+    (node: FileTreeNode)
+    (item: FileItem)
+    : FileItem =
+    let lfsState = getFileTreeNodeLfsState tryFindLfs node
 
     {
         item with

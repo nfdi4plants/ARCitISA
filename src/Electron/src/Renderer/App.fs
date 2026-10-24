@@ -315,25 +315,29 @@ let Main () =
                             updatePageState,
                             ErrorModalProvider.ErrorModalProvider(
                                 Renderer.Context.AuthStateContext.Provider(
-                                    Renderer.Context.LfsActivityContext.LfsActivityCtxProvider(
-                                        Renderer.Context.GitStateContext.GitStateCtxProvider(
-                                            Swate
-                                                .Components
-                                                .Composite
-                                                .AnnotationTable
-                                                .AnnotationTableContextProvider
-                                                .AnnotationTableContextProvider(
-                                                    Layout.Main(
-                                                        children =
-                                                            React.Fragment [|
-                                                                children
-                                                                CloseWindowController.CloseWindowController()
-                                                            |],
-                                                        navbar = Renderer.Components.Navbar.Main(),
-                                                        ?leftSidebar = leftSidebar,
-                                                        leftActions = leftActions
+                                    Renderer.Context.LargeObjectStore.LargeObjectStoreProviderWith(
+                                        model.ArcRootPath,
+                                        (fun () -> Api.ipcArcVaultApi.getLargeObjectIndex ()),
+                                        Renderer.Context.LfsActivityContext.LfsActivityCtxProvider(
+                                            Renderer.Context.GitStateContext.GitStateCtxProvider(
+                                                Swate
+                                                    .Components
+                                                    .Composite
+                                                    .AnnotationTable
+                                                    .AnnotationTableContextProvider
+                                                    .AnnotationTableContextProvider(
+                                                        Layout.Main(
+                                                            children =
+                                                                React.Fragment [|
+                                                                    children
+                                                                    CloseWindowController.CloseWindowController()
+                                                                |],
+                                                            navbar = Renderer.Components.Navbar.Main(),
+                                                            ?leftSidebar = leftSidebar,
+                                                            leftActions = leftActions
+                                                        )
                                                     )
-                                                )
+                                            )
                                         )
                                     )
                                 ),

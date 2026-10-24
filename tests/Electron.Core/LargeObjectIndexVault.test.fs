@@ -268,6 +268,24 @@ Vitest.describe (
         )
 
         Vitest.test (
+            "a restarted index starts above the last version of the disposed one",
+            fun () ->
+                withTempDirectory (fun root -> promise {
+                    let fake = FakeListing()
+                    let! vault, sent = startVault root fake
+                    let lastOldVersion = vault.GetLargeObjectIndexSnapshot().version
+
+                    vault.DisposeLargeObjectIndex()
+                    sent.Clear()
+                    vault.StartLargeObjectIndex()
+                    do! waitUntil "the first push of the new index" (fun () -> sent |> Seq.exists isIndexPush)
+
+                    Vitest.expect(vault.GetLargeObjectIndexSnapshot().version).toBeGreaterThan lastOldVersion
+                    vault.DisposeLargeObjectIndex()
+                })
+        )
+
+        Vitest.test (
             "closing the vault cancels a running listing and its result is not pushed",
             fun () ->
                 withTempDirectory (fun root -> promise {

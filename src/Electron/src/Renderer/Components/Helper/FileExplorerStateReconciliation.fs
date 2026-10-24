@@ -2,6 +2,7 @@ module Renderer.Components.Helper.FileExplorerStateReconciliation
 
 open Swate.Components.Shared
 open Swate.Electron.Shared.FileIOTypes
+open Swate.Electron.Shared.VersionControlTypes
 open Renderer.Types
 open Swate.Components.Page.ArcFileEditor.Types
 
@@ -72,19 +73,19 @@ let private reloadsWhenSelectedFileChanges =
     | PageState.ErrorPage _ -> true
     | _ -> false
 
-let private isCheckedOutLfsFile (entry: FileEntry) =
-    entry.largeObject |> Option.exists (fun state -> state.IsMaterialized)
+let private isCheckedOutLfsFile (tryFindLfs: string -> ObjectStateDto option) (entry: FileEntry) =
+    tryFindLfs entry.path |> Option.exists (fun state -> state.IsMaterialized)
 
-let private isPointerLfsFile (entry: FileEntry) =
-    entry.largeObject |> Option.exists (fun state -> not state.IsMaterialized)
+let private isPointerLfsFile (tryFindLfs: string -> ObjectStateDto option) (entry: FileEntry) =
+    tryFindLfs entry.path |> Option.exists (fun state -> not state.IsMaterialized)
 
-let private shouldReloadSelectedFile pageState entry =
-    if isPointerLfsFile entry then
+let private shouldReloadSelectedFile tryFindLfs pageState entry =
+    if isPointerLfsFile tryFindLfs entry then
         false
     else
         match pageState with
         | Some state -> reloadsWhenSelectedFileChanges state
-        | None -> isCheckedOutLfsFile entry
+        | None -> isCheckedOutLfsFile tryFindLfs entry
 
 let private tryFindSelectedFileEntry (fileTree: FileEntry[]) (selectionPath: string option) =
     selectionPath
@@ -98,22 +99,24 @@ let private tryFindSelectedFileEntry (fileTree: FileEntry[]) (selectionPath: str
     )
 
 let shouldClearPageStateForLfsPointerSelection
+    (tryFindLfs: string -> ObjectStateDto option)
     (fileTree: FileEntry[])
     (selectionPath: string option)
     (pageState: PageState option)
     =
     pageState |> Option.exists resetsWhenSelectionIsRemoved
     && (tryFindSelectedFileEntry fileTree selectionPath
-        |> Option.exists isPointerLfsFile)
+        |> Option.exists (isPointerLfsFile tryFindLfs))
 
 let tryGetReloadableSelectedFilePath
+    (tryFindLfs: string -> ObjectStateDto option)
     (fileTree: FileEntry[])
     (selectionPath: string option)
     (pageState: PageState option)
     =
     tryFindSelectedFileEntry fileTree selectionPath
     |> Option.bind (fun entry ->
-        if shouldReloadSelectedFile pageState entry then
+        if shouldReloadSelectedFile tryFindLfs pageState entry then
             Some(PathHelpers.normalizePath entry.path)
         else
             None

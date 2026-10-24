@@ -133,7 +133,7 @@ Vitest.describe (
                         let vault = ArcVault(testWindow ())
                         vault.path <- Some arcPath
                         vault.SetArc arc
-                        do! vault.EnqueueFileTreeScan false
+                        do! vault.EnqueueFileTreeScan()
 
                         let request =
                             FileContentDTO.fromArcFile (ArcFiles.DataMap(Some parentInfo, DataMap.init ()))

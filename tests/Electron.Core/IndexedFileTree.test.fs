@@ -14,7 +14,7 @@ open Vitest
 module FileTreeCreator = Main.FileTreeCreator
 
 let private entry (name: string) (directory: string) (isDirectory: bool) =
-    FileEntry.create (name, $"{directory}/{name}", isDirectory, None)
+    FileEntry.create (name, $"{directory}/{name}", isDirectory)
 
 let private names (entries: FileEntry[]) = entries |> Array.map _.name
 
@@ -49,7 +49,7 @@ Vitest.describe (
                 let child = entry "a.txt" "/arc" false
                 Vitest.expect(tree.ReplaceChildren("/arc", [| child |])).toBe (true)
                 let stored = (tree.TryFind "/arc/a.txt").Value
-                Vitest.expect(tree.ReplaceChildren("/arc", [| { child with largeObject = None } |])).toBe (false)
+                Vitest.expect(tree.ReplaceChildren("/arc", [| { child with path = child.path } |])).toBe (false)
                 Vitest.expect(obj.ReferenceEquals((tree.TryFind "/arc/a.txt").Value, stored)).toBe (true)
         )
 
@@ -114,7 +114,7 @@ Vitest.describe (
                     do! mkdirAsync' (join [| root; "old"; "inner" |])
                     do! writeAsync (join [| root; "old"; "inner"; "f.txt" |])
 
-                    let! tree = FileTreeCreator.scanFileTreeAsync root false false
+                    let! tree = FileTreeCreator.scanFileTreeAsync root false
                     Vitest.expect((tree.TryFind(root + "/old/inner/f.txt")).IsSome).toBe (true)
 
                     do! rmAsync (join [| root; "old" |]) (RmOptions(recursive = true, force = true))
@@ -149,7 +149,7 @@ Vitest.describe (
                 withTempFolder (fun root -> promise {
                     do! mkdirAsync' (join [| root; "gone" |])
                     do! writeAsync (join [| root; "gone"; "f.txt" |])
-                    let! tree = FileTreeCreator.scanFileTreeAsync root false false
+                    let! tree = FileTreeCreator.scanFileTreeAsync root false
 
                     do! rmAsync (join [| root; "gone" |]) (RmOptions(recursive = true, force = true))
                     let! changed = FileTreeCreator.reconcileFileTreeDirectoryAsync root tree (root + "/gone")
@@ -168,7 +168,7 @@ Vitest.describe (
                     do! writeAsync (join [| root; "~$x.xlsx" |])
                     do! writeAsync (join [| root; "keep.txt" |])
 
-                    let! scanned = FileTreeCreator.scanFileTreeAsync root false false
+                    let! scanned = FileTreeCreator.scanFileTreeAsync root false
                     let reconciled = IndexedFileTree(false)
                     let! _ = FileTreeCreator.reconcileFileTreeDirectoryAsync root reconciled root
 
@@ -274,7 +274,7 @@ Vitest.describe (
 
                     let slowScan =
                         writer.EnqueueReplace(fun () -> promise {
-                            let! stale = FileTreeCreator.scanFileTreeAsync root false false
+                            let! stale = FileTreeCreator.scanFileTreeAsync root false
                             signalScanned ()
                             do! Promise.sleep 150
                             return stale
@@ -307,7 +307,7 @@ Vitest.describe (
                     do! mkdirAsync' (join [| root; "studies" |])
                     let vault = ArcVault(TestHelpers.testWindow ())
                     vault.path <- Some root
-                    do! vault.EnqueueFileTreeScan false
+                    do! vault.EnqueueFileTreeScan()
 
                     let mutable publishCount = 0
                     vault.FileTreeWriter.Publish <- fun _ -> publishCount <- publishCount + 1
@@ -363,7 +363,7 @@ Vitest.describe (
             let vault = ArcVault(TestHelpers.testWindow ())
             vault.path <- Some arcPath
             do! vault.LoadArc()
-            do! vault.EnqueueFileTreeScan false
+            do! vault.EnqueueFileTreeScan()
             return vault
         }
 
@@ -496,7 +496,7 @@ Vitest.describe (
                 withTempFolder (fun root -> promise {
                     do! mkdirAsync' (join [| root; "assays"; "A" |])
                     do! writeAsync (join [| root; "assays"; "A"; "x.txt" |])
-                    let! tree = FileTreeCreator.scanFileTreeAsync root true false
+                    let! tree = FileTreeCreator.scanFileTreeAsync root true
 
                     do! rmAsync (join [| root; "assays"; "A" |]) (RmOptions(recursive = true, force = true))
                     do! mkdirAsync' (join [| root; "assays"; "a" |])
@@ -515,7 +515,7 @@ Vitest.describe (
             fun () ->
                 withTempFolder (fun root -> promise {
                     do! writeAsync (join [| root; "item" |])
-                    let! tree = FileTreeCreator.scanFileTreeAsync root false false
+                    let! tree = FileTreeCreator.scanFileTreeAsync root false
 
                     do! rmAsync (join [| root; "item" |]) (RmOptions(force = true))
                     do! mkdirAsync' (join [| root; "item" |])
@@ -566,7 +566,7 @@ Vitest.describe (
                     do! writeAsync (join [| arcPath; "assays"; "A1"; "dataset"; "move-me.txt" |])
                     let vault = TestHelpers.registerVault windowId arcPath
                     do! vault.LoadArc()
-                    do! vault.EnqueueFileTreeScan false
+                    do! vault.EnqueueFileTreeScan()
 
                     try
                         do! body vault
