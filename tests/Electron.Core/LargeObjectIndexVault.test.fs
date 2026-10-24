@@ -516,4 +516,45 @@ bbbb refs/heads/main
                 })
         )
 
+
+        Vitest.test (
+            "a write that starts while the writer queue drains makes the rename fail as busy",
+            fun () ->
+                withTempDirectory (fun parent -> promise {
+                    let root = join [| parent; "arcA" |]
+                    mkdirSync root (MkdirOptions(recursive = true))
+                    let fake = FakeListing()
+                    let! vault, _ = startVault root fake
+
+                    let release = ref (fun () -> ())
+
+                    let drain =
+                        vault.FileTreeWriter.Enqueue(fun _ ->
+                            Promise.create (fun resolve _ -> release.Value <- fun () -> resolve false)
+                        )
+
+                    let renaming = vault.RenameOpenArcRoot "arcB"
+                    do! Promise.sleep 50
+
+                    let finishWrite = ref (fun () -> ())
+
+                    let writing =
+                        vault.WithBusyWritingScope(fun () ->
+                            Promise.create (fun resolve _ -> finishWrite.Value <- fun () -> resolve ())
+                        )
+
+                    release.Value()
+                    do! drain
+                    let! result = renaming
+
+                    match result with
+                    | Ok _ -> failwith "The rename should fail while a write runs."
+                    | Error error -> Vitest.expect(error.Message).toContain "still writing"
+
+                    finishWrite.Value()
+                    do! writing
+                    vault.DisposeLargeObjectIndex()
+                })
+        )
+
 )

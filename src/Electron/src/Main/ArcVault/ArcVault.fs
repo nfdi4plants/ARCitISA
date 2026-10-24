@@ -1726,7 +1726,12 @@ module ArcVaultExtensions =
                         promise {
                             // A queued scan or reconcile would enumerate the folder while it moves.
                             do! this.FileTreeWriter.Enqueue(fun _ -> promise { return false })
-                            return! renameOpenArcRootDirectoryOnDisk currentPath newName
+
+                            // A write can start while the queue drains.
+                            if this.isBusyWriting then
+                                return Error(busyWritingError ())
+                            else
+                                return! renameOpenArcRootDirectoryOnDisk currentPath newName
                         }
 
                 match renameResult with
