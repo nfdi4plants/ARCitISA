@@ -191,7 +191,7 @@ let private pathExistsAsync (absolutePath: string) : JS.Promise<bool> = promise 
 let private currentNodePlatform () : string =
     emitJsExpr () "process.platform" |> unbox<string>
 
-/// Delays before each rename attempt. Windows holds folders longer (search indexer, antivirus, file explorer), so it waits up to 4 s.
+/// Delays before each rename attempt. Windows holds folders longer (for example while an antivirus scan reads them), so it waits up to 4 s.
 let renameRetryDelaysMs (platform: string) : int[] =
     if String.Equals(platform, "win32", StringComparison.OrdinalIgnoreCase) then
         [| 0; 100; 300; 1000; 2000; 4000 |]

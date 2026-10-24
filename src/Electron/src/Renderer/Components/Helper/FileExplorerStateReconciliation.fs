@@ -134,8 +134,8 @@ let useReconcileSelectedPreview
     (reloadPreview: string -> (PageState -> PageState) -> unit)
     (clearPageState: unit -> unit)
     =
-    // The watcher emits the initial tree too, so only later tree updates refresh the preview.
-    let hasObservedFileTreeUpdateRef = React.useRef false
+    // The watcher emits the initial tree too, so the first run only records. Later runs compare with the previous one.
+    let lastRunRef = React.useRef<(FileEntry[] * string option) option> None
 
     let selectedLfsKey =
         selectionPath
@@ -145,7 +145,18 @@ let useReconcileSelectedPreview
 
     React.useEffect (
         (fun () ->
-            if hasObservedFileTreeUpdateRef.current then
+            let previous = lastRunRef.current
+            lastRunRef.current <- Some(fileTree, selectionPath)
+
+            // A changed key alone belongs to a selection change when the selection moved. The click opens that file itself.
+            let shouldAct =
+                match previous with
+                | None -> false
+                | Some(previousTree, previousSelection) ->
+                    not (obj.ReferenceEquals(previousTree, fileTree))
+                    || previousSelection = selectionPath
+
+            if shouldAct then
                 match tryGetDataMapMismatchReload fileTree pageState with
                 | Some(parentPath, requestedView) ->
                     reloadPreview
@@ -160,8 +171,6 @@ let useReconcileSelectedPreview
                     match tryGetReloadableSelectedFilePath tryFindLfs fileTree selectionPath pageState with
                     | None -> ()
                     | Some selectedPath -> reloadPreview selectedPath id
-            else
-                hasObservedFileTreeUpdateRef.current <- true
         ),
         [| box fileTree; box selectedLfsKey |]
     )

@@ -12,6 +12,7 @@ Vitest.afterEach (fun () -> RTL.cleanup ())
 type private HarnessProps = {
     Lookup: string -> ObjectStateDto option
     FileTree: FileEntry[]
+    Selection: string
 }
 
 let private selectedPath = "data/note.md"
@@ -35,7 +36,7 @@ let private Harness
     FileExplorerStateReconciliation.useReconcileSelectedPreview
         props.Lookup
         props.FileTree
-        (Some selectedPath)
+        (Some props.Selection)
         (Some PageState.UnknownPage)
         (fun path _ -> reloads.Add path)
         (fun () -> clears.Value <- clears.Value + 1)
@@ -54,6 +55,7 @@ Vitest.test (
                 {
                     Lookup = fun _ -> None
                     FileTree = fileTree
+                    Selection = selectedPath
                 },
                 reloads,
                 clears,
@@ -68,6 +70,7 @@ Vitest.test (
                 setProps.Value {
                     Lookup = fun _ -> None
                     FileTree = fileTree
+                    Selection = selectedPath
                 }
             })
 
@@ -79,6 +82,7 @@ Vitest.test (
                 setProps.Value {
                     Lookup = fun path -> if path = selectedPath then Some(lfsState false) else None
                     FileTree = fileTree
+                    Selection = selectedPath
                 }
             })
 
@@ -90,10 +94,24 @@ Vitest.test (
                 setProps.Value {
                     Lookup = fun path -> if path = selectedPath then Some(lfsState true) else None
                     FileTree = fileTree
+                    Selection = selectedPath
                 }
             })
 
         Vitest.expect(reloads.Count).toBe 1
         Vitest.expect(reloads.[0]).toBe selectedPath
+
+        // Selecting another file changes the key, but the click opens that file itself.
+        do!
+            RTL.act (fun () -> promise {
+                setProps.Value {
+                    Lookup = fun _ -> None
+                    FileTree = fileTree
+                    Selection = "data/other.bin"
+                }
+            })
+
+        Vitest.expect(reloads.Count).toBe 1
+        Vitest.expect(clears.Value).toBe 1
     }
 )
