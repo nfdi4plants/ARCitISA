@@ -29,11 +29,20 @@ let private snapshotInput version caseInsensitive : FileTreeSnapshotDto = {|
     loadedDirectories = [| ""; "src"; "src/inner" |]
 |}
 
-let private update version directory children : FileTreeDirectoryUpdateDto = {|
+/// One writer job can change several directories, and the update lists all of them with one version.
+let private updateMany version (directories: (string * FileEntry[]) list) : FileTreeDirectoryUpdateDto = {|
     treeVersion = version
-    directoryPath = directory
-    children = children
+    directories =
+        directories
+        |> List.map (fun (directory, entries) -> {|
+            directoryPath = directory
+            children = entries
+        |})
+        |> Array.ofList
 |}
+
+let private update version directory children : FileTreeDirectoryUpdateDto =
+    updateMany version [ directory, children ]
 
 let private loadedStore () =
     let store = FileTreeStore()
@@ -70,17 +79,68 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "drops updates with an older or equal treeVersion",
+            "drops updates with an older treeVersion and applies the same version",
             fun () ->
                 let store = loadedStore ()
                 let before = store.Snapshot
-                store.ApplyDirectoryUpdate(update 5 "src" [| file "src/c.txt" |])
                 store.ApplyDirectoryUpdate(update 4 "src" [| file "src/c.txt" |])
                 Vitest.expect(obj.ReferenceEquals(store.Snapshot, before)).toBe (true)
+
+                // One writer version is one state of the tree, so the same version applies.
+                store.ApplyDirectoryUpdate(update 5 "src" [| file "src/c.txt" |])
+                Vitest.expect(names (children store.Snapshot "src")).toEqual ([| "c.txt" |])
         )
 
         Vitest.test (
-            "buffers updates during a load and applies only the newer ones after the snapshot",
+            "applies every directory of one update, parents first, however they are listed",
+            fun () ->
+                let store = loadedStore ()
+
+                // A new entity folder and its zone folder from one job. The child comes first in the input.
+                store.ApplyDirectoryUpdate(
+                    updateMany 6 [
+                        "src/fresh", [| file "src/fresh/isa.xlsx" |]
+                        "src", [| dir "src/fresh"; dir "src/inner"; file "src/b.txt" |]
+                    ]
+                )
+
+                Vitest.expect(names (children store.Snapshot "src/fresh")).toEqual ([| "isa.xlsx" |])
+                Vitest.expect(isLoaded store.Snapshot "src/fresh").toBe (true)
+                Vitest.expect(store.Snapshot.TreeVersion).toBe 6
+        )
+
+        Vitest.test (
+            "notifies once for an update with several directories",
+            fun () ->
+                let store = loadedStore ()
+                let notifications = ref 0
+
+                store.Subscribe(fun () -> notifications.Value <- notifications.Value + 1)
+                |> ignore
+
+                store.ApplyDirectoryUpdate(
+                    updateMany 6 [
+                        "src", [| dir "src/inner"; file "src/b.txt"; file "src/c.txt" |]
+                        "src/inner", [| file "src/inner/y.txt" |]
+                    ]
+                )
+
+                Vitest.expect(notifications.Value).toBe 1
+        )
+
+        Vitest.test (
+            "a loadDirectory answer at the current version applies",
+            fun () ->
+                let store = loadedStore ()
+                store.ApplyDirectoryUpdate(update 6 "src" [| dir "src/inner"; file "src/b.txt"; file "src/c.txt" |])
+
+                // The answer of a load carries the writer version that the push of the same job carried.
+                store.ApplyDirectoryUpdate(update 6 "src/inner" [| file "src/inner/z.txt" |])
+                Vitest.expect(names (children store.Snapshot "src/inner")).toEqual ([| "z.txt" |])
+        )
+
+        Vitest.test (
+            "buffers updates during a load and applies the ones at or above the snapshot version",
             fun () ->
                 let store = FileTreeStore()
                 store.BeginLoad()

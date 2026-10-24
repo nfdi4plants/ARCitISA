@@ -66,8 +66,12 @@ let private newStore () =
 
 let private update version directory (children: FileEntry list) : FileTreeDirectoryUpdateDto = {|
     treeVersion = version
-    directoryPath = directory
-    children = Array.ofList children
+    directories = [|
+        {|
+            directoryPath = directory
+            children = Array.ofList children
+        |}
+    |]
 |}
 
 type private Calls = {
@@ -105,7 +109,7 @@ type private Env = {
     Store: FileTreeStore
     Listeners: ResizeArray<FileContentStamp -> unit>
     SetSelection: ArcSelection -> unit
-    SetRoot: string -> unit
+    SetRoot: string -> bool -> unit
 }
 
 [<ReactComponent>]
@@ -114,12 +118,13 @@ let private Host
         store: FileTreeStore,
         api: FileTreeExpansionApi,
         listeners: ResizeArray<FileContentStamp -> unit>,
-        expose: (ArcSelection -> unit) -> (string -> unit) -> unit,
+        expose: (ArcSelection -> unit) -> (string -> bool -> unit) -> unit,
         children: ReactElement
     ) =
     let selection, setSelection = React.useState ArcSelection.empty
-    let root, setRoot = React.useState "arc"
-    expose setSelection setRoot
+    let rootState, setRootState = React.useState (("arc", false))
+    let root, isRename = rootState
+    expose setSelection (fun nextRoot nextIsRename -> setRootState (nextRoot, nextIsRename))
 
     let subscribe =
         React.useCallback (
@@ -136,8 +141,7 @@ let private Host
                 state = { Selection = selection }
                 fileTreeStore = store
                 subscribeFileContentChanged = subscribe
-                fileTreeIsLoading = false
-                refreshFileTree = ignore
+                rootChangeIsRename = isRename
                 setSelection = setSelection
                 updateSelection = ignore
                 activeFileImport = None
@@ -145,11 +149,11 @@ let private Host
                 importExternalFiles = fun _ -> JS.Constructors.Promise.resolve (Ok())
                 cancelFileImport = fun () -> JS.Constructors.Promise.resolve (Ok())
             }),
-            [| box selection; box store |]
+            [| box selection; box store; box isRename |]
         )
 
     Renderer.Context.AppStateContext.AppStateCtx.Provider(
-        Some root,
+        (if root = "" then None else Some root),
         FileStateCtx.Provider(controller, FileTreeExpansionCtxProvider(api, children))
     )
 
@@ -191,7 +195,7 @@ let private ExplorerView () =
 let private mount (store: FileTreeStore) (api: FileTreeExpansionApi) (view: ReactElement) =
     let listeners = ResizeArray<FileContentStamp -> unit>()
     let setSelection = ref (fun (_: ArcSelection) -> ())
-    let setRoot = ref (fun (_: string) -> ())
+    let setRoot = ref (fun (_: string) (_: bool) -> ())
 
     RTL.render (
         Host(
@@ -211,7 +215,7 @@ let private mount (store: FileTreeStore) (api: FileTreeExpansionApi) (view: Reac
         Store = store
         Listeners = listeners
         SetSelection = fun selection -> setSelection.Value selection
-        SetRoot = fun root -> setRoot.Value root
+        SetRoot = fun root isRename -> setRoot.Value root isRename
     }
 
 Vitest.describe (
@@ -451,7 +455,7 @@ Vitest.describe (
                 do! waitFor (fun () -> isLoaded store.Snapshot "assays/A1/dataset")
 
                 // The rename changes the root path, and the new snapshot lists the payload folder as not loaded.
-                do! RTL.act (fun () -> promise { env.SetRoot "arc-renamed" })
+                do! RTL.act (fun () -> promise { env.SetRoot "arc-renamed" true })
                 // The answers of the new root carry versions above its snapshot.
                 version.Value <- 300
 
@@ -488,7 +492,7 @@ Vitest.describe (
 
                 do!
                     RTL.act (fun () -> promise {
-                        env.SetRoot "other-arc"
+                        env.SetRoot "other-arc" true
                         store.Reset()
                         store.BeginLoad()
 
@@ -506,6 +510,139 @@ Vitest.describe (
                 do! Promise.sleep 30
 
                 Vitest.expect(isLoaded store.Snapshot "data").toBe false
+            }
+        )
+
+        Vitest.test (
+            "another ARC and a closed one start collapsed while a rename keeps the expanded folders",
+            fun () -> promise {
+                let calls = newCalls ()
+                let ctx = ref None
+                let store = newStore ()
+                store.ApplyDirectoryUpdate(update 2 "data" [ dir "data/deep" ])
+
+                let load (path: string) =
+                    JS.Constructors.Promise.resolve (Ok(update 3 path []))
+
+                let env =
+                    mount store (apiWith calls load) (Probe(fun value -> ctx.Value <- Some value))
+
+                let expanded = set [ "data" ]
+
+                do! RTL.act (fun () -> promise { ctx.Value.Value.setExpandedIds expanded })
+                do! RTL.act (fun () -> promise { env.SetRoot "arc-renamed" true })
+                Vitest.expect(ctx.Value.Value.expandedIds |> Set.toList).toEqual [ "data" ]
+
+                do! RTL.act (fun () -> promise { env.SetRoot "another-arc" false })
+                Vitest.expect(ctx.Value.Value.expandedIds.IsEmpty).toBe true
+
+                do! RTL.act (fun () -> promise { ctx.Value.Value.setExpandedIds expanded })
+                // An empty root stands for a closed ARC, even when the flag says rename.
+                do! RTL.act (fun () -> promise { env.SetRoot "" true })
+                Vitest.expect(ctx.Value.Value.expandedIds.IsEmpty).toBe true
+            }
+        )
+
+        Vitest.test (
+            "an answer that the store holds back during a pull is pending, not failed, and is tried again",
+            fun () -> promise {
+                let calls = newCalls ()
+                let ctx = ref None
+                let store = newStore ()
+                let version = ref 5
+
+                let load (path: string) =
+                    version.Value <- version.Value + 1
+                    JS.Constructors.Promise.resolve (Ok(update version.Value path [ file $"{path}/raw.txt" ]))
+
+                mount store (apiWith calls load) (Probe(fun value -> ctx.Value <- Some value))
+                |> ignore
+
+                // A pull is under way, so the store buffers the answer and the folder stays unloaded.
+                store.BeginLoad()
+                do! RTL.act (fun () -> promise { ctx.Value.Value.setExpandedIds (set [ "data" ]) })
+                do! waitFor (fun () -> calls.Loads.Count = 1)
+                do! Promise.sleep 20
+
+                Vitest.expect(isLoaded store.Snapshot "data").toBe false
+                Vitest.expect(ctx.Value.Value.loadStates.IsEmpty).toBe true
+                Vitest.expect(ctx.Value.Value.expandedIds.Contains "data").toBe true
+
+                version.Value <- 40
+
+                do!
+                    RTL.act (fun () -> promise {
+                        store.ApplySnapshot {|
+                            treeVersion = 30
+                            caseInsensitive = false
+                            entries = [| FileEntry.create ("arc", "", true); dir "data" |]
+                            loadedDirectories = [| "" |]
+                        |}
+                    })
+
+                do! waitFor (fun () -> isLoaded store.Snapshot "data")
+                Vitest.expect(calls.Loads.Count).toBe 2
+            }
+        )
+
+        Vitest.test (
+            "an expanded id with another case than its entry becomes the entry spelling",
+            fun () ->
+                let store = FileTreeStore()
+                store.BeginLoad()
+
+                store.ApplySnapshot {|
+                    treeVersion = 1
+                    caseInsensitive = true
+                    entries = [|
+                        FileEntry.create ("arc", "", true)
+                        dir "Assays"
+                        dir "Assays/a"
+                    |]
+                    loadedDirectories = [| ""; "Assays" |]
+                |}
+
+                let plan = planExpansion store.Snapshot (set [ "assays"; "assays/A" ])
+
+                Vitest.expect(plan.Expanded |> Set.toList).toEqual [ "Assays"; "Assays/a" ]
+                Vitest.expect(plan.ToLoad).toEqual [ "Assays/a" ]
+        )
+
+        Vitest.test (
+            "a focus during a slow revalidation starts no second one and a focus after the gap revalidates again",
+            TestOptions(timeout = 15000),
+            fun () -> promise {
+                let calls = newCalls ()
+                let slow, finishSlow = deferred<Result<unit, exn>> ()
+
+                let api =
+                    apiWith calls (fun _ -> JS.Constructors.Promise.resolve (Error(exn "unused")))
+
+                let slowApi = {
+                    api with
+                        revalidateDirectories =
+                            fun paths ->
+                                calls.Revalidations.Add paths
+
+                                if calls.Revalidations.Count = 1 then
+                                    slow
+                                else
+                                    JS.Constructors.Promise.resolve (Ok())
+                }
+
+                mount (newStore ()) slowApi Html.none |> ignore
+
+                dispatchFocus ()
+                do! waitFor (fun () -> calls.Revalidations.Count = 1)
+
+                dispatchFocus ()
+                do! Promise.sleep 450
+                Vitest.expect(calls.Revalidations.Count).toBe 1
+
+                finishSlow (Ok())
+                do! Promise.sleep 2200
+                dispatchFocus ()
+                do! waitFor (fun () -> calls.Revalidations.Count = 2)
             }
         )
 
@@ -554,6 +691,7 @@ Vitest.describe (
                                 Path = "other.txt"
                                 SizeBytes = 1.0
                                 MtimeMs = 99.0
+                                OwnWrite = false
                             }
                     })
 
@@ -566,6 +704,7 @@ Vitest.describe (
                                 Path = "readme.md"
                                 SizeBytes = 6.0
                                 MtimeMs = 8.0
+                                OwnWrite = false
                             }
                     })
 

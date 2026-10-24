@@ -17,8 +17,8 @@ open Swate.Electron.Shared.IPCTypes.MainToRendererIpc
 type private Model = {
     // Current ARC root shared with renderer contexts.
     ArcRootPath: ArcRootPath
-    // Whether the file system of the ARC root ignores case, as main reported it with the last pathChange.
-    ArcCaseInsensitive: bool
+    // Whether the last pathChange renamed the open ARC folder.
+    ArcRootIsRename: bool
     // Bumped for main-process live updates so stale snapshot replies are ignored.
     ArcRootPathLiveUpdateVersion: int
     // Bumped for each snapshot request so older async replies cannot win.
@@ -29,7 +29,7 @@ type private Model = {
 
     static member Empty = {
         ArcRootPath = None
-        ArcCaseInsensitive = false
+        ArcRootIsRename = false
         ArcRootPathLiveUpdateVersion = 0
         ArcRootPathRequestVersion = 0
         PageState = None
@@ -39,7 +39,7 @@ type private Model = {
 type private Msg =
     | ArcRootPathSnapshotRequested
     | ArcRootPathSnapshotLoaded of requestVersion: int * liveUpdateVersionAtStart: int * Result<ArcRootPath, exn>
-    | ArcRootPathChanged of ArcRootPath * caseInsensitive: bool
+    | ArcRootPathChanged of ArcRootPath * isRename: bool
     | PageStateChanged of PageState option
     | PageStateUpdated of (PageState option -> PageState option)
     | SetLeftSidebarTarget of LeftSidebarPage
@@ -93,11 +93,11 @@ let private update (msg: Msg) (model: Model) : Model * Cmd<Msg> =
         requestVersion = model.ArcRootPathRequestVersion
         && liveUpdateVersionAtStart = model.ArcRootPathLiveUpdateVersion
         ->
-        model |> applyArcRootPath arcRootPath, Cmd.none
+        { model with ArcRootIsRename = false } |> applyArcRootPath arcRootPath, Cmd.none
     | ArcRootPathSnapshotLoaded(requestVersion, _, _) when requestVersion = model.ArcRootPathRequestVersion ->
         model, Cmd.none
     | ArcRootPathSnapshotLoaded _ -> model, Cmd.none
-    | ArcRootPathChanged(appState, caseInsensitive) ->
+    | ArcRootPathChanged(appState, isRename) ->
         let model = {
             model with
                 ArcRootPathLiveUpdateVersion = model.ArcRootPathLiveUpdateVersion + 1
@@ -107,7 +107,7 @@ let private update (msg: Msg) (model: Model) : Model * Cmd<Msg> =
         | Some _ ->
             {
                 model with
-                    ArcCaseInsensitive = caseInsensitive
+                    ArcRootIsRename = isRename
             }
             |> applyArcRootPath appState,
             Cmd.none
@@ -138,7 +138,7 @@ let private subscribe (_model: Model) : Sub<Msg> = [
             Renderer.IpcReceiver.subscribeProxyReceiver<IPathChangeRendererApi> {
                 pathChange =
                     fun change ->
-                        ArcRootPathChanged(change |> Option.map _.path, change |> Option.exists _.caseInsensitive)
+                        ArcRootPathChanged(change |> Option.map _.path, change |> Option.exists _.isRename)
                         |> dispatch
             }
 
@@ -316,7 +316,7 @@ let Main () =
                 Renderer.Context.FileStateContext.FileStateCtxProviderWithSnapshots(
                     {
                         arcRootPath = model.ArcRootPath
-                        caseInsensitive = model.ArcCaseInsensitive
+                        isRename = model.ArcRootIsRename
                         changeVersion = model.ArcRootPathLiveUpdateVersion
                     },
                     (fun () -> Api.ipcArcVaultApi.getFileTreeSnapshot ()),

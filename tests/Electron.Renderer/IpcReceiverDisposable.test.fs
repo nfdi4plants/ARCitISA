@@ -18,12 +18,14 @@ let private clearBridgeProperty name =
 type private PathChange = {|
     path: string
     caseInsensitive: bool
+    isRename: bool
 |}
 
 let private pathChange (path: string) : PathChange option =
     Some {|
         path = path
         caseInsensitive = false
+        isRename = false
     |}
 
 let private subscribePathChange handler =

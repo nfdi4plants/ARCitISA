@@ -343,9 +343,6 @@ type FileExplorerItem =
                             ]
                             prop.onClick onDirectorySelect
 
-                            if canExpandDirectory then
-                                prop.ariaExpanded isExpanded
-
                             prop.children [
                                 Html.i [
                                     prop.className (

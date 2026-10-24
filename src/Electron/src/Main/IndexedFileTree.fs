@@ -177,12 +177,21 @@ type IndexedFileTree(caseInsensitive: bool) =
         childKeys.Clear()
         loadedDirectories.Clear()
 
-/// Merges lists of changed directories into one list without duplicates.
+/// Merges lists of changed directories into one list without duplicates, ordered from the root down: by depth,
+/// then by PathOrder. A parent therefore comes before its children.
 let mergeChangedDirectories (caseInsensitive: bool) (lists: string[] seq) : string[] =
+    let depth (path: string) =
+        (PathHelpers.normalizePath path).Split('/').Length
+
     lists
     |> Seq.concat
     |> Seq.distinctBy (fun path -> PathKey.ofPath caseInsensitive path |> PathKey.value)
     |> Seq.toArray
+    |> Array.sortWith (fun left right ->
+        match compare (depth left) (depth right) with
+        | 0 -> PathOrder.compareNames left right
+        | result -> result
+    )
 
 /// What a changed writer job hands to the publish callback. ChangedDirectories are normalized absolute paths
 /// whose child list changed in the job.
@@ -238,7 +247,7 @@ type FileTreeWriter(caseInsensitive: bool, log: string -> unit, publish: FileTre
                                 this.Publish {
                                     Tree = tree
                                     TreeVersion = treeVersion
-                                    ChangedDirectories = changedDirectories
+                                    ChangedDirectories = mergeChangedDirectories caseInsensitive [ changedDirectories ]
                                 }
 
                         return Ok(result, treeVersion)

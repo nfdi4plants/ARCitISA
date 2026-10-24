@@ -119,10 +119,16 @@ let private removeSubtree (snapshot: FileTreeSnapshot) (key: PathKey) : FileTree
             Entries = cleared.Entries.Remove key
     }
 
-/// Returns the same instance when the update changes nothing.
-let private applyUpdate (snapshot: FileTreeSnapshot) (update: FileTreeDirectoryUpdateDto) : FileTreeSnapshot =
+/// Applies the children of one directory. Returns the same instance when nothing changes. A version older than the
+/// snapshot is ignored, and the same version applies, because one writer version is one state of the tree.
+let private applyDirectory
+    (snapshot: FileTreeSnapshot)
+    (treeVersion: int)
+    (directoryPath: string)
+    (childEntries: FileEntry[])
+    : FileTreeSnapshot =
     let toKey = keyOf snapshot.CaseInsensitive
-    let directory = toKey update.directoryPath
+    let directory = toKey directoryPath
 
     let isKnownDirectory =
         directory = rootKey
@@ -130,10 +136,10 @@ let private applyUpdate (snapshot: FileTreeSnapshot) (update: FileTreeDirectoryU
             |> Map.tryFind directory
             |> Option.exists (fun entry -> entry.isDirectory))
 
-    if update.treeVersion <= snapshot.TreeVersion || not isKnownDirectory then
+    if treeVersion < snapshot.TreeVersion || not isKnownDirectory then
         snapshot
     else
-        let sorted = sortChildren update.children
+        let sorted = sortChildren childEntries
         let newKeys = sorted |> Array.map (fun entry -> toKey entry.path)
         let newKeySet = Set.ofArray newKeys
         let oldKeys = snapshot.Children |> Map.tryFind directory |> Option.defaultValue [||]
@@ -169,10 +175,27 @@ let private applyUpdate (snapshot: FileTreeSnapshot) (update: FileTreeDirectoryU
             {
                 current with
                     Version = snapshot.Version + 1
-                    TreeVersion = update.treeVersion
+                    TreeVersion = treeVersion
                     Children = current.Children.Add(directory, newKeys)
                     Loaded = current.Loaded.Add directory
             }
+
+/// Applies the directories of one update, parents first whatever order they arrive in, so a new directory is
+/// known when its own children come.
+let private applyUpdate (snapshot: FileTreeSnapshot) (update: FileTreeDirectoryUpdateDto) : FileTreeSnapshot =
+    let depth (path: string) =
+        (PathHelpers.normalizePath path).Split('/').Length
+
+    update.directories
+    |> Array.sortBy (fun directory ->
+        if directory.directoryPath = "" then
+            0
+        else
+            depth directory.directoryPath
+    )
+    |> Array.fold
+        (fun current directory -> applyDirectory current update.treeVersion directory.directoryPath directory.children)
+        snapshot
 
 type FileTreeStore() =
     let mutable snapshot = emptySnapshot
@@ -202,7 +225,7 @@ type FileTreeStore() =
 
         let pending =
             buffer
-            |> List.filter (fun update -> update.treeVersion > input.treeVersion)
+            |> List.filter (fun update -> update.treeVersion >= input.treeVersion)
             |> List.sortBy (fun update -> update.treeVersion)
 
         for update in pending do
@@ -234,7 +257,7 @@ type FileTreeStore() =
     member _.ApplyDirectoryUpdate(update: FileTreeDirectoryUpdateDto) =
         if loading then
             buffer <- update :: buffer
-        elif update.treeVersion > lastTreeVersion then
+        elif update.treeVersion >= lastTreeVersion then
             lastTreeVersion <- update.treeVersion
             let next = applyUpdate snapshot update
 

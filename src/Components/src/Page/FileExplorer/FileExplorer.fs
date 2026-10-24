@@ -156,7 +156,8 @@ type FileExplorer =
             ?includeDefaultContextMenuItems: bool,
             ?expandedIds: Set<string>,
             ?onExpandedIdsChange: Set<string> -> unit,
-            ?onRefreshDirectory: FileItem -> unit
+            ?onRefreshDirectory: FileItem -> unit,
+            ?ariaLabel: string
         ) =
         // A row re-renders when the parent supplies new row functions. The identities are taken before the defaults are applied.
         let rowFunctionIdentities = [|
@@ -170,6 +171,7 @@ type FileExplorer =
         |]
 
         let items = defaultArg initialItems []
+        let ariaLabel = defaultArg ariaLabel "File explorer"
 
         let delegateHorizontalScrollToParent =
             defaultArg delegateHorizontalScrollToParent false
@@ -195,6 +197,8 @@ type FileExplorer =
             React.useReducer ((fun model msg -> FileExplorerLogic.update msg model), initialModel)
 
         let containerRef = React.useElementRef ()
+        let focusedId, setFocusedId = React.useState (None: string option)
+        let treeRef = React.useElementRef ()
         let scrollRef = React.useElementRef ()
 
         let isExpansionControlled = expandedIds.IsSome
@@ -386,6 +390,24 @@ type FileExplorer =
             else
                 measured |> Array.map (fun item -> item.index, item.start)
 
+        // A focused row that leaves the virtual window unmounts, and the browser would drop the focus to the body.
+        // The tree element takes the focus instead, so keyboard users stay inside the tree.
+        React.useEffect (
+            (fun () ->
+                match focusedId with
+                | Some id when
+                    not (
+                        virtualRanges
+                        |> Array.exists (fun (index, _) -> index < rows.Length && rows.[index].Id = id)
+                    )
+                    ->
+                    treeRef.current |> Option.iter (fun element -> element.focus ())
+                    setFocusedId None
+                | _ -> ()
+            ),
+            [| box virtualRanges; box focusedId |]
+        )
+
         let spacerTop =
             if virtualRanges.Length = 0 then
                 0
@@ -496,7 +518,35 @@ type FileExplorer =
                     prop.children [
                         Html.div [
                             prop.testId "file-explorer-container"
+                            prop.ref treeRef
                             prop.role "tree"
+                            prop.tabIndex -1
+                            prop.ariaLabel ariaLabel
+
+                            prop.onFocus (fun event ->
+                                let target = event.target :?> Browser.Types.HTMLElement
+
+                                match target.closest ("[data-file-item-id]") with
+                                | Some row ->
+                                    let itemId: string = !!(row :?> Browser.Types.HTMLElement)?dataset?fileItemId
+                                    setFocusedId (Some itemId)
+                                | None -> ()
+                            )
+
+                            prop.onBlur (fun event ->
+                                let next = event.relatedTarget
+
+                                let stillInside =
+                                    not (isNull next)
+                                    && (
+                                        match containerRef.current with
+                                        | Some container -> container.contains (next :?> Browser.Types.Node)
+                                        | None -> false
+                                    )
+
+                                if not stillInside then
+                                    setFocusedId None
+                            )
                             prop.className listClassName
                             prop.style [
                                 style.paddingTop spacerTop

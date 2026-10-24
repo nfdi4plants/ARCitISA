@@ -119,11 +119,17 @@ type FileTreeSnapshotDto = {|
     caseInsensitive: bool
 |}
 
-/// The current children of one loaded directory, stamped with the tree version they belong to.
-type FileTreeDirectoryUpdateDto = {|
-    treeVersion: int
+/// The current children of one loaded directory.
+type FileTreeDirectoryChildrenDto = {|
     directoryPath: string
     children: FileEntry[]
+|}
+
+/// The current children of the loaded directories that one writer job changed, parents first, stamped with the
+/// tree version of the job. The renderer applies all directories in one step.
+type FileTreeDirectoryUpdateDto = {|
+    treeVersion: int
+    directories: FileTreeDirectoryChildrenDto[]
 |}
 
 /// Size and modification time of one file, as stat reports them.
@@ -279,12 +285,14 @@ type IAuthApi = {
 /// One Way Bridge: Main -> Renderer
 module MainToRendererIpc =
 
-    /// The new ARC root and whether its file system ignores case. The renderer pulls the file tree after it.
+    /// The new ARC root and whether its file system ignores case. isRename is true when the same ARC folder got a
+    /// new name, so ARC-relative state such as expanded folders stays valid. The renderer pulls the file tree after it.
     type IPathChangeRendererApi = {
         pathChange:
             {|
                 path: string
                 caseInsensitive: bool
+                isRename: bool
             |} option
                 -> unit
     }

@@ -50,7 +50,7 @@ let MarkdownEditorTarget (content: string) =
                 match writeResult with
                 | Ok() ->
                     setLastSavedContent markdown
-                    expansionCtx.refreshContentStamp ()
+                    expansionCtx.recordOwnWrite ()
                 | Error exn -> setSaveError (Some $"Failed to save markdown file: {exn.Message}")
 
                 setIsSaving false

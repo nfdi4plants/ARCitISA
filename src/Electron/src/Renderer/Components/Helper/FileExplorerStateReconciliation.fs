@@ -154,6 +154,11 @@ let useReconcileSelectedPreview
         |> Option.map (fun state -> $"{state.IsMaterialized}/{state.IsLocallyAvailable}")
         |> Option.defaultValue ""
 
+    // A stamp that the app recorded after its own write is the new baseline and does not reload the preview.
+    let stampIsOwnWrite =
+        contentStamp
+        |> Option.exists (fun stamp -> stamp.OwnWrite && Some stamp.Path = normalizedSelection)
+
     let stampKey =
         contentStamp
         |> Option.filter (fun stamp -> Some stamp.Path = normalizedSelection)
@@ -188,7 +193,7 @@ let useReconcileSelectedPreview
                         )
                         || run.DataMapPresent <> dataMapPresent
                         || run.LfsKey <> selectedLfsKey
-                        || (run.StampKey <> "" && run.StampKey <> stampKey))
+                        || (run.StampKey <> "" && run.StampKey <> stampKey && not stampIsOwnWrite))
 
             if shouldAct then
                 match tryGetDataMapMismatchReload dataMapPresent pageState with

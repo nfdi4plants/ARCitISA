@@ -83,7 +83,7 @@ let private createSnapshot (treeVersion: int) : FileTreeSnapshotDto = {|
 
 let private source (arcRootPath: string option) (changeVersion: int) : FileTreeSource = {
     arcRootPath = arcRootPath
-    caseInsensitive = false
+    isRename = false
     changeVersion = changeVersion
 }
 
@@ -781,8 +781,12 @@ Vitest.describe (
 
                     let withoutFile version : FileTreeDirectoryUpdateDto = {|
                         treeVersion = version
-                        directoryPath = "assays/assay-1"
-                        children = [| dirEntry "assays/assay-1/dataset" |]
+                        directories = [|
+                            {|
+                                directoryPath = "assays/assay-1"
+                                children = [| dirEntry "assays/assay-1/dataset" |]
+                            |}
+                        |]
                     |}
 
                     mounted.Publish(withoutFile 4)
@@ -819,8 +823,12 @@ Vitest.describe (
 
                     mounted.Publish {|
                         treeVersion = 7
-                        directoryPath = "assays/assay-1"
-                        children = [| dirEntry "assays/assay-1/dataset" |]
+                        directories = [|
+                            {|
+                                directoryPath = "assays/assay-1"
+                                children = [| dirEntry "assays/assay-1/dataset" |]
+                            |}
+                        |]
                     |}
 
                     releasePending (Ok(createSnapshot 5))

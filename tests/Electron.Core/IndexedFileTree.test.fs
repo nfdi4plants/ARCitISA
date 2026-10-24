@@ -505,7 +505,7 @@ Vitest.describe (
 
                     let! changed = FileTreeCreator.reconcileFileTreeDirectoryAsync root tree (root + "/assays")
 
-                    Vitest.expect(changed |> Array.sort).toEqual ([| root + "/assays"; root + "/assays/a" |])
+                    Vitest.expect(changed).toEqual ([| root + "/assays"; root + "/assays/a" |])
                     Vitest.expect((tree.TryFind(root + "/assays/a/x.txt")).IsSome).toBe (true)
                     Vitest.expect(tree.IsLoaded(root + "/assays/a")).toBe (true)
                 })
@@ -692,7 +692,7 @@ Vitest.describe (
                     Vitest.expect((tree.TryFind(root + "/assays/A2/dataset")).IsSome).toBe (true)
                     Vitest.expect(tree.IsLoaded(root + "/assays/A2/dataset")).toBe (false)
                     Vitest.expect((tree.TryFind(root + "/assays/A2/dataset/raw.bin")).IsSome).toBe (false)
-                    Vitest.expect(changed |> Array.sort).toEqual ([| root + "/assays"; root + "/assays/A2" |])
+                    Vitest.expect(changed).toEqual ([| root + "/assays"; root + "/assays/A2" |])
                 })
         )
 
@@ -740,7 +740,7 @@ Vitest.describe (
 
                     Vitest.expect(published.Count).toBe 1
                     Vitest.expect(published.[0].TreeVersion).toBe 2
-                    Vitest.expect(published.[0].ChangedDirectories |> Array.sort).toEqual ([| root; root + "/sub" |])
+                    Vitest.expect(published.[0].ChangedDirectories).toEqual ([| root; root + "/sub" |])
                 })
         )
 )
@@ -802,12 +802,13 @@ Vitest.describe (
                         vault.FileTreeWriter.Publish <- publishedUpdates.Add
 
                         let names (update: Swate.Electron.Shared.IPCTypes.FileTreeDirectoryUpdateDto) =
-                            update.children |> Array.map _.path
+                            update.directories
+                            |> Array.collect (fun directory -> directory.children |> Array.map _.path)
 
                         let! first = api.loadDirectory "assays/A1/dataset"
                         let first = first |> Result.defaultWith (fun error -> failwith error.Message)
 
-                        Vitest.expect(first.directoryPath).toBe "assays/A1/dataset"
+                        Vitest.expect(first.directories.[0].directoryPath).toBe "assays/A1/dataset"
 
                         Vitest
                             .expect(names first)
@@ -885,7 +886,7 @@ Vitest.describe (
 
                         // The new root entry "elsewhere" changes the root too.
                         Vitest
-                            .expect(published.[0].ChangedDirectories |> Array.sort)
+                            .expect(published.[0].ChangedDirectories)
                             .toEqual ([| root; root + "/assays/A1/dataset" |])
 
                         Vitest.expect(vault.FileTreeWriter.Tree.IsLoaded(root + "/elsewhere")).toBe false

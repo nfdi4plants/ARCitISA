@@ -325,7 +325,7 @@ type Navbar =
                 promise {
                     try
                         match! Api.ipcArcVaultApi.saveArcFile () with
-                        | Ok _ -> expansionCtx.refreshContentStamp ()
+                        | Ok _ -> expansionCtx.recordOwnWrite ()
                         | Error ex ->
                             errorCtx.enqueue (ErrorModalRequest.create (ex.Message, title = "Error saving ARC"))
                     finally
