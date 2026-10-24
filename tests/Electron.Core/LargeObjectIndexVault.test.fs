@@ -96,6 +96,17 @@ let private startVaultWith (caseInsensitive: bool) (root: string) (fake: FakeLis
 
 let private startVault = startVaultWith false
 
+/// A stat for the content check that records the paths it reads.
+let private countingStat (stats: ResizeArray<string>) (path: string) : JS.Promise<float option> = promise {
+    stats.Add path
+
+    try
+        let! info = statAsync path
+        return Some info.size
+    with _ ->
+        return None
+}
+
 let private withTempDirectory (testBody: string -> JS.Promise<unit>) = promise {
     let! root = TestHelpers.createTempDirectoryAsync "swate-lfs-vault-"
 
@@ -373,6 +384,109 @@ Vitest.describe (
 
                     vault.DisposeLargeObjectIndex()
                 })
+        )
+
+        Vitest.test (
+            "a revalidation finds a pointer file that now has its content and lists again once",
+            fun () ->
+                withTempDirectory (fun root -> promise {
+                    mkdirSync (join [| root; "data" |]) (MkdirOptions(recursive = true))
+                    // The index lists a pointer of 5000 bytes, and git lfs checkout wrote the full content.
+                    TestHelpers.writeText (join [| root; "data"; "big.bin" |]) (String.replicate 5000 "x")
+                    let fake = FakeListing()
+
+                    fake.Entries <- [|
+                        {
+                            entry "data/big.bin" with
+                                SizeBytes = Some 5000.0
+                        }
+                    |]
+
+                    let! vault, _ = startVault root fake
+                    let stats = ResizeArray<string>()
+                    vault.LargeObjectContentStat <- countingStat stats
+
+                    do! vault.RevalidateDirectories [| "data" |]
+                    do! waitUntil "the second listing" (fun () -> fake.Count = 2)
+                    do! settle ()
+
+                    Vitest.expect(fake.Count).toBe 2
+                    Vitest.expect(stats.Count).toBe 1
+                    vault.DisposeLargeObjectIndex()
+                })
+        )
+
+        Vitest.test (
+            "a revalidation with files that match the index causes no listing",
+            fun () ->
+                withTempDirectory (fun root -> promise {
+                    mkdirSync (join [| root; "data" |]) (MkdirOptions(recursive = true))
+
+                    TestHelpers.writeText
+                        (join [| root; "data"; "big.bin" |])
+                        "version https://git-lfs.github.com/spec/v1
+"
+
+                    let fake = FakeListing()
+
+                    fake.Entries <- [|
+                        {
+                            entry "data/big.bin" with
+                                SizeBytes = Some 5000.0
+                        }
+                    |]
+
+                    let! vault, _ = startVault root fake
+                    let stats = ResizeArray<string>()
+                    vault.LargeObjectContentStat <- countingStat stats
+
+                    do! vault.RevalidateDirectories [| "data" |]
+                    do! waitUntil "the content check" (fun () -> stats.Count = 1)
+                    do! settle ()
+
+                    Vitest.expect(fake.Count).toBe 1
+                    vault.DisposeLargeObjectIndex()
+                })
+        )
+
+        Vitest.test (
+            "a revalidation of a directory without large objects stats no file",
+            fun () ->
+                withTempDirectory (fun root -> promise {
+                    mkdirSync (join [| root; "data" |]) (MkdirOptions(recursive = true))
+                    mkdirSync (join [| root; "other" |]) (MkdirOptions(recursive = true))
+                    TestHelpers.writeText (join [| root; "other"; "plain.txt" |]) "plain"
+                    let fake = FakeListing()
+
+                    fake.Entries <- [|
+                        {
+                            entry "data/big.bin" with
+                                SizeBytes = Some 5000.0
+                        }
+                    |]
+
+                    let! vault, _ = startVault root fake
+                    let stats = ResizeArray<string>()
+                    vault.LargeObjectContentStat <- countingStat stats
+
+                    do! vault.RevalidateDirectories [| "other"; "" |]
+                    do! settle ()
+
+                    Vitest.expect(stats.Count).toBe 0
+                    Vitest.expect(fake.Count).toBe 1
+                    vault.DisposeLargeObjectIndex()
+                })
+        )
+
+        Vitest.test (
+            "the content rule compares materialized files with the object size and pointers with the pointer size",
+            fun () ->
+                Vitest.expect(lfsContentMismatch true (Some 5000.0) 5000.0).toBe false
+                Vitest.expect(lfsContentMismatch true (Some 5000.0) 130.0).toBe true
+                Vitest.expect(lfsContentMismatch false (Some 5000.0) 130.0).toBe false
+                Vitest.expect(lfsContentMismatch false (Some 5000.0) 5000.0).toBe true
+                Vitest.expect(lfsContentMismatch false None 4096.0).toBe true
+                Vitest.expect(lfsContentMismatch true None 10.0).toBe false
         )
 
         Vitest.test (

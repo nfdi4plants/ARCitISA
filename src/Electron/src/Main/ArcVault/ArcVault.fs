@@ -62,6 +62,32 @@ let fileWatcherStateToDto (state: FileWatcherState) : FileWatcherStateDto =
         reason = ""
       |}
 
+/// A Git LFS pointer file is a few lines of text, far below this size.
+let private lfsPointerSizeLimit = 1024.0
+
+/// Whether the file on disk disagrees with the indexed state of its large object. An index that lists the object as
+/// materialized expects the file to have the object size, and one that lists a pointer expects a small file.
+/// A checkout or pull made outside the app changes the working files and nothing in the Git metadata that the
+/// focus check reads, so this size comparison is the signal for it.
+let lfsContentMismatch (isMaterialized: bool) (indexedSize: float option) (fileSize: float) : bool =
+    if isMaterialized then
+        indexedSize |> Option.exists (fun expected -> fileSize <> expected)
+    else
+        fileSize > lfsPointerSizeLimit
+        || indexedSize |> Option.exists (fun expected -> fileSize = expected)
+
+/// The size of a file, or None when it is gone or not a file.
+let private statFileSize (path: string) : Fable.Core.JS.Promise<float option> = promise {
+    try
+        let! stats = statAsync path
+        return (if stats.isFile () then Some stats.size else None)
+    with _ ->
+        return None
+}
+
+/// Files are stat-ed in groups of this size.
+let private lfsContentStatConcurrency = 8
+
 type FileWatcherStartOutcome =
     | Ready
     | TimedOut
@@ -332,6 +358,11 @@ type ArcVault(window: BrowserWindow) =
 
     /// Invalidations within this window cause one listing.
     member val internal LargeObjectInvalidationDebounceMs: int = 500 with get, set
+
+    /// Reads the size of a file for the content check of the large object index. Tests replace it to count calls.
+    member val internal LargeObjectContentStat: string -> Fable.Core.JS.Promise<float option> =
+        statFileSize with get, set
+
     member val internal LargeObjectInvalidationTimeout: int option = None with get, set
     /// The Git state at the start of the last listing or at the previous focus check. None when it could not be read.
     member val internal GitStateStamp: GitStateStamp option = None with get, set
@@ -767,7 +798,62 @@ module ArcVaultExtensions =
             && not this.isCloseApproved
             && not (this.window.isDestroyed ())
 
-        /// Queues one writer job over the given ARC-relative directories. Unloaded directories are skipped.
+        /// Compares the large objects of the index that sit directly in the given ARC-relative directories with their
+        /// files. A mismatch means that content changed outside the app, for example by git lfs checkout or pull,
+        /// and invalidates the index once. Only the files of those directories are stat-ed, a few at a time.
+        member private this.CheckLfsContentOf(relativeDirectories: string[]) : Fable.Core.JS.Promise<unit> = promise {
+            match this.path, this.LargeObjectIndex with
+            | Some root, Some index ->
+                match index.State with
+                | Main.LargeObjectIndex.LargeObjectIndexState.Ready ready ->
+                    let caseInsensitive = this.isCaseInsensitive
+
+                    let directoryKeys =
+                        relativeDirectories |> Array.map (PathKey.ofPath caseInsensitive) |> Set.ofArray
+
+                    let parentKeyOf (path: string) =
+                        match path.LastIndexOf '/' with
+                        | -1 -> PathKey.ofPath caseInsensitive ""
+                        | position -> PathKey.ofPath caseInsensitive (path.Substring(0, position))
+
+                    let candidates =
+                        ready.Entries
+                        |> Array.filter (fun entry -> directoryKeys.Contains(parentKeyOf entry.Path))
+
+                    let mutable mismatch = false
+                    let mutable position = 0
+
+                    while not mismatch && position < candidates.Length && this.CanRevalidateFileTree do
+                        let group =
+                            candidates |> Array.skip position |> Array.truncate lfsContentStatConcurrency
+
+                        position <- position + group.Length
+
+                        let! sizes =
+                            group
+                            |> Array.map (fun entry ->
+                                this.LargeObjectContentStat(join [| root; entry.Path |])
+                                |> Promise.map (fun size -> entry, size)
+                            )
+                            |> Promise.all
+
+                        mismatch <-
+                            sizes
+                            |> Array.exists (fun (entry, size) ->
+                                size |> Option.exists (lfsContentMismatch entry.IsMaterialized entry.SizeBytes)
+                            )
+
+                    match this.LargeObjectIndex with
+                    | Some current when mismatch && obj.ReferenceEquals(current, index) ->
+                        swatelogfn this.window.id "Large object index invalidated by the lfs content signal."
+                        this.InvalidateLargeObjectIndex()
+                    | _ -> ()
+                | _ -> ()
+            | _ -> ()
+        }
+
+        /// Queues one writer job over the given ARC-relative directories. Unloaded directories are skipped. After
+        /// the job, a content check of the large objects in those directories runs without holding the writer.
         member this.RevalidateDirectories(relativeDirectories: string[]) : Fable.Core.JS.Promise<unit> =
             match this.path with
             | Some arcPath when this.CanRevalidateFileTree ->
@@ -777,19 +863,28 @@ module ArcVaultExtensions =
                         join [| arcPath; relative |] |> PathHelpers.normalizePathKeepingWhitespace
                     )
 
-                this.FileTreeWriter.Enqueue(fun tree ->
-                    reconcileLoadedDirectoriesAsync
-                        arcPath
-                        tree
-                        (fun directory error ->
-                            swatelogfn
-                                this.window.id
-                                "Unable to revalidate file tree directory '%s': %s"
-                                directory
-                                error.Message
+                promise {
+                    do!
+                        this.FileTreeWriter.Enqueue(fun tree ->
+                            reconcileLoadedDirectoriesAsync
+                                arcPath
+                                tree
+                                (fun directory error ->
+                                    swatelogfn
+                                        this.window.id
+                                        "Unable to revalidate file tree directory '%s': %s"
+                                        directory
+                                        error.Message
+                                )
+                                absolute
                         )
-                        absolute
-                )
+
+                    this.CheckLfsContentOf relativeDirectories
+                    |> Promise.catch (fun error ->
+                        swatelogfn this.window.id "The lfs content check failed: %s" error.Message
+                    )
+                    |> Promise.start
+                }
             | _ -> promise { return () }
 
         /// Reconciles one ARC-relative directory, loads it when it was not loaded and answers with its current
