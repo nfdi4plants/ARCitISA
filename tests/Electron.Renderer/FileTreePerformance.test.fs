@@ -4,6 +4,7 @@ open Fable.Core
 open Renderer.Components.LeftSidebar.FileExplorer.FileTreeMaterialization
 open Renderer.Context.FileTreeStore
 open Swate.Electron.Shared.FileIOTypes
+open Swate.Electron.Shared.IPCTypes
 open Vitest
 
 /// Timings of a folder with 7,202 files. They run when SWATE_PERF_TESTS is set and print their numbers.
@@ -31,7 +32,10 @@ let private rootSnapshot: Swate.Electron.Shared.IPCTypes.FileTreeSnapshotDto = {
         FileEntry.create ("README.md", "README.md", false)
     |]
     loadedDirectories = [| "" |]
-    fileWatcher = {| state = "running"; reason = "" |}
+    fileWatcher = {|
+        state = FileWatcherStatus.Running
+        reason = ""
+    |}
 |}
 
 let private timed (label: string) (action: unit -> unit) =

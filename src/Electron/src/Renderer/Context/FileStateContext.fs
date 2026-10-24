@@ -42,7 +42,10 @@ type FileStateController = {
     cancelFileImport: unit -> JS.Promise<Result<unit, exn>>
 }
 
-let runningFileWatcher: FileWatcherStateDto = {| state = "running"; reason = "" |}
+let runningFileWatcher: FileWatcherStateDto = {|
+    state = FileWatcherStatus.Running
+    reason = ""
+|}
 
 let FileStateCtx =
     React.createContext<FileStateController> (

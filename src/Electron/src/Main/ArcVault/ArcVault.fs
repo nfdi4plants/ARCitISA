@@ -48,16 +48,19 @@ type FileWatcherState =
 let fileWatcherStateToDto (state: FileWatcherState) : FileWatcherStateDto =
     match state with
     | FileWatcherState.Degraded reason -> {|
-        state = "degraded"
+        state = FileWatcherStatus.Degraded
         reason = reason
       |}
     | FileWatcherState.Unavailable reason -> {|
-        state = "unavailable"
+        state = FileWatcherStatus.Unavailable
         reason = reason
       |}
     | FileWatcherState.Stopped
     | FileWatcherState.Starting
-    | FileWatcherState.Running -> {| state = "running"; reason = "" |}
+    | FileWatcherState.Running -> {|
+        state = FileWatcherStatus.Running
+        reason = ""
+      |}
 
 type FileWatcherStartOutcome =
     | Ready

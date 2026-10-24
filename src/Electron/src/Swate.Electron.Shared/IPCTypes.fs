@@ -110,9 +110,18 @@ type LargeObjectIndexSnapshot = {|
     entries: ObjectStateDto[]
 |}
 
-/// Whether the structural file watcher works. state is running, degraded or unavailable. reason is the error text of
-/// a degraded or unavailable watcher and empty otherwise.
-type FileWatcherStateDto = {| state: string; reason: string |}
+[<RequireQualifiedAccess; StringEnum>]
+type FileWatcherStatus =
+    | Running
+    | Degraded
+    | Unavailable
+
+/// Whether the structural file watcher works. reason is the error text of a degraded or unavailable watcher and
+/// empty otherwise.
+type FileWatcherStateDto = {|
+    state: FileWatcherStatus
+    reason: string
+|}
 
 /// Structural snapshot of the open ARC's file tree. Paths are ARC-relative and the root is "". loadedDirectories
 /// lists the directories whose children are in entries. treeVersion orders snapshots and updates of one vault.
