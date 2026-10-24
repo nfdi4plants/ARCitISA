@@ -647,6 +647,96 @@ Vitest.describe (
         )
 
         Vitest.test (
+            "a selection made during a pull is revealed after the snapshot",
+            fun () -> promise {
+                let calls = newCalls ()
+                let ctx = ref None
+                let store = newStore ()
+                let version = ref 5
+
+                let load (path: string) =
+                    version.Value <- version.Value + 1
+
+                    match path with
+                    | "notes" -> JS.Constructors.Promise.resolve (Ok(update version.Value "notes" [ dir "notes/2026" ]))
+                    | _ ->
+                        JS.Constructors.Promise.resolve (
+                            Ok(update version.Value "notes/2026" [ file "notes/2026/n.md" ])
+                        )
+
+                let env =
+                    mount store (apiWith calls load) (Probe(fun value -> ctx.Value <- Some value))
+
+                let selected = "notes/2026/n.md"
+
+                // A pull is under way, so the store holds back the answer for the first folder.
+                store.BeginLoad()
+                do! RTL.act (fun () -> promise { env.SetSelection(ArcSelection.forTreePath (Some selected)) })
+                do! waitFor (fun () -> calls.Loads.Count = 1)
+                do! Promise.sleep 20
+                Vitest.expect(isLoaded store.Snapshot "notes").toBe false
+
+                version.Value <- 40
+
+                do!
+                    RTL.act (fun () -> promise {
+                        store.ApplySnapshot {|
+                            treeVersion = 30
+                            caseInsensitive = false
+                            entries = [| FileEntry.create ("arc", "", true); dir "notes" |]
+                            loadedDirectories = [| "" |]
+                        |}
+                    })
+
+                do! waitFor (fun () -> ctx.Value.Value.expandedIds.Contains "notes/2026")
+                Vitest.expect(ctx.Value.Value.expandedIds.Contains "notes").toBe true
+
+                match knows store.Snapshot selected with
+                | Present _ -> ()
+                | other -> failwith $"Expected the selected file to be present, got {other}."
+            }
+        )
+
+        Vitest.test (
+            "a stat that lands while an own-write stat is under way does not replace it",
+            fun () -> promise {
+                let calls = newCalls ()
+                let ownStat, finishOwnStat = deferred<Result<FileStatDto option, exn>> ()
+                let statCalls = ref 0
+                let ctx = ref None
+
+                let baseApi =
+                    apiWith calls (fun _ -> JS.Constructors.Promise.resolve (Error(exn "unused")))
+
+                let api = {
+                    baseApi with
+                        statFile =
+                            fun _ ->
+                                statCalls.Value <- statCalls.Value + 1
+
+                                match statCalls.Value with
+                                | 1 -> JS.Constructors.Promise.resolve (Ok(Some {| sizeBytes = 5.0; mtimeMs = 7.0 |}))
+                                | 2 -> ownStat
+                                | _ -> JS.Constructors.Promise.resolve (Ok(Some {| sizeBytes = 5.0; mtimeMs = 9.0 |}))
+                }
+
+                let env = mount (newStore ()) api (Probe(fun value -> ctx.Value <- Some value))
+                do! RTL.act (fun () -> promise { env.SetSelection(ArcSelection.forTreePath (Some "readme.md")) })
+                do! waitFor (fun () -> ctx.Value.Value.contentStamp.IsSome)
+
+                do! RTL.act (fun () -> promise { ctx.Value.Value.recordOwnWrite () })
+                // A focus stat resolves with another time while the own-write stat is still under way.
+                do! RTL.act (fun () -> promise { ctx.Value.Value.refreshContentStamp () })
+                do! Promise.sleep 30
+                Vitest.expect(ctx.Value.Value.contentStamp.Value.MtimeMs).toBe 7.0
+
+                do! RTL.act (fun () -> promise { finishOwnStat (Ok(Some {| sizeBytes = 6.0; mtimeMs = 11.0 |})) })
+                do! waitFor (fun () -> ctx.Value.Value.contentStamp.Value.MtimeMs = 11.0)
+                Vitest.expect(ctx.Value.Value.contentStamp.Value.OwnWrite).toBe true
+            }
+        )
+
+        Vitest.test (
             "Refresh folder loads the folder again through loadDirectory",
             fun () -> promise {
                 let calls = newCalls ()

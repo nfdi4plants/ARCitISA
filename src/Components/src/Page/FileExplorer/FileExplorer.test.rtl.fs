@@ -191,4 +191,40 @@ Vitest.describe (
                 Vitest.expect((RTL.screen.getAllByRole "treeitem").Count <= 13).toBe true
             }
         )
+
+        Vitest.test (
+            "moves the focus to the tree when a focusout without a target arrives before the row is removed",
+            fun () -> promise {
+                let files (names: string list) = names |> List.map file
+
+                let initial =
+                    files [
+                        for index in 0..29 -> "row-" + (string index).PadLeft(2, '0')
+                    ]
+
+                let setItems = ref (fun (_: FileItem list) -> ())
+
+                RTL.render (ItemsHarness(initial, (fun setter -> setItems.Value <- setter)))
+                |> ignore
+
+                let row = treeItem "row-02"
+                RTL.fireEvent.custom ("focusIn", row, {| |})
+                // Chromium may report the removal of the focused row as a focusout without a related target.
+                RTL.fireEvent.custom ("focusOut", row, {| relatedTarget = null |})
+
+                do!
+                    RTL.act (fun () -> promise {
+                        setItems.Value(
+                            files [
+                                for index in 0..39 -> "new-" + (string index).PadLeft(2, '0')
+                            ]
+                            @ initial
+                        )
+                    })
+
+                let tree = RTL.screen.getByRole ("tree", ByRoleOptions(name = Text "File explorer"))
+                Vitest.expect(Browser.Dom.document.activeElement = (tree :> Browser.Types.Element)).toBe true
+            }
+        )
+
 )

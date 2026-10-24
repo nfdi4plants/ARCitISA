@@ -134,6 +134,11 @@ let FileTreeExpansionCtxProvider (api: FileTreeExpansionApi, children: ReactElem
     // store change tries them again.
     let pending = React.useRef (Set.empty: Set<PathKey>)
     let isRevalidating = React.useRef false
+    // The selected path whose folders are not all loaded and expanded yet. A store change tries it again.
+    let revealTarget = React.useRef (None: string option)
+    let isRevealing = React.useRef false
+    // Paths with an own-write stat under way. A stat that lands meanwhile may show the file before the write.
+    let ownWriteInFlight = React.useRef (Set.empty: Set<string>)
     let autoLoading = React.useRef false
     let recentLoads = React.useRef ([]: string list)
     let lastRevalidatedAt = React.useRef -1.0e12
@@ -226,8 +231,76 @@ let FileTreeExpansionCtxProvider (api: FileTreeExpansionApi, children: ReactElem
                 |> Promise.start
             | None -> ()
 
+    /// Loads the folders above the reveal target one after another and expands them. A folder whose answer is held
+    /// back (a pull is running) leaves the target in place, and the next store change runs this again.
+    let reveal () =
+        match revealTarget.current with
+        | Some path when not isRevealing.current ->
+            isRevealing.current <- true
+
+            promise {
+                try
+                    let ancestors = ancestorPaths path
+
+                    for ancestor in ancestors do
+                        match knows store.Snapshot ancestor with
+                        | Present entry when
+                            entry.isDirectory
+                            && not (isLoaded store.Snapshot ancestor)
+                            && not (pending.current.Contains(keyOf ancestor))
+                            ->
+                            do! loadDirectory ancestor false
+                        | _ -> ()
+
+                    let states =
+                        ancestors |> List.map (fun ancestor -> ancestor, knows store.Snapshot ancestor)
+
+                    let present =
+                        states
+                        |> List.choose (fun (_, state) ->
+                            match state with
+                            | Present entry when entry.isDirectory -> Some entry.path
+                            | _ -> None
+                        )
+                        |> Set.ofList
+
+                    if isMounted.current && not present.IsEmpty && selectionRef.current = Some path then
+                        setExpandedIds (fun current ->
+                            if Set.isSubset present current then
+                                current
+                            else
+                                Set.union current present
+                        )
+
+                    // Done when every folder above the path is loaded, or when the path cannot be reached.
+                    let reachable =
+                        states
+                        |> List.forall (fun (ancestor, state) ->
+                            state <> Absent && not (failed.current.Contains(keyOf ancestor))
+                        )
+
+                    let complete =
+                        states
+                        |> List.forall (fun (_, state) ->
+                            match state with
+                            | Present entry -> entry.isDirectory && isLoaded store.Snapshot entry.path
+                            | _ -> false
+                        )
+
+                    if complete || not reachable then
+                        if revealTarget.current = Some path then
+                            revealTarget.current <- None
+                finally
+                    isRevealing.current <- false
+            }
+            |> Promise.catch ignore
+            |> Promise.start
+        | _ -> ()
+
     let evaluateRef = React.useRef evaluate
     evaluateRef.current <- evaluate
+    let revealRef = React.useRef reveal
+    revealRef.current <- reveal
 
     React.useEffect (
         (fun () ->
@@ -237,6 +310,7 @@ let FileTreeExpansionCtxProvider (api: FileTreeExpansionApi, children: ReactElem
                 store.Subscribe(fun () ->
                     pending.current <- Set.empty
                     evaluateRef.current ()
+                    revealRef.current ()
                 )
 
             { new System.IDisposable with
@@ -279,19 +353,27 @@ let FileTreeExpansionCtxProvider (api: FileTreeExpansionApi, children: ReactElem
                 match selectionRef.current with
                 | None -> setContentStamp None
                 | Some path ->
+                    if ownWrite then
+                        ownWriteInFlight.current <- ownWriteInFlight.current.Add path
+
                     promise {
-                        match! apiRef.current.statFile path with
-                        | Ok(Some stat) when isMounted.current && selectionRef.current = Some path ->
-                            setContentStamp (
-                                Some {
-                                    Path = path
-                                    SizeBytes = stat.sizeBytes
-                                    MtimeMs = stat.mtimeMs
-                                    OwnWrite = ownWrite
-                                }
-                            )
-                        | Ok None when isMounted.current -> setContentStamp None
-                        | _ -> ()
+                        try
+                            match! apiRef.current.statFile path with
+                            | Ok _ when not ownWrite && ownWriteInFlight.current.Contains path -> ()
+                            | Ok(Some stat) when isMounted.current && selectionRef.current = Some path ->
+                                setContentStamp (
+                                    Some {
+                                        Path = path
+                                        SizeBytes = stat.sizeBytes
+                                        MtimeMs = stat.mtimeMs
+                                        OwnWrite = ownWrite
+                                    }
+                                )
+                            | Ok None when isMounted.current -> setContentStamp None
+                            | _ -> ()
+                        finally
+                            if ownWrite then
+                                ownWriteInFlight.current <- ownWriteInFlight.current.Remove path
                     }
                     |> Promise.catch ignore
                     |> Promise.start
@@ -311,7 +393,10 @@ let FileTreeExpansionCtxProvider (api: FileTreeExpansionApi, children: ReactElem
     React.useEffect (
         (fun () ->
             fileCtx.subscribeFileContentChanged (fun stamp ->
-                if selectionRef.current = Some(PathHelpers.normalizePath stamp.Path) then
+                if
+                    selectionRef.current = Some(PathHelpers.normalizePath stamp.Path)
+                    && not (ownWriteInFlight.current.Contains(PathHelpers.normalizePath stamp.Path))
+                then
                     setContentStamp (Some stamp)
             )
             |> fun unsubscribe ->
@@ -344,37 +429,8 @@ let FileTreeExpansionCtxProvider (api: FileTreeExpansionApi, children: ReactElem
     // expands them.
     React.useEffect (
         (fun () ->
-            match selectionPath with
-            | None -> ()
-            | Some path ->
-                promise {
-                    let ancestors = ancestorPaths path
-
-                    for ancestor in ancestors do
-                        match knows store.Snapshot ancestor with
-                        | Present entry when entry.isDirectory && not (isLoaded store.Snapshot ancestor) ->
-                            do! loadDirectory ancestor false
-                        | _ -> ()
-
-                    let present =
-                        ancestors
-                        |> List.choose (fun ancestor ->
-                            match knows store.Snapshot ancestor with
-                            | Present entry when entry.isDirectory -> Some entry.path
-                            | _ -> None
-                        )
-                        |> Set.ofList
-
-                    if isMounted.current && not present.IsEmpty && selectionRef.current = Some path then
-                        setExpandedIds (fun current ->
-                            if Set.isSubset present current then
-                                current
-                            else
-                                Set.union current present
-                        )
-                }
-                |> Promise.catch ignore
-                |> Promise.start
+            revealTarget.current <- selectionPath
+            revealRef.current ()
         ),
         [| box selectionPath |]
     )

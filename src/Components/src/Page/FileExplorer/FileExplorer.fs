@@ -9,6 +9,9 @@ open Feliz
 
 module private FileExplorerHelper =
 
+    [<Emit("$0.focus({ preventScroll: true })")>]
+    let focusWithoutScroll (element: Browser.Types.HTMLElement) : unit = jsNative
+
     let tryGetEventTargetElement (e: Browser.Types.Event) : Browser.Types.Element option =
         let targetObj: obj = box e.target
 
@@ -197,7 +200,9 @@ type FileExplorer =
             React.useReducer ((fun model msg -> FileExplorerLogic.update msg model), initialModel)
 
         let containerRef = React.useElementRef ()
-        let focusedId, setFocusedId = React.useState (None: string option)
+        // The last row that had keyboard focus. A blur without a target is no reason to forget it, because the
+        // browser may report the removal of the focused row that way before the row is gone.
+        let focusedRowId = React.useRef (None: string option)
         let treeRef = React.useElementRef ()
         let scrollRef = React.useElementRef ()
 
@@ -390,22 +395,27 @@ type FileExplorer =
             else
                 measured |> Array.map (fun item -> item.index, item.start)
 
-        // A focused row that leaves the virtual window unmounts, and the browser would drop the focus to the body.
-        // The tree element takes the focus instead, so keyboard users stay inside the tree.
+        // A focused row that leaves the virtual window unmounts, and the browser drops the focus to the body.
+        // The tree element takes the focus instead, so keyboard users stay inside the tree. A focus that already
+        // moved to another element stays there.
         React.useEffect (
             (fun () ->
-                match focusedId with
+                match focusedRowId.current with
                 | Some id when
                     not (
                         virtualRanges
                         |> Array.exists (fun (index, _) -> index < rows.Length && rows.[index].Id = id)
                     )
                     ->
-                    treeRef.current |> Option.iter (fun element -> element.focus ())
-                    setFocusedId None
+                    let active = Browser.Dom.document.activeElement
+
+                    if isNull active || active = (Browser.Dom.document.body :> Browser.Types.Element) then
+                        treeRef.current |> Option.iter FileExplorerHelper.focusWithoutScroll
+
+                    focusedRowId.current <- None
                 | _ -> ()
             ),
-            [| box virtualRanges; box focusedId |]
+            [| box virtualRanges |]
         )
 
         let spacerTop =
@@ -529,23 +539,25 @@ type FileExplorer =
                                 match target.closest ("[data-file-item-id]") with
                                 | Some row ->
                                     let itemId: string = !!(row :?> Browser.Types.HTMLElement)?dataset?fileItemId
-                                    setFocusedId (Some itemId)
+                                    focusedRowId.current <- Some itemId
                                 | None -> ()
                             )
 
                             prop.onBlur (fun event ->
                                 let next = event.relatedTarget
 
-                                let stillInside =
+                                // Focus that moves to an element outside the tree ends the tracking. A blur without
+                                // a target (click on empty space, removal of the row) keeps the last row.
+                                let movedOutside =
                                     not (isNull next)
                                     && (
                                         match containerRef.current with
-                                        | Some container -> container.contains (next :?> Browser.Types.Node)
-                                        | None -> false
+                                        | Some container -> not (container.contains (next :?> Browser.Types.Node))
+                                        | None -> true
                                     )
 
-                                if not stillInside then
-                                    setFocusedId None
+                                if movedOutside then
+                                    focusedRowId.current <- None
                             )
                             prop.className listClassName
                             prop.style [
