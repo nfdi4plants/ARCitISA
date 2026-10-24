@@ -690,14 +690,14 @@ export const DirectoryArrowsReflectLoadability: StoryObj<typeof LazyLoadDirector
     const canvas = within(canvasElement);
 
     // A folder row reports aria-expanded only when it can expand.
-    const emptyFolder = await canvas.findByRole("button", { name: "Empty Folder" });
+    const emptyFolder = await canvas.findByRole("treeitem", { name: "Empty Folder" });
     await expect(emptyFolder).not.toHaveAttribute("aria-expanded");
 
-    const lazyFolder = await canvas.findByRole("button", { name: "Lazy Folder" });
+    const lazyFolder = await canvas.findByRole("treeitem", { name: "Lazy Folder" });
     await expect(lazyFolder).toHaveAttribute("aria-expanded", "false");
     await expect(canvas.queryByText("Lazy Child.txt")).toBeNull();
 
-    await userEvent.click(lazyFolder);
+    await userEvent.click(within(lazyFolder).getByRole("button", { name: "Lazy Folder" }));
 
     await waitFor(() => {
       expect(canvas.getByText("Lazy Child.txt")).toBeInTheDocument();
@@ -715,12 +715,12 @@ export const SelectingLazyDirectoryMaterializesChildren: StoryObj<typeof LazyLoa
     await userEvent.click(await canvas.findByText("Lazy Folder"));
 
     await waitFor(() => expect(canvas.getByText("Lazy Child.txt")).toBeInTheDocument());
-    await expect(canvas.getByRole("button", { name: "Lazy Folder" })).toHaveAttribute("aria-expanded", "true");
+    await expect(canvas.getByRole("treeitem", { name: "Lazy Folder" })).toHaveAttribute("aria-expanded", "true");
 
     await userEvent.click(await canvas.findByText("Lazy Folder"));
 
     await waitFor(() => expect(canvas.queryByText("Lazy Child.txt")).toBeNull());
-    await expect(canvas.getByRole("button", { name: "Lazy Folder" })).toHaveAttribute("aria-expanded", "false");
+    await expect(canvas.getByRole("treeitem", { name: "Lazy Folder" })).toHaveAttribute("aria-expanded", "false");
   },
 };
 
@@ -752,7 +752,7 @@ export const InitialExpandedHintIsApplied: StoryObj<typeof InitiallyExpandedFile
     const canvas = within(canvasElement);
 
     await expect(await canvas.findByText("Initially Visible.txt")).toBeInTheDocument();
-    await expect(canvas.getByRole("button", { name: "Initially Expanded" })).toHaveAttribute("aria-expanded", "true");
+    await expect(canvas.getByRole("treeitem", { name: "Initially Expanded" })).toHaveAttribute("aria-expanded", "true");
   },
 };
 
@@ -767,10 +767,11 @@ export const SelectedFileHighlightPersistsAfterParentReopen: StoryObj<typeof Sel
     await expect(selectedFileLabel).toHaveClass(/swt:text-primary/);
 
     // The parent row is highlighted as part of the selected path.
-    const parentFolder = await canvas.findByRole("button", { name: "Selected Parent" });
+    const parentFolder = await canvas.findByRole("treeitem", { name: "Selected Parent" });
     await expect(parentFolder).toHaveAttribute("aria-expanded", "true");
-    await expect(parentFolder.closest("[data-file-item-id]")).toHaveClass(/swt:bg-base-300/);
-    await userEvent.click(parentFolder);
+    const parentButton = within(parentFolder).getByRole("button", { name: "Selected Parent" });
+    await expect(parentButton.closest("[data-file-item-id]")).toHaveClass(/swt:bg-base-300/);
+    await userEvent.click(parentButton);
 
     await waitFor(() => {
       expect(canvas.queryByText("selected-report.txt")).toBeNull();
@@ -825,7 +826,7 @@ export const CollapsedDirectoryStaysClosedAfterLazySiblingLoads: StoryObj<typeof
     await waitFor(() => expect(canvas.getByText("Lazy Child.txt")).toBeInTheDocument());
 
     await expect(canvas.queryByText("selected-report.txt")).toBeNull();
-    await expect(canvas.getByRole("button", { name: "Selected Parent" })).toHaveAttribute("aria-expanded", "false");
+    await expect(canvas.getByRole("treeitem", { name: "Selected Parent" })).toHaveAttribute("aria-expanded", "false");
   },
 };
 

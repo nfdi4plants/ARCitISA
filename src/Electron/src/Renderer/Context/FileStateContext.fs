@@ -21,6 +21,8 @@ type FileContentStamp = {
     Path: string
     SizeBytes: float
     MtimeMs: float
+    /// True for a stamp that the app recorded after its own write. It is the new baseline, not an outside change.
+    OwnWrite: bool
 }
 
 type FileStateController = {
@@ -28,8 +30,8 @@ type FileStateController = {
     fileTreeStore: FileTreeStore
     /// Calls the listener for every fileContentChanged push. Returns the function that removes the listener.
     subscribeFileContentChanged: (FileContentStamp -> unit) -> (unit -> unit)
-    fileTreeIsLoading: bool
-    refreshFileTree: unit -> unit
+    /// True when the last pathChange renamed the open ARC folder, so ARC-relative state stays valid.
+    rootChangeIsRename: bool
     setSelection: ArcSelection -> unit
     updateSelection: (ArcSelection -> ArcSelection) -> unit
     activeFileImport: ActiveFileImportState option
@@ -44,8 +46,7 @@ let FileStateCtx =
             state = FileState.init ()
             fileTreeStore = FileTreeStore()
             subscribeFileContentChanged = fun _ -> ignore
-            fileTreeIsLoading = true
-            refreshFileTree = ignore
+            rootChangeIsRename = false
             setSelection = ignore
             updateSelection = ignore
             activeFileImport = None
@@ -65,7 +66,7 @@ type ActiveFileImportLoader = unit -> JS.Promise<Result<ActiveFileImportState op
 /// path stays the same, for example when the same ARC is opened again.
 type FileTreeSource = {
     arcRootPath: string option
-    caseInsensitive: bool
+    isRename: bool
     changeVersion: int
 }
 
@@ -88,7 +89,6 @@ let FileStateCtxProviderWithSnapshots
     let isFilePickerOpenRef = React.useRef false
     let isCancellingFileImport, setIsCancellingFileImport = React.useState false
     let store, _ = React.useState (fun () -> FileTreeStore())
-    let fileTreeIsLoading, setFileTreeIsLoading = React.useState true
     // Counts the pulls. A result that belongs to an older pull or an older root is dropped.
     let requestCounter = React.useRef 0
     let previousRootRef = React.useRef (None: string option)
@@ -110,6 +110,7 @@ let FileStateCtxProviderWithSnapshots
                                 Path = change.path
                                 SizeBytes = change.sizeBytes
                                 MtimeMs = change.mtimeMs
+                                OwnWrite = false
                             }
 
                             for listener in contentListeners.current.ToArray() do
@@ -132,17 +133,14 @@ let FileStateCtxProviderWithSnapshots
 
                 if not hasRoot then
                     store.Reset()
-                    setFileTreeIsLoading false
                 else
                     store.BeginLoad()
-                    setFileTreeIsLoading true
 
                     let isCurrent () = requestCounter.current = requestId
 
                     let fail (message: string) =
                         if isCurrent () then
                             store.FailLoad()
-                            setFileTreeIsLoading false
                             console.error ("Failed to load file tree snapshot.", message)
 
                     promise {
@@ -150,7 +148,6 @@ let FileStateCtxProviderWithSnapshots
                         | Ok snapshot ->
                             if isCurrent () then
                                 store.ApplySnapshot snapshot
-                                setFileTreeIsLoading false
                         | Error error -> fail error.Message
                     }
                     |> Promise.catch (fun error -> fail error.Message)
@@ -265,8 +262,7 @@ let FileStateCtxProviderWithSnapshots
                 state = fileState
                 fileTreeStore = store
                 subscribeFileContentChanged = subscribeFileContentChanged
-                fileTreeIsLoading = fileTreeIsLoading
-                refreshFileTree = fun () -> pull source.arcRootPath.IsSome
+                rootChangeIsRename = source.isRename
                 setSelection = fun selection -> setSelectionState (fun _ -> selection |> ArcSelection.normalize)
                 updateSelection =
                     fun update ->
@@ -279,7 +275,7 @@ let FileStateCtxProviderWithSnapshots
             [|
                 box fileState
                 box store
-                box fileTreeIsLoading
+                box source.isRename
                 box source.arcRootPath
                 box activeFileImport.state
                 box isCancellingFileImport

@@ -1,6 +1,7 @@
 module internal Swate.Components.Page.FileExplorer.Tests
 
 open Fable.Core
+open Feliz
 open Fable.Core.JsInterop
 open Vitest
 open Swate.Components.Page.FileExplorer
@@ -27,6 +28,12 @@ let private treeItem (id: string) =
     RTL.screen.getByRole ("treeitem", ByRoleOptions(name = Text id))
 
 Vitest.afterEach (fun () -> RTL.cleanup ())
+
+[<ReactComponent>]
+let private ItemsHarness (initial: FileItem list, expose: (FileItem list -> unit) -> unit) =
+    let items, setItems = React.useState initial
+    expose setItems
+    FileExplorer.FileExplorer(initialItems = items)
 
 Vitest.describe (
     "FileExplorer",
@@ -118,5 +125,70 @@ Vitest.describe (
 
                 RTL.fireEvent.click (RTL.screen.getByText "Refresh folder")
                 Vitest.expect(refreshed.ToArray()).toEqual [| "Empty Folder" |]
+        )
+
+        Vitest.test (
+            "puts aria-expanded on the treeitem only, not on the button inside it",
+            fun () ->
+                RTL.render (FileExplorer.FileExplorer(initialItems = tree, expandedIds = set [ "src" ]))
+                |> ignore
+
+                let marked = Browser.Dom.document.querySelectorAll "[aria-expanded]"
+                Vitest.expect(marked.length > 0).toBe true
+
+                for index in 0 .. marked.length - 1 do
+                    Vitest.expect((marked.[index] :?> Browser.Types.HTMLElement).getAttribute "role").toBe "treeitem"
+        )
+
+        Vitest.test (
+            "labels the tree with a default and a custom name",
+            fun () ->
+                RTL.render (FileExplorer.FileExplorer(initialItems = tree)) |> ignore
+
+                RTL.screen.getByRole ("tree", ByRoleOptions(name = Text "File explorer"))
+                |> ignore
+
+                RTL.cleanup ()
+
+                RTL.render (FileExplorer.FileExplorer(initialItems = tree, ariaLabel = "ARC files"))
+                |> ignore
+
+                RTL.screen.getByRole ("tree", ByRoleOptions(name = Text "ARC files")) |> ignore
+        )
+
+        Vitest.test (
+            "moves the focus to the tree when the focused row leaves the rendered window",
+            fun () -> promise {
+                let files (names: string list) = names |> List.map file
+
+                let initial =
+                    files [
+                        for index in 0..29 -> "row-" + (string index).PadLeft(2, '0')
+                    ]
+
+                let setItems = ref (fun (_: FileItem list) -> ())
+
+                RTL.render (ItemsHarness(initial, (fun setter -> setItems.Value <- setter)))
+                |> ignore
+
+                RTL.fireEvent.custom ("focusIn", treeItem "row-02", {| |})
+
+                // 40 rows come in above, so the focused row moves far below the first rendered rows.
+                do!
+                    RTL.act (fun () -> promise {
+                        setItems.Value(
+                            files [
+                                for index in 0..39 -> "new-" + (string index).PadLeft(2, '0')
+                            ]
+                            @ initial
+                        )
+                    })
+
+                Vitest.expect((RTL.screen.queryByText "row-02").IsNone).toBe true
+
+                let tree = RTL.screen.getByRole ("tree", ByRoleOptions(name = Text "File explorer"))
+                Vitest.expect(Browser.Dom.document.activeElement = (tree :> Browser.Types.Element)).toBe true
+                Vitest.expect((RTL.screen.getAllByRole "treeitem").Count <= 13).toBe true
+            }
         )
 )

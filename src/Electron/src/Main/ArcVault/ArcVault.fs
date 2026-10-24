@@ -216,7 +216,7 @@ type ArcVault(window: BrowserWindow) =
         | VersionControlService.Abstractions.CaseSensitive -> false
 
     /// Every change of the main-process file tree runs through this writer. After a job with changes it sends
-    /// one fileTreeDirectoryUpdate per changed directory, all stamped with the version of the job.
+    /// one fileTreeDirectoryUpdate that lists every changed directory, parents first, with the version of the job.
     let fileTreeWriter =
         FileTreeWriter(
             defaultCaseInsensitive,
@@ -224,20 +224,26 @@ type ArcVault(window: BrowserWindow) =
             (fun change ->
                 match arcPath with
                 | Some root ->
-                    for directory in change.ChangedDirectories do
-                        match tryGetRepoRelativePathOrRoot root directory, change.Tree.Children directory with
-                        | Some relativeDirectory, Some children ->
-                            let update: FileTreeDirectoryUpdateDto = {|
-                                treeVersion = change.TreeVersion
-                                directoryPath = relativeDirectory
-                                children = toRendererEntries root children
-                            |}
+                    // A directory that left the tree has nothing to send. Its parent is in the same change.
+                    let directories =
+                        change.ChangedDirectories
+                        |> Array.choose (fun directory ->
+                            match tryGetRepoRelativePathOrRoot root directory, change.Tree.Children directory with
+                            | Some relativeDirectory, Some children ->
+                                Some {|
+                                    directoryPath = relativeDirectory
+                                    children = toRendererEntries root children
+                                |}
+                            | _ -> None
+                        )
 
-                            WindowSend.send<IFileTreeRendererApi>
-                                window
-                                (fun api -> api.fileTreeDirectoryUpdate update)
-                        // A directory that left the tree has nothing to send. Its parent is in the same change.
-                        | _ -> ()
+                    if directories.Length > 0 then
+                        let update: FileTreeDirectoryUpdateDto = {|
+                            treeVersion = change.TreeVersion
+                            directories = directories
+                        |}
+
+                        WindowSend.send<IFileTreeRendererApi> window (fun api -> api.fileTreeDirectoryUpdate update)
                 | None -> ()
             )
         )
@@ -724,6 +730,14 @@ module ArcVaultExtensions =
             && not this.isCloseApproved
             && not (this.window.isDestroyed ())
 
+        /// True when a directory may load. A root rename or a close replaces the tree anyway.
+        member this.CanLoadDirectory =
+            this.path.IsSome
+            && not this.isRenamingArcRoot
+            && not this.isCloseRequestPending
+            && not this.isCloseApproved
+            && not (this.window.isDestroyed ())
+
         /// Queues one writer job over the given ARC-relative directories. Unloaded directories are skipped.
         member this.RevalidateDirectories(relativeDirectories: string[]) : Fable.Core.JS.Promise<unit> =
             match this.path with
@@ -756,6 +770,8 @@ module ArcVaultExtensions =
             promise {
                 match this.path with
                 | None -> return Error(arcNotOpenError ())
+                | Some _ when not this.CanLoadDirectory ->
+                    return Error(exn "The ARC is renaming or closing. Try again in a moment.")
                 | Some arcPath ->
                     let absolute = join [| arcPath; relativeDirectory |] |> PathHelpers.normalizePath
 
@@ -778,8 +794,12 @@ module ArcVaultExtensions =
                             return
                                 Ok {|
                                     treeVersion = treeVersion
-                                    directoryPath = relativePath
-                                    children = children
+                                    directories = [|
+                                        {|
+                                            directoryPath = relativePath
+                                            children = children
+                                        |}
+                                    |]
                                 |}
             }
 
@@ -1287,14 +1307,33 @@ module ArcVaultExtensions =
                 if this.FileTreeWriter.Tree.Count = 0 then
                     do! this.EnqueueFileTreeScan()
 
-                let tree = this.FileTreeWriter.Tree
+                // Read inside the writer queue, so a job that is still running is never seen half done.
+                let! outcome =
+                    this.FileTreeWriter.EnqueueWithResult(fun tree -> promise {
+                        let entries = toRendererEntries arcPath tree.Entries
 
-                return {|
-                    treeVersion = this.FileTreeWriter.TreeVersion
-                    entries = toRendererEntries arcPath tree.Entries
-                    loadedDirectories = tree.LoadedDirectories |> Array.choose (tryGetRepoRelativePathOrRoot arcPath)
-                    caseInsensitive = this.isCaseInsensitive
-                |}
+                        let loaded =
+                            tree.LoadedDirectories |> Array.choose (tryGetRepoRelativePathOrRoot arcPath)
+
+                        return [||], (entries, loaded)
+                    })
+
+                match outcome with
+                | Ok((entries, loaded), treeVersion) ->
+                    return {|
+                        treeVersion = treeVersion
+                        entries = entries
+                        loadedDirectories = loaded
+                        caseInsensitive = this.isCaseInsensitive
+                    |}
+                | Error _ ->
+                    // A reset dropped the job. The renderer pulls again when pathChange announces the new tree.
+                    return {|
+                        treeVersion = this.FileTreeWriter.TreeVersion
+                        entries = [||]
+                        loadedDirectories = [||]
+                        caseInsensitive = this.isCaseInsensitive
+                    |}
             | _ ->
                 return {|
                     treeVersion = this.FileTreeWriter.TreeVersion
@@ -1784,6 +1823,7 @@ module ArcVaultExtensions =
                                         Some {|
                                             path = normalizedPath
                                             caseInsensitive = this.isCaseInsensitive
+                                            isRename = false
                                         |}
                                     )
                                 )
@@ -1973,6 +2013,7 @@ module ArcVaultExtensions =
                                     Some {|
                                         path = renamedPath
                                         caseInsensitive = this.isCaseInsensitive
+                                        isRename = true
                                     |}
                                 )
                             )

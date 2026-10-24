@@ -1,6 +1,7 @@
 module Renderer.Components.LeftSidebar.FileExplorer.FileTreeMaterialization
 
 open System
+open Swate.Components.Shared
 open Swate.Components.Page.FileExplorer.Types
 open Swate.Electron.Shared.FileIOTypes
 open Renderer.Context.FileTreeStore
@@ -39,7 +40,7 @@ let rec private buildChildren
     (createItem: FileEntry -> FileItem)
     (withBusy: string -> FileEntry[] -> FileEntry[])
     (snapshot: FileTreeSnapshot)
-    (expandedIds: Set<string>)
+    (expandedKeys: Set<PathKey>)
     (isRoot: bool)
     (directoryPath: string)
     : FileItem list =
@@ -52,14 +53,14 @@ let rec private buildChildren
             entries
 
     ordered
-    |> Array.map (buildItem createItem withBusy snapshot expandedIds)
+    |> Array.map (buildItem createItem withBusy snapshot expandedKeys)
     |> List.ofArray
 
 and private buildItem
     (createItem: FileEntry -> FileItem)
     (withBusy: string -> FileEntry[] -> FileEntry[])
     (snapshot: FileTreeSnapshot)
-    (expandedIds: Set<string>)
+    (expandedKeys: Set<PathKey>)
     (entry: FileEntry)
     : FileItem =
     if not entry.isDirectory then
@@ -73,8 +74,8 @@ and private buildItem
         let itemChildren =
             if not (isLoaded snapshot path) then
                 None
-            elif expandedIds.Contains path then
-                Some(buildChildren createItem withBusy snapshot expandedIds false path)
+            elif expandedKeys.Contains(PathKey.ofPath snapshot.CaseInsensitive path) then
+                Some(buildChildren createItem withBusy snapshot expandedKeys false path)
             elif childCount snapshot path = 0 then
                 Some []
             else
@@ -91,4 +92,6 @@ let buildVisibleItems
     (snapshot: FileTreeSnapshot)
     (expandedIds: Set<string>)
     : FileItem list =
-    buildChildren createItem withBusy snapshot expandedIds true ""
+    // Ids and entries are compared by path key, because a case-only rename leaves the old spelling in the set.
+    let expandedKeys = expandedIds |> Set.map (PathKey.ofPath snapshot.CaseInsensitive)
+    buildChildren createItem withBusy snapshot expandedKeys true ""

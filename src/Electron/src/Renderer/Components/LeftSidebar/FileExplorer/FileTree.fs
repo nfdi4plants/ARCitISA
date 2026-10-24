@@ -77,7 +77,10 @@ type FileTree =
         let lfsActivityCtx = Renderer.Context.LfsActivityContext.useLfsActivityCtx ()
         let tryFindLfs = Renderer.Context.LargeObjectStore.useLargeObjectLookup ()
         let lfsActivityByPath = lfsActivityCtx.activities
-        let lfsActivePaths = lfsActivityByPath |> Map.toList |> List.map fst
+
+        let lfsActivePaths =
+            React.useMemo ((fun () -> lfsActivityByPath |> Map.toList |> List.map fst), [| box lfsActivityByPath |])
+
         // The delete confirmation reads the paths through this ref, so it sees the actions that
         // started after the modal opened.
         let lfsActivePathsRef = React.useRef lfsActivePaths
@@ -135,11 +138,17 @@ type FileTree =
             {
                 item with
                     LfsActivity = lfsActivityByPath |> Map.tryFind entry.path |> Option.map _.Label
-                    // The folder row shows a failed load with the error tone until the next expand retries it.
+                    // A folder shows its load: an ellipsis icon while it loads and the error tone after a failure
+                    // until the next expand retries it.
+                    Icon =
+                        match loadState with
+                        | Some Renderer.Context.FileTreeExpansionContext.Loading -> FileItemIcon.MoreHorizontal
+                        | _ -> item.Icon
                     IconTone =
                         match loadState with
                         | Some(Renderer.Context.FileTreeExpansionContext.Failed _) -> Some FileItemIconTone.Error
-                        | _ -> item.IconTone
+                        | Some Renderer.Context.FileTreeExpansionContext.Loading -> Some FileItemIconTone.Info
+                        | None -> item.IconTone
             }
 
         let rootEntry = Renderer.Context.FileTreeStore.tryFind snapshot ""
@@ -272,25 +281,56 @@ type FileTree =
             openDialog (FreeLfsDialog relativePath)
             promise { return Ok() }
 
+        // The row getters below keep their identity until their inputs change. A new identity re-renders every row.
+        // The dialog state setters never change, so the workflows that only open dialogs can be created once.
         let requestDeleteItem =
-            FileTreeDeleteWorkflow.requestDeleteItem (Option.iter (DeleteDialog >> openDialog))
+            React.useMemo (
+                (fun () -> FileTreeDeleteWorkflow.requestDeleteItem (Option.iter (DeleteDialog >> openDialog))),
+                [||]
+            )
 
         let requestRenameItem =
-            FileTreeRenameWorkflow.requestRenameItem (Option.iter (RenameDialog >> openDialog)) errorModal.enqueue
+            React.useMemo (
+                (fun () ->
+                    FileTreeRenameWorkflow.requestRenameItem
+                        (Option.iter (RenameDialog >> openDialog))
+                        errorModal.enqueue
+                ),
+                [| box errorModal.enqueue |]
+            )
 
         let rootPath = rootEntry |> Option.map (fun root -> root.path)
 
-        let canCreateFromItem path item =
-            match path with
-            | Some path -> tryGetInlineArcCreateKind path item
-            | None -> None
-            |> Option.isSome
+        let canCreateFromItem =
+            React.useCallback (
+                (fun (item: FileItem) ->
+                    match rootPath with
+                    | Some path -> tryGetInlineArcCreateKind path item
+                    | None -> None
+                    |> Option.isSome
+                ),
+                [| box rootPath |]
+            )
 
-        let createFromItem path item =
-            match path with
-            | Some path -> tryGetInlineArcCreateKind path item
-            | None -> None
-            |> Option.iter (fun kind -> openDialog (CreateDialog kind))
+        let createFromItem =
+            React.useCallback (
+                (fun (item: FileItem) ->
+                    match rootPath with
+                    | Some path -> tryGetInlineArcCreateKind path item
+                    | None -> None
+                    |> Option.iter (fun kind -> openDialog (CreateDialog kind))
+                ),
+                [| box rootPath |]
+            )
+
+        let canDeleteItem =
+            React.useCallback (
+                (fun (item: FileItem) ->
+                    not (FileTreeContextMenu.isLockedByLfsActivity lfsActivePaths item)
+                    && canDeleteFileItem item
+                ),
+                [| box lfsActivePaths |]
+            )
 
         let applyCreateError errorMessage =
             errorModal.enqueue (ErrorModalRequest.create (errorMessage, title = "Could not create ARC file"))
@@ -465,16 +505,24 @@ type FileTree =
                 { item with Id = entry.path }
             )
 
-        let itemActions item = [
-            yield!
-                rootFolderContextMenuItems
-                    "notes"
-                    "Create new item in"
-                    "swt:fluent--note-add-24-regular"
-                    (fun () -> pageStateCtx.setState (Some Renderer.Types.PageState.NotesDraftPage))
-                    item
-            yield! FileTreeContextMenu.renameContextMenuItems lfsActivePaths requestRenameItem item
-        ]
+        let itemActions =
+            React.useCallback (
+                (fun (item: FileItem) -> [
+                    yield!
+                        rootFolderContextMenuItems
+                            "notes"
+                            "Create new item in"
+                            "swt:fluent--note-add-24-regular"
+                            (fun () -> pageStateCtx.setState (Some Renderer.Types.PageState.NotesDraftPage))
+                            item
+                    yield! FileTreeContextMenu.renameContextMenuItems lfsActivePaths requestRenameItem item
+                ]),
+                [|
+                    box lfsActivePaths
+                    box requestRenameItem
+                    box pageStateCtx.setState
+                |]
+            )
 
         let runToggleLfsMark (relativePath: string) (markAsLfs: bool) = promise {
             let! result = Renderer.Components.Helper.GitLfsHelper.runToggleLfsMark relativePath markAsLfs
@@ -527,8 +575,20 @@ type FileTree =
                 onSpawn = (fun _ -> Some(box ()))
             )
 
+        // The pill action reads the download through a ref, so it keeps its identity across renders.
+        let runDownloadRef = React.useRef runDownloadLfsFile
+        runDownloadRef.current <- runDownloadLfsFile
+
         let getItemStatusAction =
-            Renderer.Components.FileExplorerLfs.createLfsPillAction errorModal.enqueue arcScopeId runDownloadLfsFile
+            React.useMemo (
+                (fun () ->
+                    Renderer.Components.FileExplorerLfs.createLfsPillAction
+                        errorModal.enqueue
+                        arcScopeId
+                        (fun path -> runDownloadRef.current path)
+                ),
+                [| box errorModal.enqueue; box arcScopeId |]
+            )
 
         let confirmRenameItem (newName: string) =
             if not isDialogBusy then
@@ -618,15 +678,11 @@ type FileTree =
                                 (fun (item: FileItem) -> item.Path |> Option.iter expansionCtx.refreshDirectory),
                             onContextMenu = createContextMenuItems,
                             getItemIconClass = getItemIconClass,
-                            canCreateItem = canCreateFromItem rootPath,
-                            onCreateItem = createFromItem rootPath,
+                            canCreateItem = canCreateFromItem,
+                            onCreateItem = createFromItem,
                             getItemActions = itemActions,
                             getItemStatusAction = getItemStatusAction,
-                            canDeleteItem =
-                                (fun (item: FileItem) ->
-                                    not (FileTreeContextMenu.isLockedByLfsActivity lfsActivePaths item)
-                                    && canDeleteFileItem item
-                                ),
+                            canDeleteItem = canDeleteItem,
                             onDeleteItem = requestDeleteItem,
                             selectedItemId = fileStateCtx.state.Selection.TreePath,
                             includeDefaultContextMenuItems = false,

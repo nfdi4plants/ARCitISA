@@ -33,6 +33,7 @@ let private stamp (path: string) (mtimeMs: float) : FileContentStamp option =
         Path = path
         SizeBytes = 10.0
         MtimeMs = mtimeMs
+        OwnWrite = false
     }
 
 /// A store with the root, a data folder that holds the given files and an unrelated folder.
@@ -62,8 +63,7 @@ let private controllerFor (store: FileTreeStore) : FileStateController = {
     state = FileState.init ()
     fileTreeStore = store
     subscribeFileContentChanged = fun _ -> ignore
-    fileTreeIsLoading = false
-    refreshFileTree = ignore
+    rootChangeIsRename = false
     setSelection = ignore
     updateSelection = ignore
     activeFileImport = None
@@ -132,8 +132,12 @@ Vitest.test (
             RTL.act (fun () -> promise {
                 store.ApplyDirectoryUpdate {|
                     treeVersion = 2
-                    directoryPath = "other"
-                    children = [| FileEntry.create ("y.txt", "other/y.txt", false) |]
+                    directories = [|
+                        {|
+                            directoryPath = "other"
+                            children = [| FileEntry.create ("y.txt", "other/y.txt", false) |]
+                        |}
+                    |]
                 |}
             })
 
@@ -188,6 +192,47 @@ Vitest.test (
 
         Vitest.expect(reloads.Count).toBe 2
         Vitest.expect(clears.Value).toBe 1
+    }
+)
+
+Vitest.test (
+    "a stamp that the app recorded after its own write is a baseline and an outside change after it reloads",
+    fun () -> promise {
+        let store = storeWith [ selectedPath ]
+        let reloads = ResizeArray<string>()
+        let clears = ref 0
+
+        let initial = {
+            Lookup = noLfs
+            Selection = selectedPath
+            Stamp = stamp selectedPath 1.0
+        }
+
+        let update = render store initial reloads clears
+
+        let ownWrite =
+            stamp selectedPath 2.0
+            |> Option.map (fun value -> { value with OwnWrite = true })
+
+        do! update { initial with Stamp = ownWrite }
+        Vitest.expect(reloads.Count).toBe 0
+
+        // The next stat finds the same file, so it is no change.
+        do!
+            update {
+                initial with
+                    Stamp = stamp selectedPath 2.0
+            }
+
+        Vitest.expect(reloads.Count).toBe 0
+
+        do!
+            update {
+                initial with
+                    Stamp = stamp selectedPath 3.0
+            }
+
+        Vitest.expect(reloads.ToArray()).toEqual [| selectedPath |]
     }
 )
 

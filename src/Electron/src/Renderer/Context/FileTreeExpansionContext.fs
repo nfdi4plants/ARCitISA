@@ -1,6 +1,7 @@
 /// Which folders of the file tree are expanded, loading or failed, plus the focus revalidation of the loaded
 /// folders and the content stamp of the selected file. The state lives above the sidebar panels, so a panel switch
-/// that remounts the file tree keeps it. It resets when the ARC root changes.
+/// that remounts the file tree keeps it. Expanded folders are ARC-relative paths, so they survive a rename of the
+/// ARC folder and are cleared for another ARC or a closed one. The load bookkeeping resets with every root change.
 module Renderer.Context.FileTreeExpansionContext
 
 open Fable.Core
@@ -15,8 +16,8 @@ type FolderLoadState =
     | Loading
     | Failed of string
 
-/// What an expanded set needs from a snapshot. Expanded keeps the ids that are not known to be gone. ToLoad lists
-/// the expanded directories that are in the tree but not loaded, parents first.
+/// What an expanded set needs from a snapshot. Expanded keeps the ids that are not known to be gone, spelled like
+/// the entry in the tree. ToLoad lists the expanded directories that are in the tree but not loaded, parents first.
 type ExpansionPlan = {
     Expanded: Set<string>
     ToLoad: string list
@@ -25,19 +26,26 @@ type ExpansionPlan = {
 let planExpansion (snapshot: FileTreeSnapshot) (expandedIds: Set<string>) : ExpansionPlan =
     let states = expandedIds |> Seq.map (fun id -> id, knows snapshot id) |> Seq.toList
 
+    // The tree compares paths by their key, so an id with another case than the entry (after a case-only rename)
+    // becomes the entry's own spelling. That is the id the rows carry.
     let expanded =
         states
-        |> List.filter (fun (_, state) -> state <> Absent)
-        |> List.map fst
+        |> List.choose (fun (id, state) ->
+            match state with
+            | Absent -> None
+            | Present entry -> Some entry.path
+            | Unknown -> Some id
+        )
         |> Set.ofList
 
     let toLoad =
         states
-        |> List.choose (fun (id, state) ->
+        |> List.choose (fun (_, state) ->
             match state with
-            | Present entry when entry.isDirectory && not (isLoaded snapshot id) -> Some id
+            | Present entry when entry.isDirectory && not (isLoaded snapshot entry.path) -> Some entry.path
             | _ -> None
         )
+        |> List.distinct
         |> List.sortBy (fun id -> (PathHelpers.normalizePath id).Split('/').Length, id)
 
     { Expanded = expanded; ToLoad = toLoad }
@@ -66,7 +74,11 @@ type FileTreeExpansionController = {
     refreshDirectory: string -> unit
     /// The stat of the selected file as of the last refresh, focus or change push.
     contentStamp: FileContentStamp option
+    /// Stats the selected file again, for example after a window focus.
     refreshContentStamp: unit -> unit
+    /// Records the stat of the selected file after the app wrote it. The stamp is a new baseline, so the preview
+    /// does not reload for it.
+    recordOwnWrite: unit -> unit
 }
 
 let FileTreeExpansionCtx =
@@ -79,6 +91,7 @@ let FileTreeExpansionCtx =
             refreshDirectory = ignore
             contentStamp = None
             refreshContentStamp = ignore
+            recordOwnWrite = ignore
         }
     )
 
@@ -117,6 +130,10 @@ let FileTreeExpansionCtxProvider (api: FileTreeExpansionApi, children: ReactElem
     let inFlight = React.useRef (Map.empty: Map<PathKey, JS.Promise<unit>>)
     // Folders whose last load failed. The automatic loader skips them until the user expands them again.
     let failed = React.useRef (Set.empty: Set<PathKey>)
+    // Folders whose answer did not make them loaded, for example while a pull holds the updates back. The next
+    // store change tries them again.
+    let pending = React.useRef (Set.empty: Set<PathKey>)
+    let isRevalidating = React.useRef false
     let autoLoading = React.useRef false
     let recentLoads = React.useRef ([]: string list)
     let lastRevalidatedAt = React.useRef -1.0e12
@@ -153,17 +170,19 @@ let FileTreeExpansionCtxProvider (api: FileTreeExpansionApi, children: ReactElem
                     | _ when token <> scopeToken.current -> ()
                     | Ok update ->
                         store.ApplyDirectoryUpdate update
+                        setLoadStates (fun current -> current.Remove key)
 
-                        // An update that the store drops as older leaves the directory unloaded.
                         if isLoaded store.Snapshot path then
-                            failed.current <- failed.current.Remove(keyOf path)
+                            failed.current <- failed.current.Remove key
                             recentLoads.current <- path :: (recentLoads.current |> List.filter ((<>) path))
-                            setLoadStates (fun current -> current.Remove key)
                         else
-                            markFailed path "The folder could not be loaded." collapseOnFailure
+                            // The store holds the update back during a pull, or dropped it as older. Neither is
+                            // a failure of the folder, so the next store change tries it again.
+                            pending.current <- pending.current.Add key
                     | Error error -> markFailed path error.Message collapseOnFailure
-                with error when token = scopeToken.current ->
-                    markFailed path error.Message collapseOnFailure
+                with error ->
+                    if token = scopeToken.current then
+                        markFailed path error.Message collapseOnFailure
 
                 if token = scopeToken.current then
                     inFlight.current <- inFlight.current.Remove key
@@ -179,14 +198,17 @@ let FileTreeExpansionCtxProvider (api: FileTreeExpansionApi, children: ReactElem
         let plan = planExpansion snapshot expandedRef.current
 
         if plan.Expanded <> expandedRef.current then
-            setExpandedIds (fun current -> Set.intersect current plan.Expanded)
+            setExpandedIds (fun current -> (planExpansion store.Snapshot current).Expanded)
 
         if not autoLoading.current then
             let next =
                 plan.ToLoad
                 |> List.tryFind (fun path ->
                     let key = keyOf path
-                    not (inFlight.current.ContainsKey key) && not (failed.current.Contains key)
+
+                    not (inFlight.current.ContainsKey key)
+                    && not (failed.current.Contains key)
+                    && not (pending.current.Contains key)
                 )
 
             match next with
@@ -200,6 +222,7 @@ let FileTreeExpansionCtxProvider (api: FileTreeExpansionApi, children: ReactElem
                     if isMounted.current then
                         evaluate ()
                 )
+                |> Promise.catch ignore
                 |> Promise.start
             | None -> ()
 
@@ -210,7 +233,11 @@ let FileTreeExpansionCtxProvider (api: FileTreeExpansionApi, children: ReactElem
         (fun () ->
             isMounted.current <- true
 
-            let unsubscribe = store.Subscribe(fun () -> evaluateRef.current ())
+            let unsubscribe =
+                store.Subscribe(fun () ->
+                    pending.current <- Set.empty
+                    evaluateRef.current ()
+                )
 
             { new System.IDisposable with
                 member _.Dispose() =
@@ -221,8 +248,8 @@ let FileTreeExpansionCtxProvider (api: FileTreeExpansionApi, children: ReactElem
         [| box store |]
     )
 
-    // The expanded ids are ARC-relative and stay valid for a renamed or another root. The next snapshot decides
-    // which of them still exist, and the loader loads the ones that are not loaded. Load bookkeeping is per root.
+    // The expanded ids are ARC-relative and stay valid across a rename. The next snapshot decides which of them
+    // still exist, and the loader loads the ones that are not loaded. Load bookkeeping is per root.
     React.useEffect (
         (fun () ->
             if previousScope.current <> scope then
@@ -233,6 +260,12 @@ let FileTreeExpansionCtxProvider (api: FileTreeExpansionApi, children: ReactElem
                 setLoadStates (fun _ -> Map.empty)
                 recentLoads.current <- []
                 failed.current <- Set.empty
+                pending.current <- Set.empty
+
+                // A rename keeps the expanded folders. Another ARC and a closed one start collapsed.
+                if scope.IsNone || not fileCtx.rootChangeIsRename then
+                    setExpandedIds (fun _ -> Set.empty)
+
                 evaluate ()
         ),
         [| box scope |]
@@ -240,9 +273,9 @@ let FileTreeExpansionCtxProvider (api: FileTreeExpansionApi, children: ReactElem
 
     React.useEffect ((fun () -> evaluate ()), [| box expandedIds |])
 
-    let refreshContentStamp =
+    let statSelection =
         React.useCallback (
-            (fun () ->
+            (fun (ownWrite: bool) ->
                 match selectionRef.current with
                 | None -> setContentStamp None
                 | Some path ->
@@ -254,6 +287,7 @@ let FileTreeExpansionCtxProvider (api: FileTreeExpansionApi, children: ReactElem
                                     Path = path
                                     SizeBytes = stat.sizeBytes
                                     MtimeMs = stat.mtimeMs
+                                    OwnWrite = ownWrite
                                 }
                             )
                         | Ok None when isMounted.current -> setContentStamp None
@@ -264,6 +298,12 @@ let FileTreeExpansionCtxProvider (api: FileTreeExpansionApi, children: ReactElem
             ),
             [||]
         )
+
+    let refreshContentStamp =
+        React.useCallback ((fun () -> statSelection false), [| box statSelection |])
+
+    let recordOwnWrite =
+        React.useCallback ((fun () -> statSelection true), [| box statSelection |])
 
     // The first stamp of a selection is the baseline for later comparisons.
     React.useEffect ((fun () -> refreshContentStamp ()), [| box selectionPath |])
@@ -284,6 +324,7 @@ let FileTreeExpansionCtxProvider (api: FileTreeExpansionApi, children: ReactElem
 
     let expandDirectory (path: string) =
         failed.current <- failed.current.Remove(keyOf path)
+        pending.current <- pending.current.Remove(keyOf path)
 
         setLoadStates (fun current ->
             match current |> Map.tryFind (keyOf path) with
@@ -317,10 +358,10 @@ let FileTreeExpansionCtxProvider (api: FileTreeExpansionApi, children: ReactElem
 
                     let present =
                         ancestors
-                        |> List.filter (fun ancestor ->
+                        |> List.choose (fun ancestor ->
                             match knows store.Snapshot ancestor with
-                            | Present entry -> entry.isDirectory
-                            | _ -> false
+                            | Present entry when entry.isDirectory -> Some entry.path
+                            | _ -> None
                         )
                         |> Set.ofList
 
@@ -332,6 +373,7 @@ let FileTreeExpansionCtxProvider (api: FileTreeExpansionApi, children: ReactElem
                                 Set.union current present
                         )
                 }
+                |> Promise.catch ignore
                 |> Promise.start
         ),
         [| box selectionPath |]
@@ -345,7 +387,12 @@ let FileTreeExpansionCtxProvider (api: FileTreeExpansionApi, children: ReactElem
             let revalidate () =
                 let now = JS.Constructors.Date.now ()
 
-                if now - lastRevalidatedAt.current >= minRevalidationGapMs then
+                // A slow revalidation blocks the next one too, because it has not finished yet.
+                if
+                    not isRevalidating.current
+                    && now - lastRevalidatedAt.current >= minRevalidationGapMs
+                then
+                    isRevalidating.current <- true
                     let snapshot = store.Snapshot
 
                     let recent = recentLoads.current |> List.filter (isLoaded snapshot)
@@ -365,6 +412,7 @@ let FileTreeExpansionCtxProvider (api: FileTreeExpansionApi, children: ReactElem
                             let! _ = apiRef.current.revalidateDirectories directories
                             ()
                         finally
+                            isRevalidating.current <- false
                             lastRevalidatedAt.current <- JS.Constructors.Date.now ()
 
                         refreshContentStamp ()
@@ -397,12 +445,14 @@ let FileTreeExpansionCtxProvider (api: FileTreeExpansionApi, children: ReactElem
                 refreshDirectory = refreshDirectory
                 contentStamp = contentStamp
                 refreshContentStamp = refreshContentStamp
+                recordOwnWrite = recordOwnWrite
             }),
             [|
                 box expandedIds
                 box loadStates
                 box contentStamp
                 box refreshContentStamp
+                box recordOwnWrite
             |]
         )
 

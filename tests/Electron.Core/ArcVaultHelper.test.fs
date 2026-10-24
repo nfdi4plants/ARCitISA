@@ -1399,6 +1399,42 @@ Vitest.describe (
         )
 
         Vitest.test (
+            "a job that changes a zone and a new entity folder pushes one update with the zone first",
+            fun () ->
+                withTempArc
+                    (fun arc -> arc.AddAssay(ArcAssay("A1")))
+                    (fun arcPath -> promise {
+                        let windowState = createTestWindow (testWindowOptions 91)
+                        let vault = ArcVault(windowState.Window)
+                        vault.path <- Some arcPath
+                        do! vault.EnqueueFileTreeScan()
+
+                        do! mkdirWatcherDirectoryAsync (join [| arcPath; "assays"; "A9"; "dataset" |])
+                        do! writeWatcherTextFileAsync (join [| arcPath; "assays"; "A9"; "isa.assay.xlsx" |]) "x"
+
+                        // The entity folder is listed before its zone.
+                        do!
+                            vault.EnqueueFileTreeDirectoriesReconcile [|
+                                join [| arcPath; "assays"; "A9" |]
+                                join [| arcPath; "assays" |]
+                            |]
+
+                        let updates =
+                            windowState.SentMessages
+                            |> Seq.map (fun args -> emitJsExpr args "JSON.stringify($0)": string)
+                            |> Seq.filter (fun text -> text.Contains "fileTreeDirectoryUpdate")
+                            |> Seq.toArray
+
+                        Vitest.expect(updates.Length).toBe 1
+                        let zone = updates.[0].IndexOf "\"directoryPath\":\"assays\""
+                        let entity = updates.[0].IndexOf "\"directoryPath\":\"assays/A9\""
+                        Vitest.expect(zone >= 0).toBe true
+                        Vitest.expect(entity > zone).toBe true
+                        Vitest.expect(updates.[0].Contains "assays/A9/isa.assay.xlsx").toBe true
+                    })
+        )
+
+        Vitest.test (
             "a tree update queued before a state reset does not publish",
             fun () ->
                 withTempArc
