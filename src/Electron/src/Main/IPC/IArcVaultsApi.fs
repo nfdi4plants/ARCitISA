@@ -27,9 +27,7 @@ open VersionControlService.Abstractions
 
 let private refreshVaultFileTree (vault: ArcVault) = promise {
     match vault.path with
-    | Some arcPath ->
-        let! fileTree = getFileTree arcPath
-        vault.SetFileTree fileTree
+    | Some arcPath -> do! vault.EnqueueFileTreeScan true
     | None -> ()
 }
 
@@ -695,11 +693,10 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
                     match vault.path with
                     | None -> return Error(arcNotOpenError ())
                     | Some arcPath ->
-                        let! fileEntries =
-                            if vault.fileTree.Count > 0 then
-                                promise { return vault.fileTree.Values |> Seq.toArray }
-                            else
-                                getFileEntries arcPath true
+                        if vault.FileTreeWriter.Tree.Count = 0 then
+                            do! vault.EnqueueFileTreeScan true
+
+                        let fileEntries = vault.FileTreeWriter.Tree.Entries |> Seq.toArray
 
                         let! notes = Main.NoteSearchReader.readNotes arcPath fileEntries
                         return Ok(notes |> Array.map NoteSearchNoteDto.ofNote)
@@ -873,9 +870,13 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
                                                     let absoluteDataMapPath =
                                                         Main.Bindings.Path.join [| arcPath; normalizedDataMapPath |]
 
-                                                    vault.SetFileTree(
-                                                        removePathAndDescendants absoluteDataMapPath vault.fileTree
-                                                    )
+                                                    match
+                                                        Swate.Components.Shared.PathHelpers.tryGetParentPath
+                                                            absoluteDataMapPath
+                                                    with
+                                                    | Some parentDirectory ->
+                                                        do! vault.EnqueueFileTreeDirectoryReconcile parentDirectory
+                                                    | None -> ()
 
                                                     return Ok()
                                             })

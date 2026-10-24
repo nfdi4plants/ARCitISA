@@ -133,6 +133,7 @@ Vitest.describe (
                         let vault = ArcVault(testWindow ())
                         vault.path <- Some arcPath
                         vault.SetArc arc
+                        do! vault.EnqueueFileTreeScan false
 
                         let request =
                             FileContentDTO.fromArcFile (ArcFiles.DataMap(Some parentInfo, DataMap.init ()))
@@ -150,7 +151,7 @@ Vitest.describe (
                         Vitest.expect(dataMapExists).toBe (true)
 
                         let dataMapIsLoadedInFileTree =
-                            vault.fileTree.Values
+                            vault.FileTreeWriter.Tree.Entries
                             |> Seq.exists (fun entry -> PathHelpers.pathsEqual entry.path dataMapPath)
 
                         Vitest.expect(dataMapIsLoadedInFileTree).toBe (true)

@@ -913,6 +913,8 @@ Vitest.describe (
                         let vault = ArcVault(TestHelpers.testWindow ())
                         vault.path <- Some arcPath
 
+                        do! vault.EnqueueFileTreeScan false
+
                         let firstPath = join [| arcPath; "tree-first.txt" |]
                         let secondPath = join [| arcPath; "tree-second.txt" |]
                         do! writeWatcherTextFileAsync firstPath "first"
@@ -927,8 +929,8 @@ Vitest.describe (
                         do! firstUpdate
                         do! secondUpdate
 
-                        Vitest.expect(vault.fileTree.ContainsKey(firstPath)).toBe (true)
-                        Vitest.expect(vault.fileTree.ContainsKey(secondPath)).toBe (true)
+                        Vitest.expect((vault.FileTreeWriter.Tree.TryFind(firstPath)).IsSome).toBe (true)
+                        Vitest.expect((vault.FileTreeWriter.Tree.TryFind(secondPath)).IsSome).toBe (true)
                     })
         )
 
@@ -1237,6 +1239,7 @@ Vitest.describe (
                         let vault = ArcVault(TestHelpers.testWindow ())
                         vault.path <- Some arcPath
                         vault.SetArc loadedArc
+                        do! vault.EnqueueFileTreeScan false
 
                         let! diskArc = TestHelpers.loadArcAsync arcPath
                         diskArc.GetAssay("DiskAssay").Title <- Some "Changed on disk"
@@ -1269,8 +1272,8 @@ Vitest.describe (
                             let treeHasEntry () =
                                 let expectedKey = PathHelpers.normalizePath treeEntryPath
 
-                                vault.fileTree.Keys
-                                |> Seq.exists (fun key -> PathHelpers.normalizePath key = expectedKey)
+                                vault.FileTreeWriter.Tree.Entries
+                                |> Seq.exists (fun entry -> PathHelpers.normalizePath entry.path = expectedKey)
 
                             let fallbackPublished () =
                                 vault.HasReachedWatcherDeferralLimit
@@ -1348,18 +1351,20 @@ Vitest.describe (
                         let vault = ArcVault(TestHelpers.testWindow ())
                         vault.path <- Some arcPath
 
+                        do! vault.EnqueueFileTreeScan false
+
                         let filePath = join [| arcPath; "tree-kept.txt" |]
                         do! writeWatcherTextFileAsync filePath "kept"
 
                         do! vault.ApplyWatcherFileTreeEvents [ watcherEvent arcPath "add" "tree-kept.txt" ]
-                        Vitest.expect(vault.fileTree.ContainsKey(filePath)).toBe (true)
+                        Vitest.expect((vault.FileTreeWriter.Tree.TryFind(filePath)).IsSome).toBe (true)
 
                         do! vault.ApplyWatcherFileTreeEvents [ watcherEvent arcPath "unlink" "tree-kept.txt" ]
-                        Vitest.expect(vault.fileTree.ContainsKey(filePath)).toBe (true)
+                        Vitest.expect((vault.FileTreeWriter.Tree.TryFind(filePath)).IsSome).toBe (true)
 
                         do! rmAsync filePath (RmOptions(force = true))
                         do! vault.ApplyWatcherFileTreeEvents [ watcherEvent arcPath "unlink" "tree-kept.txt" ]
-                        Vitest.expect(vault.fileTree.ContainsKey(filePath)).toBe (false)
+                        Vitest.expect((vault.FileTreeWriter.Tree.TryFind(filePath)).IsSome).toBe (false)
                     })
         )
 
@@ -1372,6 +1377,8 @@ Vitest.describe (
                         let vault = ArcVault(TestHelpers.testWindow ())
                         vault.path <- Some arcPath
 
+                        do! vault.EnqueueFileTreeScan false
+
                         let filePath = join [| arcPath; "tree-reset.txt" |]
                         do! writeWatcherTextFileAsync filePath "reset"
 
@@ -1381,7 +1388,11 @@ Vitest.describe (
                             JS.Constructors.Promise.Create(fun resolve _ -> releaseTail <- fun () -> resolve ())
 
                         // The update waits behind the tail while the pending state is reset.
-                        vault.FileTreeUpdateTail <- tailGate
+                        vault.FileTreeWriter.Enqueue(fun _ -> promise {
+                            do! tailGate
+                            return false
+                        })
+                        |> ignore
 
                         let update =
                             vault.ApplyWatcherFileTreeEvents [ watcherEvent arcPath "add" "tree-reset.txt" ]
@@ -1390,7 +1401,7 @@ Vitest.describe (
                         releaseTail ()
                         do! update
 
-                        Vitest.expect(vault.fileTree.ContainsKey(filePath)).toBe (false)
+                        Vitest.expect((vault.FileTreeWriter.Tree.TryFind(filePath)).IsSome).toBe (false)
                     })
         )
 
@@ -1611,7 +1622,7 @@ Vitest.describe (
 
                 callingVault.path <- Some existingArcPath
                 callingVault.SetArc(existingArc)
-                callingVault.fileTree.Add(seededEntry.path, seededEntry)
+                callingVault.FileTreeWriter.Tree.SetRoot seededEntry
 
                 let targetWindow = (createTestWindow (testWindowOptions targetWindowId)).Window
 
@@ -1639,8 +1650,8 @@ Vitest.describe (
                     Vitest.expect(callingVault.arc.IsSome).toBe (true)
                     Vitest.expect(callingVault.arc.Value).toBe (existingArc)
                     Vitest.expect(callingVault.watcher).toEqual (None)
-                    Vitest.expect(callingVault.fileTree.Count).toBe (1)
-                    Vitest.expect(callingVault.fileTree.ContainsKey(seededEntry.path)).toBe (true)
+                    Vitest.expect(callingVault.FileTreeWriter.Tree.Count).toBe (1)
+                    Vitest.expect((callingVault.FileTreeWriter.Tree.TryFind(seededEntry.path)).IsSome).toBe (true)
 
                     vaults.Vaults.Remove(callingWindowId) |> ignore
                     do! TestHelpers.removeDirectoryAsync invalidTargetPath
@@ -1926,7 +1937,7 @@ Vitest.describe (
 
                             Vitest.expect(vault.path).toEqual (None)
                             Vitest.expect(vault.arc).toEqual (None)
-                            Vitest.expect(vault.fileTree.Count).toBe (0)
+                            Vitest.expect(vault.FileTreeWriter.Tree.Count).toBe (0)
                             Vitest.expect(vault.watcher).toEqual (None)
                             Vitest.expect(windowState.SentMessages |> Seq.exists isPathChangeMessage).toBe (false)
                             Vitest.expect(windowState.SentMessages |> Seq.exists isFileTreeMessage).toBe (false)
@@ -1973,7 +1984,7 @@ Vitest.describe (
 
                     Vitest.expect(vault.path).toEqual (None)
                     Vitest.expect(vault.arc).toEqual (None)
-                    Vitest.expect(vault.fileTree.Count).toBe (0)
+                    Vitest.expect(vault.FileTreeWriter.Tree.Count).toBe (0)
                     Vitest.expect(vault.watcher).toEqual (None)
                     Vitest.expect(windowState.SentMessages |> Seq.exists isPathChangeMessage).toBe (false)
                     Vitest.expect(windowState.SentMessages |> Seq.exists isFileTreeMessage).toBe (false)
@@ -2120,7 +2131,7 @@ Vitest.describe (
                                                     |> Option.exists (fun vault ->
                                                         vault.arc.IsSome
                                                         && vault.path.IsSome
-                                                        && vault.fileTree.Count > 0
+                                                        && vault.FileTreeWriter.Tree.Count > 0
                                                         && vault.watcher.IsSome
                                                         && not vault.isInitializingArc
                                                     )
@@ -2586,7 +2597,7 @@ Vitest.describe (
                                 pathWasAssigned <- vault.path = Some expectedPath
                                 arcWasLoaded <- vault.arc.IsSome
                                 watcherWasStarted <- vault.watcher.IsSome
-                                fileTreeWasEmpty <- vault.fileTree.Count = 0
+                                fileTreeWasEmpty <- vault.FileTreeWriter.Tree.Count = 0
 
                                 pathWasAssigned
                                 && arcWasLoaded
@@ -2648,7 +2659,7 @@ Vitest.describe (
                             Vitest.expect(startupWasCompleteWhenClosed).toBe (true)
                             Vitest.expect(targetWindowState.IsDestroyed()).toBe (true)
                             Vitest.expect(targetVault.IsSome).toBe (true)
-                            Vitest.expect(targetVault.Value.fileTree.Count).toBe (0)
+                            Vitest.expect(targetVault.Value.FileTreeWriter.Tree.Count).toBe (0)
                             Vitest.expect(ARC_VAULTS.Vaults.ContainsKey(targetWindowId)).toBe (false)
                             Vitest.expect(targetWindowState.SendsAfterDestroy()).toBe (0)
                             Vitest.expect(targetWindowState.TitleWritesAfterDestroy()).toBe (0)
@@ -2782,7 +2793,7 @@ Vitest.describe (
                                 pathWasAssigned <- vault.path = Some expectedPath
                                 arcWasLoaded <- vault.arc.IsSome
                                 watcherWasStarted <- vault.watcher.IsSome
-                                fileTreeWasEmpty <- vault.fileTree.Count = 0
+                                fileTreeWasEmpty <- vault.FileTreeWriter.Tree.Count = 0
 
                                 pathWasAssigned
                                 && arcWasLoaded
@@ -2840,7 +2851,7 @@ Vitest.describe (
                             Vitest.expect(startupWasCompleteWhenClosed).toBe (true)
                             Vitest.expect(windowState.IsDestroyed()).toBe (true)
                             Vitest.expect(currentVault.IsSome).toBe (true)
-                            Vitest.expect(currentVault.Value.fileTree.Count).toBe (0)
+                            Vitest.expect(currentVault.Value.FileTreeWriter.Tree.Count).toBe (0)
                             Vitest.expect(ARC_VAULTS.Vaults.ContainsKey(windowId)).toBe (false)
                             Vitest.expect(windowState.SendsAfterDestroy()).toBe (0)
                             Vitest.expect(windowState.TitleWritesAfterDestroy()).toBe (0)
@@ -3543,7 +3554,7 @@ Vitest.describe (
                         pathWasAssigned <- vault.path = Some expectedPath
                         arcWasLoaded <- vault.arc.IsSome
                         watcherWasStarted <- vault.watcher.IsSome
-                        fileTreeWasEmpty <- vault.fileTree.Count = 0
+                        fileTreeWasEmpty <- vault.FileTreeWriter.Tree.Count = 0
 
                         pathWasAssigned
                         && arcWasLoaded
@@ -3622,7 +3633,7 @@ Vitest.describe (
                     Vitest.expect(startupWasCompleteWhenClosed).toBe (true)
                     Vitest.expect(targetWindowState.IsDestroyed()).toBe (true)
                     Vitest.expect(targetVault.IsSome).toBe (true)
-                    Vitest.expect(targetVault.Value.fileTree.Count).toBe (0)
+                    Vitest.expect(targetVault.Value.FileTreeWriter.Tree.Count).toBe (0)
                     Vitest.expect(ARC_VAULTS.Vaults.ContainsKey(targetWindowId)).toBe (false)
                     Vitest.expect(targetWindowState.SendsAfterDestroy()).toBe (0)
                     Vitest.expect(targetWindowState.TitleWritesAfterDestroy()).toBe (0)
@@ -4468,7 +4479,7 @@ Vitest.describe (
                 let seededEntry = FileEntry.create ("seeded.txt", "seeded.txt", false)
                 let mutable createdWindowCount = 0
 
-                vault.fileTree.Add(seededEntry.path, seededEntry)
+                vault.FileTreeWriter.Tree.SetRoot seededEntry
                 vaults.Vaults.Add(windowId, vault)
                 do! writeTextFileAsync blockedParent "This file prevents creation of a nested ARC directory."
 
@@ -4490,7 +4501,7 @@ Vitest.describe (
                     Vitest.expect(vault.path).toEqual (None)
                     Vitest.expect(vault.arc).toEqual (None)
                     Vitest.expect(vault.watcher).toEqual (None)
-                    Vitest.expect(vault.fileTree.Count).toBe (0)
+                    Vitest.expect(vault.FileTreeWriter.Tree.Count).toBe (0)
                     Vitest.expect(vault.hasUnsavedArcChanges).toBe (false)
                     Vitest.expect(vault.window.title).toBe (Swate.Electron.Shared.ApplicationVersion.windowTitle None)
 
@@ -4548,7 +4559,7 @@ Vitest.describe (
                 let sentMessages = windowState.SentMessages
                 let vault = ArcVault(windowState.Window)
                 let seededEntry = FileEntry.create ("seeded.txt", "seeded.txt", false)
-                vault.fileTree.Add(seededEntry.path, seededEntry)
+                vault.FileTreeWriter.Tree.SetRoot seededEntry
                 do! writeTextFileAsync blockedParent "This file prevents creation of a nested ARC directory."
 
                 try
@@ -4563,7 +4574,7 @@ Vitest.describe (
                     Vitest.expect(vault.path).toEqual (None)
                     Vitest.expect(vault.arc).toEqual (None)
                     Vitest.expect(vault.watcher).toEqual (None)
-                    Vitest.expect(vault.fileTree.Count).toBe (0)
+                    Vitest.expect(vault.FileTreeWriter.Tree.Count).toBe (0)
                     Vitest.expect(vault.hasUnsavedArcChanges).toBe (false)
                     Vitest.expect(creationError.Value).not.toBe (rollbackError)
                     Vitest.expect(creationError.Value.Message).toContain ("Could not write ARC")
@@ -4601,7 +4612,7 @@ Vitest.describe (
                 let sentMessages = windowState.SentMessages
                 let vault = ArcVault(windowState.Window)
                 let seededEntry = FileEntry.create ("seeded.txt", "seeded.txt", false)
-                vault.fileTree.Add(seededEntry.path, seededEntry)
+                vault.FileTreeWriter.Tree.SetRoot seededEntry
 
                 try
                     let mutable creationError: exn option = None
@@ -4615,7 +4626,7 @@ Vitest.describe (
                     Vitest.expect(vault.path).toEqual (None)
                     Vitest.expect(vault.arc).toEqual (None)
                     Vitest.expect(vault.watcher).toEqual (None)
-                    Vitest.expect(vault.fileTree.Count).toBe (0)
+                    Vitest.expect(vault.FileTreeWriter.Tree.Count).toBe (0)
                     Vitest.expect(vault.hasUnsavedArcChanges).toBe (false)
                     Vitest.expect(vault.window.title).toBe (Swate.Electron.Shared.ApplicationVersion.windowTitle None)
 
@@ -4652,10 +4663,10 @@ Vitest.describe (
                 try
                     let vault = ArcVault(TestHelpers.testWindow ())
                     let seededEntry = FileEntry.create ("seeded.txt", "seeded.txt", false)
-                    vault.fileTree.Add(seededEntry.path, seededEntry)
+                    vault.FileTreeWriter.Tree.SetRoot seededEntry
                     let mutable failed = false
 
-                    Vitest.expect(vault.fileTree.Count).toBe (1)
+                    Vitest.expect(vault.FileTreeWriter.Tree.Count).toBe (1)
 
                     try
                         do! vault.OpenARC folderPath
@@ -4666,7 +4677,7 @@ Vitest.describe (
                     Vitest.expect(vault.path).toEqual (None)
                     Vitest.expect(vault.arc).toEqual (None)
                     Vitest.expect(vault.watcher).toEqual (None)
-                    Vitest.expect(vault.fileTree.Count).toBe (0)
+                    Vitest.expect(vault.FileTreeWriter.Tree.Count).toBe (0)
                     do! TestHelpers.removeDirectoryAsync folderPath
                 with error ->
                     do! TestHelpers.removeDirectoryAsync folderPath

@@ -19,6 +19,7 @@
     <Compile Include="FileTreeCompaction.test.fs" />
     <Compile Include="ArcLoadExtensions.test.fs" />
     <Compile Include="FileTreeCreator.test.fs" />
+    <Compile Include="IndexedFileTree.test.fs" />
     <Compile Include="ArcFileMutationHelper.test.fs" />
     <Compile Include="ArcVaultHelper.test.fs" />
     <Compile Include="FileWatcher.test.fs" />

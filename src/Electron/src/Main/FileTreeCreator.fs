@@ -190,117 +190,172 @@ let toRendererFileTree (repoRoot: string) (entries: seq<FileEntry>) : Dictionary
 
     rendererFileTree
 
-/// Remove a path and all descendants from a file tree dictionary using normalized ancestor checks.
-let removePathAndDescendants
-    (targetPath: string)
-    (fileTree: Dictionary<string, FileEntry>)
-    : Dictionary<string, FileEntry> =
-    let normalizedTargetPath = PathHelpers.normalizePath targetPath
-    let nextTree = Dictionary<string, FileEntry>(fileTree)
+let private relativeToRoot (arcRoot: string) (fullPath: string) =
+    let root = PathHelpers.normalizePath arcRoot
+    (PathHelpers.normalizePath fullPath).Substring(root.Length).TrimStart('/')
 
-    if String.IsNullOrWhiteSpace normalizedTargetPath then
-        nextTree
-    else
-        let keysToRemove =
-            nextTree.Keys
-            |> Seq.filter (fun path -> PathHelpers.isSameOrDescendantPath path normalizedTargetPath)
-            |> Seq.toArray
+/// Lists the direct children of one directory with a single readdir. Inventory ignore rules apply and no
+/// Git LFS call is made.
+let readDirectoryChildrenAsync (arcRoot: string) (directoryPath: string) : JS.Promise<FileEntry[]> = promise {
+    let! dirents = readdirWithTypesAsync directoryPath (ReaddirOptions(withFileTypes = true))
 
-        keysToRemove |> Array.iter (fun path -> nextTree.Remove(path) |> ignore)
-        nextTree
+    return
+        dirents
+        |> Array.choose (fun dirent ->
+            let name = dirent.name
+            let isDirectory = dirent.isDirectory ()
+            let fullPath = join [| directoryPath; name |] |> PathHelpers.normalizeSeparators
 
-/// Add or replace a single file tree entry without mutating the current snapshot.
-let upsertFileEntry (entry: FileEntry) (fileTree: Dictionary<string, FileEntry>) : Dictionary<string, FileEntry> =
-    let nextTree = Dictionary<string, FileEntry>(fileTree)
-    nextTree.[entry.path] <- entry
-    nextTree
-
-let getFileEntry (path: string) = promise {
-    let! stats = statAsync path
-    return FileEntry.create (basename path, path, stats.isDirectory (), None)
+            if isIgnoredInventoryEntry name (relativeToRoot arcRoot fullPath) isDirectory then
+                None
+            else
+                Some(FileEntry.create (name, fullPath, isDirectory, None))
+        )
+        |> Array.sortWith (fun left right -> PathOrder.compareNames left.name right.name)
 }
 
-/// Refreshes one known relative path without rescanning the ARC directory.
-let refreshFileTreeEntry
-    (arcPath: string)
-    (relativePath: string)
-    (fileTree: Dictionary<string, FileEntry>)
-    : Fable.Core.JS.Promise<Dictionary<string, FileEntry>> =
+let private isMissingDirectoryError (error: exn) =
+    match tryGetNodeErrorCode error with
+    | Some "ENOENT"
+    | Some "ENOTDIR" -> true
+    | _ -> false
+
+/// Interim until the lazy tree (step 4.1): a directory that is new to the tree is scanned right away, so the
+/// tree stays complete. Delete this step when directories load on demand.
+let rec private loadNewSubdirectoriesAsync
+    (arcRoot: string)
+    (tree: IndexedFileTree)
+    (newDirectories: FileEntry[])
+    : JS.Promise<bool> =
     promise {
-        let absolutePath = join [| arcPath; relativePath |]
-        let! entry = getFileEntry absolutePath
-        return upsertFileEntry entry fileTree
+        let mutable changed = false
+
+        for directory in newDirectories do
+            try
+                let! children = readDirectoryChildrenAsync arcRoot directory.path
+
+                let newChildDirectories =
+                    children
+                    |> Array.filter (fun child -> child.isDirectory && (tree.TryFind child.path).IsNone)
+
+                if tree.ReplaceChildren(directory.path, children) then
+                    changed <- true
+
+                let! nestedChanged = loadNewSubdirectoriesAsync arcRoot tree newChildDirectories
+
+                if nestedChanged then
+                    changed <- true
+            with error when isMissingDirectoryError error ->
+                ()
+
+        return changed
     }
 
-let getFileEntryWithLfsMetadata (repoRoot: string) (path: string) = promise {
-    let normalizedRepoRoot = normalizeRootPath repoRoot
-    let! entry = getFileEntry path
+/// Reads one directory and applies its children to the tree. A directory that no longer exists loses its
+/// subtree. Returns true when the tree changed.
+let reconcileFileTreeDirectoryAsync
+    (arcRoot: string)
+    (tree: IndexedFileTree)
+    (directoryPath: string)
+    : JS.Promise<bool> =
+    promise {
+        try
+            let! children = readDirectoryChildrenAsync arcRoot directoryPath
 
-    if entry.isDirectory then
-        return entry
-    else
-        let! largeObjectsByRelativePath = tryListLargeObjects normalizedRepoRoot true
+            let newDirectories =
+                children
+                |> Array.filter (fun child -> child.isDirectory && (tree.TryFind child.path).IsNone)
+
+            let childrenChanged = tree.ReplaceChildren(directoryPath, children)
+            let! subdirectoriesChanged = loadNewSubdirectoriesAsync arcRoot tree newDirectories
+            return childrenChanged || subdirectoriesChanged
+        with error when isMissingDirectoryError error ->
+            return tree.RemoveSubtree directoryPath
+    }
+
+/// Scans the whole ARC folder into a tree with every directory loaded. The root entry is the ARC folder itself.
+/// LFS metadata is attached once per scan.
+let scanFileTreeAsync (arcRoot: string) (caseInsensitive: bool) (openSession: bool) : JS.Promise<IndexedFileTree> = promise {
+    let repoRoot = normalizeRootPath arcRoot
+    let tree = IndexedFileTree(caseInsensitive)
+
+    let! rootStats = statAsync repoRoot
+    let rootIsDirectory = rootStats.isDirectory ()
+    tree.SetRoot(FileEntry.create (basename repoRoot, repoRoot, rootIsDirectory, None))
+
+    if rootIsDirectory then
+        let listed = ResizeArray<string * FileEntry[]>()
+        let pending = Stack<string>()
+        pending.Push repoRoot
+
+        while pending.Count > 0 do
+            let directoryPath = pending.Pop()
+            let! children = readDirectoryChildrenAsync repoRoot directoryPath
+            listed.Add((directoryPath, children))
+
+            for child in children do
+                if child.isDirectory then
+                    pending.Push child.path
+
+        let! largeObjectsByRelativePath = tryListLargeObjects repoRoot openSession
 
         let largeObjectsByComparisonKey =
             buildLargeObjectsByComparisonKey largeObjectsByRelativePath
 
-        return withFileEntryLfsMetadata normalizedRepoRoot largeObjectsByRelativePath largeObjectsByComparisonKey entry
+        for (directoryPath, children) in listed do
+            let withMetadata =
+                children
+                |> Array.map (withFileEntryLfsMetadata repoRoot largeObjectsByRelativePath largeObjectsByComparisonKey)
+
+            tree.ReplaceChildren(directoryPath, withMetadata) |> ignore
+
+    return tree
 }
 
-/// Finds all files and subfolders of the given filepath
-let getFileEntries (path: string) (openSession: bool) : Fable.Core.JS.Promise<FileEntry[]> = promise {
-    let repoRoot = normalizeRootPath path
+/// Reconciles directories that a writer marked dirty, from the root downwards. A directory the tree has not
+/// loaded is replaced by its nearest loaded ancestor. One failing directory is reported to onError and does not
+/// stop the others. Returns true when any reconcile changed the tree.
+let reconcileDirtyDirectoriesAsync
+    (arcRoot: string)
+    (tree: IndexedFileTree)
+    (onError: string -> exn -> unit)
+    (directories: string[])
+    : JS.Promise<bool> =
+    promise {
+        let rootKey = PathKey.ofPath tree.CaseInsensitive arcRoot |> PathKey.value
 
-    let! rootStats = statAsync repoRoot
-    let rootIsDir = rootStats.isDirectory ()
+        let isInsideRoot (path: string) =
+            let key = PathKey.ofPath tree.CaseInsensitive path |> PathKey.value
+            key = rootKey || key.StartsWith(rootKey + "/")
 
-    let rootName = basename repoRoot
-    let rootEntry = FileEntry.create (rootName, repoRoot, rootIsDir, None)
+        let rec nearestLoaded (path: string) =
+            if not (isInsideRoot path) then
+                None
+            elif tree.IsLoaded path then
+                Some path
+            else
+                match PathHelpers.tryGetParentPath path with
+                | Some parent -> nearestLoaded parent
+                | None -> None
 
-    if not rootIsDir then
-        return [| rootEntry |]
-    else
-        let stack = ResizeArray<string>()
-        stack.Add(repoRoot)
+        let depth (path: string) =
+            (PathHelpers.normalizePath path).Split('/').Length
 
-        let entries = ResizeArray<FileEntry>()
-        entries.Add(rootEntry)
+        let ordered = directories |> Array.sortBy depth
+        let reconciled = HashSet<string>()
+        let mutable changed = false
 
-        while stack.Count > 0 do
-            let currentDir = stack.[stack.Count - 1]
-            stack.RemoveAt(stack.Count - 1)
+        for directory in ordered do
+            match nearestLoaded directory with
+            | Some target when reconciled.Add(PathKey.ofPath tree.CaseInsensitive target |> PathKey.value) ->
+                try
+                    let! directoryChanged = reconcileFileTreeDirectoryAsync arcRoot tree target
 
-            let! dirents = readdirWithTypesAsync currentDir (ReaddirOptions(withFileTypes = true))
+                    if directoryChanged then
+                        changed <- true
+                with error ->
+                    onError target error
+            | _ -> ()
 
-            dirents
-            |> Array.iter (fun dirent ->
-                let name = dirent.name
-                let isDir = dirent.isDirectory ()
-
-                let fullPath = join [| currentDir; name |] |> PathHelpers.normalizeSeparators
-                let relativePath = fullPath.Substring(repoRoot.Length).TrimStart('/')
-
-                if isDir then
-                    if not (isIgnoredInventoryEntry name relativePath true) then
-                        entries.Add(FileEntry.create (name, fullPath, true, None))
-                        stack.Add(fullPath)
-                else if not (isIgnoredInventoryEntry name relativePath false) then
-                    entries.Add(FileEntry.create (name, fullPath, false, None))
-            )
-
-        let scannedEntries = entries.ToArray()
-        let! largeObjectsByRelativePath = tryListLargeObjects repoRoot openSession
-        return withFileEntriesLfsMetadata repoRoot largeObjectsByRelativePath scannedEntries
-}
-
-/// Scans a path and builds its keyed file tree.
-let getFileTree (path: string) : Fable.Core.JS.Promise<Dictionary<string, FileEntry>> = promise {
-    let! fileEntries = getFileEntries path true
-    return createFileEntryTree fileEntries
-}
-
-/// Refreshes the tree without reopening a session that is being closed.
-let getFileTreeFromOpenSession (path: string) : Fable.Core.JS.Promise<Dictionary<string, FileEntry>> = promise {
-    let! fileEntries = getFileEntries path false
-    return createFileEntryTree fileEntries
-}
+        return changed
+    }

@@ -160,3 +160,22 @@ let queueFileWatcherEvent
         then
             pendingArcMergeEvents.Add watcherEvent
     | None -> ()
+
+/// The directories a batch of watcher events marks dirty, without duplicates. The parent of every event path is
+/// dirty. An added directory is dirty too, because its children are new. A removed directory only dirties its parent.
+let dirtyDirectoriesOfEvents (caseInsensitive: bool) (events: ArcVaultFileSystemEvent list) : string[] =
+    let dirty = Dictionary<string, string>()
+
+    let mark (path: string) =
+        let key = PathKey.ofPath caseInsensitive path |> PathKey.value
+
+        if not (dirty.ContainsKey key) then
+            dirty.[key] <- PathHelpers.normalizePath path
+
+    for event in events do
+        PathHelpers.tryGetParentPath event.AbsolutePath |> Option.iter mark
+
+        if eventNameEquals Chokidar.Events.AddDir event.EventName then
+            mark event.AbsolutePath
+
+    dirty.Values |> Seq.toArray
