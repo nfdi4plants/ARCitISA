@@ -16,14 +16,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### ✨ Added
+
+- "Refresh folder" in the file tree's right-click menu reads a folder from disk again. (by @caroott)
+
 ### 🔄 Changed
 
 - Files above the preview size limit or with binary content open as a page that shows the file name and size, with a button to open the file in its default application. (by @caroott)
 - The Git LFS badge of a downloaded file no longer frees its local copy. Freeing is in the right-click menu and asks for confirmation first. (by @caroott)
+- Large ARCs open faster. The file tree shows the ARC structure first and reads other folders when you expand them. (by @caroott)
+- Changes that other programs make inside data folders appear when the ARCitISA window gets focus, or after "Refresh folder". (by @caroott)
+- Git LFS badges come from one background listing per ARC. They update after Git operations in ARCitISA, and after changes made outside it when the window gets focus. (by @caroott)
 
 ### 🐛 Fixed
 
 - File names of Git LFS files stay visible in narrow file tree rows. The badge drops its text and size first. (by @caroott)
+- ARCitISA no longer keeps several CPU cores busy while a large ARC is open, because it watches only the ARC structure. (by @caroott)
+- The file tree stays responsive in folders with thousands of files. (by @caroott)
+- Renaming the ARC folder on Windows retries for longer and reports the reason when it fails. (by @caroott)
 
 ## 3.1.0 - 2026-10-21
 
