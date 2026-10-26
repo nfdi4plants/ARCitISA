@@ -200,6 +200,22 @@ type Rect = {
     Bottom: float
 }
 
+/// What the scrolling root reports about its scroll position and its sizes, plus the origin of the drawing in
+/// scroll coordinates and the zoom. The minimap computes with these numbers only.
+type ScrollGeometry = {
+    ScrollLeft: float
+    ScrollTop: float
+    ClientWidth: float
+    ClientHeight: float
+    ScrollWidth: float
+    ScrollHeight: float
+    /// Left edge of the drawing in the scroll coordinates of the root, in px.
+    OffsetX: float
+    /// Top edge of the drawing in the scroll coordinates of the root, in px.
+    OffsetY: float
+    Zoom: float
+}
+
 /// Everything the placement of the pill list reads from the DOM.
 type PillMenuGeometry = {
     /// getBoundingClientRect of the scrolling root.
