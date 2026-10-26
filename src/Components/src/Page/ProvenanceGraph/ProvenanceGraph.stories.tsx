@@ -3,6 +3,8 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, userEvent, waitFor, within } from 'storybook/test';
 import { ProvenanceGraph } from './ProvenanceGraph.fs.js';
 import { emptyIndex, index, wipIndex } from './ProvenanceGraph.sample.fs.js';
+import { ProvenanceGraphData_ofInvestigation, ProvenanceIndex_ofData } from '../../../../Shared/ProvenanceGraph/BuildIndex.fs.ts';
+import { ArcAssay, ArcInvestigation } from '../../fable_modules/ARCtrl.Core.3.0.0-beta.12/ArcTypes.fs.js';
 
 // The page fills its parent, so every story gives it a box with a height.
 const box = (width: number | string, height: number) => (Story: React.ComponentType) => (
@@ -127,7 +129,7 @@ async function expectHeaderFits(canvas: ReturnType<typeof within>, canvasElement
 }
 
 // A header of about 180px with three crumbs. Every crumb cuts its text with an ellipsis and keeps a width of
-// its own, and nothing sticks out of the header.
+// its own, and nothing sticks out of the header. The up button hides here, and the overview hides with its toggle.
 export const VeryNarrowHeader: Story = {
   decorators: [box(180, 480)],
   play: async ({ canvasElement }) => {
@@ -140,6 +142,9 @@ export const VeryNarrowHeader: Story = {
     await waitFor(() => expect(canvas.getAllByTestId(/^provenance-crumb-\d+$/)).toHaveLength(3), wait);
     await expect(canvas.queryByTestId('provenance-crumb-menu')).not.toBeInTheDocument();
     await expectHeaderFits(canvas, canvasElement, ['provenance-crumb-0', 'provenance-crumb-1', 'provenance-crumb-2']);
+    // Below the width where the toggle hides, the overview hides too, because it could not be collapsed.
+    await expect(canvas.getByTestId('provenance-overview')).not.toBeVisible();
+    await expect(canvas.getByTestId('provenance-overview-toggle')).not.toBeVisible();
   },
 };
 
@@ -158,6 +163,159 @@ export const VeryNarrowHeaderWithMenu: Story = {
       'provenance-crumb-3',
       'provenance-crumb-4',
     ]);
+  },
+};
+
+// A header between 16rem and 28rem wide shows the arrow of the up button without its label. The name stays in the
+// aria label and the title. The crumbs and both header buttons fit.
+export const NarrowHeaderUpIcon: Story = {
+  decorators: [box(360, 480)],
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    await canvas.findByTestId(`graph-node-${extraction}`, {}, wait);
+    await open(canvas, extraction, extractionProcess);
+    await open(canvas, extractionProcess, inputGroup);
+
+    const up = await canvas.findByTestId('provenance-up');
+    await expect(up).toBeVisible();
+    await expect(canvas.getByTestId('provenance-overview')).toBeVisible();
+    await expect(up).toHaveAttribute('aria-label');
+    await expect(up.querySelector('span')).not.toBeVisible();
+    await expectHeaderFits(canvas, canvasElement, [
+      'provenance-up',
+      'provenance-crumb-0',
+      'provenance-crumb-1',
+      'provenance-crumb-2',
+      'provenance-overview-toggle',
+    ]);
+  },
+};
+
+// The rows of the overview wrap when they are wider than the panel, so every control stays inside the panel and the
+// panel does not scroll sideways.
+export const WideOverviewRows: Story = {
+  decorators: [box(360, 560)],
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    await openLineage(canvas);
+    const overview = await canvas.findByTestId('provenance-overview');
+    await expect(overview).toBeVisible();
+
+    await waitFor(() => {
+      const panel = overview.getBoundingClientRect();
+      const controls = Array.from(overview.querySelectorAll('button'));
+
+      expect(controls.length).toBeGreaterThan(0);
+      for (const control of controls) {
+        expect(control.getBoundingClientRect().right).toBeLessThanOrEqual(panel.right + 1);
+      }
+      expect(overview.scrollWidth).toBeLessThanOrEqual(overview.clientWidth + 1);
+    }, wait);
+  },
+};
+
+// The left edge and the width of every chip of the first overview row, by the title of the chip.
+function chipBoxes(canvasElement: HTMLElement) {
+  const chips = Array.from(
+    canvasElement.querySelectorAll('[data-testid="provenance-overview-row-0"] [data-testid="provenance-overview-item"]'),
+  );
+  return new Map(
+    chips.map((chip) => {
+      const rect = chip.getBoundingClientRect();
+      return [chip.getAttribute('title') as string, { left: rect.left, width: rect.width }] as const;
+    }),
+  );
+}
+
+// Every chip that was in the row before is at the same place and has the same width now.
+function expectSameBoxes(canvasElement: HTMLElement, before: ReturnType<typeof chipBoxes>) {
+  const after = chipBoxes(canvasElement);
+  expect(after.size).toBeGreaterThan(1);
+  for (const [title, rect] of after) {
+    const old = before.get(title);
+    if (!old) continue;
+    expect(Math.abs(rect.left - old.left)).toBeLessThanOrEqual(0.5);
+    expect(Math.abs(rect.width - old.width)).toBeLessThanOrEqual(0.5);
+  }
+}
+
+// The chips of the first overview row hold still while the user navigates. After a click into a deeper level and a
+// click on a sibling chip, every chip that stays in the row keeps its left edge and its width. A chip has the same
+// width as the selected chip and as an unselected one, because the pin sits over the corner of the chip and takes no
+// inline space. The pin lies inside the panel, which clips what sticks out of its top.
+export const OverviewHoldsStill: Story = {
+  decorators: [box('100%', 640)],
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    await canvas.findByTestId(`graph-node-${extraction}`, {}, wait);
+    await open(canvas, extraction, extractionProcess);
+
+    const overview = await canvas.findByTestId('provenance-overview');
+    const before = chipBoxes(canvasElement);
+    expect(before.size).toBeGreaterThan(2);
+
+    const pin = canvas.getByTestId('provenance-overview-location');
+    await expect(pin).toBeVisible();
+    await expect(getComputedStyle(pin).position).toBe('absolute');
+    await expect(getComputedStyle(pin).pointerEvents).toBe('none');
+    await expect(pin.getBoundingClientRect().top).toBeGreaterThanOrEqual(overview.getBoundingClientRect().top);
+
+    // A click into a deeper level turns the selected chip of the first row from the pin chip into a button.
+    await open(canvas, extractionProcess, inputGroup);
+    await waitFor(() => expectSameBoxes(canvasElement, before), wait);
+
+    // A click on a sibling chip makes it the selected one and the old one an unselected button.
+    const sibling = canvasElement.querySelector(
+      '[data-testid="provenance-overview-row-0"] [data-testid="provenance-overview-item"][data-selected="false"]',
+    ) as HTMLElement;
+    const title = sibling.getAttribute('title') as string;
+    await userEvent.click(sibling);
+    await waitFor(() => expect(canvas.getByTestId('provenance-crumb-1')).toHaveTextContent(title), wait);
+    await waitFor(() => expectSameBoxes(canvasElement, before), wait);
+  },
+};
+
+// Three datasets with labels shorter than the minimum width of a chip. The chips keep the minimum width in every
+// state, so a chip that becomes the selected one does not shrink.
+const shortLabels = ProvenanceIndex_ofData(
+  ProvenanceGraphData_ofInvestigation(
+    ArcInvestigation.create(
+      'Short-example',
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      [ArcAssay.create('S1'), ArcAssay.create('S2'), ArcAssay.create('S3')],
+    ),
+  ),
+);
+
+export const OverviewShortLabels: Story = {
+  args: { index: shortLabels },
+  decorators: [box('100%', 480)],
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    await userEvent.click(await canvas.findByTestId('graph-node-assays/S1/', {}, wait));
+    await canvas.findByTestId('provenance-overview', {}, wait);
+    await waitFor(() => expect(canvas.getByTestId('provenance-crumb-1')).toHaveTextContent('S1'), wait);
+
+    const before = chipBoxes(canvasElement);
+    expect(before.size).toBe(3);
+
+    const sibling = canvasElement.querySelector(
+      '[data-testid="provenance-overview-row-0"] [data-testid="provenance-overview-item"][title="S2"]',
+    ) as HTMLElement;
+    await userEvent.click(sibling);
+    await waitFor(() => expect(canvas.getByTestId('provenance-crumb-1')).toHaveTextContent('S2'), wait);
+    await waitFor(() => expectSameBoxes(canvasElement, before), wait);
+    await expect(chipBoxes(canvasElement).size).toBe(3);
   },
 };
 
