@@ -177,11 +177,7 @@ type OpenArcRootRenamePlan = {
 let private resolveAbsolutePath (pathValue: string) =
     pathDynamic?resolve (pathValue) |> unbox<string> |> PathHelpers.normalizePath
 
-let private tryGetNodeErrorCode (error: exn) : string option =
-    try
-        error?code |> unbox<string> |> Option.ofObj
-    with _ ->
-        None
+let private tryGetNodeErrorCode = Filesystem.tryGetNodeErrorCode
 
 let private pathExistsAsync (absolutePath: string) : JS.Promise<bool> = promise {
     let! fileExists = ARCtrl.FileSystemHelper.fileExistsAsync absolutePath
@@ -192,11 +188,22 @@ let private pathExistsAsync (absolutePath: string) : JS.Promise<bool> = promise 
         return! ARCtrl.FileSystemHelper.directoryExistsAsync absolutePath
 }
 
+let private currentNodePlatform () : string =
+    emitJsExpr () "process.platform" |> unbox<string>
+
+/// Delays before each rename attempt. Windows holds folders longer (for example while an antivirus scan reads them), so it waits up to 4 s.
+let renameRetryDelaysMs (platform: string) : int[] =
+    if String.Equals(platform, "win32", StringComparison.OrdinalIgnoreCase) then
+        [| 0; 100; 300; 1000; 2000; 4000 |]
+    else
+        [| 0; 75; 200; 500 |]
+
 let private renameWithRetriesAsync
+    (platform: string)
     (sourceAbsolutePath: string)
     (targetAbsolutePath: string)
     : JS.Promise<Result<unit, exn>> =
-    let retryDelaysMs = [| 0; 75; 200; 500 |]
+    let retryDelaysMs = renameRetryDelaysMs platform
 
     let isTransientRenameError =
         function
@@ -226,16 +233,19 @@ let private renameWithRetriesAsync
 
     attempt 0
 
-let private mapArcRootRenameDiskError (sourcePath: string) (targetPath: string) (renameError: exn) =
+/// Maps a failed rename to an exception with a readable message that includes the error code.
+/// The message of a raw Node error does not survive the IPC bridge, so the result is always a plain exn.
+let mapArcRootRenameDiskError (sourcePath: string) (targetPath: string) (renameError: exn) =
     match tryGetNodeErrorCode renameError with
-    | Some "EPERM"
-    | Some "EACCES" ->
+    | Some code when code = "EPERM" || code = "EACCES" || code = "EBUSY" ->
         exn
-            $"Cannot rename '{sourcePath}' to '{targetPath}'. Windows reported a permission or file-lock conflict. If the destination already exists, choose a different name and close apps that may be using these paths."
-    | Some "ENOTEMPTY"
-    | Some "EEXIST" -> exn $"Cannot rename '{sourcePath}' to '{targetPath}' because the destination already exists."
-    | Some "ENOENT" -> exn $"Cannot rename '{sourcePath}' because the source path no longer exists on disk."
-    | _ -> renameError
+            $"Cannot rename '{sourcePath}' to '{targetPath}'. The folder is in use or access is denied ({code}). Close apps that may be using these paths, such as a file explorer window or a terminal inside the ARC, and try again."
+    | Some code when code = "ENOTEMPTY" || code = "EEXIST" ->
+        exn $"Cannot rename '{sourcePath}' to '{targetPath}' because the destination already exists ({code})."
+    | Some "ENOENT" -> exn $"Cannot rename '{sourcePath}' because the source path no longer exists on disk (ENOENT)."
+    | code ->
+        let codeText = code |> Option.defaultValue "no error code"
+        exn $"Cannot rename '{sourcePath}' to '{targetPath}': {renameError.Message} ({codeText})."
 
 let tryBuildOpenArcRootRenamePlan arcPath newName : Result<OpenArcRootRenamePlan, exn> =
     let candidateName = newName |> Option.ofObj |> Option.defaultValue String.Empty
@@ -290,7 +300,7 @@ let renameOpenArcRootDirectoryOnDisk arcPath newName : JS.Promise<Result<string,
                             $"Cannot rename '{plan.SourcePath}' to '{plan.TargetPath}' because the destination already exists."
                     )
             else
-                let! renameResult = renameWithRetriesAsync plan.SourcePath plan.TargetPath
+                let! renameResult = renameWithRetriesAsync (currentNodePlatform ()) plan.SourcePath plan.TargetPath
 
                 match renameResult with
                 | Ok() -> return Ok plan.TargetPath
@@ -354,60 +364,177 @@ let loadWindow (window: BrowserWindow) = promise {
 let shouldUsePollingByDefault (platform: string) =
     System.String.Equals(platform, "win32", System.StringComparison.OrdinalIgnoreCase)
 
-/// Decides whether the file watcher ignores a path. It ignores every path with a `.git` segment, files and
-/// folders alike, so it also ignores a file named `.git`, which the file tree lists. Of the other names the
-/// file tree hides, it ignores files only (such as lock files), so a folder named like a lock file is watched.
-/// An unknown kind (None) is treated like a folder. Chokidar first asks without stats and repeats the
-/// question with stats before it watches a path, so a file is still judged as a file.
-let isFileWatcherPathIgnoredFor (path: string) (isDirectory: bool option) =
+/// Chokidar passes cwd-relative paths without telling files from directories, so the shared rule runs as for a file.
+/// Import staging folders stay hidden here only, because they exist for the length of an import.
+let isFileWatcherPathIgnored (path: string) =
     let normalizedPath = PathHelpers.normalizeSeparators path
+    let temporaryImportPattern = """(^|/)\.swate-import-[0-9a-fA-F]{32}(/|$)"""
 
-    isGitMetadataPath normalizedPath
-    || (isDirectory = Some false && isHiddenArcFilePath normalizedPath)
+    isIgnoredInventoryEntry (PathHelpers.getNameFromPath normalizedPath) normalizedPath false
+    || System.Text.RegularExpressions.Regex.IsMatch(normalizedPath, temporaryImportPattern)
 
-/// The function chokidar calls. It passes the stats when it has them. The staging check needs no stats,
-/// so it also covers the first call for a path.
-let internal isFileWatcherPathIgnoredByStats
-    (isActiveStagingPath: string -> bool)
-    (path: string)
-    (stats: Chokidar.IWatchStats option)
-    =
-    isActiveStagingPath path
-    || (stats
-        |> Option.map (fun stats -> stats.isDirectory ())
-        |> isFileWatcherPathIgnoredFor path)
+/// Environment variable that forces polling for network or FUSE mounts, where native file events do not arrive.
+[<Literal>]
+let watchPollingEnvironmentVariable = "SWATE_WATCH_POLLING"
 
-/// Starts a watcher on an ARC folder. It also ignores the paths for which isActiveStagingPath is true.
-let createFileWatcher (isActiveStagingPath: string -> bool) (path: string) (usePolling: bool) =
+/// Decides between polling and native events. An explicit choice wins. Otherwise the environment flag
+/// forces polling on any platform and the platform default applies without it.
+let resolveFileWatcherPolling (platform: string) (environmentFlag: string option) (explicitChoice: bool option) =
+    match explicitChoice with
+    | Some choice -> choice
+    | None -> environmentFlag = Some "1" || shouldUsePollingByDefault platform
 
-    let watcherOptions =
-        if usePolling then
-            Chokidar.WatchOptions(
-                cwd = path,
-                awaitWriteFinish = true,
-                ignored =
-                    !^System.Func<string, Chokidar.IWatchStats option, bool>(isFileWatcherPathIgnoredByStats
-                        isActiveStagingPath),
-                ignoreInitial = true,
-                usePolling = true,
-                interval = 200,
-                binaryInterval = 400
-            )
+/// Timings of the watcher in milliseconds. Tests shorten them. The write values are chokidar's defaults.
+type FileWatcherTuning = {
+    PollingIntervalMs: int
+    BinaryPollingIntervalMs: int
+    WriteStabilityMs: int
+    WritePollMs: int
+}
+
+let defaultFileWatcherTuning = {
+    PollingIntervalMs = 200
+    BinaryPollingIntervalMs = 400
+    WriteStabilityMs = 2000
+    WritePollMs = 100
+}
+
+/// Keeps the permanent watcher on ARC structure. Chokidar often asks before it has stat data, so the path shape
+/// decides first and the stats only separate files from folders where the shape allows both.
+let isStructuralWatcherPathOfKind (arcPath: string) (candidatePath: string) (isDirectory: bool option) =
+    let absolutePath =
+        if Main.Bindings.Path.isAbsolute candidatePath then
+            candidatePath
         else
-            Chokidar.WatchOptions(
-                cwd = path,
-                awaitWriteFinish = true,
-                ignored =
-                    !^System.Func<string, Chokidar.IWatchStats option, bool>(isFileWatcherPathIgnoredByStats
-                        isActiveStagingPath),
-                ignoreInitial = true
-            )
+            Main.Bindings.Path.resolve [| arcPath; candidatePath |]
 
-    let watcher = Chokidar.Chokidar.watch (path, watcherOptions)
+    match tryGetRepoRelativePathOrRoot arcPath absolutePath with
+    | None -> false
+    | Some relativePath ->
+        // Import staging folders and git metadata are checked on the relative path, so a parent folder of the ARC
+        // with such a name cannot hide the whole ARC.
+        (relativePath = "" || not (isFileWatcherPathIgnored relativePath))
+        && ArcEntityPathRules.isStructuralWatcherPath relativePath isDirectory
 
-    watcher
+/// The watcher's own decision, where chokidar's stats (when present) tell files from folders.
+let isStructuralFileWatcherPath (arcPath: string) (candidatePath: string) (stats: Chokidar.IWatchedStats option) =
+    isStructuralWatcherPathOfKind arcPath candidatePath (stats |> Option.map (fun value -> value.isDirectory ()))
+
+let createWatchOptions (path: string) (usePolling: bool) (tuning: FileWatcherTuning) =
+    let ignored =
+        System.Func<string, Chokidar.IWatchedStats option, bool>(fun candidatePath stats ->
+            not (isStructuralFileWatcherPath path candidatePath stats)
+        )
+
+    let awaitWriteFinish =
+        Chokidar.AwaitWriteFinishOptions(
+            stabilityThreshold = tuning.WriteStabilityMs,
+            pollInterval = tuning.WritePollMs
+        )
+
+    if usePolling then
+        Chokidar.WatchOptions(
+            cwd = path,
+            awaitWriteFinish = !^awaitWriteFinish,
+            ignored = !^ignored,
+            ignoreInitial = true,
+            usePolling = true,
+            interval = tuning.PollingIntervalMs,
+            binaryInterval = tuning.BinaryPollingIntervalMs
+        )
+    else
+        Chokidar.WatchOptions(
+            cwd = path,
+            awaitWriteFinish = !^awaitWriteFinish,
+            ignored = !^ignored,
+            ignoreInitial = true
+        )
+
+let createFileWatcherWith (tuning: FileWatcherTuning) (path: string) (usePolling: bool option) =
+    // Native Windows file events can keep handles that block app-initiated folder renames.
+    let usePolling =
+        resolveFileWatcherPolling
+            (currentNodePlatform ())
+            (Main.Bindings.Node.environmentVariable watchPollingEnvironmentVariable)
+            usePolling
+
+    Chokidar.Chokidar.watch (path, createWatchOptions path usePolling tuning)
+
+let createFileWatcher (path: string) (usePolling: bool option) =
+    createFileWatcherWith defaultFileWatcherTuning path usePolling
 
 let sendArcHasUnsavedChangesUpdate (hasUnsavedChanges: bool) (window: BrowserWindow) =
     WindowSend.send<Swate.Electron.Shared.IPCTypes.MainToRendererIpc.IHasUnsavedArcChangesRendererApi>
         window
         (fun api -> api.arcUnsavedChangesUpdate hasUnsavedChanges)
+
+/// Text files above this size get no preview.
+let maxTextPreviewBytes = 20.0 * 1024.0 * 1024.0
+
+/// PDFs above this size get no preview.
+let maxPdfPreviewBytes = 50.0 * 1024.0 * 1024.0
+
+let private binarySniffBytes = 8192
+
+/// Reads up to maxBytes bytes from the start of the file through one handle. The handle is closed on success
+/// and on failure. The close is awaited so the file is released before the caller continues.
+let private readFirstBytesAsync (path: string) (maxBytes: int) : JS.Promise<byte[] * int> = promise {
+    let! handle = Filesystem.openAsync path "r"
+    let buffer = Filesystem.allocBuffer maxBytes
+
+    let! total = promise {
+        try
+            let total = ref 0
+            let reachedEnd = ref false
+
+            while not reachedEnd.Value && total.Value < maxBytes do
+                let! result = handle.read (buffer, total.Value, maxBytes - total.Value, total.Value)
+                total.Value <- total.Value + result.bytesRead
+                reachedEnd.Value <- result.bytesRead = 0
+
+            return total.Value
+        with error ->
+            do! handle.close ()
+            return raise error
+    }
+
+    do! handle.close ()
+    return buffer, total
+}
+
+/// Reads a file of an ARC for the preview. Files above the size limit and files without text content come
+/// back as a NoPreview DTO. Their content is not read.
+let readFileForPreviewAsync (absolutePath: string) (relativePath: string) : JS.Promise<FileContentDTO> = promise {
+    let fileType = FileContentDTO.inferTextFileTypeFromPath relativePath
+    let isPdf = fileType = FileContentType.PDF
+    let! stats = Filesystem.statAsync absolutePath
+    let limit = if isPdf then maxPdfPreviewBytes else maxTextPreviewBytes
+
+    if not (stats.isFile ()) then
+        return FileContentDTO.createNoPreview relativePath stats.size NoPreviewReason.Binary
+    elif stats.size > limit then
+        return FileContentDTO.createNoPreview relativePath stats.size NoPreviewReason.TooLarge
+    else
+        // The read is capped at the size from the stat plus one byte. A file that grew afterwards is previewed
+        // up to that cap, and one that crossed the limit while it was exactly at it shows as too large.
+        let capacity = int (min (limit + 1.0) (stats.size + 1.0))
+        let! buffer, total = readFirstBytesAsync absolutePath capacity
+
+        if float total > limit then
+            return FileContentDTO.createNoPreview relativePath stats.size NoPreviewReason.TooLarge
+        elif isPdf then
+            return FileContentDTO.create fileType (Filesystem.bufferToBase64Prefix buffer total) relativePath
+        elif total >= 2 && buffer[0] = 0xFFuy && buffer[1] = 0xFEuy then
+            // UTF-16 text has NUL bytes, so a BOM decides before the NUL sniff.
+            return FileContentDTO.create fileType (Filesystem.bufferDecodePrefix buffer total "utf-16le") relativePath
+        elif total >= 2 && buffer[0] = 0xFEuy && buffer[1] = 0xFFuy then
+            return FileContentDTO.create fileType (Filesystem.bufferDecodePrefix buffer total "utf-16be") relativePath
+        elif
+            buffer
+            |> Array.truncate (min total binarySniffBytes)
+            |> Array.exists (fun b -> b = 0uy)
+        then
+            return FileContentDTO.createNoPreview relativePath stats.size NoPreviewReason.Binary
+        else
+            return FileContentDTO.create fileType (Filesystem.bufferToUtf8Prefix buffer total) relativePath
+}

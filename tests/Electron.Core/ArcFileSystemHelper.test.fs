@@ -137,7 +137,6 @@ let private acceptImportedFiles () = promise { return Ok() }
 
 let private importWithoutCancellation arcPath targetRelativePath sourcePaths =
     ArcFileSystemHelper.importExternalFilesOnDisk
-        (fun _ -> ignore)
         arcPath
         targetRelativePath
         sourcePaths
@@ -153,7 +152,6 @@ let private importCollectingPlannedFiles arcPath targetRelativePath sourcePaths 
 
     match!
         ArcFileSystemHelper.importExternalFilesOnDisk
-            (fun _ -> ignore)
             arcPath
             targetRelativePath
             sourcePaths
@@ -167,42 +165,6 @@ let private importCollectingPlannedFiles arcPath targetRelativePath sourcePaths 
     | Ok ImportExternalFilesResult.Cancelled -> return failwith "Expected import to complete."
     | Ok ImportExternalFilesResult.Completed -> return plannedFiles.ToArray()
 }
-
-/// Runs a lifecycle import and records what the staging registration saw.
-let private importRecordingStagingLifecycle
-    arcPath
-    sourcePath
-    (removeTemporaryDirectory: string -> JS.Promise<unit>)
-    (validate: unit -> JS.Promise<Result<unit, exn>>)
-    =
-    promise {
-        let registered = ResizeArray<string * bool>()
-        let released = ResizeArray<bool>()
-        let mutable stagingDirectory = ""
-
-        let! result =
-            ArcFileSystemHelper.importExternalFilesOnDiskWithTemporaryCleanup
-                (fun directory ->
-                    stagingDirectory <- directory
-                    registered.Add(directory, Main.Bindings.Filesystem.existsSync directory)
-                    fun stillExists -> released.Add stillExists
-                )
-                removeTemporaryDirectory
-                ignore
-                arcPath
-                "assays/AssayA"
-                [| sourcePath |]
-                ignore
-                (fun () -> false)
-                ignore
-                ignore
-                validate
-
-        return result, registered, released, stagingDirectory
-    }
-
-let private removeDirectoryRecursively (directory: string) =
-    Main.Bindings.Filesystem.rmAsync directory (Main.Bindings.Filesystem.RmOptions(recursive = true, force = true))
 
 let private readRelativeFileAsync rootPath relativePath =
     Main.Bindings.Filesystem.readFileAsync
@@ -322,11 +284,9 @@ Vitest.describe (
                 let guidSuffix = String.replicate 32 "a"
                 let backupPath = $"C:/arc/data.bin.vcs-lfs-backup-{guidSuffix}"
 
-                Vitest.expect(Main.ArcVaultHelper.isFileWatcherPathIgnoredFor backupPath (Some false)).toBe (true)
+                Vitest.expect(Main.ArcVaultHelper.isFileWatcherPathIgnored backupPath).toBe (true)
 
-                Vitest
-                    .expect(Main.ArcVaultHelper.isFileWatcherPathIgnoredFor "C:/arc/data.bin" (Some false))
-                    .toBe (false)
+                Vitest.expect(Main.ArcVaultHelper.isFileWatcherPathIgnored "C:/arc/data.bin").toBe (false)
         )
 
         Vitest.test (
@@ -340,7 +300,7 @@ Vitest.describe (
                         "C:/arc/.~$Book1.xlsx"
                         "C:/arc/.~lock.Book1.xlsx#"
                     ] do
-                    Vitest.expect(Main.ArcVaultHelper.isFileWatcherPathIgnoredFor lockFilePath (Some false)).toBe (true)
+                    Vitest.expect(Main.ArcVaultHelper.isFileWatcherPathIgnored lockFilePath).toBe (true)
 
                 for regularPath in
                     [
@@ -349,73 +309,62 @@ Vitest.describe (
                         "C:/arc/~$drafts"
                         "C:/arc/~$drafts/notes.md"
                     ] do
-                    Vitest.expect(Main.ArcVaultHelper.isFileWatcherPathIgnoredFor regularPath (Some false)).toBe (false)
+                    Vitest.expect(Main.ArcVaultHelper.isFileWatcherPathIgnored regularPath).toBe (false)
         )
 
         Vitest.test (
-            "leaves files the watcher ignores out of the imported file events and claims staging-named user folders",
-            fun () ->
-                // The watcher never reports these files, so no event would match their claim. The claim would only
-                // match a folder that another program later creates at that path, and that folder would skip its ARC
-                // merge until the lease ends.
-                let guidSuffix = String.replicate 32 "a"
-
-                let events =
-                    Main.WatcherHelpers.createImportedWatcherEvents "C:/arc" "assays/AssayA/dataset" {
-                        FolderPaths = [| $"Run1/.swate-import-{guidSuffix}" |]
-                        FilePaths = [|
-                            "Run1/notes.txt"
-                            "Run1/~$results.xlsx"
-                            $"Run1/.swate-import-{guidSuffix}/raw.txt"
-                            $"Run1/data.bin.vcs-lfs-backup-{guidSuffix}"
-                        |]
-                    }
-
-                Vitest
-                    .expect(events |> Array.map _.RelativePath)
-                    .toEqual (
-                        [|
-                            $"assays/AssayA/dataset/Run1/.swate-import-{guidSuffix}"
-                            "assays/AssayA/dataset/Run1/notes.txt"
-                            $"assays/AssayA/dataset/Run1/.swate-import-{guidSuffix}/raw.txt"
-                        |]
-                    )
-        )
-
-        Vitest.test (
-            "builds addDir events for planned folders and add events for planned files, below the target or at the ARC root",
+            "builds addDir and add events only for the planned paths that the structural watcher reports",
             fun () ->
                 let addDir = Main.Bindings.Chokidar.Events.AddDir.ToString()
                 let add = Main.Bindings.Chokidar.Events.Add.ToString()
+                let guidSuffix = String.replicate 32 "a"
 
-                let plannedPaths = {
-                    FolderPaths = [| "Run1"; "Run1/raw" |]
-                    FilePaths = [| "Run1/raw/results.csv" |]
-                }
-
-                let eventsFor target =
-                    Main.WatcherHelpers.createImportedWatcherEvents "C:/arc" target plannedPaths
+                let eventsFor target plannedPaths =
+                    Main.WatcherHelpers.createImportedWatcherEvents "/arc" target plannedPaths
                     |> Array.map (fun event -> event.EventName, event.RelativePath)
 
+                // Payload folders and files are never reported.
                 Vitest
-                    .expect(eventsFor "assays/AssayA/dataset")
+                    .expect(
+                        eventsFor "assays/AssayA/dataset" {
+                            FolderPaths = [| "Run1"; "Run1/raw" |]
+                            FilePaths = [| "Run1/raw/results.csv" |]
+                        }
+                    )
+                    .toEqual ([||])
+
+                Vitest
+                    .expect(
+                        eventsFor "assays" {
+                            FolderPaths = [|
+                                "AssayB"
+                                "AssayB/dataset"
+                                $".swate-import-{guidSuffix}"
+                            |]
+                            FilePaths = [|
+                                "AssayB/isa.assay.xlsx"
+                                "AssayB/isa.datamap.xlsx"
+                                "AssayB/notes.txt"
+                                "AssayB/dataset/raw.csv"
+                            |]
+                        }
+                    )
                     .toEqual (
                         [|
-                            addDir, "assays/AssayA/dataset/Run1"
-                            addDir, "assays/AssayA/dataset/Run1/raw"
-                            add, "assays/AssayA/dataset/Run1/raw/results.csv"
+                            addDir, "assays/AssayB"
+                            add, "assays/AssayB/isa.assay.xlsx"
+                            add, "assays/AssayB/isa.datamap.xlsx"
                         |]
                     )
 
                 Vitest
-                    .expect(eventsFor "")
-                    .toEqual (
-                        [|
-                            addDir, "Run1"
-                            addDir, "Run1/raw"
-                            add, "Run1/raw/results.csv"
-                        |]
+                    .expect(
+                        eventsFor "" {
+                            FolderPaths = [||]
+                            FilePaths = [| "isa.investigation.xlsx"; "notes.md" |]
+                        }
                     )
+                    .toEqual ([| add, "isa.investigation.xlsx" |])
         )
 
         Vitest.test (
@@ -516,7 +465,6 @@ Vitest.describe (
 
                     match!
                         ArcFileSystemHelper.importExternalFilesOnDisk
-                            (fun _ -> ignore)
                             arcPath
                             "assays/AssayA"
                             [| sourcePath |]
@@ -565,7 +513,6 @@ Vitest.describe (
 
                     match!
                         ArcFileSystemHelper.importExternalFilesOnDisk
-                            (fun _ -> ignore)
                             arcPath
                             "assays/AssayA/dataset"
                             [| sourcePath |]
@@ -601,7 +548,6 @@ Vitest.describe (
 
                     match!
                         ArcFileSystemHelper.importExternalFilesOnDisk
-                            (fun _ -> ignore)
                             arcPath
                             "assays/AssayA"
                             [|
@@ -643,7 +589,6 @@ Vitest.describe (
 
                     match!
                         ArcFileSystemHelper.importExternalFilesOnDisk
-                            (fun _ -> ignore)
                             arcPath
                             "assays/AssayA"
                             [| sourcePath |]
@@ -674,7 +619,6 @@ Vitest.describe (
 
                     match!
                         ArcFileSystemHelper.importExternalFilesOnDisk
-                            (fun _ -> ignore)
                             arcPath
                             "assays/AssayA"
                             [|
@@ -717,7 +661,6 @@ Vitest.describe (
 
                     match!
                         ArcFileSystemHelper.importExternalFilesOnDiskWithTemporaryCleanup
-                            (fun _ -> ignore)
                             (fun _ ->
                                 lifecycleOrder.Add "cleanup"
                                 JS.Constructors.Promise.reject (nodeError "staging directory busy" "EBUSY")
@@ -729,7 +672,7 @@ Vitest.describe (
                             ignore
                             (fun () -> false)
                             ignore
-                            (fun _ -> lifecycleOrder.Add "published")
+                            (fun () -> lifecycleOrder.Add "published")
                             (fun () -> promise {
                                 lifecycleOrder.Add "validate"
                                 return Ok()
@@ -757,74 +700,6 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "registers the staging folder before it exists and releases it once after it is removed",
-            fun () ->
-                withAssayArc (fun arcPath -> promise {
-                    let fileName = $"lifecycle-{newGuidN ()}.txt"
-                    do! writeRelativeFileAsync (dirname arcPath) fileName "content"
-
-                    let! result, registered, released, _ =
-                        importRecordingStagingLifecycle
-                            arcPath
-                            (join [| dirname arcPath; fileName |])
-                            removeDirectoryRecursively
-                            acceptImportedFiles
-
-                    Vitest.expect(result).toEqual (Ok ImportExternalFilesResult.Completed)
-                    Vitest.expect(registered.Count).toBe 1
-                    Vitest.expect(snd registered.[0]).toBe false
-                    Vitest.expect(released.Count).toBe 1
-                    Vitest.expect(released.[0]).toBe false
-                })
-        )
-
-        Vitest.test (
-            "releases the staging folder once after a failed import is rolled back",
-            fun () ->
-                withAssayArc (fun arcPath -> promise {
-                    let fileName = $"lifecycle-{newGuidN ()}.txt"
-                    do! writeRelativeFileAsync (dirname arcPath) fileName "content"
-
-                    let! result, registered, released, _ =
-                        importRecordingStagingLifecycle
-                            arcPath
-                            (join [| dirname arcPath; fileName |])
-                            removeDirectoryRecursively
-                            (fun () -> promise { return Error(exn "ARC synchronization failed") })
-
-                    match result with
-                    | Error _ -> ()
-                    | Ok _ -> failwith "Expected the import to fail."
-
-                    Vitest.expect(registered.Count).toBe 1
-                    Vitest.expect(released.Count).toBe 1
-                    Vitest.expect(released.[0]).toBe false
-                })
-        )
-
-        Vitest.test (
-            "releases the staging folder with stillExists true when its removal fails and the folder stays",
-            fun () ->
-                withAssayArc (fun arcPath -> promise {
-                    let fileName = $"lifecycle-{newGuidN ()}.txt"
-                    do! writeRelativeFileAsync (dirname arcPath) fileName "content"
-
-                    let! result, registered, released, stagingDirectory =
-                        importRecordingStagingLifecycle
-                            arcPath
-                            (join [| dirname arcPath; fileName |])
-                            (fun _ -> JS.Constructors.Promise.reject (nodeError "staging directory busy" "EBUSY"))
-                            acceptImportedFiles
-
-                    Vitest.expect(result).toEqual (Ok ImportExternalFilesResult.Completed)
-                    Vitest.expect(registered.Count).toBe 1
-                    Vitest.expect(released.Count).toBe 1
-                    Vitest.expect(released.[0]).toBe true
-                    Vitest.expect(Main.Bindings.Filesystem.existsSync stagingDirectory).toBe true
-                })
-        )
-
-        Vitest.test (
             "does not overwrite an existing destination file",
             fun () ->
                 withAssayArc (fun arcPath -> promise {
@@ -835,7 +710,6 @@ Vitest.describe (
 
                     match!
                         ArcFileSystemHelper.importExternalFilesOnDisk
-                            (fun _ -> ignore)
                             arcPath
                             "assays/AssayA"
                             [| join [| sourceDirectory; fileName |] |]
@@ -867,7 +741,6 @@ Vitest.describe (
                     do! createRelativeDirectoryAsync arcPath "assays/AssayA/dataset"
                     let mutable plannedFiles = [||]
                     let mutable plannedFolders = [||]
-                    let mutable publishedFolders = [||]
                     let lifecycleOrder = ResizeArray<string>()
 
                     // The import handler registers watcher ownership in onPathsPlanned, so it must run
@@ -885,17 +758,13 @@ Vitest.describe (
 
                     match!
                         ArcFileSystemHelper.importExternalFilesOnDisk
-                            (fun _ -> ignore)
                             arcPath
                             "assays/AssayA/dataset"
                             [| sourcePath |]
                             ignore
                             (fun () -> false)
                             onPathsPlanned
-                            (fun folders ->
-                                publishedFolders <- folders
-                                lifecycleOrder.Add "published"
-                            )
+                            (fun () -> lifecycleOrder.Add "published")
                             acceptImportedFiles
                     with
                     | Error error -> failwith error.Message
@@ -924,11 +793,6 @@ Vitest.describe (
 
                         Vitest.expect(plannedFolders).toEqual ([| "Run1"; "Run1/empty"; "Run1/raw" |])
                         Vitest.expect(lifecycleOrder |> Seq.toArray).toEqual ([| "planned"; "published" |])
-
-                        // Only the picked folder is reported, not the folders inside it.
-                        Vitest
-                            .expect(publishedFolders)
-                            .toEqual ([| absoluteArcPath arcPath "assays/AssayA/dataset/Run1" |])
 
                         Vitest.expect(notes).toBe ("run notes")
                         Vitest.expect(results).toBe ("a,b")
@@ -1002,7 +866,6 @@ Vitest.describe (
 
                     match!
                         ArcFileSystemHelper.importExternalFilesOnDisk
-                            (fun _ -> ignore)
                             arcPath
                             "assays/AssayA/dataset"
                             [| sourcePath |]
@@ -1147,7 +1010,6 @@ Vitest.describe (
 
                     let! result =
                         ArcFileSystemHelper.importExternalFilesOnDisk
-                            (fun _ -> ignore)
                             arcPath
                             "assays/AssayA/dataset"
                             [| sourcePath |]
@@ -1182,7 +1044,6 @@ Vitest.describe (
 
                     let! result =
                         ArcFileSystemHelper.importExternalFilesOnDisk
-                            (fun _ -> ignore)
                             arcPath
                             "assays/AssayA/dataset"
                             [| sourcePath |]
@@ -1879,7 +1740,6 @@ Vitest.describe (
 
                     let! result =
                         ArcFileSystemHelper.importExternalFilesOnDisk
-                            (fun _ -> ignore)
                             arcPath
                             "assays/AssayA/dataset"
                             [|
@@ -1909,7 +1769,6 @@ Vitest.describe (
 
                     match!
                         ArcFileSystemHelper.importExternalFilesOnDisk
-                            (fun _ -> ignore)
                             arcPath
                             "assays/AssayA/dataset"
                             [| sourcePath |]
@@ -1952,7 +1811,6 @@ Vitest.describe (
 
                     match!
                         ArcFileSystemHelper.importExternalFilesOnDisk
-                            (fun _ -> ignore)
                             arcPath
                             "assays/AssayA/dataset"
                             [| sourcePath |]

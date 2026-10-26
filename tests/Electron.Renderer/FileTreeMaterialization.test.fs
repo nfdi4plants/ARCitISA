@@ -1,98 +1,165 @@
 module ElectronRenderer.FileTreeMaterializationTests
 
-open System.Collections.Generic
-open Renderer.Components.LeftSidebar.FileExplorer.Helper
 open Renderer.Components.LeftSidebar.FileExplorer.FileTreeMaterialization
+open Renderer.Context.FileTreeStore
 open Swate.Components.Page.FileExplorer.Types
 open Swate.Electron.Shared.FileIOTypes
+open Swate.Electron.Shared.IPCTypes
 open Vitest
 
-let private fileNode (name: string) (path: string) =
-    FileTreeNode.create (name, false, path, Dictionary())
+let private nameOf (path: string) =
+    path.Substring(path.LastIndexOf '/' + 1)
 
-let private directoryNode (name: string) (path: string) (children: FileTreeNode list) =
-    let childrenByName = Dictionary<string, FileTreeNode>()
+let private dir (path: string) =
+    FileEntry.create (nameOf path, path, true)
 
-    children |> List.iter (fun child -> childrenByName.[child.name] <- child)
+let private file (path: string) =
+    FileEntry.create (nameOf path, path, false)
 
-    FileTreeNode.create (name, true, path, childrenByName)
+/// A store snapshot with the given entries. The root entry is added, and loaded lists the loaded directories.
+let private snapshotOf (entries: FileEntry list) (loaded: string list) =
+    let store = FileTreeStore()
+    store.BeginLoad()
 
-let private toFileItemTree materializedDirectoryPaths node =
-    toMaterializedFileItemTree
-        (fun node ->
-            let item =
-                if node.isDirectory then
-                    FileTree.createFolder node.name (Some node.path) FileItemIcon.Folder
-                else
-                    FileTree.createFile node.name (Some node.path) FileItemIcon.Document
+    store.ApplySnapshot {|
+        treeVersion = 1
+        caseInsensitive = false
+        entries = Array.ofList (FileEntry.create ("arc", "", true) :: entries)
+        loadedDirectories = Array.ofList ("" :: loaded)
+        fileWatcher = {|
+            state = FileWatcherStatus.Running
+            reason = ""
+        |}
+    |}
 
-            { item with Id = node.path }
-        )
-        materializedDirectoryPaths
-        node
-        true
+    store.Snapshot
+
+let private createItem (visited: ResizeArray<string>) (entry: FileEntry) =
+    visited.Add entry.path
+
+    let item =
+        if entry.isDirectory then
+            FileTree.createFolder entry.name (Some entry.path) FileItemIcon.Folder
+        else
+            FileTree.createFile entry.name (Some entry.path) FileItemIcon.Document
+
+    { item with Id = entry.path }
+
+let private noBusy (_: string) (entries: FileEntry[]) = entries
+
+let private build snapshot expanded =
+    buildVisibleItems (createItem (ResizeArray())) noBusy snapshot (Set.ofList expanded)
 
 Vitest.describe (
-    "Electron file-tree materialization",
+    "Electron file-tree visible items",
     fun () ->
         Vitest.test (
-            "materializing a directory normalizes its path and preserves its ARC scope",
+            "an unloaded directory has unknown children and a loaded empty one has none",
             fun () ->
-                let state = {
-                    empty with
-                        ArcScopeId = Some "C:/arc"
-                }
+                let snapshot = snapshotOf [ dir "data"; dir "empty" ] [ "empty" ]
+                let items = build snapshot []
 
-                let materialized = materialize "arc\\notes" state
-
-                Vitest.expect(materialized.ArcScopeId).toEqual (Some "C:/arc")
-                Vitest.expect(materialized.Paths |> Set.toList).toEqual ([ "arc/notes" ])
+                Vitest.expect((items |> List.find (fun item -> item.Name = "data")).Children.IsNone).toBe true
+                Vitest.expect((items |> List.find (fun item -> item.Name = "empty")).Children).toEqual (Some [])
         )
 
         Vitest.test (
-            "maps an unmaterialized non-empty directory without children or expansion state",
+            "a loaded directory with children is expandable until it is expanded",
             fun () ->
-                let directory =
-                    directoryNode "notes" "arc/notes" [ fileNode "note.md" "arc/notes/note.md" ]
+                let snapshot = snapshotOf [ dir "notes"; file "notes/note.md" ] [ "notes" ]
 
-                let item = toFileItemTree Set.empty directory
+                let collapsed = build snapshot [] |> List.head
+                let expanded = build snapshot [ "notes" ] |> List.head
 
-                Vitest.expect(item.Children.IsNone).toBe (true)
-                Vitest.expect(item.IsExpanded).toBe (false)
+                Vitest.expect(collapsed.Children.IsNone).toBe true
+                Vitest.expect(expanded.Children.Value |> List.map _.Name).toEqual [ "note.md" ]
+                Vitest.expect(expanded.IsExpanded).toBe false
         )
 
         Vitest.test (
-            "maps children for a materialized directory without setting expansion state",
+            "only the expanded directories are visited",
             fun () ->
-                let directory =
-                    directoryNode "notes" "arc/notes" [ fileNode "note.md" "arc/notes/note.md" ]
+                let bigFolder = [ for index in 1..500 -> file $"big/file-{index}.txt" ]
 
-                let item = toFileItemTree (Set.singleton "arc/notes") directory
+                let snapshot =
+                    snapshotOf
+                        ([
+                            dir "big"
+                            dir "small"
+                            file "small/a.txt"
+                            file "small/b.txt"
+                         ]
+                         @ bigFolder)
+                        [ "big"; "small" ]
 
-                Vitest.expect(item.Children.IsSome).toBe (true)
-                Vitest.expect(item.Children.Value.Length).toBe (1)
-                Vitest.expect(item.Children.Value.Head.Name).toBe ("note.md")
-                Vitest.expect(item.IsExpanded).toBe (false)
+                let visited = ResizeArray<string>()
+
+                buildVisibleItems (createItem visited) noBusy snapshot (Set.ofList [ "small" ])
+                |> ignore
+
+                // The two root children and the two files of the expanded folder.
+                Vitest.expect(visited.Count).toBe 4
+                Vitest.expect(visited.Exists(fun path -> path.StartsWith "big/")).toBe false
+        )
+
+        Vitest.test (
+            "a second build with the same snapshot reuses the cached items of untouched entries",
+            fun () ->
+                let snapshot =
+                    snapshotOf [
+                        dir "big"
+                        file "big/a.txt"
+                        file "big/b.txt"
+                        dir "small"
+                        file "small/c.txt"
+                    ] [ "big"; "small" ]
+
+                // The cache keeps the row of an entry instance, like the file tree does.
+                let cache = Renderer.ReferenceCache.ReferenceCache<FileEntry, FileItem>()
+                let built = ref 0
+
+                let cachedItem (entry: FileEntry) =
+                    cache.GetOrAdd(
+                        entry,
+                        fun entry ->
+                            built.Value <- built.Value + 1
+                            createItem (ResizeArray()) entry
+                    )
+
+                let first = buildVisibleItems cachedItem noBusy snapshot (Set.ofList [ "big" ])
+                let builtByFirst = built.Value
+
+                // Expanding another folder changes the expanded ids and nothing else.
+                let second =
+                    buildVisibleItems cachedItem noBusy snapshot (Set.ofList [ "big"; "small" ])
+
+                let bigFiles (items: FileItem list) =
+                    (items |> List.find (fun item -> item.Name = "big")).Children.Value
+
+                Vitest.expect(builtByFirst).toBe 4
+                // Only the two entries that became visible were built.
+                Vitest.expect(built.Value - builtByFirst).toBe 1
+
+                for before, after in List.zip (bigFiles first) (bigFiles second) do
+                    Vitest.expect(obj.ReferenceEquals(before, after)).toBe true
         )
 
         Vitest.test (
             "orders recognized ARC items before other root-level items",
             fun () ->
-                let root =
-                    directoryNode "arc" "arc" [
-                        fileNode "unrelated.txt" "arc/unrelated.txt"
-                        directoryNode "runs" "arc/runs" []
-                        directoryNode "assays" "arc/assays" []
-                        directoryNode "studies" "arc/studies" []
-                        fileNode "isa.investigation.xlsx" "arc/isa.investigation.xlsx"
-                        fileNode "README.md" "arc/README.md"
-                        directoryNode "notes" "arc/notes" []
-                        directoryNode "workflows" "arc/workflows" []
-                    ]
+                let snapshot =
+                    snapshotOf [
+                        file "unrelated.txt"
+                        dir "runs"
+                        dir "assays"
+                        dir "studies"
+                        file "isa.investigation.xlsx"
+                        file "README.md"
+                        dir "notes"
+                        dir "workflows"
+                    ] []
 
-                let item = toFileItemTree (Set.singleton "arc") root
-
-                Vitest.expect(item.Children.Value |> List.map _.Name).toEqual [
+                Vitest.expect(build snapshot [] |> List.map _.Name).toEqual [
                     "notes"
                     "README.md"
                     "isa.investigation.xlsx"
@@ -105,66 +172,67 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "orders only root-level items",
+            "lists directories first, then names ignoring case, below the root",
             fun () ->
-                let notes =
-                    directoryNode "notes" "arc/notes" [
-                        fileNode "zebra.md" "arc/notes/zebra.md"
-                        fileNode "apple.md" "arc/notes/apple.md"
-                    ]
+                let snapshot =
+                    snapshotOf [
+                        dir "notes"
+                        file "notes/zebra.md"
+                        file "notes/Apple.md"
+                        dir "notes/sub"
+                        file "notes/banana.md"
+                    ] [ "notes" ]
 
-                let root =
-                    directoryNode "arc" "arc" [
-                        fileNode "another-file.txt" "arc/another-file.txt"
-                        notes
-                    ]
+                let notes = build snapshot [ "notes" ] |> List.head
 
-                let item = toFileItemTree (Set.ofList [ "arc"; "arc/notes" ]) root
-                let notesItem = item.Children.Value |> List.find (fun child -> child.Name = "notes")
-
-                Vitest.expect(item.Children.Value |> List.map _.Name).toEqual [ "notes"; "another-file.txt" ]
-                Vitest.expect(notesItem.Children.Value |> List.map _.Name).toEqual [ "zebra.md"; "apple.md" ]
+                Vitest.expect(notes.Children.Value |> List.map _.Name).toEqual [
+                    "sub"
+                    "Apple.md"
+                    "banana.md"
+                    "zebra.md"
+                ]
         )
 
         Vitest.test (
-            "snapshot reconciliation preserves surviving paths, prunes removed paths, and materializes selection",
+            "collapses a single same-named subdirectory when both levels are loaded",
             fun () ->
-                let kept =
-                    directoryNode "kept" "arc/kept" [ fileNode "kept.txt" "arc/kept/kept.txt" ]
+                let snapshot =
+                    snapshotOf [ dir "Data"; dir "Data/data"; file "Data/data/leaf.txt" ] [ "Data"; "Data/data" ]
 
-                let selected =
-                    directoryNode "selected" "arc/selected" [ fileNode "selected.txt" "arc/selected/selected.txt" ]
+                let row = build snapshot [] |> List.head
 
-                let root = directoryNode "arc" "arc" [ kept; selected ]
+                Vitest.expect(row.Name).toBe "Data"
+                Vitest.expect(row.Path).toEqual (Some "Data/data")
+                Vitest.expect(row.Id).toBe "Data/data"
 
-                let current = {
-                    ArcScopeId = Some "C:/arc"
-                    Paths = Set.ofList [ "arc"; "arc/kept"; "arc/removed" ]
-                }
-
-                let reconciled =
-                    reconcileMaterializedState (Some "C:/arc") (Some "arc/selected/selected.txt") (Some root) current
-
-                Vitest.expect(reconciled.Paths |> Set.toList).toEqual ([ "arc"; "arc/kept"; "arc/selected" ])
+                let opened = build snapshot [ "Data/data" ] |> List.head
+                Vitest.expect(opened.Children.Value |> List.map _.Name).toEqual [ "leaf.txt" ]
         )
 
         Vitest.test (
-            "changing ARC scope resets materialized paths to the required root and selection chain",
+            "does not collapse when the same-named child is not loaded",
             fun () ->
-                let kept =
-                    directoryNode "kept" "arc/kept" [ fileNode "kept.txt" "arc/kept/kept.txt" ]
+                let snapshot = snapshotOf [ dir "Data"; dir "Data/data" ] [ "Data" ]
 
-                let root = directoryNode "arc" "arc" [ kept ]
+                let row = build snapshot [ "Data" ] |> List.head
 
-                let current = {
-                    ArcScopeId = Some "C:/old-arc"
-                    Paths = Set.ofList [ "arc"; "arc/kept" ]
-                }
+                Vitest.expect(row.Path).toEqual (Some "Data")
+                Vitest.expect(row.Children.Value |> List.map _.Name).toEqual [ "data" ]
+        )
 
-                let reconciled =
-                    reconcileMaterializedState (Some "C:/new-arc") None (Some root) current
+        Vitest.test (
+            "does not collapse when the child has siblings or a different name",
+            fun () ->
+                let withSibling =
+                    snapshotOf [
+                        dir "A"
+                        dir "A/A"
+                        file "A/notes.txt"
+                        dir "B"
+                        dir "B/C"
+                    ] [ "A"; "A/A"; "B"; "B/C" ]
 
-                Vitest.expect(reconciled.ArcScopeId).toEqual (Some "C:/new-arc")
-                Vitest.expect(reconciled.Paths |> Set.toList).toEqual ([ "arc" ])
+                let rows = build withSibling []
+                Vitest.expect(rows |> List.map (fun row -> row.Path.Value)).toEqual [ "A"; "B" ]
         )
 )

@@ -104,12 +104,6 @@ let pathExistsAsync (absolutePath: string) : JS.Promise<bool> = promise {
 let mkdirAsync (directoryPath: string) : JS.Promise<unit> =
     ARCtrl.FileSystemHelper.createDirectoryAsync directoryPath
 
-let tryGetNodeErrorCode (error: exn) : string option =
-    try
-        error?code |> unbox<string> |> Option.ofObj
-    with _ ->
-        None
-
 type private FileSystemRetryStrategy = {
     DelaysMs: int[]
     IsTransientErrorCode: string option -> bool
@@ -677,11 +671,7 @@ module ArcFileSystemHelper =
                 return Error importError
         }
 
-    /// Registers the staging folder with registerStagingDirectory before the import creates it, so the file
-    /// watcher never sees its first write. The returned release function runs once after the last cleanup
-    /// attempt. Its argument tells whether the folder still exists, so the caller can list a leftover folder.
     let importExternalFilesOnDiskWithTemporaryCleanup
-        (registerStagingDirectory: string -> (bool -> unit))
         (removeTemporaryDirectory: string -> JS.Promise<unit>)
         (logTemporaryCleanupError: exn -> unit)
         (arcPath: string)
@@ -690,7 +680,7 @@ module ArcFileSystemHelper =
         (onProgress: FileImportProgress -> unit)
         (isCancellationRequested: unit -> bool)
         (onPathsPlanned: PlannedImportPaths -> unit)
-        (onPublished: string[] -> unit)
+        (onPublished: unit -> unit)
         (validateImportedFiles: unit -> JS.Promise<Result<unit, exn>>)
         : JS.Promise<Result<ImportExternalFilesResult, exn>> =
         promise {
@@ -707,7 +697,6 @@ module ArcFileSystemHelper =
                     let! plan = createExternalFileImportPlan isCancellationRequested targetDirectory sourcePaths
 
                     let createdTargetPaths = ResizeArray<string>()
-                    let release: (bool -> unit) option ref = ref None
 
                     onPathsPlanned {
                         FolderPaths =
@@ -722,15 +711,10 @@ module ArcFileSystemHelper =
 
                     let! result = promise {
                         try
-                            release.Value <- Some(registerStagingDirectory plan.TemporaryDirectory)
                             do! copyExternalFilesToTemporaryDirectory plan onProgress isCancellationRequested
                             do! copyTemporaryFilesIntoTarget plan createdTargetPaths onProgress isCancellationRequested
 
-                            // Reports the absolute paths of the imported top-level folders.
-                            plan.Entries
-                            |> Array.filter (fun entry -> entry.IsDirectory && isTopLevelImportEntry entry)
-                            |> Array.map (importEntryPath plan.TargetDirectory)
-                            |> onPublished
+                            onPublished ()
 
                             match! removePathWithRetriesAsync removeTemporaryDirectory plan.TemporaryDirectory with
                             | Ok() -> ()
@@ -746,23 +730,14 @@ module ArcFileSystemHelper =
                                 externalFileImportFailureResult plan.TemporaryDirectory createdTargetPaths importError
                     }
 
-                    match release.Value with
-                    | Some releaseStaging ->
-                        let! stagingStillExists = pathExistsAsync plan.TemporaryDirectory
-
-                        release.Value <- None
-                        releaseStaging stagingStillExists
-                    | None -> ()
-
                     return result
                 with
                 | ImportCancelledException -> return Ok ImportExternalFilesResult.Cancelled
                 | planError -> return Error planError
         }
 
-    let importExternalFilesOnDisk (registerStagingDirectory: string -> (bool -> unit)) =
+    let importExternalFilesOnDisk =
         importExternalFilesOnDiskWithTemporaryCleanup
-            registerStagingDirectory
             (fun temporaryDirectory -> rmAsync temporaryDirectory (RmOptions(recursive = true, force = true)))
             (fun cleanupError -> printfn $"Unable to remove completed import staging directory: {cleanupError.Message}")
 

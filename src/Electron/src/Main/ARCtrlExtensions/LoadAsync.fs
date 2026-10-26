@@ -18,30 +18,122 @@ module ArcLoadExtensions =
         |> getNonEmptyPathParts
         |> Array.exists (fun segment -> String.Equals(segment, ".git", StringComparison.OrdinalIgnoreCase))
 
-    let private getAllArcFilePathsAsync (arcPath: string) =
-        let rec collectFiles (absoluteDirectoryPath: string) (relativeDirectoryPath: string) = promise {
-            let! entries = readdirWithTypesAsync absoluteDirectoryPath (ReaddirOptions(withFileTypes = true))
-            let files = ResizeArray<string>()
+    type private StructuralEntityDirectory = {
+        Zone: ArcEntityPathRules.AddZone
+        ZoneName: string
+        ZonePath: string
+        EntityName: string
+    }
 
-            for entry in entries do
-                let relativePath =
-                    if relativeDirectoryPath = "" then
-                        entry.name
+    let internal discoverStructuralArcFilePathsWithAsync
+        (readEntries: string -> ReaddirOptions -> Fable.Core.JS.Promise<Dirent[]>)
+        (arcPath: string)
+        =
+        promise {
+            // Sorting every listing by name makes the result independent of readdir and completion order.
+            let readDirectory path options = promise {
+                let! entries = readEntries path options
+
+                return
+                    entries
+                    |> Array.sortWith (fun left right -> PathOrder.compareNames left.name right.name)
+            }
+
+            // The root snapshot is authoritative: zones absent here are optional and are never read.
+            let! rootEntries = readDirectory arcPath (ReaddirOptions(withFileTypes = true))
+
+            let structuralRootFilePaths =
+                rootEntries
+                |> Array.choose (fun entry ->
+                    if
+                        entry.isFile ()
+                        && PathHelpers.pathMatchesAny ArcEntityPathRules.structuralRootFileNames entry.name
+                    then
+                        Some entry.name
                     else
-                        $"{relativeDirectoryPath}/{entry.name}"
+                        None
+                )
 
-                if not (isGitMetadataPath relativePath) then
-                    if entry.isDirectory () then
-                        let absolutePath = join [| absoluteDirectoryPath; entry.name |]
-                        let! nestedFiles = collectFiles absolutePath relativePath
-                        files.AddRange nestedFiles
-                    elif entry.isFile () then
-                        files.Add relativePath
+            let existingZones =
+                ArcEntityPathRules.allAddZones
+                |> List.choose (fun zone ->
+                    let zoneFolder = ArcEntityPathRules.zoneFolderName zone
 
-            return files.ToArray()
+                    rootEntries
+                    |> Array.tryFind (fun entry ->
+                        entry.isDirectory () && PathHelpers.pathsEqual entry.name zoneFolder
+                    )
+                    |> Option.map (fun zoneEntry -> zone, zoneEntry.name, join [| arcPath; zoneEntry.name |])
+                )
+                |> List.toArray
+
+            // Node's thread pool bounds how many of these reads run at once.
+            let! zoneEntries =
+                existingZones
+                |> Array.map (fun (zone, zoneName, zonePath) -> promise {
+                    let! entries = readDirectory zonePath (ReaddirOptions(withFileTypes = true))
+                    return zone, zoneName, zonePath, entries
+                })
+                |> Promise.all
+
+            // Zone reads reveal only the entity directories. Discovery never descends into payload folders.
+            let entityDirectories =
+                zoneEntries
+                |> Array.collect (fun (zone, zoneName, zonePath, entries) ->
+                    entries
+                    |> Array.choose (fun entry ->
+                        if entry.isDirectory () then
+                            Some {
+                                Zone = zone
+                                ZoneName = zoneName
+                                ZonePath = zonePath
+                                EntityName = entry.name
+                            }
+                        else
+                            None
+                    )
+                )
+
+            let! entityMetadataPaths =
+                entityDirectories
+                |> Array.map (fun entity -> promise {
+                    let entityPath = join [| entity.ZonePath; entity.EntityName |]
+                    // An entity folder that vanished after the zone listing counts as absent.
+                    let! metadataEntries = promise {
+                        try
+                            return! readDirectory entityPath (ReaddirOptions(withFileTypes = true))
+                        with readError ->
+                            match tryGetNodeErrorCode readError with
+                            | Some "ENOENT"
+                            | Some "ENOTDIR" -> return [||]
+                            | _ -> return raise readError
+                    }
+
+                    let allowedFileNames = [|
+                        ArcEntityPathRules.zoneEntityFileName entity.Zone
+                        ArcPathHelper.DataMapFileName
+                        ArcEntityPathRules.legacyDataMapFileName
+                    |]
+
+                    return
+                        metadataEntries
+                        |> Array.choose (fun metadataEntry ->
+                            if
+                                metadataEntry.isFile ()
+                                && allowedFileNames |> Array.exists (PathHelpers.pathsEqual metadataEntry.name)
+                            then
+                                Some $"{entity.ZoneName}/{entity.EntityName}/{metadataEntry.name}"
+                            else
+                                None
+                        )
+                })
+                |> Promise.all
+
+            // Root files come first, then zones in fixed order, each level sorted by name.
+            return
+                Array.append structuralRootFilePaths (Array.concat entityMetadataPaths)
+                |> Array.map PathHelpers.normalizePath
         }
-
-        collectFiles arcPath ""
 
     let migrateLegacyDataMapPathsAsync (arcPath: string) (paths: string[]) = promise {
         let migratedPaths = ResizeArray<string>()
@@ -176,9 +268,10 @@ module ArcLoadExtensions =
     type ARC with
 
         /// Hotfix for #619, not fixed in the consumed ARCtrl 3.0.0-beta.12.
-        /// Mirrors ARC.tryLoadAsync, changing only filesystem traversal so `.git` directories are never enumerated.
+        /// Mirrors ARC.tryLoadAsync. It lists the root, the zone folders and the entity folders to find the
+        /// metadata files, and never reads payload folders.
         static member LoadAsyncSwate(arcPath: string) = promise {
-            let! discoveredPaths = getAllArcFilePathsAsync arcPath
+            let! discoveredPaths = discoverStructuralArcFilePathsWithAsync readdirWithTypesAsync arcPath
             let! paths = migrateLegacyDataMapPathsAsync arcPath discoveredPaths
             let arc = ARC.fromFilePaths paths
             let contracts = arc.GetReadContracts()

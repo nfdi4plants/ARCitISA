@@ -31,6 +31,7 @@ let private createContextMenuConfig () : ContextMenuConfig = {
     runToggleLfsMark = fun _ _ -> promise { return Ok() }
     runDownloadLfsFile = fun _ -> promise { return Ok() }
     runFreeLocalLfsCopy = fun _ -> promise { return Ok() }
+    refreshDirectory = ignore
     lfsActivePaths = []
 }
 
@@ -304,6 +305,8 @@ Vitest.describe (
                             "Import files"
                             "Import folders"
                             "Open Folder Location"
+                            "<divider>"
+                            "Refresh folder"
                             "<divider>"
                             "Copy Path"
                             "Copy Full Path"

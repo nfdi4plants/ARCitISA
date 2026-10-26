@@ -14,6 +14,7 @@ open Swate.Electron.Shared.FileIOHelper
 open Swate.Electron.Shared.DTOs.NoteSearchDto
 open Node.Api
 open Main
+open Main.ArcVaultState
 open Main.Bindings
 open Main.ARCtrlExtensions
 open Main.ArcVaultHelper
@@ -25,13 +26,50 @@ open Main.IPC.FileSystemIO
 open Main.VersionControl
 open VersionControlService.Abstractions
 
-let private refreshVaultFileTree (vault: ArcVault) = promise {
+/// The structural watcher does not see payload folders, so app-initiated file operations update the tree
+/// themselves. This reconciles the parent directory of every absolute path and waits for the writer, so the
+/// renderer finds the path when it asks next.
+let private reconcileParentsOfAbsolutePaths (vault: ArcVault) (absolutePaths: string seq) = promise {
+    let parents =
+        absolutePaths
+        |> Seq.choose PathHelpers.tryGetParentPath
+        |> Seq.distinct
+        |> Seq.toArray
+
+    if parents.Length > 0 then
+        do! vault.EnqueueFileTreeDirectoriesReconcile parents
+}
+
+let private reconcileParentsOfRelativePaths (vault: ArcVault) (relativePaths: string seq) = promise {
     match vault.path with
     | Some arcPath ->
-        let! fileTree = getFileTree arcPath
-        vault.SetFileTree fileTree
+        do!
+            relativePaths
+            |> Seq.map (fun relativePath -> Main.Bindings.Path.join [| arcPath; relativePath |])
+            |> reconcileParentsOfAbsolutePaths vault
     | None -> ()
 }
+
+/// Reconciles the parents of the given relative paths after a successful operation and passes the result on.
+let private reconcileAfterSuccess
+    (vault: ArcVault)
+    (relativePaths: string seq)
+    (result: Result<'T, exn>)
+    : JS.Promise<Result<'T, exn>> =
+    promise {
+        match result with
+        | Ok _ -> do! reconcileParentsOfRelativePaths vault relativePaths
+        | Error _ -> ()
+
+        return result
+    }
+
+/// The entity folder (zone folder plus identifier) that holds a path. The entity operations reconcile its parent,
+/// the zone folder, because a renamed or deleted entity changes the child list of the zone.
+let private entityFolderOf (relativePath: string) =
+    (PathHelpers.normalizeRelativePath relativePath).Split([| '/' |], StringSplitOptions.RemoveEmptyEntries)
+    |> Array.truncate 2
+    |> String.concat "/"
 
 let private withLoadedArcVault<'T>
     (event: IpcMainInvokeEvent)
@@ -333,7 +371,14 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
             try
                 match tryGetVaultAndArcPath event with
                 | Error error -> return Error error
-                | Ok(_, arcPath) -> return! Main.Notes.NoteScaffolding.ensureNotesFolderAtArcPath arcPath
+                | Ok(vault, arcPath) ->
+                    let! result = Main.Notes.NoteScaffolding.ensureNotesFolderAtArcPath arcPath
+
+                    match result with
+                    | Ok _ -> do! vault.EnqueueFileTreeDirectoriesReconcile [| arcPath |]
+                    | Error _ -> ()
+
+                    return result
             with error ->
                 return Error error
         }
@@ -543,9 +588,9 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
                         event
                         (fun vault -> promise {
                             // The watcher ignores temporary import directories. While the import's marks last, creation
-                            // events of imported files and folders start no merge. Later edits and deletions do, and so
-                            // do unrelated external ARC changes. A completed import adds its items to the file tree
-                            // itself before the notice closes. Later watcher events for them replace or remove those entries.
+                            // events of imported ARC structure files start no merge. Later edits and deletions do, and so
+                            // do unrelated external ARC changes. The import reconciles its target folder in the file tree
+                            // before the notice closes.
 
                             let publisher =
                                 FileImportCoordinator.createThrottledStatePublisher
@@ -620,11 +665,7 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
                                                 let importedEvents = ResizeArray()
                                                 let importToken = vault.StartImport()
 
-                                                let registeredPlannedPaths: PlannedImportPaths option ref = ref None
-
                                                 let registerImportedPaths plannedPaths =
-                                                    registeredPlannedPaths.Value <- Some plannedPaths
-
                                                     importedEvents.AddRange(
                                                         WatcherHelpers.createImportedWatcherEvents
                                                             vault.path.Value
@@ -639,36 +680,14 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
                                                 try
                                                     let! result =
                                                         ArcFileSystemHelper.importExternalFilesOnDisk
-                                                            (fun stagingDirectory ->
-                                                                vault.RegisterImportStagingDirectory
-                                                                    stagingDirectory
-
-                                                                (fun stillExists ->
-                                                                    vault.ReleaseImportStagingDirectory
-                                                                        stagingDirectory
-
-                                                                    // A folder that could not be removed stays on disk, so the tree lists it.
-                                                                    if stillExists then
-                                                                        vault.WatchLeftoverStagingFolder
-                                                                            stagingDirectory
-                                                                        |> Promise.catch (fun error ->
-                                                                            swatelogfn
-                                                                                vault.window.id
-                                                                                "Unable to list the leftover import staging folder: %s"
-                                                                                error.Message
-                                                                        )
-                                                                        |> ignore
-                                                                )
-                                                            )
                                                             vault.path.Value
                                                             request.targetRelativePath
                                                             sourceAbsolutePaths
                                                             reportImportProgress
                                                             (fun () -> abortSignal.aborted)
                                                             registerImportedPaths
-                                                            (fun publishedFolders ->
+                                                            (fun () ->
                                                                 publisher.Stop()
-                                                                vault.WatchImportedFolders publishedFolders
 
                                                                 match vault.activeFileImport with
                                                                 | Some activeImport when
@@ -697,28 +716,17 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
                                                             )
                                                         |> Promise.catch Error
 
-                                                    match result, registeredPlannedPaths.Value with
-                                                    | Ok ImportExternalFilesResult.Completed, Some plannedPaths ->
-                                                        try
-                                                            let folderPaths, filePaths =
-                                                                WatcherHelpers.importedFileTreePaths
-                                                                    vault.path.Value
-                                                                    request.targetRelativePath
-                                                                    plannedPaths
-
-                                                            do!
-                                                                vault.AddImportedEntriesToFileTree(
-                                                                    folderPaths,
-                                                                    filePaths
-                                                                )
-                                                        with fileTreeError ->
-                                                            swatelogfn
-                                                                vault.window.id
-                                                                "Unable to add imported items to the file tree: %s"
-                                                                fileTreeError.Message
-                                                    | _ -> ()
-
                                                     vault.ReleaseImportedFileEventsAfterImport(importToken, result)
+
+                                                    // Partly copied items and a staging folder that could not be
+                                                    // removed count too, so the target folder is reconciled for every outcome.
+                                                    do!
+                                                        Main.Bindings.Path.join [|
+                                                            vault.path.Value
+                                                            request.targetRelativePath
+                                                        |]
+                                                        |> PathHelpers.normalizePathKeepingWhitespace
+                                                        |> vault.EnqueueFileTreeDirectoryReconcile
 
                                                     vault.window.setProgressBar -1.0
                                                     return result
@@ -762,7 +770,7 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
             with e ->
                 return Error e
         }
-    getFileTree =
+    getFileTreeSnapshot =
         fun () -> promise {
             try
                 let windowId = windowIdFromIpcEvent event
@@ -770,8 +778,54 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
                 match ARC_VAULTS.TryGetVault(windowId) with
                 | None -> return Error(exn $"The ARC for window id {windowId} should exist")
                 | Some vault ->
-                    let! fileTree = vault.GetRendererFileTreeSnapshot()
-                    return Ok fileTree
+                    let! snapshot = vault.GetFileTreeSnapshot()
+                    return Ok snapshot
+            with e ->
+                return Error e
+        }
+    loadDirectory =
+        fun (relativePath: string) -> promise {
+            try
+                let windowId = windowIdFromIpcEvent event
+
+                match ARC_VAULTS.TryGetVault(windowId) with
+                | None -> return Error(exn $"The ARC for window id {windowId} should exist")
+                | Some vault -> return! vault.LoadDirectory relativePath
+            with e ->
+                return Error e
+        }
+    revalidateDirectories =
+        fun (relativePaths: string[]) -> promise {
+            try
+                let windowId = windowIdFromIpcEvent event
+
+                match ARC_VAULTS.TryGetVault(windowId) with
+                | None -> return Error(exn $"The ARC for window id {windowId} should exist")
+                | Some vault ->
+                    do! vault.RevalidateDirectories relativePaths
+                    return Ok()
+            with e ->
+                return Error e
+        }
+    statFile =
+        fun (relativePath: string) -> promise {
+            try
+                let windowId = windowIdFromIpcEvent event
+
+                match ARC_VAULTS.TryGetVault(windowId) with
+                | None -> return Error(exn $"The ARC for window id {windowId} should exist")
+                | Some vault -> return! vault.StatFile relativePath
+            with e ->
+                return Error e
+        }
+    getLargeObjectIndex =
+        fun () -> promise {
+            try
+                let windowId = windowIdFromIpcEvent event
+
+                match ARC_VAULTS.TryGetVault(windowId) with
+                | None -> return Error(exn $"The ARC for window id {windowId} should exist")
+                | Some vault -> return Ok(vault.GetLargeObjectIndexSnapshot())
             with e ->
                 return Error e
         }
@@ -797,12 +851,7 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
                     match vault.path with
                     | None -> return Error(arcNotOpenError ())
                     | Some arcPath ->
-                        let! fileEntries =
-                            if vault.fileTree.Count > 0 then
-                                promise { return vault.fileTree.Values |> Seq.toArray }
-                            else
-                                getFileEntries arcPath true
-
+                        let! fileEntries = Main.NoteSearchReader.scanNoteEntriesAsync arcPath
                         let! notes = Main.NoteSearchReader.readNotes arcPath fileEntries
                         return Ok(notes |> Array.map NoteSearchNoteDto.ofNote)
             with e ->
@@ -865,19 +914,7 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
     saveArcFile =
         fun () -> promise {
             try
-                return!
-                    withLoadedArcVault
-                        event
-                        (fun vault -> promise {
-                            match! vault.WriteArc() with
-                            | Error saveError -> return Error saveError
-                            | Ok() ->
-                                match vault.path with
-                                | None -> return Error(arcNotOpenError ())
-                                | Some _ ->
-                                    do! refreshVaultFileTree vault
-                                    return Ok()
-                        })
+                return! withLoadedArcVault event (fun vault -> promise { return! vault.SaveArc() })
             with e ->
                 return Error e
         }
@@ -909,7 +946,13 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
                     withLoadedArcVault
                         event
                         (fun vault -> promise {
-                            return! ArcFileSystemHelper.createFileSystemItemOnDisk vault.path.Value request
+                            let! created = ArcFileSystemHelper.createFileSystemItemOnDisk vault.path.Value request
+
+                            match created with
+                            | Ok targetPath -> do! reconcileParentsOfRelativePaths vault [ targetPath ]
+                            | Error _ -> ()
+
+                            return created
                         })
             with e ->
                 return Error e
@@ -932,7 +975,10 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
 
                             match! ArcFileSystemHelper.resolveDeletePathRouteAsync arcPath relativePath with
                             | ArcFileSystemHelper.DeletePathRoute.GenericItem _ ->
-                                return! ArcFileSystemHelper.deleteGenericFileSystemItemOnDisk arcPath relativePath
+                                let! deleted =
+                                    ArcFileSystemHelper.deleteGenericFileSystemItemOnDisk arcPath relativePath
+
+                                return! reconcileAfterSuccess vault [ relativePath ] deleted
                             | ArcFileSystemHelper.DeletePathRoute.ArcEntity normalizedRelativePath ->
                                 match vault.arc with
                                 | None -> return Error(arcNotOpenError ())
@@ -951,6 +997,12 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
                                                 | Ok deletedArc ->
                                                     vault.SetArc deletedArc
                                                     vault.RefreshHasUnsavedArcChangesFlag()
+                                                    // The watcher reports this late, so the zone folder is reconciled here.
+                                                    do!
+                                                        reconcileParentsOfRelativePaths vault [
+                                                            entityFolderOf normalizedRelativePath
+                                                        ]
+
                                                     return Ok()
                                             })
                             | ArcFileSystemHelper.DeletePathRoute.DataMap normalizedDataMapPath ->
@@ -975,9 +1027,13 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
                                                     let absoluteDataMapPath =
                                                         Main.Bindings.Path.join [| arcPath; normalizedDataMapPath |]
 
-                                                    vault.SetFileTree(
-                                                        removePathAndDescendants absoluteDataMapPath vault.fileTree
-                                                    )
+                                                    match
+                                                        Swate.Components.Shared.PathHelpers.tryGetParentPath
+                                                            absoluteDataMapPath
+                                                    with
+                                                    | Some parentDirectory ->
+                                                        do! vault.EnqueueFileTreeDirectoryReconcile parentDirectory
+                                                    | None -> ()
 
                                                     return Ok()
                                             })
@@ -999,7 +1055,8 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
                                 ArcFileSystemHelper.isGenericRenamePathAsync arcPath request.relativePath
 
                             if isGenericRename then
-                                return! ArcFileSystemHelper.renameGenericFileSystemItemOnDisk arcPath request
+                                let! renamed = ArcFileSystemHelper.renameGenericFileSystemItemOnDisk arcPath request
+                                return! reconcileAfterSuccess vault [ request.relativePath ] renamed
                             else
                                 match vault.arc with
                                 | None -> return Error(arcNotOpenError ())
@@ -1015,6 +1072,15 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
                                                 | Ok renamedArc ->
                                                     vault.SetArc renamedArc
                                                     vault.RefreshHasUnsavedArcChangesFlag()
+
+                                                    // The watcher reports this late. The zone folder shows the new
+                                                    // entity folder, and the zone rule loads its direct children.
+                                                    do!
+                                                        reconcileParentsOfRelativePaths vault [
+                                                            request.relativePath
+                                                            entityFolderOf request.relativePath
+                                                        ]
+
                                                     return Ok()
                                             })
                         })
@@ -1028,7 +1094,13 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
                     withLoadedArcVault
                         event
                         (fun vault -> promise {
-                            return! ArcFileSystemHelper.moveGenericFileSystemItemOnDisk vault.path.Value request
+                            let! moved = ArcFileSystemHelper.moveGenericFileSystemItemOnDisk vault.path.Value request
+
+                            return!
+                                reconcileAfterSuccess
+                                    vault
+                                    [ request.sourceRelativePath; request.targetRelativePath ]
+                                    moved
                         })
             with e ->
                 return Error e
@@ -1052,6 +1124,14 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
                                 return Ok renamedPath
                         })
             with e ->
+                swatelogfn
+                    (try
+                        windowIdFromIpcEvent event
+                     with _ ->
+                         -1)
+                    "Renaming the ARC folder failed: %s"
+                    e.Message
+
                 return Error e
         }
     writeFile =
@@ -1081,7 +1161,7 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
 
                                             do! ARCtrl.FileSystemHelper.writeFileTextAsync absolutePath request.content
 
-                                            do! refreshVaultFileTree vault
+                                            do! vault.EnqueueFileTreeDirectoryReconcile directoryPath
                                             return Ok()
                                         | FileContentType.CLI ->
                                             return Error(exn "Direct writing of CLI files is not supported.")
@@ -1121,15 +1201,7 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
                             match absolutePath with
                             | Error pathError -> return Error pathError
                             | Ok path ->
-                                let fileType = FileContentDTO.inferTextFileTypeFromPath relativePath
-
-                                let! content =
-                                    if fileType = FileContentType.PDF then
-                                        Main.Bindings.Filesystem.readFileBase64Async path
-                                    else
-                                        ARCtrl.FileSystemHelper.readFileTextAsync path
-
-                                let dto = FileContentDTO.create fileType content relativePath
+                                let! dto = Main.ArcVaultHelper.readFileForPreviewAsync path relativePath
 
                                 return Ok dto
                         with e ->

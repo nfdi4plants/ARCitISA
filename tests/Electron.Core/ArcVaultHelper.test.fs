@@ -7,6 +7,10 @@ open Fable.Electron
 open Fable.Electron.Main
 open Main.ARCtrlExtensions
 open Main.ArcVault
+open Main.ArcVaultState
+open Main.ArcVaultLargeObjects
+open Main.ArcVaultFileTree
+open Main.ArcVaultFileWatcher
 open Main.ArcVaultHelper
 open Main.ArcVaultTypes
 open Main.Bindings.Filesystem
@@ -38,18 +42,6 @@ let private setShowOpenDialog (handler: obj -> obj -> obj) =
 
 let private setShowMessageBox (handler: obj -> obj -> obj) =
     electronMock?setShowMessageBox (handler) |> ignore
-
-let private recordingWatcher (addedPaths: ResizeArray<string>) : Main.Bindings.Chokidar.IWatcher =
-    { new Main.Bindings.Chokidar.IWatcher with
-        member _.close() = Promise.lift ()
-        member _.add(path: string) = addedPaths.Add path
-        member _.add(paths: string[]) = addedPaths.AddRange paths
-        member _.unwatch(_: string) = Promise.lift ()
-        member _.unwatch(_: string[]) = Promise.lift ()
-        member this.on(_: Main.Bindings.Chokidar.Events, _: string -> unit) = this
-        member this.on(_: Main.Bindings.Chokidar.Events, _: string -> string -> unit) = this
-        member _.getWatched() = unbox null
-    }
 
 let private ipcEventWithSenderId senderId : IpcMainInvokeEvent =
     createObj [ "sender" ==> createObj [ "id" ==> senderId ] ]
@@ -195,174 +187,21 @@ Vitest.describe (
             }
         )
 
+        // The claims do not depend on which paths the watcher reports, so the events are built directly.
         let importedEvents (folderPaths: string[]) (filePaths: string[]) =
-            WatcherHelpers.createImportedWatcherEvents "C:/arc" "assays/AssayA/dataset" {
-                FolderPaths = folderPaths
-                FilePaths = filePaths
-            }
+            let eventsOf eventName (relativePaths: string[]) =
+                relativePaths
+                |> Array.map (fun relativePath ->
+                    WatcherHelpers.buildWatcherEvent "/arc" eventName $"assays/AssayA/dataset/{relativePath}"
+                )
 
-        Vitest.test (
-            "claims the addDir event of a folder named like a lock file and ignores such a name only for files",
-            fun () ->
-                let events =
-                    importedEvents [| "~$data.old" |] [| "~$data.old/inner.txt"; "~$lock.xlsx" |]
+            Array.append (eventsOf "addDir" folderPaths) (eventsOf "add" filePaths)
 
-                Vitest
-                    .expect(events |> Array.map _.RelativePath)
-                    .toEqual (
-                        [|
-                            "assays/AssayA/dataset/~$data.old"
-                            "assays/AssayA/dataset/~$data.old/inner.txt"
-                        |]
-                    )
-
-                Vitest.expect(Main.ArcVaultHelper.isFileWatcherPathIgnoredFor "x/~$data.old" (Some true)).toBe false
-                Vitest.expect(Main.ArcVaultHelper.isFileWatcherPathIgnoredFor "x/~$data.old" (Some false)).toBe true
-                Vitest.expect(Main.ArcVaultHelper.isFileWatcherPathIgnoredFor "x/~$data.old" None).toBe false
-        )
-
-        Vitest.test (
-            "the function chokidar calls ignores lock names for files and watches folders with such names",
-            fun () ->
-                let statsOf (isDirectory: bool) =
-                    { new Main.Bindings.Chokidar.IWatchStats with
-                        member _.isDirectory() = isDirectory
-                    }
-
-                let ignored path stats =
-                    Main.ArcVaultHelper.isFileWatcherPathIgnoredByStats (fun _ -> false) path stats
-
-                Vitest.expect(ignored "x/~$data.old" (Some(statsOf true))).toBe false
-                Vitest.expect(ignored "x/~$data.old/inner.txt" (Some(statsOf false))).toBe false
-                Vitest.expect(ignored "x/~$lock.xlsx" (Some(statsOf false))).toBe true
-                Vitest.expect(ignored "x/~$lock.xlsx" None).toBe false
-        )
-
-        Vitest.test (
-            "the function chokidar calls ignores only the registered staging folder and what is inside it",
-            fun () ->
-                let statsOf (isDirectory: bool) =
-                    { new Main.Bindings.Chokidar.IWatchStats with
-                        member _.isDirectory() = isDirectory
-                    }
-
-                let staging = "C:/arc/x/.swate-import-" + String.replicate 32 "a"
-                let sibling = "C:/arc/x/.swate-import-" + String.replicate 32 "b"
-
-                let ignoredWith (isActive: string -> bool) path stats =
-                    Main.ArcVaultHelper.isFileWatcherPathIgnoredByStats isActive path stats
-
-                let registered path =
-                    path = staging || (path: string).StartsWith(staging + "/")
-
-                for stats in [ None; Some(statsOf true) ] do
-                    Vitest.expect(ignoredWith registered staging stats).toBe true
-
-                Vitest.expect(ignoredWith registered $"{staging}/a.txt" None).toBe true
-                Vitest.expect(ignoredWith registered $"{staging}/a.txt" (Some(statsOf false))).toBe true
-                Vitest.expect(ignoredWith registered sibling (Some(statsOf true))).toBe false
-                Vitest.expect(ignoredWith registered $"{sibling}/a.txt" (Some(statsOf false))).toBe false
-
-                for stats in [ None; Some(statsOf true) ] do
-                    Vitest.expect(ignoredWith (fun _ -> false) staging stats).toBe false
-
-                Vitest.expect(ignoredWith (fun _ -> false) $"{staging}/a.txt" (Some(statsOf false))).toBe false
-
-                let arcNamedLikeStaging = "C:/.swate-import-" + String.replicate 32 "c"
-                Vitest.expect(ignoredWith registered $"{arcNamedLikeStaging}/data.txt" (Some(statsOf false))).toBe false
-        )
-
-        Vitest.test (
-            "a vault ignores a registered staging folder by relative and absolute path until it is released",
-            fun () ->
-                let arcPath = resolve [| "registry-arc" |]
-                let vault = ArcVault(TestHelpers.testWindow ())
-                vault.path <- Some arcPath
-
-                let staging =
-                    join [|
-                        arcPath
-                        "data"
-                        ".swate-import-" + String.replicate 32 "a"
-                    |]
-
-                vault.RegisterImportStagingDirectory staging
-
-                Vitest.expect(vault.IsActiveImportStagingPath staging).toBe true
-                Vitest.expect(vault.IsActiveImportStagingPath(join [| staging; "a.txt" |])).toBe true
-
-                Vitest.expect(vault.IsActiveImportStagingPath("data/.swate-import-" + String.replicate 32 "a")).toBe
-                    true
-
-                Vitest
-                    .expect(
-                        vault.IsActiveImportStagingPath(
-                            "data/.swate-import-" + String.replicate 32 "a" + "/inner/a.txt"
-                        )
-                    )
-                    .toBe
-                    true
-
-                Vitest.expect(vault.IsActiveImportStagingPath "data/.swate-import-other").toBe false
-
-                vault.ClearPendingFileWatcherState()
-                Vitest.expect(vault.IsActiveImportStagingPath staging).toBe true
-
-                vault.ReleaseImportStagingDirectory staging
-                Vitest.expect(vault.IsActiveImportStagingPath staging).toBe false
-                Vitest.expect(vault.IsActiveImportStagingPath(join [| staging; "a.txt" |])).toBe false
-        )
-
-        Vitest.test (
-            "importedFileTreePaths drops the files the file tree hides after a reload, below the ARC root or a nested target",
-            fun () ->
-                let staging = ".swate-import-" + String.replicate 32 "a"
-
-                let plannedPaths: PlannedImportPaths = {
-                    FolderPaths = [| "x"; $"x/{staging}"; "x/README.md" |]
-                    FilePaths = [|
-                        "x/~$Book1.xlsx"
-                        "x/isa_datamap"
-                        $"x/{staging}/a.txt"
-                        "x/README.md/inner.txt"
-                        "x/data.csv"
-                    |]
-                }
-
-                let expectedFor (prefix: string) =
-                    [|
-                        $"{prefix}x"
-                        $"{prefix}x/{staging}"
-                        $"{prefix}x/README.md"
-                    |],
-                    [|
-                        $"{prefix}x/{staging}/a.txt"
-                        $"{prefix}x/README.md/inner.txt"
-                        $"{prefix}x/data.csv"
-                    |]
-
-                Vitest
-                    .expect(WatcherHelpers.importedFileTreePaths "C:/arc" "" plannedPaths)
-                    .toEqual (expectedFor "C:/arc/")
-
-                Vitest
-                    .expect(WatcherHelpers.importedFileTreePaths "C:/arc" "assays/AssayA/dataset" plannedPaths)
-                    .toEqual (expectedFor "C:/arc/assays/AssayA/dataset/")
-        )
-
-        Vitest.test (
-            "createImportedWatcherEvents claims nothing for isa_datamap and claims a name that ends in .git",
-            fun () ->
-                let events = importedEvents [| "x"; "x/sub" |] [| "x/isa_datamap"; "x/sub2.git" |]
-
-                let relativePaths = events |> Array.map _.RelativePath |> Array.toList
-                let prefix = "assays/AssayA/dataset/"
-
-                Vitest.expect(relativePaths |> List.contains $"{prefix}x").toBe true
-                Vitest.expect(relativePaths |> List.contains $"{prefix}x/sub").toBe true
-                Vitest.expect(relativePaths |> List.contains $"{prefix}x/sub2.git").toBe true
-                Vitest.expect(relativePaths |> List.contains $"{prefix}x/isa_datamap").toBe false
-        )
+        // A completed import keeps its marks only while a watcher runs that can still report its paths.
+        let vaultWithRunningWatcher () =
+            let vault = ArcVault(TestHelpers.testWindow ())
+            vault.fileWatcherState <- FileWatcherState.Running
+            vault
 
         let advanceSeconds (seconds: int) =
             Vitest.vi.advanceTimersByTime (seconds * 1000) |> ignore
@@ -370,7 +209,7 @@ Vitest.describe (
         Vitest.test (
             "a completed import keeps its marks while the watcher still reports its paths",
             fun () ->
-                let vault = ArcVault(TestHelpers.testWindow ())
+                let vault = vaultWithRunningWatcher ()
                 let events = importedEvents [| "Run1" |] [| "Run1/notes.txt" |]
                 let fileEvent = events |> Array.find (fun e -> e.RelativePath.EndsWith "notes.txt")
                 let unrelatedEvent = (importedEvents [||] [| "Other/x.txt" |]).[0]
@@ -401,7 +240,7 @@ Vitest.describe (
                 Vitest.vi.useFakeTimers () |> ignore
 
                 try
-                    let quietVault = ArcVault(TestHelpers.testWindow ())
+                    let quietVault = vaultWithRunningWatcher ()
                     let quietToken = quietVault.StartImport()
                     quietVault.ClaimImportedFileEvents(quietToken, events)
 
@@ -410,7 +249,7 @@ Vitest.describe (
                     advanceSeconds 30
                     Vitest.expect(quietVault.IsImportedWatcherEvent events.[0]).toBe false
 
-                    let busyVault = ArcVault(TestHelpers.testWindow ())
+                    let busyVault = vaultWithRunningWatcher ()
                     let busyToken = busyVault.StartImport()
                     busyVault.ClaimImportedFileEvents(busyToken, events)
 
@@ -429,7 +268,7 @@ Vitest.describe (
         Vitest.test (
             "an import never releases the marks of a later import of the same path",
             fun () ->
-                let vault = ArcVault(TestHelpers.testWindow ())
+                let vault = vaultWithRunningWatcher ()
                 let events = importedEvents [||] [| "Run1/notes.txt" |]
 
                 Vitest.vi.useFakeTimers () |> ignore
@@ -462,7 +301,7 @@ Vitest.describe (
                         Ok ImportExternalFilesResult.Cancelled
                         Error(exn "Import failed")
                     ] do
-                    let vault = ArcVault(TestHelpers.testWindow ())
+                    let vault = vaultWithRunningWatcher ()
                     let token = vault.StartImport()
                     vault.ClaimImportedFileEvents(token, events)
                     vault.ReleaseImportedFileEventsAfterImport(token, result)
@@ -473,7 +312,7 @@ Vitest.describe (
             "only creation events of a marked path count as imported",
             fun () ->
                 let events = importedEvents [||] [| "Run1/notes.txt" |]
-                let vault = ArcVault(TestHelpers.testWindow ())
+                let vault = vaultWithRunningWatcher ()
                 vault.ClaimImportedFileEvents(vault.StartImport(), events)
 
                 Vitest.expect(vault.IsImportedWatcherEvent { events.[0] with EventName = "change" }).toBe false
@@ -484,7 +323,7 @@ Vitest.describe (
         Vitest.test (
             "a completed import's timer removes its marks without any watcher event",
             fun () ->
-                let vault = ArcVault(TestHelpers.testWindow ())
+                let vault = vaultWithRunningWatcher ()
                 let events = importedEvents [||] [| "Run1/notes.txt" |]
 
                 Vitest.vi.useFakeTimers () |> ignore
@@ -504,7 +343,7 @@ Vitest.describe (
         Vitest.test (
             "clearing the watcher state drops the marks of a completed import",
             fun () ->
-                let vault = ArcVault(TestHelpers.testWindow ())
+                let vault = vaultWithRunningWatcher ()
                 let events = importedEvents [||] [| "Run1/notes.txt" |]
 
                 Vitest.vi.useFakeTimers () |> ignore
@@ -523,30 +362,6 @@ Vitest.describe (
                     Vitest.expect(vault.importedPathLeases.Count).toBe 0
                 finally
                     Vitest.vi.useRealTimers () |> ignore
-        )
-
-        Vitest.test (
-            "imported folders are added to a native watcher only",
-            fun () ->
-                let addedPaths = ResizeArray<string>()
-
-                let watcher = recordingWatcher addedPaths
-
-                let watchImportedFolders usesPolling folders =
-                    let vault = ArcVault(TestHelpers.testWindow ())
-                    vault.watcher <- Some watcher
-                    vault.watcherUsesPolling <- usesPolling
-                    vault.WatchImportedFolders folders
-
-                // A polling watcher finds new folders by itself, and adding them again would swallow
-                // the events of the files that are already there.
-                watchImportedFolders true [| "C:/arc/dataset/Run1" |]
-                watchImportedFolders false [||]
-                Vitest.expect(addedPaths.Count).toBe 0
-
-                watchImportedFolders false [| "C:/arc/dataset/Run1"; "C:/arc/dataset/Run2" |]
-
-                Vitest.expect(addedPaths |> Seq.toArray).toEqual ([| "C:/arc/dataset/Run1"; "C:/arc/dataset/Run2" |])
         )
 
         Vitest.test (
@@ -1284,6 +1099,8 @@ Vitest.describe (
                         let vault = ArcVault(TestHelpers.testWindow ())
                         vault.path <- Some arcPath
 
+                        do! vault.EnqueueFileTreeScan()
+
                         let firstPath = join [| arcPath; "tree-first.txt" |]
                         let secondPath = join [| arcPath; "tree-second.txt" |]
                         do! writeWatcherTextFileAsync firstPath "first"
@@ -1298,8 +1115,8 @@ Vitest.describe (
                         do! firstUpdate
                         do! secondUpdate
 
-                        Vitest.expect(vault.fileTree.ContainsKey(firstPath)).toBe (true)
-                        Vitest.expect(vault.fileTree.ContainsKey(secondPath)).toBe (true)
+                        Vitest.expect((vault.FileTreeWriter.Tree.TryFind(firstPath)).IsSome).toBe (true)
+                        Vitest.expect((vault.FileTreeWriter.Tree.TryFind(secondPath)).IsSome).toBe (true)
                     })
         )
 
@@ -1608,6 +1425,7 @@ Vitest.describe (
                         let vault = ArcVault(TestHelpers.testWindow ())
                         vault.path <- Some arcPath
                         vault.SetArc loadedArc
+                        do! vault.EnqueueFileTreeScan()
 
                         let! diskArc = TestHelpers.loadArcAsync arcPath
                         diskArc.GetAssay("DiskAssay").Title <- Some "Changed on disk"
@@ -1640,8 +1458,8 @@ Vitest.describe (
                             let treeHasEntry () =
                                 let expectedKey = PathHelpers.normalizePath treeEntryPath
 
-                                vault.fileTree.Keys
-                                |> Seq.exists (fun key -> PathHelpers.normalizePath key = expectedKey)
+                                vault.FileTreeWriter.Tree.Entries
+                                |> Seq.exists (fun entry -> PathHelpers.normalizePath entry.path = expectedKey)
 
                             let fallbackPublished () =
                                 vault.HasReachedWatcherDeferralLimit
@@ -1711,7 +1529,7 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "a watcher event for a folder an import created does not queue an ARC merge",
+            "a watcher event for an ARC structure file an import created does not queue an ARC merge",
             fun () ->
                 withTempArc
                     ignore
@@ -1723,9 +1541,9 @@ Vitest.describe (
 
                         vault.ClaimImportedFileEvents(
                             vault.StartImport(),
-                            WatcherHelpers.createImportedWatcherEvents arcPath "assays/AssayA/dataset" {
-                                FolderPaths = [| "Run1"; "Run1/raw" |]
-                                FilePaths = [| "Run1/raw/results.csv" |]
+                            WatcherHelpers.createImportedWatcherEvents arcPath "assays" {
+                                FolderPaths = [| "AssayB" |]
+                                FilePaths = [| "AssayB/isa.assay.xlsx" |]
                             }
                         )
 
@@ -1735,13 +1553,13 @@ Vitest.describe (
                             vault._FileEventController (recordingWatcherApi loadingChanges)
 
                         try
-                            handleFileEvent "addDir" (join [| arcPath; "assays/AssayA/dataset/Run1" |])
-                            handleFileEvent "addDir" (join [| arcPath; "assays/AssayA/dataset/Run1/raw" |])
+                            handleFileEvent "addDir" (join [| arcPath; "assays/AssayB" |])
+                            handleFileEvent "add" (join [| arcPath; "assays/AssayB/isa.assay.xlsx" |])
 
                             Vitest.expect(vault.fileWatcherPendingArcMergeEvents.Count).toBe (0)
                             Vitest.expect(vault.fileWatcherPendingEvents.Count).toBe (2)
 
-                            handleFileEvent "addDir" (join [| arcPath; "assays/AssayA/dataset/Other" |])
+                            handleFileEvent "add" (join [| arcPath; "assays/AssayC/isa.assay.xlsx" |])
 
                             Vitest.expect(vault.fileWatcherPendingArcMergeEvents.Count).toBe (1)
                         finally
@@ -1758,18 +1576,134 @@ Vitest.describe (
                         let vault = ArcVault(TestHelpers.testWindow ())
                         vault.path <- Some arcPath
 
+                        do! vault.EnqueueFileTreeScan()
+
                         let filePath = join [| arcPath; "tree-kept.txt" |]
                         do! writeWatcherTextFileAsync filePath "kept"
 
                         do! vault.ApplyWatcherFileTreeEvents [ watcherEvent arcPath "add" "tree-kept.txt" ]
-                        Vitest.expect(vault.fileTree.ContainsKey(filePath)).toBe (true)
+                        Vitest.expect((vault.FileTreeWriter.Tree.TryFind(filePath)).IsSome).toBe (true)
 
                         do! vault.ApplyWatcherFileTreeEvents [ watcherEvent arcPath "unlink" "tree-kept.txt" ]
-                        Vitest.expect(vault.fileTree.ContainsKey(filePath)).toBe (true)
+                        Vitest.expect((vault.FileTreeWriter.Tree.TryFind(filePath)).IsSome).toBe (true)
 
                         do! rmAsync filePath (RmOptions(force = true))
                         do! vault.ApplyWatcherFileTreeEvents [ watcherEvent arcPath "unlink" "tree-kept.txt" ]
-                        Vitest.expect(vault.fileTree.ContainsKey(filePath)).toBe (false)
+                        Vitest.expect((vault.FileTreeWriter.Tree.TryFind(filePath)).IsSome).toBe (false)
+                    })
+        )
+
+        Vitest.test (
+            "a watcher change event of a structural file pushes its size and time",
+            fun () ->
+                withTempArc
+                    ignore
+                    (fun arcPath -> promise {
+                        let windowState = createTestWindow (testWindowOptions 90)
+                        let vault = ArcVault(windowState.Window)
+                        vault.path <- Some arcPath
+                        do! vault.EnqueueFileTreeScan()
+
+                        do!
+                            vault.ApplyWatcherFileTreeEvents [
+                                watcherEvent arcPath "change" "isa.investigation.xlsx"
+                                watcherEvent arcPath "add" "isa.investigation.xlsx"
+                            ]
+
+                        let contentMessages =
+                            windowState.SentMessages
+                            |> Seq.map (fun args -> emitJsExpr args "JSON.stringify($0)": string)
+                            |> Seq.filter (fun text -> text.Contains "fileContentChanged")
+                            |> Seq.toArray
+
+                        Vitest.expect(contentMessages.Length).toBe 1
+                        Vitest.expect(contentMessages.[0].Contains "isa.investigation.xlsx").toBe true
+                        Vitest.expect(contentMessages.[0].Contains "sizeBytes").toBe true
+                        Vitest.expect(contentMessages.[0].Contains "mtimeMs").toBe true
+                    })
+        )
+
+        Vitest.test (
+            "a job that changes a zone and a new entity folder pushes one update with the zone first",
+            fun () ->
+                withTempArc
+                    (fun arc -> arc.AddAssay(ArcAssay("A1")))
+                    (fun arcPath -> promise {
+                        let windowState = createTestWindow (testWindowOptions 91)
+                        let vault = ArcVault(windowState.Window)
+                        vault.path <- Some arcPath
+                        do! vault.EnqueueFileTreeScan()
+
+                        do! mkdirWatcherDirectoryAsync (join [| arcPath; "assays"; "A9"; "dataset" |])
+                        do! writeWatcherTextFileAsync (join [| arcPath; "assays"; "A9"; "isa.assay.xlsx" |]) "x"
+
+                        // The entity folder is listed before its zone.
+                        do!
+                            vault.EnqueueFileTreeDirectoriesReconcile [|
+                                join [| arcPath; "assays"; "A9" |]
+                                join [| arcPath; "assays" |]
+                            |]
+
+                        let updates =
+                            windowState.SentMessages
+                            |> Seq.map (fun args -> emitJsExpr args "JSON.stringify($0)": string)
+                            |> Seq.filter (fun text -> text.Contains "fileTreeDirectoryUpdate")
+                            |> Seq.toArray
+
+                        Vitest.expect(updates.Length).toBe 1
+                        let zone = updates.[0].IndexOf "\"directoryPath\":\"assays\""
+                        let entity = updates.[0].IndexOf "\"directoryPath\":\"assays/A9\""
+                        Vitest.expect(zone >= 0).toBe true
+                        Vitest.expect(entity > zone).toBe true
+                        Vitest.expect(updates.[0].Contains "assays/A9/isa.assay.xlsx").toBe true
+                    })
+        )
+
+        Vitest.test (
+            "a file watcher start after the window is gone leaves no watcher behind",
+            fun () ->
+                withTempArc
+                    ignore
+                    (fun arcPath -> promise {
+                        let windowState =
+                            createTestWindow {
+                                testWindowOptions 92 with
+                                    InitiallyDestroyed = true
+                            }
+
+                        let vault = ArcVault(windowState.Window)
+                        vault.path <- Some arcPath
+
+                        let! outcome = vault.StartFileWatcherAsync()
+
+                        Vitest.expect(outcome).toEqual FileWatcherStartOutcome.Stopped
+                        Vitest.expect(vault.watcher.IsNone).toBe true
+                    })
+        )
+
+        Vitest.test (
+            "a change of the watcher state is pushed to the renderer",
+            fun () ->
+                withTempArc
+                    ignore
+                    (fun arcPath -> promise {
+                        let windowState = createTestWindow (testWindowOptions 95)
+                        let vault = ArcVault(windowState.Window)
+                        vault.path <- Some arcPath
+
+                        vault.fileWatcherState <- FileWatcherState.Unavailable "ENOSPC: no watches left"
+                        vault.fileWatcherState <- FileWatcherState.Running
+
+                        let pushes =
+                            windowState.SentMessages
+                            |> Seq.map (fun args -> emitJsExpr args "JSON.stringify($0)": string)
+                            |> Seq.filter (fun text -> text.Contains "fileWatcherStateChanged")
+                            |> Seq.toArray
+
+                        Vitest.expect(pushes.Length).toBe 2
+                        Vitest.expect(pushes.[0].Contains "unavailable").toBe true
+                        Vitest.expect(pushes.[0].Contains "ENOSPC").toBe true
+                        Vitest.expect(pushes.[1].Contains "running").toBe true
                     })
         )
 
@@ -1782,6 +1716,8 @@ Vitest.describe (
                         let vault = ArcVault(TestHelpers.testWindow ())
                         vault.path <- Some arcPath
 
+                        do! vault.EnqueueFileTreeScan()
+
                         let filePath = join [| arcPath; "tree-reset.txt" |]
                         do! writeWatcherTextFileAsync filePath "reset"
 
@@ -1791,7 +1727,11 @@ Vitest.describe (
                             JS.Constructors.Promise.Create(fun resolve _ -> releaseTail <- fun () -> resolve ())
 
                         // The update waits behind the tail while the pending state is reset.
-                        vault.FileTreeUpdateTail <- tailGate
+                        vault.FileTreeWriter.Enqueue(fun _ -> promise {
+                            do! tailGate
+                            return [||]
+                        })
+                        |> ignore
 
                         let update =
                             vault.ApplyWatcherFileTreeEvents [ watcherEvent arcPath "add" "tree-reset.txt" ]
@@ -1800,147 +1740,7 @@ Vitest.describe (
                         releaseTail ()
                         do! update
 
-                        Vitest.expect(vault.fileTree.ContainsKey(filePath)).toBe (false)
-                    })
-        )
-
-
-        Vitest.test (
-            "a completed import adds its folders and files to the file tree",
-            fun () ->
-                withTempArc
-                    ignore
-                    (fun arcPath -> promise {
-                        let vault = ArcVault(TestHelpers.testWindow ())
-                        vault.path <- Some arcPath
-
-                        let run1 = join [| arcPath; "assays"; "AssayA"; "dataset"; "Run1" |]
-                        let raw = join [| run1; "raw" |]
-                        let results = join [| raw; "results.csv" |]
-                        let notes = join [| run1; "notes.txt" |]
-                        do! mkdirWatcherDirectoryAsync raw
-                        do! writeWatcherTextFileAsync results "a,b"
-                        do! writeWatcherTextFileAsync notes "notes"
-
-                        do! vault.AddImportedEntriesToFileTree([| run1; raw |], [| results; notes |])
-
-                        for folder in [ run1; raw ] do
-                            Vitest.expect(vault.fileTree.ContainsKey(folder)).toBe (true)
-                            Vitest.expect(vault.fileTree.[folder].isDirectory).toBe (true)
-
-                        for file in [ results; notes ] do
-                            Vitest.expect(vault.fileTree.ContainsKey(file)).toBe (true)
-                            Vitest.expect(vault.fileTree.[file].isDirectory).toBe (false)
-                    })
-        )
-
-        Vitest.test (
-            "skips imported paths that no longer exist",
-            fun () ->
-                withTempArc
-                    ignore
-                    (fun arcPath -> promise {
-                        let vault = ArcVault(TestHelpers.testWindow ())
-                        vault.path <- Some arcPath
-
-                        let existing = join [| arcPath; "imported-existing.txt" |]
-                        let missing = join [| arcPath; "imported-missing.txt" |]
-                        do! writeWatcherTextFileAsync existing "here"
-
-                        do! vault.AddImportedEntriesToFileTree([||], [| existing; missing |])
-
-                        Vitest.expect(vault.fileTree.ContainsKey(existing)).toBe (true)
-                        Vitest.expect(vault.fileTree.ContainsKey(missing)).toBe (false)
-                    })
-        )
-
-        Vitest.test (
-            "imported entries are added next to the existing tree entries",
-            fun () ->
-                withTempArc
-                    ignore
-                    (fun arcPath -> promise {
-                        let vault = ArcVault(TestHelpers.testWindow ())
-                        vault.path <- Some arcPath
-
-                        let! existingTree = Main.FileTreeCreator.getFileTree arcPath
-                        vault.SetFileTree existingTree
-                        Vitest.expect(existingTree.Count).toBeGreaterThan 0
-
-                        let filePath = join [| arcPath; "imported-next.txt" |]
-                        do! writeWatcherTextFileAsync filePath "next"
-                        do! vault.AddImportedEntriesToFileTree([||], [| filePath |])
-
-                        for key in existingTree.Keys do
-                            Vitest.expect(vault.fileTree.ContainsKey key).toBe true
-
-                        Vitest.expect(vault.fileTree.ContainsKey filePath).toBe true
-                    })
-        )
-
-        Vitest.test (
-            "imported entries and a queued watcher update both reach the tree",
-            fun () ->
-                withTempArc
-                    ignore
-                    (fun arcPath -> promise {
-                        let vault = ArcVault(TestHelpers.testWindow ())
-                        vault.path <- Some arcPath
-
-                        let! existingTree = Main.FileTreeCreator.getFileTree arcPath
-                        vault.SetFileTree existingTree
-
-                        let watcherFile = join [| arcPath; "watcher-added.txt" |]
-                        let importedFile = join [| arcPath; "imported-after.txt" |]
-                        do! writeWatcherTextFileAsync watcherFile "watcher"
-                        do! writeWatcherTextFileAsync importedFile "imported"
-
-                        let mutable releaseTail = ignore
-
-                        let tailGate =
-                            JS.Constructors.Promise.Create(fun resolve _ -> releaseTail <- fun () -> resolve ())
-
-                        vault.FileTreeUpdateTail <- tailGate
-
-                        let watcherUpdate =
-                            vault.ApplyWatcherFileTreeEvents [ watcherEvent arcPath "add" "watcher-added.txt" ]
-
-                        let importUpdate = vault.AddImportedEntriesToFileTree([||], [| importedFile |])
-
-                        releaseTail ()
-                        do! watcherUpdate
-                        do! importUpdate
-
-                        Vitest.expect(vault.fileTree.ContainsKey watcherFile).toBe true
-                        Vitest.expect(vault.fileTree.ContainsKey importedFile).toBe true
-                    })
-        )
-
-        Vitest.test (
-            "drops imported entries after the watcher state was reset",
-            fun () ->
-                withTempArc
-                    ignore
-                    (fun arcPath -> promise {
-                        let vault = ArcVault(TestHelpers.testWindow ())
-                        vault.path <- Some arcPath
-
-                        let filePath = join [| arcPath; "imported-reset.txt" |]
-                        do! writeWatcherTextFileAsync filePath "reset"
-
-                        let mutable releaseTail = ignore
-
-                        let tailGate =
-                            JS.Constructors.Promise.Create(fun resolve _ -> releaseTail <- fun () -> resolve ())
-
-                        vault.FileTreeUpdateTail <- tailGate
-                        let update = vault.AddImportedEntriesToFileTree([||], [| filePath |])
-
-                        vault.ClearPendingFileWatcherState()
-                        releaseTail ()
-                        do! update
-
-                        Vitest.expect(vault.fileTree.ContainsKey(filePath)).toBe (false)
+                        Vitest.expect((vault.FileTreeWriter.Tree.TryFind(filePath)).IsSome).toBe (false)
                     })
         )
 )
@@ -2003,7 +1803,7 @@ let private isPathChangeMessage (args: obj array) =
     args.Length > 0 && (string args.[0]).Contains("pathChange")
 
 let private isFileTreeMessage (args: obj array) =
-    args.Length > 0 && (string args.[0]).Contains("fileTreeUpdate")
+    args.Length > 0 && (string args.[0]).Contains("fileTreeDirectoryUpdate")
 
 Vitest.describe (
     "ArcVaultHelper",
@@ -2160,7 +1960,7 @@ Vitest.describe (
 
                 callingVault.path <- Some existingArcPath
                 callingVault.SetArc(existingArc)
-                callingVault.fileTree.Add(seededEntry.path, seededEntry)
+                callingVault.FileTreeWriter.Tree.SetRoot seededEntry
 
                 let targetWindow = (createTestWindow (testWindowOptions targetWindowId)).Window
 
@@ -2188,8 +1988,8 @@ Vitest.describe (
                     Vitest.expect(callingVault.arc.IsSome).toBe (true)
                     Vitest.expect(callingVault.arc.Value).toBe (existingArc)
                     Vitest.expect(callingVault.watcher).toEqual (None)
-                    Vitest.expect(callingVault.fileTree.Count).toBe (1)
-                    Vitest.expect(callingVault.fileTree.ContainsKey(seededEntry.path)).toBe (true)
+                    Vitest.expect(callingVault.FileTreeWriter.Tree.Count).toBe (1)
+                    Vitest.expect((callingVault.FileTreeWriter.Tree.TryFind(seededEntry.path)).IsSome).toBe (true)
 
                     vaults.Vaults.Remove(callingWindowId) |> ignore
                     do! TestHelpers.removeDirectoryAsync invalidTargetPath
@@ -2475,7 +2275,7 @@ Vitest.describe (
 
                             Vitest.expect(vault.path).toEqual (None)
                             Vitest.expect(vault.arc).toEqual (None)
-                            Vitest.expect(vault.fileTree.Count).toBe (0)
+                            Vitest.expect(vault.FileTreeWriter.Tree.Count).toBe (0)
                             Vitest.expect(vault.watcher).toEqual (None)
                             Vitest.expect(windowState.SentMessages |> Seq.exists isPathChangeMessage).toBe (false)
                             Vitest.expect(windowState.SentMessages |> Seq.exists isFileTreeMessage).toBe (false)
@@ -2522,7 +2322,7 @@ Vitest.describe (
 
                     Vitest.expect(vault.path).toEqual (None)
                     Vitest.expect(vault.arc).toEqual (None)
-                    Vitest.expect(vault.fileTree.Count).toBe (0)
+                    Vitest.expect(vault.FileTreeWriter.Tree.Count).toBe (0)
                     Vitest.expect(vault.watcher).toEqual (None)
                     Vitest.expect(windowState.SentMessages |> Seq.exists isPathChangeMessage).toBe (false)
                     Vitest.expect(windowState.SentMessages |> Seq.exists isFileTreeMessage).toBe (false)
@@ -2669,7 +2469,7 @@ Vitest.describe (
                                                     |> Option.exists (fun vault ->
                                                         vault.arc.IsSome
                                                         && vault.path.IsSome
-                                                        && vault.fileTree.Count > 0
+                                                        && vault.FileTreeWriter.Tree.Count > 0
                                                         && vault.watcher.IsSome
                                                         && not vault.isInitializingArc
                                                     )
@@ -2697,11 +2497,11 @@ Vitest.describe (
                                     if isPathChangeMessage args then Some index else None
                                 )
 
-                            let treeMessageIndex = messages |> Array.findIndex isFileTreeMessage
 
+                            // The renderer pulls the snapshot after pathChange, so no tree push follows.
                             Vitest.expect(pathMessageIndexes.Length).toBe (1)
                             Vitest.expect(wasReadyAtPathPublication).toBe (true)
-                            Vitest.expect(pathMessageIndexes.[0] < treeMessageIndex).toBe (true)
+                            Vitest.expect(messages |> Array.exists isFileTreeMessage).toBe (false)
                         }
 
                         return! withAsyncCleanup cleanup operation
@@ -2796,9 +2596,7 @@ Vitest.describe (
                             loadingVault <- vaults.TryGetVault(targetWindowId)
 
                             loadingVault
-                            |> Option.exists (fun vault ->
-                                vault.path.IsSome && vault.arc.IsNone && vault.watcher.IsNone
-                            )
+                            |> Option.exists (fun vault -> vault.path.IsSome && vault.arc.IsNone)
 
                         let windowState = createTestWindow (testWindowOptions targetWindowId)
 
@@ -3048,9 +2846,7 @@ Vitest.describe (
                             loadingVault <- ARC_VAULTS.TryGetVault(targetWindowId)
 
                             loadingVault
-                            |> Option.exists (fun vault ->
-                                vault.path.IsSome && vault.arc.IsNone && vault.watcher.IsNone
-                            )
+                            |> Option.exists (fun vault -> vault.path.IsSome && vault.arc.IsNone)
 
                         let targetWindowState = createTestWindow (testWindowOptions targetWindowId)
                         let mutable arcWasOpeningWhenClosed = false
@@ -3127,7 +2923,7 @@ Vitest.describe (
                         let mutable targetWasRegistered = false
                         let mutable pathWasAssigned = false
                         let mutable arcWasLoaded = false
-                        let mutable watcherWasAbsent = false
+                        let mutable watcherWasStarted = false
                         let mutable fileTreeWasEmpty = false
 
                         let isArcStartedBeforeFileTreePublication () =
@@ -3138,12 +2934,12 @@ Vitest.describe (
                                 targetWasRegistered <- true
                                 pathWasAssigned <- vault.path = Some expectedPath
                                 arcWasLoaded <- vault.arc.IsSome
-                                watcherWasAbsent <- vault.watcher.IsNone
-                                fileTreeWasEmpty <- vault.fileTree.Count = 0
+                                watcherWasStarted <- vault.watcher.IsSome
+                                fileTreeWasEmpty <- vault.FileTreeWriter.Tree.Count = 0
 
                                 pathWasAssigned
                                 && arcWasLoaded
-                                && watcherWasAbsent
+                                && watcherWasStarted
                                 && fileTreeWasEmpty
                                 && vault.isInitializingArc
                             | None -> false
@@ -3196,12 +2992,12 @@ Vitest.describe (
                             Vitest.expect(targetWindowState.WasShown()).toBe (true)
                             Vitest.expect(pathWasAssigned).toBe (true)
                             Vitest.expect(arcWasLoaded).toBe (true)
-                            Vitest.expect(watcherWasAbsent).toBe (true)
+                            Vitest.expect(watcherWasStarted).toBe (true)
                             Vitest.expect(fileTreeWasEmpty).toBe (true)
                             Vitest.expect(startupWasCompleteWhenClosed).toBe (true)
                             Vitest.expect(targetWindowState.IsDestroyed()).toBe (true)
                             Vitest.expect(targetVault.IsSome).toBe (true)
-                            Vitest.expect(targetVault.Value.fileTree.Count).toBe (0)
+                            Vitest.expect(targetVault.Value.FileTreeWriter.Tree.Count).toBe (0)
                             Vitest.expect(ARC_VAULTS.Vaults.ContainsKey(targetWindowId)).toBe (false)
                             Vitest.expect(targetWindowState.SendsAfterDestroy()).toBe (0)
                             Vitest.expect(targetWindowState.TitleWritesAfterDestroy()).toBe (0)
@@ -3237,7 +3033,7 @@ Vitest.describe (
                         let mutable vaultExistedWhenClosed = false
                         let mutable pathWasAssignedWhenClosed = false
                         let mutable arcWasNoneWhenClosed = false
-                        let mutable watcherWasAbsentWhenClosed = false
+                        let mutable watcherWasStartedWhenClosed = false
 
                         let isArcOpening () =
                             loadingVault <- ARC_VAULTS.TryGetVault(windowId)
@@ -3248,13 +3044,13 @@ Vitest.describe (
                                 pathWasAssignedWhenClosed <- vault.path = Some(PathHelpers.normalizePath arcPath)
 
                                 arcWasNoneWhenClosed <- vault.arc.IsNone
-                                watcherWasAbsentWhenClosed <- vault.watcher.IsNone
+                                watcherWasStartedWhenClosed <- vault.watcher.IsSome
                             | None -> ()
 
                             vaultExistedWhenClosed
                             && pathWasAssignedWhenClosed
                             && arcWasNoneWhenClosed
-                            && watcherWasAbsentWhenClosed
+                            && watcherWasStartedWhenClosed
 
                         let windowState = createTestWindow (testWindowOptions windowId)
                         let mutable arcWasOpeningWhenClosed = false
@@ -3297,7 +3093,7 @@ Vitest.describe (
                                 Vitest.expect(vaultExistedWhenClosed).toBe (true)
                                 Vitest.expect(pathWasAssignedWhenClosed).toBe (true)
                                 Vitest.expect(arcWasNoneWhenClosed).toBe (true)
-                                Vitest.expect(watcherWasAbsentWhenClosed).toBe (true)
+                                Vitest.expect(watcherWasStartedWhenClosed).toBe (true)
                                 Vitest.expect(windowState.IsDestroyed()).toBe (true)
                                 Vitest.expect(vault.watcher.IsNone).toBe (true)
                                 Vitest.expect(ARC_VAULTS.Vaults.ContainsKey(windowId)).toBe (false)
@@ -3324,7 +3120,7 @@ Vitest.describe (
                         let mutable currentVault: ArcVault option = None
                         let mutable pathWasAssigned = false
                         let mutable arcWasLoaded = false
-                        let mutable watcherWasAbsent = false
+                        let mutable watcherWasStarted = false
                         let mutable fileTreeWasEmpty = false
 
                         let isArcStartedBeforeFileTreePublication () =
@@ -3334,12 +3130,12 @@ Vitest.describe (
                             | Some vault ->
                                 pathWasAssigned <- vault.path = Some expectedPath
                                 arcWasLoaded <- vault.arc.IsSome
-                                watcherWasAbsent <- vault.watcher.IsNone
-                                fileTreeWasEmpty <- vault.fileTree.Count = 0
+                                watcherWasStarted <- vault.watcher.IsSome
+                                fileTreeWasEmpty <- vault.FileTreeWriter.Tree.Count = 0
 
                                 pathWasAssigned
                                 && arcWasLoaded
-                                && watcherWasAbsent
+                                && watcherWasStarted
                                 && fileTreeWasEmpty
                                 && vault.isInitializingArc
                             | None -> false
@@ -3388,12 +3184,12 @@ Vitest.describe (
                             Vitest.expect(createdWindowCount).toBe (0)
                             Vitest.expect(pathWasAssigned).toBe (true)
                             Vitest.expect(arcWasLoaded).toBe (true)
-                            Vitest.expect(watcherWasAbsent).toBe (true)
+                            Vitest.expect(watcherWasStarted).toBe (true)
                             Vitest.expect(fileTreeWasEmpty).toBe (true)
                             Vitest.expect(startupWasCompleteWhenClosed).toBe (true)
                             Vitest.expect(windowState.IsDestroyed()).toBe (true)
                             Vitest.expect(currentVault.IsSome).toBe (true)
-                            Vitest.expect(currentVault.Value.fileTree.Count).toBe (0)
+                            Vitest.expect(currentVault.Value.FileTreeWriter.Tree.Count).toBe (0)
                             Vitest.expect(ARC_VAULTS.Vaults.ContainsKey(windowId)).toBe (false)
                             Vitest.expect(windowState.SendsAfterDestroy()).toBe (0)
                             Vitest.expect(windowState.TitleWritesAfterDestroy()).toBe (0)
@@ -3943,7 +3739,7 @@ Vitest.describe (
                 let mutable targetWasRegistered = false
                 let mutable targetPathWasAssigned = false
                 let mutable creationReachedPostWriteLoad = false
-                let mutable watcherWasAbsent = false
+                let mutable watcherWasStarted = false
                 let mutable vaultWasEmptyWhenShown = false
 
                 let isArcLoadingAfterWrite () =
@@ -3954,12 +3750,12 @@ Vitest.describe (
                         targetWasRegistered <- true
                         targetPathWasAssigned <- vault.path = Some expectedPath
                         creationReachedPostWriteLoad <- vault.arc.IsSome
-                        watcherWasAbsent <- vault.watcher.IsNone
+                        watcherWasStarted <- vault.watcher.IsSome
 
                         targetWasRegistered
                         && targetPathWasAssigned
                         && creationReachedPostWriteLoad
-                        && watcherWasAbsent
+                        && watcherWasStarted
                         && vault.isInitializingArc
                         && not vault.isBusyWriting
                         && vault.hasUnsavedArcChanges
@@ -4083,7 +3879,7 @@ Vitest.describe (
                 let mutable targetWasRegistered = false
                 let mutable pathWasAssigned = false
                 let mutable arcWasLoaded = false
-                let mutable watcherWasAbsent = false
+                let mutable watcherWasStarted = false
                 let mutable fileTreeWasEmpty = false
                 let mutable vaultWasEmptyWhenShown = false
 
@@ -4095,12 +3891,12 @@ Vitest.describe (
                         targetWasRegistered <- true
                         pathWasAssigned <- vault.path = Some expectedPath
                         arcWasLoaded <- vault.arc.IsSome
-                        watcherWasAbsent <- vault.watcher.IsNone
-                        fileTreeWasEmpty <- vault.fileTree.Count = 0
+                        watcherWasStarted <- vault.watcher.IsSome
+                        fileTreeWasEmpty <- vault.FileTreeWriter.Tree.Count = 0
 
                         pathWasAssigned
                         && arcWasLoaded
-                        && watcherWasAbsent
+                        && watcherWasStarted
                         && fileTreeWasEmpty
                         && vault.isInitializingArc
                         && not vault.hasUnsavedArcChanges
@@ -4170,12 +3966,12 @@ Vitest.describe (
                     Vitest.expect(vaultWasEmptyWhenShown).toBe (true)
                     Vitest.expect(pathWasAssigned).toBe (true)
                     Vitest.expect(arcWasLoaded).toBe (true)
-                    Vitest.expect(watcherWasAbsent).toBe (true)
+                    Vitest.expect(watcherWasStarted).toBe (true)
                     Vitest.expect(fileTreeWasEmpty).toBe (true)
                     Vitest.expect(startupWasCompleteWhenClosed).toBe (true)
                     Vitest.expect(targetWindowState.IsDestroyed()).toBe (true)
                     Vitest.expect(targetVault.IsSome).toBe (true)
-                    Vitest.expect(targetVault.Value.fileTree.Count).toBe (0)
+                    Vitest.expect(targetVault.Value.FileTreeWriter.Tree.Count).toBe (0)
                     Vitest.expect(ARC_VAULTS.Vaults.ContainsKey(targetWindowId)).toBe (false)
                     Vitest.expect(targetWindowState.SendsAfterDestroy()).toBe (0)
                     Vitest.expect(targetWindowState.TitleWritesAfterDestroy()).toBe (0)
@@ -4684,7 +4480,7 @@ Vitest.describe (
 
                         match! vault.WriteArc() with
                         | Error error -> failwith error.Message
-                        | Ok() -> ()
+                        | Ok _ -> ()
 
                         let! rootNoteAfterSave = readFileAsync rootNotePath TextEncoding.Utf8
                         let! studyNoteAfterSave = readFileAsync studyNotePath TextEncoding.Utf8
@@ -4745,7 +4541,14 @@ Vitest.describe (
 
                         let! loadResult = ARC.LoadAsyncSwate arcPath
                         let loadedArc = TestHelpers.expectLoadedArc loadResult
-                        let stalePaths = loadedArc.FileSystem.Tree.ToFilePaths()
+                        // Structural loading no longer lists payload files, so the stale tree is built explicitly.
+                        let stalePaths =
+                            Array.append (loadedArc.FileSystem.Tree.ToFilePaths()) [|
+                                "payload.txt"
+                                "assays/.gitkeep"
+                            |]
+
+                        loadedArc.SetFilePaths stalePaths
 
                         Vitest.expect(stalePaths |> Array.contains "payload.txt").toBe (true)
                         Vitest.expect(stalePaths |> Array.contains "assays/.gitkeep").toBe (true)
@@ -5019,7 +4822,7 @@ Vitest.describe (
                 let seededEntry = FileEntry.create ("seeded.txt", "seeded.txt", false)
                 let mutable createdWindowCount = 0
 
-                vault.fileTree.Add(seededEntry.path, seededEntry)
+                vault.FileTreeWriter.Tree.SetRoot seededEntry
                 vaults.Vaults.Add(windowId, vault)
                 do! writeTextFileAsync blockedParent "This file prevents creation of a nested ARC directory."
 
@@ -5041,7 +4844,7 @@ Vitest.describe (
                     Vitest.expect(vault.path).toEqual (None)
                     Vitest.expect(vault.arc).toEqual (None)
                     Vitest.expect(vault.watcher).toEqual (None)
-                    Vitest.expect(vault.fileTree.Count).toBe (0)
+                    Vitest.expect(vault.FileTreeWriter.Tree.Count).toBe (0)
                     Vitest.expect(vault.hasUnsavedArcChanges).toBe (false)
                     Vitest.expect(vault.window.title).toBe (Swate.Electron.Shared.ApplicationVersion.windowTitle None)
 
@@ -5099,7 +4902,7 @@ Vitest.describe (
                 let sentMessages = windowState.SentMessages
                 let vault = ArcVault(windowState.Window)
                 let seededEntry = FileEntry.create ("seeded.txt", "seeded.txt", false)
-                vault.fileTree.Add(seededEntry.path, seededEntry)
+                vault.FileTreeWriter.Tree.SetRoot seededEntry
                 do! writeTextFileAsync blockedParent "This file prevents creation of a nested ARC directory."
 
                 try
@@ -5114,7 +4917,7 @@ Vitest.describe (
                     Vitest.expect(vault.path).toEqual (None)
                     Vitest.expect(vault.arc).toEqual (None)
                     Vitest.expect(vault.watcher).toEqual (None)
-                    Vitest.expect(vault.fileTree.Count).toBe (0)
+                    Vitest.expect(vault.FileTreeWriter.Tree.Count).toBe (0)
                     Vitest.expect(vault.hasUnsavedArcChanges).toBe (false)
                     Vitest.expect(creationError.Value).not.toBe (rollbackError)
                     Vitest.expect(creationError.Value.Message).toContain ("Could not write ARC")
@@ -5152,7 +4955,7 @@ Vitest.describe (
                 let sentMessages = windowState.SentMessages
                 let vault = ArcVault(windowState.Window)
                 let seededEntry = FileEntry.create ("seeded.txt", "seeded.txt", false)
-                vault.fileTree.Add(seededEntry.path, seededEntry)
+                vault.FileTreeWriter.Tree.SetRoot seededEntry
 
                 try
                     let mutable creationError: exn option = None
@@ -5166,7 +4969,7 @@ Vitest.describe (
                     Vitest.expect(vault.path).toEqual (None)
                     Vitest.expect(vault.arc).toEqual (None)
                     Vitest.expect(vault.watcher).toEqual (None)
-                    Vitest.expect(vault.fileTree.Count).toBe (0)
+                    Vitest.expect(vault.FileTreeWriter.Tree.Count).toBe (0)
                     Vitest.expect(vault.hasUnsavedArcChanges).toBe (false)
                     Vitest.expect(vault.window.title).toBe (Swate.Electron.Shared.ApplicationVersion.windowTitle None)
 
@@ -5203,10 +5006,10 @@ Vitest.describe (
                 try
                     let vault = ArcVault(TestHelpers.testWindow ())
                     let seededEntry = FileEntry.create ("seeded.txt", "seeded.txt", false)
-                    vault.fileTree.Add(seededEntry.path, seededEntry)
+                    vault.FileTreeWriter.Tree.SetRoot seededEntry
                     let mutable failed = false
 
-                    Vitest.expect(vault.fileTree.Count).toBe (1)
+                    Vitest.expect(vault.FileTreeWriter.Tree.Count).toBe (1)
 
                     try
                         do! vault.OpenARC folderPath
@@ -5217,7 +5020,7 @@ Vitest.describe (
                     Vitest.expect(vault.path).toEqual (None)
                     Vitest.expect(vault.arc).toEqual (None)
                     Vitest.expect(vault.watcher).toEqual (None)
-                    Vitest.expect(vault.fileTree.Count).toBe (0)
+                    Vitest.expect(vault.FileTreeWriter.Tree.Count).toBe (0)
                     do! TestHelpers.removeDirectoryAsync folderPath
                 with error ->
                     do! TestHelpers.removeDirectoryAsync folderPath
@@ -5272,6 +5075,39 @@ Vitest.describe (
                 Vitest.expect(error.Message).toContain ("window 42")
         )
 
+
+        Vitest.test (
+            "an EBUSY rename failure maps to a readable message with the code",
+            fun () ->
+                let busy =
+                    emitJsExpr () "Object.assign(new Error('busy'), { code: 'EBUSY' })"
+                    |> unbox<exn>
+
+                let mapped = mapArcRootRenameDiskError "/arcs/a" "/arcs/b" busy
+
+                Vitest.expect(mapped.Message).toContain "in use"
+                Vitest.expect(mapped.Message).toContain "(EBUSY)"
+        )
+
+        Vitest.test (
+            "an unknown rename failure keeps the code and the native message",
+            fun () ->
+                let other =
+                    emitJsExpr () "Object.assign(new Error('cross-device link not permitted'), { code: 'EXDEV' })"
+                    |> unbox<exn>
+
+                let mapped = mapArcRootRenameDiskError "/arcs/a" "/arcs/b" other
+
+                Vitest.expect(mapped.Message).toContain "cross-device link not permitted"
+                Vitest.expect(mapped.Message).toContain "EXDEV"
+        )
+
+        Vitest.test (
+            "the rename retries wait up to four seconds on win32 and keep the short table elsewhere",
+            fun () ->
+                Vitest.expect(renameRetryDelaysMs "win32").toEqual [| 0; 100; 300; 1000; 2000; 4000 |]
+                Vitest.expect(renameRetryDelaysMs "linux").toEqual [| 0; 75; 200; 500 |]
+        )
 )
 
 Vitest.describe (
@@ -5347,11 +5183,6 @@ Vitest.describe (
 let private importWindowId = ref 9000
 let private importTarget = "assays/AssayA/dataset"
 
-let private importPlannedPaths: PlannedImportPaths = {
-    FolderPaths = [| "Run1"; "Run1/raw" |]
-    FilePaths = [| "Run1/notes.txt"; "Run1/raw/results.csv" |]
-}
-
 /// Registers a loaded vault whose window records its messages, with the source folder Run1 next to the ARC.
 /// The optional extra file is written into Run1.
 let private withImportVault
@@ -5407,9 +5238,6 @@ let private pickAndImport (api: IArcVaultsApi) requestId = promise {
             }
     | other -> return failwithf "Expected an authorization, received %A." other
 }
-
-let private sortedTreeKeys (tree: System.Collections.Generic.Dictionary<string, FileEntry>) =
-    tree.Keys |> Seq.map PathHelpers.normalizePath |> Seq.sort |> Seq.toArray
 
 let private importStatesOf (windowState: TestWindowState) =
     windowState.SentMessages
@@ -5542,16 +5370,22 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "imports a picked folder through the IPC handler and marks its paths",
+            "imports a picked folder through the IPC handler and reconciles its target folder",
             fun () ->
                 withImportVault
                     None
                     (fun vault api windowState arcPath _ -> promise {
+                        do! vault.EnqueueFileTreeScan()
+
+                        match! vault.LoadDirectory importTarget with
+                        | Ok _ -> ()
+                        | Error error -> failwith error.Message
+
+                        let sentBeforeImport = windowState.SentMessages.Count
+
                         match! pickAndImport api "import-1" with
                         | Ok ImportExternalFilesResult.Completed -> ()
                         | other -> failwithf "Expected Completed, received %A." other
-
-                        Vitest.expect(vault.importStagingRoots.Count).toBe 0
 
                         let targetPath = join [| arcPath; importTarget; "Run1" |]
                         let! notes = ARCtrl.FileSystemHelper.readFileTextAsync (join [| targetPath; "notes.txt" |])
@@ -5563,38 +5397,22 @@ Vitest.describe (
                         Vitest.expect(results).toBe "a,b"
                         Vitest.expect(vault.activeFileImport.IsNone).toBe true
 
-                        // The full scan defines the key format. The vault starts with an empty tree.
-                        let! scanned = Main.FileTreeCreator.getFileTree arcPath
+                        let importedFolder = join [| arcPath; importTarget; "Run1" |]
+                        Vitest.expect(vault.FileTreeWriter.Tree.TryFind(importedFolder).IsSome).toBe true
 
-                        let importedKeys =
-                            scanned.Keys
-                            |> Seq.filter (fun key -> (PathHelpers.normalizePath key).Contains "dataset/Run1")
-                            |> Seq.toArray
+                        let stagingLeftovers =
+                            readdirSync (join [| arcPath; importTarget |])
+                            |> Array.filter _.StartsWith(".swate-import-")
 
-                        Vitest.expect(importedKeys.Length).toBe 4
-                        Vitest.expect(vault.fileTree.Count).toBe 4
+                        Vitest.expect(stagingLeftovers).toEqual [||]
 
-                        for key in importedKeys do
-                            Vitest.expect(vault.fileTree.ContainsKey key).toBe true
-
-                        let importedRelativeKeys = [
-                            "assays/AssayA/dataset/Run1"
-                            "assays/AssayA/dataset/Run1/raw"
-                            "assays/AssayA/dataset/Run1/notes.txt"
-                            "assays/AssayA/dataset/Run1/raw/results.csv"
-                        ]
-
-                        let sentMessages = windowState.SentMessages |> Seq.toArray
+                        let sentMessages =
+                            windowState.SentMessages |> Seq.skip sentBeforeImport |> Seq.toArray
 
                         let treeMessageIndex =
                             sentMessages
                             |> Array.tryFindIndex (fun args ->
-                                args.Length > 1
-                                && (string args.[0]).Contains("fileTreeUpdate")
-                                && (let sentTree =
-                                        unbox<System.Collections.Generic.Dictionary<string, FileEntry>> args.[1]
-
-                                    importedRelativeKeys |> List.forall sentTree.ContainsKey)
+                                args.Length > 0 && (string args.[0]).Contains("fileTreeDirectoryUpdate")
                             )
 
                         let finalStateIndex =
@@ -5606,17 +5424,9 @@ Vitest.describe (
                         Vitest.expect(treeMessageIndex.IsSome).toBe true
                         Vitest.expect(treeMessageIndex.Value < finalStateIndex).toBe true
 
-                        let events =
-                            WatcherHelpers.createImportedWatcherEvents arcPath importTarget importPlannedPaths
-
-                        let eventFor name suffix =
-                            events
-                            |> Array.find (fun (e: ArcVaultFileSystemEvent) ->
-                                e.EventName = name && e.RelativePath.EndsWith(suffix: string)
-                            )
-
-                        Vitest.expect(vault.IsImportedWatcherEvent(eventFor "add" "Run1/notes.txt")).toBe true
-                        Vitest.expect(vault.IsImportedWatcherEvent(eventFor "addDir" "dataset/Run1")).toBe true
+                        // Without a running watcher no delayed event will come, so a completed import keeps no marks.
+                        Vitest.expect(vault.importedPathOwners.Count).toBe 0
+                        Vitest.expect(vault.importedPathLeases.Count).toBe 0
 
                         let states = importStatesOf windowState
                         Vitest.expect(states.[states.Length - 1].IsNone).toBe true
@@ -5675,104 +5485,13 @@ Vitest.describe (
                         let! written = TestHelpers.pathExistsAsync (join [| arcPath; importTarget; "Run1" |])
                         Vitest.expect(written).toBe false
 
-                        Vitest.expect(vault.fileTree.Keys |> Seq.exists (fun key -> key.Contains "Run1")).toBe false
+                        Vitest
+                            .expect(vault.FileTreeWriter.Tree.TryFind(join [| arcPath; importTarget; "Run1" |]).IsSome)
+                            .toBe
+                            false
 
-                        let events =
-                            WatcherHelpers.createImportedWatcherEvents arcPath importTarget importPlannedPaths
-
-                        for event in events do
-                            Vitest.expect(vault.IsImportedWatcherEvent event).toBe false
-
+                        Vitest.expect(vault.importedPathOwners.Count).toBe 0
                         Vitest.expect(vault.importedPathLeases.Count).toBe 0
-                    })
-        )
-
-        Vitest.test (
-            "the file tree after an import equals the tree a reload builds",
-            fun () ->
-                withImportVault
-                    None
-                    (fun vault api _ arcPath sourcePath -> promise {
-                        let stagingName = ".swate-import-" + String.replicate 32 "a"
-                        do! mkdirWatcherDirectoryAsync (join [| sourcePath; "sub" |])
-                        do! writeWatcherTextFileAsync (join [| sourcePath; "~$Book1.xlsx" |]) "Excel lock file"
-                        do! mkdirWatcherDirectoryAsync (join [| sourcePath; stagingName |])
-                        do! writeWatcherTextFileAsync (join [| sourcePath; stagingName; "a.txt" |]) "staged"
-                        do! mkdirWatcherDirectoryAsync (join [| sourcePath; "README.md" |])
-                        do! writeWatcherTextFileAsync (join [| sourcePath; "README.md"; "inner.txt" |]) "inner"
-                        do! writeWatcherTextFileAsync (join [| sourcePath; "data.csv" |]) "a,b"
-
-                        match! pickAndImport api "import-tree" with
-                        | Ok ImportExternalFilesResult.Completed -> ()
-                        | other -> failwithf "Expected Completed, received %A." other
-
-                        let! reloadedTree = Main.FileTreeCreator.getFileTree arcPath
-
-                        let importedKeys (tree: System.Collections.Generic.Dictionary<string, FileEntry>) =
-                            sortedTreeKeys tree |> Array.filter (fun key -> key.Contains "dataset/Run1")
-
-                        Vitest.expect(importedKeys reloadedTree |> Array.exists _.EndsWith("/data.csv")).toBe true
-                        Vitest.expect(importedKeys vault.fileTree).toEqual (importedKeys reloadedTree)
-                    })
-        )
-
-        Vitest.test (
-            "adds only the top-level imported folders to a native watcher",
-            fun () ->
-                let addedPaths = ResizeArray<string>()
-
-                let watcher = recordingWatcher addedPaths
-
-                withImportVault
-                    None
-                    (fun vault api _ arcPath _ -> promise {
-                        vault.watcher <- Some watcher
-                        vault.watcherUsesPolling <- false
-
-                        match! pickAndImport api "import-3" with
-                        | Ok ImportExternalFilesResult.Completed -> ()
-                        | other -> failwithf "Expected Completed, received %A." other
-
-                        Vitest.expect(addedPaths.ToArray()).toEqual [| join [| arcPath; importTarget; "Run1" |] |]
-                    })
-        )
-
-        Vitest.test (
-            "lists a leftover staging folder with its files and adds it to a polling watcher",
-            fun () ->
-                let addedPaths = ResizeArray<string>()
-
-                let watcher = recordingWatcher addedPaths
-
-                withImportVault
-                    None
-                    (fun vault _ _ arcPath _ -> promise {
-                        vault.watcher <- Some watcher
-                        vault.watcherUsesPolling <- true
-
-                        let stagingFolder =
-                            join [|
-                                arcPath
-                                importTarget
-                                ".swate-import-" + String.replicate 32 "a"
-                            |]
-
-                        do! mkdirWatcherDirectoryAsync stagingFolder
-                        do! writeWatcherTextFileAsync (join [| stagingFolder; "left-over.txt" |]) "x"
-
-                        do! vault.WatchLeftoverStagingFolder stagingFolder
-
-                        Vitest.expect(addedPaths.ToArray()).toEqual [| stagingFolder |]
-
-                        let! reloadedTree = Main.FileTreeCreator.getFileTree arcPath
-
-                        let stagingKeys (tree: System.Collections.Generic.Dictionary<string, FileEntry>) =
-                            sortedTreeKeys tree |> Array.filter (fun key -> key.Contains ".swate-import-")
-
-                        Vitest.expect(stagingKeys vault.fileTree).toEqual (stagingKeys reloadedTree)
-
-                        Vitest.expect(stagingKeys vault.fileTree |> Array.exists _.EndsWith("/left-over.txt")).toBe
-                            true
                     })
         )
 )

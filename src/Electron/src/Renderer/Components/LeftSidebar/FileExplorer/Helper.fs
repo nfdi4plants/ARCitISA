@@ -74,24 +74,26 @@ let private folderIcon (path: string) =
     | Some "notes", _ -> FileItemIcon.Notebook
     | _ -> FileItemIcon.Folder
 
-let private fileIcon (path: string) =
-    let normalizedPath = normalizeNodePath path
-    let segments = pathSegments normalizedPath
-    let fileName = PathHelpers.getFileName normalizedPath |> lowerInvariant
+/// The icon of a file. The path is the normalized ARC-relative path of the entry and name is its last segment.
+/// Only isa.datamap.xlsx can be a DataMap, so the path parsing runs for that name alone.
+let private isInNotesFolder (path: string) =
+    let separator = path.IndexOf '/'
+    let first = if separator < 0 then path else path.Substring(0, separator)
+    String.Equals(first, "notes", StringComparison.OrdinalIgnoreCase)
 
-    match colorClassForDatamapPath normalizedPath with
-    | Some _ -> FileItemIcon.Map
-    | None ->
-        match iconForArcWorkbookFile fileName with
+let private fileIcon (name: string) (path: string) =
+    let lowerName = lowerInvariant name
+
+    if
+        lowerName = DatamapParentInfo.DatamapFileName
+        && (DatamapParentInfo.tryFromPath path).IsSome
+    then
+        FileItemIcon.Map
+    else
+        match iconForArcWorkbookFile lowerName with
         | Some icon -> icon
-        | None when
-            (segments
-             |> Array.tryHead
-             |> Option.exists (fun segment -> String.Equals(segment, "notes", StringComparison.OrdinalIgnoreCase)))
-            && fileName.EndsWith(".md", StringComparison.OrdinalIgnoreCase)
-            ->
-            FileItemIcon.Note
-        | None when fileName.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase) -> FileItemIcon.Table
+        | None when lowerName.EndsWith(".md", StringComparison.Ordinal) && isInNotesFolder path -> FileItemIcon.Note
+        | None when lowerName.EndsWith(".xlsx", StringComparison.Ordinal) -> FileItemIcon.Table
         | None -> FileItemIcon.Document
 
 let getItemIconClass (item: FileItem) =
@@ -180,15 +182,63 @@ let isArcEntityFolderViewOpen
         || PathHelpers.pathsEqual selectedPath $"{PathHelpers.normalizePath folderPath}/{workbookName}"
     | _ -> false
 
-let createItem (node: FileTreeNode) : FileItem =
-    let item =
-        if node.isDirectory then
-            FileTree.createFolder node.name (Some node.path) (folderIcon node.path)
-        else
-            FileTree.createFile node.name (Some node.path) (fileIcon node.path)
+/// Builds the row of an entry in one record. Entry paths are already normalized, so nothing normalizes them again.
+let createItem
+    (tryFindLfs: string -> Swate.Electron.Shared.VersionControlTypes.ObjectStateDto option)
+    (node: FileEntry)
+    : FileItem =
+    let path = node.path
 
-    { item with Id = node.path }
-    |> Renderer.Components.FileExplorerLfs.withFileTreeNodeLfsState node
+    if node.isDirectory then
+        {
+            Id = path
+            Name = node.name
+            Icon = folderIcon path
+            IconTone = None
+            IsExpanded = false
+            Children = Some []
+            IdRel = None
+            IsDirectory = true
+            IsLFS = None
+            IsLFSPointer = None
+            Checkout = None
+            Downloaded = None
+            LfsActivity = None
+            Size = None
+            SizeFormatted = None
+            ItemType = "node"
+            Label = Some node.name
+            Selectable = false
+            Path = Some path
+        }
+    else
+        let icon = fileIcon node.name path
+
+        let item: FileItem = {
+            Id = path
+            Name = node.name
+            Icon = icon
+            IconTone = None
+            IsExpanded = false
+            Children = None
+            IdRel = None
+            IsDirectory = false
+            IsLFS = None
+            IsLFSPointer = None
+            Checkout = None
+            Downloaded = None
+            LfsActivity = None
+            Size = None
+            SizeFormatted = None
+            ItemType = "node"
+            Label = Some node.name
+            Selectable = false
+            Path = Some path
+        }
+
+        match tryFindLfs path with
+        | None -> item
+        | Some _ -> Renderer.Components.FileExplorerLfs.withFileTreeNodeLfsState tryFindLfs node item
 
 let arcCreateKinds = [
     {

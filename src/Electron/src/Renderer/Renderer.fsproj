@@ -10,11 +10,16 @@
     <Compile Include="Types.fs" />
     <Compile Include="IpcReceiver.fs" />
     <Compile Include="MainSyncedState.fs" />
+    <Compile Include="ReferenceCache.fs" />
     <Compile Include="VersionControlApiClient.fs" />
     <Compile Include="GitDiffPresentation.fs" />
     <Compile Include="Context\AppStateContext.fs" />
+    <Compile Include="Context\LargeObjectStore.fs" />
     <Compile Include="Context\PageStateContext.fs" />
+    <Compile Include="Context\FileTreeStore.fs" />
     <Compile Include="Context\FileStateContext.fs" />
+    <Compile Include="Context\FileTreeHooks.fs" />
+    <Compile Include="Context\FileTreeExpansionContext.fs" />
     <Compile Include="Context\AuthStateContext.fs" />
     <Compile Include="Context\GitWorkflow.fs" />
     <Compile Include="Context\GitStateContext.fs" />
@@ -41,9 +46,11 @@
     <Compile Include="Components\LeftSidebar\FileExplorer\Modals\CreateFileSystemItemModal.fs" />
     <Compile Include="Components\LeftSidebar\FileExplorer\Modals\FileTreeRenameModal.fs" />
     <Compile Include="Components\LeftSidebar\FileExplorer\Modals\FileTreeDeleteModal.fs" />
+    <Compile Include="Components\LeftSidebar\FileExplorer\Modals\FileTreeFreeLfsModal.fs" />
     <Compile Include="Components\LeftSidebar\FileExplorer\FileTreeRename.fs" />
     <Compile Include="Components\LeftSidebar\FileExplorer\FileTreeDelete.fs" />
     <Compile Include="Components\LeftSidebar\FileExplorer\FileTree.fs" />
+    <Compile Include="Components\LeftSidebar\FileExplorer\FileWatcherNotice.fs" />
     <Compile Include="Components\LeftSidebar\FileExplorer\Main.fs" />
     <Compile Include="Components\LeftSidebar\Git\Types.fs" />
     <Compile Include="Components\LeftSidebar\Git\GitSidebarEmptyState.fs" />
@@ -59,6 +66,7 @@
     <Compile Include="Components\MainContent\MarkdownEditorTarget.fs" />
     <Compile Include="Components\MainContent\PDFViewer.fs" />
     <Compile Include="Components\MainContent\UnknownPreviewTarget.fs" />
+    <Compile Include="Components\MainContent\LargeFilePreviewTarget.fs" />
     <Compile Include="Components\MainContent\ErrorViewTarget.fs" />
     <Compile Include="Components\MainContent\NotesDraftTarget.fs" />
     <Compile Include="Components\MainContent\NotesSearchTarget.fs" />

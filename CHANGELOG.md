@@ -20,6 +20,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Right-clicking a folder or the ARC name offers "Import folders", which copies the folders you pick, with everything inside them. It is available wherever "New Folder" is. #1429 (by @Etschbeijer)
 - Imported folders that would stay empty get an empty ".gitkeep" file, so they are kept when the ARC is uploaded. #1429 (by @Etschbeijer)
+- "Refresh folder" in the file tree's right-click menu reads a folder from disk again. (by @caroott)
+- The provenance graph has an up button that takes you one level back and names that level. (by @caroott)
+- An overview above the provenance graph shows where you are in the ARC and lets you jump to a neighboring dataset, process, group or node. (by @caroott)
+- A minimap in the corner of the provenance graph shows the whole graph and the visible part, and a click or drag on it moves the view. (by @caroott)
+- The whole provenance graph can be saved as a PNG image or copied to paste into Slack or Teams. (by @caroott)
 
 ### 🔄 Changed
 
@@ -30,16 +35,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - "Import files" and "Import folders" do not open the picker while ARCitISA is saving or importing. #1429 (by @Etschbeijer)
 - While files or folders are imported, the notice shows the current step and how many items are done. The taskbar progress now covers the whole import, including adding the items to the ARC. #1429 (by @Etschbeijer)
 - Creating and renaming items says why a name can't be used, for example for a "dataset" folder inside an assay or an ARC metadata file name. #1429 (by @Etschbeijer)
+- Files above the preview size limit or with binary content open as a page that shows the file name and size, with a button to open the file in its default application. (by @caroott)
+- The Git LFS badge of a downloaded file no longer frees its local copy. Freeing is in the right-click menu and asks for confirmation first. (by @caroott)
+- Large ARCs open faster. The file tree shows the ARC structure first and reads other folders when you expand them. #1340 (by @caroott, @Etschbeijer)
+- Changes that other programs make inside data folders appear when the ARCitISA window gets focus, or after "Refresh folder". #1340 (by @caroott)
+- Git LFS badges come from one background listing per ARC. They update after Git operations in ARCitISA, and after changes made outside it when the window gets focus. #1340 (by @caroott, @Etschbeijer)
 - Switching views in the provenance graph keeps the previous graph on screen until the new one is ready, so the view no longer flashes. (by @caroott)
 - The provenance graph lays out large graphs in the background, so the app stays responsive in the meantime. (by @caroott)
 
 ### 🐛 Fixed
 
 - Lock files of open Office documents, such as "~$Book1.xlsx", no longer appear in the file tree. #1429 (by @Etschbeijer)
-- The provenance graph has an up button that takes you one level back and names that level. (by @caroott)
-- An overview above the provenance graph shows where you are in the ARC and lets you jump to a neighboring dataset, process, group or node. (by @caroott)
-- A minimap in the corner of the provenance graph shows the whole graph and the visible part, and a click or drag on it moves the view. (by @caroott)
-- The whole provenance graph can be saved as a PNG image or copied to paste into Slack or Teams. (by @caroott)
+- File names of Git LFS files stay visible in narrow file tree rows. The badge drops its text and size first. (by @caroott)
+- ARCitISA no longer keeps several CPU cores busy while a large ARC is open, because it watches only the ARC structure. #1340 (by @caroott, @Etschbeijer)
+- The file tree stays responsive in folders with thousands of files. #1340 (by @caroott, @Etschbeijer)
+- Renaming the ARC folder on Windows retries for longer and reports the reason when it fails. (by @caroott)
 
 ## 3.1.0 - 2026-10-21
 

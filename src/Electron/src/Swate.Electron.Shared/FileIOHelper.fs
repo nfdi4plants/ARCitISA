@@ -23,28 +23,24 @@ let isLegacyDataMapPath (path: string) =
         String.Equals(fileName, ArcEntityPathRules.legacyDataMapFileName, StringComparison.OrdinalIgnoreCase)
     )
 
-let isOfficeLockFilePath (path: string) =
-    Text.RegularExpressions.Regex.IsMatch(
-        PathHelpers.normalizeSeparators path,
-        """(^|/)(\.?~\$[^/]*\.[^/]+|\.~lock\.[^/]+#)$"""
-    )
+// Office writes "~$name.xlsx" lock files, some tools prefix them with a dot, and LibreOffice writes ".~lock.name#".
+let private officeLockFilePattern = """(^|/)(\.?~\$[^/]*\.[^/]+|\.~lock\.[^/]+#)$"""
+let private lfsBackupPattern = """\.vcs-lfs-backup-[0-9a-fA-F]{32}$"""
 
-let isLfsBackupPath (path: string) =
-    Text.RegularExpressions.Regex.IsMatch(PathHelpers.normalizeSeparators path, """\.vcs-lfs-backup-[0-9a-fA-F]{32}$""")
+/// True for entries that are not part of the ARC inventory: git metadata (a `.git` directory or a `.git`
+/// gitlink file, anywhere on the path), LFS backup leftovers, and the Office lock files and the legacy
+/// `isa_datamap` file, which count as files only. A folder named like a lock file stays in the inventory.
+/// The tree scan and the file watcher share this rule. `relativePath` is relative to the ARC root.
+let isIgnoredInventoryEntry (name: string) (relativePath: string) (isDirectory: bool) =
+    let normalizedPath = PathHelpers.normalizeSeparators relativePath
 
-let isHiddenArcFilePath (path: string) =
-    isOfficeLockFilePath path || isLfsBackupPath path || isLegacyDataMapPath path
-
-let isHiddenArcFolderName (name: string) =
     String.Equals(name, ".git", StringComparison.OrdinalIgnoreCase)
-
-/// Tells whether the file tree hides the entry at `path`. It checks only the last segment. The tree also lists
-/// nothing inside a hidden folder, so callers check the parent folders themselves.
-let isHiddenFileTreeEntry (isDirectory: bool) (path: string) =
-    if isDirectory then
-        isHiddenArcFolderName ((PathHelpers.normalizeSeparators path).TrimEnd('/').Split('/') |> Array.last)
-    else
-        isHiddenArcFilePath path
+    || getNonEmptyPathParts normalizedPath
+       |> Array.exists (fun segment -> String.Equals(segment, ".git", StringComparison.OrdinalIgnoreCase))
+    || System.Text.RegularExpressions.Regex.IsMatch(normalizedPath, lfsBackupPattern)
+    || (not isDirectory
+        && (System.Text.RegularExpressions.Regex.IsMatch(normalizedPath, officeLockFilePattern)
+            || isLegacyDataMapPath normalizedPath))
 
 let isRootFolderPath (rootFolderName: string) (candidateRelativePath: string) =
     match getNonEmptyPathParts candidateRelativePath with
@@ -117,109 +113,6 @@ let tryGetPathSegmentAfterFolder (folderName: string) (path: string) =
 
 let resolveArcPreviewPath (path: string) =
     Swate.Components.Shared.PathHelpers.resolveArcViewPath path
-
-let private insertFileTreeEntry (root: FileTreeNode) (rootPath: string) (entry: FileEntry) =
-    let parts = getNonEmptyPathParts entry.path
-    let rootParts = getNonEmptyPathParts rootPath
-
-    if parts.Length > rootParts.Length then
-        let rec loop (node: FileTreeNode) index =
-            let part = parts[index]
-            let isLast = index = parts.Length - 1
-
-            let child =
-                match node.children.TryGetValue(part) with
-                | true, existing when ((not isLast) || entry.isDirectory) && not existing.isDirectory ->
-                    // A node may first appear via a file path segment; upgrade it to a directory when needed.
-                    let upgraded = { existing with isDirectory = true }
-                    node.children.[part] <- upgraded
-                    upgraded
-                | true, existing -> existing
-                | false, _ ->
-                    let newPath = parts.[0..index] |> String.concat "/"
-
-                    let newNode =
-                        FileTreeNode.create (
-                            part,
-                            (if isLast then entry.isDirectory else true),
-                            newPath,
-                            Dictionary(),
-                            entry.largeObject
-                        )
-
-                    node.children.Add(part, newNode)
-                    newNode
-
-            if isLast then ignore child else loop child (index + 1)
-
-        loop root rootParts.Length
-
-let toFileTreeNode (fileEntries: FileEntry[]) =
-
-    if fileEntries.Length = 0 then
-        failwith "toFileTreeNode requires at least one file entry to determine the root path."
-
-    let normalizedPaths =
-        fileEntries
-        |> Array.map (fun fileEntry -> PathHelpers.normalizePath fileEntry.path)
-
-    let rootPath =
-        normalizedPaths
-        |> Array.distinct
-        |> Array.sortBy (fun path -> getPathDepth path, path)
-        |> Array.head
-
-    let adaptedFileEntries =
-        fileEntries
-        |> Array.filter (fun fileEntry -> PathHelpers.normalizePath fileEntry.path <> rootPath)
-        // Deterministic order avoids creating parents from file entries before their directory entries.
-        |> Array.sortBy (fun fileEntry ->
-            let depth = getPathDepth fileEntry.path
-            depth, (if fileEntry.isDirectory then 0 else 1), PathHelpers.normalizePath fileEntry.path
-        )
-
-    let rootElement =
-        let rootEntry =
-            fileEntries
-            |> Array.find (fun fileEntry -> PathHelpers.normalizePath fileEntry.path = rootPath)
-
-        FileTreeNode.create (rootEntry.name, rootEntry.isDirectory, rootPath, Dictionary(), rootEntry.largeObject)
-
-    adaptedFileEntries
-    |> Array.iter (fun fileEntry -> insertFileTreeEntry rootElement rootPath fileEntry)
-
-    rootElement
-
-let rec collapseSingleChildSameName (node: FileTreeNode) : FileTreeNode =
-    let collapsedChildren =
-        node.children.Values |> Seq.map collapseSingleChildSameName |> Seq.toList
-
-    let childrenByName = Dictionary<string, FileTreeNode>()
-
-    collapsedChildren
-    |> List.iter (fun (child: FileTreeNode) -> childrenByName.[child.name] <- child)
-
-    let nodeWithCollapsedChildren = { node with children = childrenByName }
-
-    if
-        nodeWithCollapsedChildren.isDirectory
-        && nodeWithCollapsedChildren.children.Count = 1
-    then
-        let onlyChild = nodeWithCollapsedChildren.children.Values |> Seq.exactlyOne
-
-        if
-            onlyChild.isDirectory
-            && String.Equals(nodeWithCollapsedChildren.name, onlyChild.name, StringComparison.OrdinalIgnoreCase)
-        then
-            // Preserve the displayed label while routing interactions to the deepest merged directory path.
-            {
-                onlyChild with
-                    name = nodeWithCollapsedChildren.name
-            }
-        else
-            nodeWithCollapsedChildren
-    else
-        nodeWithCollapsedChildren
 
 let private tryGetExistingArcEntityTargetMatch
     (targetSources: seq<string * string * (string -> 'Target)>)
@@ -313,6 +206,7 @@ module FileContentType =
         | FileContentType.CLI -> Some DTOType.CLI
         | FileContentType.Markdown -> None
         | FileContentType.PDF -> None
+        | FileContentType.NoPreview -> None
 
     /// Maps ARCtrl DTOType values to custom file content types.
     let ofArcContractDTOType (dtoType: DTOType) : FileContentType =
@@ -352,6 +246,19 @@ module FileContentDTO =
         fileType = fileType
         content = content
         path = path
+        noPreview = None
+    |}
+
+    /// Describes a file that is shown without content, with its size in bytes and the reason.
+    let createNoPreview (path: string) (sizeBytes: float) (reason: NoPreviewReason) : FileContentDTO = {|
+        fileType = FileContentType.NoPreview
+        content = ""
+        path = path
+        noPreview =
+            Some {|
+                sizeBytes = sizeBytes
+                reason = reason
+            |}
     |}
 
     let inferTextFileTypeFromPath (path: string) : FileContentType =

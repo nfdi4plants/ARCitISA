@@ -68,33 +68,33 @@ Vitest.describe (
         Vitest.test (
             "a busy path missing from the listing keeps its last known entry",
             fun () ->
-                let listed = [| fileEntry "runs"; fileEntry "runs/other.bin" |]
+                let listed = [| fileEntry "runs/other.bin" |]
                 let activities = Map.ofList [ "runs/big.bin", activity "Freeing" "runs/big.bin" ]
 
-                let merged = LfsActivityState.withBusyEntries activities listed
+                let merged = LfsActivityState.withBusyChildren activities "runs" listed
 
-                Vitest.expect(merged |> Array.map _.path).toEqual ([| "runs"; "runs/other.bin"; "runs/big.bin" |])
+                Vitest.expect(merged |> Array.map _.path).toEqual ([| "runs/other.bin"; "runs/big.bin" |])
         )
 
         Vitest.test (
             "a busy path that is still listed is not added twice",
             fun () ->
-                let listed = [| fileEntry "runs"; fileEntry "runs/big.bin" |]
+                let listed = [| fileEntry "runs/big.bin" |]
 
                 let activities =
                     Map.ofList [ "runs/big.bin", activity "Downloading" "runs/big.bin" ]
 
-                let merged = LfsActivityState.withBusyEntries activities listed
+                let merged = LfsActivityState.withBusyChildren activities "runs" listed
 
                 Vitest.expect(obj.ReferenceEquals(merged, listed)).toBe (true)
         )
 
         Vitest.test (
-            "an empty listing stays empty",
+            "a busy file of another folder is not added",
             fun () ->
                 let activities = Map.ofList [ "runs/big.bin", activity "Freeing" "runs/big.bin" ]
 
-                Vitest.expect(LfsActivityState.withBusyEntries activities [||]).toEqual ([||])
+                Vitest.expect(LfsActivityState.withBusyChildren activities "assays" [||]).toEqual ([||])
         )
 
         Vitest.test (

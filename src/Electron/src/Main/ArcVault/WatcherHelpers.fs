@@ -15,10 +15,10 @@ open Swate.Electron.Shared.FileIOTypes
 let eventNameEquals (expected: Chokidar.Events) (actual: string) =
     String.Equals(actual, expected.ToString(), StringComparison.OrdinalIgnoreCase)
 
+/// Whether the path exists with exactly its name, so a case-only rename counts as gone. The directory is listed
+/// only when the path exists.
 let existsSyncWithExactName (path: string) =
-    existsSync path
-    && (readdirSync (dirname path)
-        |> Array.exists (fun name -> String.Equals(name, basename path, StringComparison.Ordinal)))
+    existsSync path && Array.contains (basename path) (readdirSync (dirname path))
 
 /// Builds an ARC-root-relative watcher event from the raw chokidar payload.
 let buildWatcherEvent (arcPath: string) (eventName: string) (path: string) =
@@ -72,21 +72,9 @@ let importedAbsolutePaths arcPath targetRelativePath (plannedPaths: PlannedImpor
 
     toAbsolutePaths plannedPaths.FolderPaths, toAbsolutePaths plannedPaths.FilePaths
 
-/// Builds the absolute folder and file paths that the file tree lists after an import. The result matches what
-/// `FileTreeCreator.getFileEntries` lists after a reload. It drops the files the file tree hides, such as lock
-/// files and LFS backups. The only folder name the file tree hides is ".git", and the import rejects it.
-let importedFileTreePaths arcPath targetRelativePath (plannedPaths: PlannedImportPaths) : string[] * string[] =
-    let visiblePlannedPaths = {
-        plannedPaths with
-            FilePaths = plannedPaths.FilePaths |> Array.filter (isHiddenFileTreeEntry false >> not)
-    }
-
-    importedAbsolutePaths arcPath targetRelativePath visiblePlannedPaths
-
-/// Builds the watcher events of an import's planned folders and files. The polling watcher reports
-/// each new folder as addDir, and an unclaimed addDir would start a second ARC merge after the import.
-/// It builds no claim for planned paths that `ArcVaultHelper.isFileWatcherPathIgnoredFor` ignores, because
-/// the watcher never reports them. A folder gets a claim even when a file with its name would not.
+/// Builds the watcher events of an import's planned folders and files. It builds events only for the paths
+/// that the structural watcher reports, so the import merges its ARC structure files and claims nothing that
+/// no delayed watcher event would consume.
 let createImportedWatcherEvents arcPath targetRelativePath (plannedPaths: PlannedImportPaths) =
     let folderPaths, filePaths =
         importedAbsolutePaths arcPath targetRelativePath plannedPaths
@@ -95,28 +83,10 @@ let createImportedWatcherEvents arcPath targetRelativePath (plannedPaths: Planne
         absolutePaths
         |> Array.map (fun absolutePath -> buildWatcherEvent arcPath (eventName.ToString()) absolutePath)
         |> Array.filter (fun event ->
-            not (ArcVaultHelper.isFileWatcherPathIgnoredFor event.AbsolutePath (Some isDirectory))
+            ArcVaultHelper.isStructuralWatcherPathOfKind arcPath event.AbsolutePath (Some isDirectory)
         )
 
     Array.append (buildEvents Chokidar.Events.AddDir true folderPaths) (buildEvents Chokidar.Events.Add false filePaths)
-
-/// Always queues a watcher event for the file tree, while ARC merge eligibility is controlled separately.
-let queueFileWatcherEvent
-    isArcMergeEligible
-    arcPath
-    (pendingEvents: ResizeArray<ArcVaultFileSystemEvent>)
-    (pendingArcMergeEvents: ResizeArray<ArcVaultFileSystemEvent>)
-    eventName
-    changedPath
-    =
-    match arcPath with
-    | Some rootPath ->
-        let watcherEvent = buildWatcherEvent rootPath eventName changedPath
-        pendingEvents.Add watcherEvent
-
-        if isArcMergeEligible watcherEvent then
-            pendingArcMergeEvents.Add watcherEvent
-    | None -> ()
 
 /// An admitted unlink for a recreated file becomes a change. An add or change for a file that is
 /// missing at merge time is dropped, because the file is either mid-replacement (an add follows)
@@ -182,3 +152,45 @@ let toArcMergeEvents (events: ArcVaultFileSystemEvent list) =
         else
             []
     )
+
+/// Always queues a watcher event for the file tree. The ARC merge queue only gets events that expand to at least one
+/// merge event, so a batch of directory additions never loads the ARC. UnlinkDir expands to canonical paths and stays eligible.
+let queueFileWatcherEvent
+    isArcMergeEligible
+    arcPath
+    (pendingEvents: ResizeArray<ArcVaultFileSystemEvent>)
+    (pendingArcMergeEvents: ResizeArray<ArcVaultFileSystemEvent>)
+    eventName
+    changedPath
+    =
+    match arcPath with
+    | Some rootPath ->
+        let watcherEvent = buildWatcherEvent rootPath eventName changedPath
+        pendingEvents.Add watcherEvent
+
+        // The eligibility check runs first. It also consumes the imported-path marker of the event.
+        if
+            isArcMergeEligible watcherEvent
+            && not (toArcMergeEvents [ watcherEvent ]).IsEmpty
+        then
+            pendingArcMergeEvents.Add watcherEvent
+    | None -> ()
+
+/// The directories a batch of watcher events marks dirty, without duplicates. The parent of every event path is
+/// dirty. An added directory is dirty too, because its children are new. A removed directory only dirties its parent.
+let dirtyDirectoriesOfEvents (caseInsensitive: bool) (events: ArcVaultFileSystemEvent list) : string[] =
+    let dirty = Dictionary<string, string>()
+
+    let mark (path: string) =
+        let key = PathKey.ofPath caseInsensitive path |> PathKey.value
+
+        if not (dirty.ContainsKey key) then
+            dirty.[key] <- PathHelpers.normalizePath path
+
+    for event in events do
+        PathHelpers.tryGetParentPath event.AbsolutePath |> Option.iter mark
+
+        if eventNameEquals Chokidar.Events.AddDir event.EventName then
+            mark event.AbsolutePath
+
+    dirty.Values |> Seq.toArray
