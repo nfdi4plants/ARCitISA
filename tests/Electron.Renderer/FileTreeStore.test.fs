@@ -38,10 +38,14 @@ let private updateMany version (directories: (string * FileEntry[]) list) : File
     treeVersion = version
     directories =
         directories
-        |> List.map (fun (directory, entries) -> {|
-            directoryPath = directory
-            children = entries
-        |})
+        |> List.map (fun (directory, entries) ->
+            let entry: FileTreeDirectoryChildrenDto = {|
+                directoryPath = directory
+                children = entries
+            |}
+
+            entry
+        )
         |> Array.ofList
 |}
 
