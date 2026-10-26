@@ -3,6 +3,10 @@ module ElectronCore.IpcArchitectureReviewTests
 open Main.Bindings.Path
 open Main.Bindings.Filesystem
 open Main.ArcVault
+open Main.ArcVaultState
+open Main.ArcVaultLargeObjects
+open Main.ArcVaultFileTree
+open Main.ArcVaultFileWatcher
 open Main.ArcVaultTypes
 open Main.FileImportAuthorization
 open Main.IPC.FileSystemIO
@@ -219,6 +223,60 @@ Vitest.describe (
                             let diskStudy = reloadedArc.GetStudy("StudyA")
                             Vitest.expect(diskStudy.RegisteredAssayIdentifiers |> Seq.contains "OldAssay").toBe (false)
                             Vitest.expect(diskStudy.RegisteredAssayIdentifiers |> Seq.contains "NewAssay").toBe (true)
+                    })
+        )
+
+        Vitest.test (
+            "ARCtrl try rename moves payload files with the entity folder",
+            fun () ->
+                withTempArc
+                    (fun arc -> arc.AddAssay(ArcAssay("PayloadAssay", title = "Persisted payload title")))
+                    (fun arcPath -> promise {
+                        let oldFolder = join [| arcPath; "assays"; "PayloadAssay" |]
+
+                        let! _ =
+                            Main.Bindings.Filesystem.mkdirAsync
+                                (join [| oldFolder; "dataset"; "nested" |])
+                                (MkdirOptions(recursive = true))
+
+                        do! writeFileAsync (join [| oldFolder; "dataset"; "raw.bin" |]) "raw payload" TextEncoding.Utf8
+
+                        do!
+                            writeFileAsync
+                                (join [| oldFolder; "dataset"; "nested"; "deep.txt" |])
+                                "nested payload"
+                                TextEncoding.Utf8
+
+                        let! loadResult = ARC.LoadAsyncSwate arcPath
+                        let loadedArc = TestHelpers.expectLoadedArc loadResult
+
+                        match!
+                            ArcRenameHelper.renameArcEntityAsync
+                                arcPath
+                                (renameRequest "assays/PayloadAssay" "MovedAssay")
+                                loadedArc
+                        with
+                        | Error renameError -> return failwith renameError.Message
+                        | Ok _ ->
+                            let newFolder = join [| arcPath; "assays"; "MovedAssay" |]
+                            let! oldFolderExists = pathExistsAsync oldFolder
+                            Vitest.expect(oldFolderExists).toBe (false)
+
+                            let! rawContent =
+                                readFileAsync (join [| newFolder; "dataset"; "raw.bin" |]) TextEncoding.Utf8
+
+                            let! deepContent =
+                                readFileAsync (join [| newFolder; "dataset"; "nested"; "deep.txt" |]) TextEncoding.Utf8
+
+                            Vitest.expect(rawContent).toBe "raw payload"
+                            Vitest.expect(deepContent).toBe "nested payload"
+
+                            let! reloadedArc = loadArcAsync arcPath
+                            Vitest.expect(reloadedArc.ContainsAssay("PayloadAssay")).toBe (false)
+
+                            Vitest
+                                .expect(reloadedArc.GetAssay("MovedAssay").Title)
+                                .toEqual (Some "Persisted payload title")
                     })
         )
 

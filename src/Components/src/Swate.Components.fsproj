@@ -379,8 +379,11 @@
     <Compile Include="Page\FileExplorer\Types.fs" />
     <Compile Include="Page\FileExplorer\Helper.fs" />
     <Compile Include="Page\FileExplorer\FileExplorerGitLfsHelper.fs" />
+    <Compile Include="Page\FileExplorer\FileExplorerGitLfsHelper.test.fs" />
+    <Compile Include="Page\FileExplorer\FileExplorerLogic.test.fs" />
     <Compile Include="Page\FileExplorer\FileExplorerItem.fs" />
     <Compile Include="Page\FileExplorer\FileExplorer.fs" />
+    <Compile Include="Page\FileExplorer\FileExplorer.test.rtl.fs" />
     <Compile Include="Page\DataHubBrowser\Types.fs" />
     <Compile Include="Page\DataHubBrowser\MockData.fs" />
     <Compile Include="Page\DataHubBrowser\Model.fs" />

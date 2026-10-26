@@ -15,10 +15,10 @@ open Swate.Electron.Shared.FileIOTypes
 let eventNameEquals (expected: Chokidar.Events) (actual: string) =
     String.Equals(actual, expected.ToString(), StringComparison.OrdinalIgnoreCase)
 
+/// Whether the path exists with exactly its name, so a case-only rename counts as gone. The directory is listed
+/// only when the path exists.
 let existsSyncWithExactName (path: string) =
-    existsSync path
-    && (readdirSync (dirname path)
-        |> Array.exists (fun name -> String.Equals(name, basename path, StringComparison.Ordinal)))
+    existsSync path && Array.contains (basename path) (readdirSync (dirname path))
 
 /// Builds an ARC-root-relative watcher event from the raw chokidar payload.
 let buildWatcherEvent (arcPath: string) (eventName: string) (path: string) =
@@ -69,23 +69,25 @@ let createImportedFileWatcherEvents arcPath targetRelativePath sourceAbsolutePat
         buildWatcherEvent arcPath (Chokidar.Events.Add.ToString()) relativePath
     )
 
-/// Always queues a watcher event for the file tree, while ARC merge eligibility is controlled separately.
-let queueFileWatcherEvent
-    isArcMergeEligible
-    arcPath
-    (pendingEvents: ResizeArray<ArcVaultFileSystemEvent>)
-    (pendingArcMergeEvents: ResizeArray<ArcVaultFileSystemEvent>)
-    eventName
-    changedPath
-    =
-    match arcPath with
-    | Some rootPath ->
-        let watcherEvent = buildWatcherEvent rootPath eventName changedPath
-        pendingEvents.Add watcherEvent
+/// The key under which an imported event is remembered, so the delayed watcher event can be matched and ignored.
+let importedFileWatcherPathKey (event: ArcVaultFileSystemEvent) =
+    PathHelpers.normalizePath (event.AbsolutePath.ToLowerInvariant())
 
-        if isArcMergeEligible watcherEvent then
-            pendingArcMergeEvents.Add watcherEvent
-    | None -> ()
+/// Forgets the imported paths that no delayed watcher event will consume. That is every path when the watcher is not
+/// running (ignoreInitial skips files that already exist) and the paths the structural watcher never reports. Imports
+/// are always files, so the shape check gets a file.
+let releaseUnwatchedImportedPaths
+    (arcPath: string)
+    (isWatcherRunning: bool)
+    (importedPaths: HashSet<string>)
+    (events: ArcVaultFileSystemEvent[])
+    =
+    for event in events do
+        if
+            not isWatcherRunning
+            || not (ArcVaultHelper.isStructuralWatcherPathOfKind arcPath event.AbsolutePath (Some false))
+        then
+            importedPaths.Remove(importedFileWatcherPathKey event) |> ignore
 
 /// An admitted unlink for a recreated file becomes a change. An add or change for a file that is
 /// missing at merge time is dropped, because the file is either mid-replacement (an add follows)
@@ -151,3 +153,45 @@ let toArcMergeEvents (events: ArcVaultFileSystemEvent list) =
         else
             []
     )
+
+/// Always queues a watcher event for the file tree. The ARC merge queue only gets events that expand to at least one
+/// merge event, so a batch of directory additions never loads the ARC. UnlinkDir expands to canonical paths and stays eligible.
+let queueFileWatcherEvent
+    isArcMergeEligible
+    arcPath
+    (pendingEvents: ResizeArray<ArcVaultFileSystemEvent>)
+    (pendingArcMergeEvents: ResizeArray<ArcVaultFileSystemEvent>)
+    eventName
+    changedPath
+    =
+    match arcPath with
+    | Some rootPath ->
+        let watcherEvent = buildWatcherEvent rootPath eventName changedPath
+        pendingEvents.Add watcherEvent
+
+        // The eligibility check runs first. It also consumes the imported-path marker of the event.
+        if
+            isArcMergeEligible watcherEvent
+            && not (toArcMergeEvents [ watcherEvent ]).IsEmpty
+        then
+            pendingArcMergeEvents.Add watcherEvent
+    | None -> ()
+
+/// The directories a batch of watcher events marks dirty, without duplicates. The parent of every event path is
+/// dirty. An added directory is dirty too, because its children are new. A removed directory only dirties its parent.
+let dirtyDirectoriesOfEvents (caseInsensitive: bool) (events: ArcVaultFileSystemEvent list) : string[] =
+    let dirty = Dictionary<string, string>()
+
+    let mark (path: string) =
+        let key = PathKey.ofPath caseInsensitive path |> PathKey.value
+
+        if not (dirty.ContainsKey key) then
+            dirty.[key] <- PathHelpers.normalizePath path
+
+    for event in events do
+        PathHelpers.tryGetParentPath event.AbsolutePath |> Option.iter mark
+
+        if eventNameEquals Chokidar.Events.AddDir event.EventName then
+            mark event.AbsolutePath
+
+    dirty.Values |> Seq.toArray

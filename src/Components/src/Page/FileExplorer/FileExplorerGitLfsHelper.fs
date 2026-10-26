@@ -90,7 +90,7 @@ let private lfsAction label icon item enabled action =
             ContextMenuItem.disabled label icon
     )
 
-let lfsPillAction (item: FileItem) onDownloadLfsFile onFreeLocalLfsCopy =
+let lfsPillAction (item: FileItem) onDownloadLfsFile =
     let withFallback label icon enabled action =
         lfsAction label icon item enabled action
         |> Option.defaultValue (ContextMenuItem.disabled label icon)
@@ -102,7 +102,8 @@ let lfsPillAction (item: FileItem) onDownloadLfsFile onFreeLocalLfsCopy =
     elif FileItemHelper.needsLfsDownload item then
         withFallback downloadLabel downloadIcon isIdle onDownloadLfsFile |> Some
     elif FileItemHelper.hasLocalLfsCopy item then
-        withFallback freeCopyLabel freeCopyIcon isIdle onFreeLocalLfsCopy |> Some
+        // A click on the pill must not free a local copy. Free stays in the context menu.
+        None
     else
         ContextMenuItem.disabled downloadLabel downloadIcon |> Some
 

@@ -26,6 +26,7 @@ module private FileTreeHelper =
         | FileSystemCreateDialog of FileSystemCreateDraft
         | RenameDialog of ArcRenameDraft
         | DeleteDialog of FileItem
+        | FreeLfsDialog of string
 
 open FileTreeHelper
 
@@ -45,6 +46,17 @@ type FileTree =
         let pageStateCtx = Renderer.Context.PageStateContext.usePageStateCtx ()
         let appStateCtx = Renderer.Context.AppStateContext.useAppStateCtx ()
         let fileStateCtx = Renderer.Context.FileStateContext.useFileStateCtx ()
+
+        let expansionCtx =
+            Renderer.Context.FileTreeExpansionContext.useFileTreeExpansionCtx ()
+
+        let snapshot = Renderer.Context.FileTreeHooks.useFileTreeSnapshot ()
+
+        let selectionKnown =
+            Renderer.Context.FileTreeHooks.useFileTreeKnows (
+                fileStateCtx.state.Selection.TreePath |> Option.map PathHelpers.normalizePath
+            )
+
         let gitStateCtx = Renderer.Context.GitStateContext.useGitStateCtx ()
 
         let errorModal = useErrorModalCtx ()
@@ -63,8 +75,12 @@ type FileTree =
         let isDialogBusy, setIsDialogBusy = React.useState false
 
         let lfsActivityCtx = Renderer.Context.LfsActivityContext.useLfsActivityCtx ()
+        let tryFindLfs = Renderer.Context.LargeObjectStore.useLargeObjectLookup ()
         let lfsActivityByPath = lfsActivityCtx.activities
-        let lfsActivePaths = lfsActivityByPath |> Map.toList |> List.map fst
+
+        let lfsActivePaths =
+            React.useMemo ((fun () -> lfsActivityByPath |> Map.toList |> List.map fst), [| box lfsActivityByPath |])
+
         // The delete confirmation reads the paths through this ref, so it sees the actions that
         // started after the modal opened.
         let lfsActivePathsRef = React.useRef lfsActivePaths
@@ -76,8 +92,7 @@ type FileTree =
             (relativePath: string)
             : JS.Promise<Result<unit, string>> =
             let entry =
-                fileStateCtx.state.FileTree
-                |> Array.tryFind (fun entry -> PathHelpers.pathsEqual entry.path relativePath)
+                Renderer.Context.FileTreeStore.tryFind fileStateCtx.fileTreeStore.Snapshot relativePath
 
             lfsActivityCtx.run activity entry runAction relativePath
 
@@ -90,16 +105,9 @@ type FileTree =
         let runFreeLocalLfsCopy relativePath =
             runLfsActionWithActivity "Freeing" Renderer.Components.Helper.GitLfsHelper.runFreeLocalLfsCopy relativePath
 
-        // The file watcher emits the initial tree too; only later tree updates should refresh open previews.
-        let hasObservedFileTreeUpdateRef = React.useRef false
-
         React.useEffect (
             (fun () ->
-                let filePaths = fileStateCtx.state.FileTree |> Array.map (fun entry -> entry.path)
-
-                if
-                    FileExplorerStateReconciliation.isSelectionMissing filePaths fileStateCtx.state.Selection.TreePath
-                then
+                if FileExplorerStateReconciliation.isKnownAbsent selectionKnown then
                     fileStateCtx.setSelection ArcSelection.empty
 
                     if
@@ -108,72 +116,106 @@ type FileTree =
                         pageStateCtx.setState None
             ),
             [|
-                box fileStateCtx.state.FileTree
+                box selectionKnown
                 box fileStateCtx.state.Selection.TreePath
                 box pageStateCtx.state
             |]
         )
 
-        let treeEntries =
+        let withBusy =
+            Renderer.Context.LfsActivityContext.LfsActivityState.withBusyChildren lfsActivityByPath
+
+        // Entries are immutable and keep their instance while unchanged, so the base row of an entry is built once.
+        // A new large object snapshot gets a new cache, because the rows carry that state.
+        let itemCache =
             React.useMemo (
-                (fun () ->
-                    Renderer.Context.LfsActivityContext.LfsActivityState.withBusyEntries
-                        lfsActivityByPath
-                        fileStateCtx.state.FileTree
-                ),
-                [| box fileStateCtx.state.FileTree; box lfsActivityByPath |]
+                (fun () -> Renderer.ReferenceCache.ReferenceCache<FileEntry, FileItem>()),
+                [| box tryFindLfs |]
             )
 
-        let fileTree: FileTreeNode option =
-            React.useMemo (
-                (fun () ->
-                    match treeEntries with
-                    | [||] -> None
-                    | _ -> treeEntries |> toFileTreeNode |> collapseSingleChildSameName |> Some
-                ),
-                [| box treeEntries |]
-            )
+        let createFileItem (entry: FileEntry) =
+            let baseItem = itemCache.GetOrAdd(entry, Helper.createItem tryFindLfs)
 
-        let materializedState, setMaterializedState =
-            React.useStateWithUpdater FileTreeMaterialization.empty
+            // Only the entries with a running action get a copy.
+            if lfsActivityByPath.IsEmpty then
+                baseItem
+            else
+                match Map.tryFind entry.path lfsActivityByPath with
+                | Some activity -> {
+                    baseItem with
+                        LfsActivity = Some activity.Label
+                  }
+                | None -> baseItem
 
-        let reconciledMaterializedState =
-            reconcileMaterializedState arcScopeId fileStateCtx.state.Selection.TreePath fileTree materializedState
-
-        React.useEffect (
-            (fun () ->
-                setMaterializedState (fun current ->
-                    if reconciledMaterializedState = current then
-                        current
-                    else
-                        reconciledMaterializedState
-                )
-            ),
-            [|
-                box arcScopeId
-                box fileTree
-                box fileStateCtx.state.Selection.TreePath
-            |]
-        )
+        let rootEntry = Renderer.Context.FileTreeStore.tryFind snapshot ""
 
         let fileItem =
-            fileTree
-            |> Option.map (fun parent ->
-                FileTreeMaterialization.toMaterializedFileItemTree
-                    (fun node ->
-                        let item = Helper.createItem node
+            React.useMemo (
+                (fun () ->
+                    rootEntry
+                    |> Option.map (fun root -> {
+                        createFileItem root with
+                            Children =
+                                Some(
+                                    FileTreeMaterialization.buildVisibleItems
+                                        createFileItem
+                                        withBusy
+                                        snapshot
+                                        expansionCtx.expandedIds
+                                )
+                    })
+                ),
+                [|
+                    box snapshot
+                    box expansionCtx.expandedIds
+                    box tryFindLfs
+                    box lfsActivityByPath
+                |]
+            )
 
-                        {
-                            item with
-                                LfsActivity =
-                                    item.Path
-                                    |> Option.bind (fun path -> Map.tryFind path lfsActivityByPath)
-                                    |> Option.map _.Label
-                        }
-                    )
-                    reconciledMaterializedState.Paths
-                    parent
-                    true
+        // A folder shows its load: an ellipsis icon while it loads and the error tone after a failure until the
+        // next expand retries it. The overlay copies the folder rows with a state and leaves every other row alone,
+        // so a change of the load states does not rebuild the items.
+        let fileItem =
+            React.useMemo (
+                (fun () ->
+                    if expansionCtx.loadStates.IsEmpty then
+                        fileItem
+                    else
+                        fileItem
+                        |> Option.map (fun root -> {
+                            root with
+                                Children =
+                                    root.Children
+                                    |> Option.map (
+                                        FileTreeMaterialization.overlayDirectories (fun item ->
+                                            match item.Path with
+                                            | None -> item
+                                            | Some path ->
+                                                match
+                                                    Map.tryFind
+                                                        (PathKey.ofPath snapshot.CaseInsensitive path)
+                                                        expansionCtx.loadStates
+                                                with
+                                                | Some Renderer.Context.FileTreeExpansionContext.Loading -> {
+                                                    item with
+                                                        Icon = FileItemIcon.MoreHorizontal
+                                                        IconTone = Some FileItemIconTone.Info
+                                                  }
+                                                | Some(Renderer.Context.FileTreeExpansionContext.Failed _) -> {
+                                                    item with
+                                                        IconTone = Some FileItemIconTone.Error
+                                                  }
+                                                | None -> item
+                                        )
+                                    )
+                        })
+                ),
+                [|
+                    box fileItem
+                    box expansionCtx.loadStates
+                    box snapshot.CaseInsensitive
+                |]
             )
 
         let applyPreviewResult itemName result =
@@ -248,48 +290,18 @@ type FileTree =
             |> Promise.catch (fun exn -> applyReloadError exn.Message)
             |> Promise.start
 
-        React.useEffect (
-            (fun () ->
-                if hasObservedFileTreeUpdateRef.current then
-                    match
-                        FileExplorerStateReconciliation.tryGetDataMapMismatchReload
-                            fileStateCtx.state.FileTree
-                            pageStateCtx.state
-                    with
-                    | Some(parentPath, requestedView) ->
-                        reloadPreviewAfterFileTreeUpdate
-                            parentPath
-                            (function
-                            | Renderer.Types.PageState.ArcFilePage(nextArcFile, _) ->
-                                Renderer.Types.PageState.ArcFilePage(nextArcFile, requestedView)
-                            | pageState -> pageState
-                            )
-                    | None when
-                        FileExplorerStateReconciliation.shouldClearPageStateForLfsPointerSelection
-                            fileStateCtx.state.FileTree
-                            fileStateCtx.state.Selection.TreePath
-                            pageStateCtx.state
-                        ->
-                        pageStateCtx.setState None
-                    | None ->
-                        match
-                            FileExplorerStateReconciliation.tryGetReloadableSelectedFilePath
-                                fileStateCtx.state.FileTree
-                                fileStateCtx.state.Selection.TreePath
-                                pageStateCtx.state
-                        with
-                        | None -> ()
-                        | Some selectedPath -> reloadPreviewAfterFileTreeUpdate selectedPath id
-                else
-                    hasObservedFileTreeUpdateRef.current <- true
-            ),
-            [| box fileStateCtx.state.FileTree |]
-        )
+        FileExplorerStateReconciliation.useReconcileSelectedPreview
+            tryFindLfs
+            fileStateCtx.state.Selection.TreePath
+            pageStateCtx.state
+            expansionCtx.contentStamp
+            reloadPreviewAfterFileTreeUpdate
+            (fun () -> pageStateCtx.setState None)
 
         let handleExpansionChange (item: FileItem) (willExpand: bool) =
             if willExpand then
                 match item.Path with
-                | Some path -> setMaterializedState (fun _ -> materialize path reconciledMaterializedState)
+                | Some path -> expansionCtx.expandDirectory path
                 | None -> ()
 
         let openDialog dialog =
@@ -304,25 +316,61 @@ type FileTree =
             if canCreateFileSystemItemIn kind item then
                 openDialog (FileSystemCreateDialog { Parent = item; Kind = kind })
 
+        // The context menu runs Free through this request, which only opens the confirmation.
+        let requestFreeLocalLfsCopy (relativePath: string) : JS.Promise<Result<unit, string>> =
+            openDialog (FreeLfsDialog relativePath)
+            promise { return Ok() }
+
+        // The row getters below keep their identity until their inputs change. A new identity re-renders every row.
+        // The dialog state setters never change, so the workflows that only open dialogs can be created once.
         let requestDeleteItem =
-            FileTreeDeleteWorkflow.requestDeleteItem (Option.iter (DeleteDialog >> openDialog))
+            React.useMemo (
+                (fun () -> FileTreeDeleteWorkflow.requestDeleteItem (Option.iter (DeleteDialog >> openDialog))),
+                [||]
+            )
 
         let requestRenameItem =
-            FileTreeRenameWorkflow.requestRenameItem (Option.iter (RenameDialog >> openDialog)) errorModal.enqueue
+            React.useMemo (
+                (fun () ->
+                    FileTreeRenameWorkflow.requestRenameItem
+                        (Option.iter (RenameDialog >> openDialog))
+                        errorModal.enqueue
+                ),
+                [| box errorModal.enqueue |]
+            )
 
-        let rootPath = fileTree |> Option.map (fun (tree: FileTreeNode) -> tree.path)
+        let rootPath = rootEntry |> Option.map (fun root -> root.path)
 
-        let canCreateFromItem path item =
-            match path with
-            | Some path -> tryGetInlineArcCreateKind path item
-            | None -> None
-            |> Option.isSome
+        let canCreateFromItem =
+            React.useCallback (
+                (fun (item: FileItem) ->
+                    match rootPath with
+                    | Some path -> tryGetInlineArcCreateKind path item
+                    | None -> None
+                    |> Option.isSome
+                ),
+                [| box rootPath |]
+            )
 
-        let createFromItem path item =
-            match path with
-            | Some path -> tryGetInlineArcCreateKind path item
-            | None -> None
-            |> Option.iter (fun kind -> openDialog (CreateDialog kind))
+        let createFromItem =
+            React.useCallback (
+                (fun (item: FileItem) ->
+                    match rootPath with
+                    | Some path -> tryGetInlineArcCreateKind path item
+                    | None -> None
+                    |> Option.iter (fun kind -> openDialog (CreateDialog kind))
+                ),
+                [| box rootPath |]
+            )
+
+        let canDeleteItem =
+            React.useCallback (
+                (fun (item: FileItem) ->
+                    not (FileTreeContextMenu.isLockedByLfsActivity lfsActivePaths item)
+                    && canDeleteFileItem item
+                ),
+                [| box lfsActivePaths |]
+            )
 
         let applyCreateError errorMessage =
             errorModal.enqueue (ErrorModalRequest.create (errorMessage, title = "Could not create ARC file"))
@@ -346,7 +394,33 @@ type FileTree =
             | Some(FileSystemCreateDialog draft) -> None, Some draft, None, None
             | Some(RenameDialog renameDraft) -> None, None, Some renameDraft, None
             | Some(DeleteDialog item) -> None, None, None, Some item
+            | Some(FreeLfsDialog _)
             | None -> None, None, None, None
+
+        let activeFreeLfsPath =
+            match activeDialog with
+            | Some(FreeLfsDialog path) -> Some path
+            | _ -> None
+
+        let confirmFreeLocalLfsCopy () =
+            activeFreeLfsPath
+            |> Option.iter (fun path ->
+                closeDialog ()
+
+                promise {
+                    match! runFreeLocalLfsCopy path with
+                    | Ok() -> ()
+                    | Error msg ->
+                        errorModal.enqueue (
+                            ErrorModalRequest.create (
+                                $"Git LFS cleanup failed for '{PathHelpers.getFileName path}': {msg}",
+                                title = "Git LFS cleanup failed",
+                                ?scopeId = arcScopeId
+                            )
+                        )
+                }
+                |> Promise.start
+            )
 
         let confirmDeleteItem () =
             if not isDialogBusy then
@@ -361,8 +435,18 @@ type FileTree =
 
         let createArcEntry kind (identifier: string) =
             if not isDialogBusy then
+                // The entity files sit directly in the loaded entity folders of the zone folder.
                 let existingPaths =
-                    fileStateCtx.state.FileTree |> Array.map (fun entry -> entry.path)
+                    let current = fileStateCtx.fileTreeStore.Snapshot
+
+                    arcCreateKinds
+                    |> List.tryFind (fun config -> config.Kind = kind)
+                    |> Option.map (fun config ->
+                        Renderer.Context.FileTreeStore.children current config.FolderName
+                        |> Array.collect (fun entity -> Renderer.Context.FileTreeStore.children current entity.path)
+                        |> Array.map _.path
+                    )
+                    |> Option.defaultValue [||]
 
                 match tryBuildArcCreateDraft kind identifier existingPaths with
                 | Error errorMessage -> applyCreateError errorMessage
@@ -450,8 +534,7 @@ type FileTree =
             |> Promise.start
 
         let tryFindDataMapItemByPath path =
-            fileStateCtx.state.FileTree
-            |> Array.tryFind (fun entry -> PathHelpers.pathsEqual entry.path path)
+            Renderer.Context.FileTreeStore.tryFind fileStateCtx.fileTreeStore.Snapshot path
             |> Option.map (fun entry ->
                 let item =
                     Swate.Components.Page.FileExplorer.Types.FileTree.createFile
@@ -462,16 +545,24 @@ type FileTree =
                 { item with Id = entry.path }
             )
 
-        let itemActions item = [
-            yield!
-                rootFolderContextMenuItems
-                    "notes"
-                    "Create new item in"
-                    "swt:fluent--note-add-24-regular"
-                    (fun () -> pageStateCtx.setState (Some Renderer.Types.PageState.NotesDraftPage))
-                    item
-            yield! FileTreeContextMenu.renameContextMenuItems lfsActivePaths requestRenameItem item
-        ]
+        let itemActions =
+            React.useCallback (
+                (fun (item: FileItem) -> [
+                    yield!
+                        rootFolderContextMenuItems
+                            "notes"
+                            "Create new item in"
+                            "swt:fluent--note-add-24-regular"
+                            (fun () -> pageStateCtx.setState (Some Renderer.Types.PageState.NotesDraftPage))
+                            item
+                    yield! FileTreeContextMenu.renameContextMenuItems lfsActivePaths requestRenameItem item
+                ]),
+                [|
+                    box lfsActivePaths
+                    box requestRenameItem
+                    box pageStateCtx.setState
+                |]
+            )
 
         let runToggleLfsMark (relativePath: string) (markAsLfs: bool) = promise {
             let! result = Renderer.Components.Helper.GitLfsHelper.runToggleLfsMark relativePath markAsLfs
@@ -501,7 +592,8 @@ type FileTree =
             enqueueError = errorModal.enqueue
             runToggleLfsMark = runToggleLfsMark
             runDownloadLfsFile = runDownloadLfsFile
-            runFreeLocalLfsCopy = runFreeLocalLfsCopy
+            runFreeLocalLfsCopy = requestFreeLocalLfsCopy
+            refreshDirectory = (fun (item: FileItem) -> item.Path |> Option.iter expansionCtx.refreshDirectory)
             lfsActivePaths = lfsActivePaths
         }
 
@@ -524,12 +616,20 @@ type FileTree =
                 onSpawn = (fun _ -> Some(box ()))
             )
 
+        // The pill action reads the download through a ref, so it keeps its identity across renders.
+        let runDownloadRef = React.useRef runDownloadLfsFile
+        runDownloadRef.current <- runDownloadLfsFile
+
         let getItemStatusAction =
-            Renderer.Components.FileExplorerLfs.createLfsPillAction
-                errorModal.enqueue
-                arcScopeId
-                runDownloadLfsFile
-                runFreeLocalLfsCopy
+            React.useMemo (
+                (fun () ->
+                    Renderer.Components.FileExplorerLfs.createLfsPillAction
+                        errorModal.enqueue
+                        arcScopeId
+                        (fun path -> runDownloadRef.current path)
+                ),
+                [| box errorModal.enqueue; box arcScopeId |]
+            )
 
         let confirmRenameItem (newName: string) =
             if not isDialogBusy then
@@ -581,6 +681,16 @@ type FileTree =
                 isDeleting = isDialogBusy
             )
 
+        let freeLfsModal =
+            FileTreeFreeLfsModal.Main(
+                isOpen = activeFreeLfsPath.IsSome,
+                itemName =
+                    (activeFreeLfsPath
+                     |> Option.map (fun path -> path.Split([| '/'; '\\' |]) |> Array.last)),
+                close = closeDialog,
+                submit = confirmFreeLocalLfsCopy
+            )
+
         let renameModal =
             FileTreeRenameModal.Main(
                 isOpen = activeRenameDraft.IsSome,
@@ -597,23 +707,21 @@ type FileTree =
 
             React.Fragment [
                 Html.div [
-                    prop.className "swt:w-full"
+                    prop.className "swt:w-full swt:h-full swt:min-h-0"
                     prop.children [
                         Swate.Components.Page.FileExplorer.FileExplorer.FileExplorer(
                             initialItems = visibleItems,
                             onItemClick = openPreview false,
                             onDirectoryExpansionChange = handleExpansionChange,
+                            expandedIds = expansionCtx.expandedIds,
+                            onExpandedIdsChange = expansionCtx.setExpandedIds,
                             onContextMenu = createContextMenuItems,
                             getItemIconClass = getItemIconClass,
-                            canCreateItem = canCreateFromItem rootPath,
-                            onCreateItem = createFromItem rootPath,
+                            canCreateItem = canCreateFromItem,
+                            onCreateItem = createFromItem,
                             getItemActions = itemActions,
                             getItemStatusAction = getItemStatusAction,
-                            canDeleteItem =
-                                (fun (item: FileItem) ->
-                                    not (FileTreeContextMenu.isLockedByLfsActivity lfsActivePaths item)
-                                    && canDeleteFileItem item
-                                ),
+                            canDeleteItem = canDeleteItem,
                             onDeleteItem = requestDeleteItem,
                             selectedItemId = fileStateCtx.state.Selection.TreePath,
                             includeDefaultContextMenuItems = false,
@@ -627,6 +735,7 @@ type FileTree =
                 fileSystemCreateModal
                 renameModal
                 deleteConfirmModal
+                freeLfsModal
             ]
         | None ->
             React.Fragment [
@@ -635,4 +744,5 @@ type FileTree =
                 fileSystemCreateModal
                 renameModal
                 deleteConfirmModal
+                freeLfsModal
             ]

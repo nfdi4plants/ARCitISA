@@ -4,6 +4,7 @@ open Fable.Core
 open Fable.Core.JsInterop
 open Fable.Electron
 open Main
+open Main.ArcVaultState
 open Main.Bindings.Path
 open Main.VersionControl
 open Swate.Components.Composite.Authentication.Types
@@ -24,6 +25,20 @@ let private mockResolvedValue (mock: obj) (value: obj) : unit = jsNative
 let private mockCallCount (mock: obj) : int = jsNative
 
 let private git (cwd: string) (args: string list) = execFile "git" (List.toArray args) cwd
+
+let private largeObjectTestOptions = TestOptions(timeout = 40000)
+
+let private waitUntilIndexReady (vault: ArcVault) = promise {
+    let mutable waited = 0
+
+    while vault.GetLargeObjectIndexSnapshot().state <> LargeObjectIndexStatus.Ready
+          && waited < 30000 do
+        do! Promise.sleep 50
+        waited <- waited + 50
+
+    if vault.GetLargeObjectIndexSnapshot().state <> LargeObjectIndexStatus.Ready then
+        failwith "The large object index did not become ready."
+}
 
 let private expectFailure (operation: string) (result: OperationResult<'T>) =
     match result with
@@ -751,6 +766,12 @@ let private withCreateArcSetup
         let cleanup () = promise {
             Vitest.vi.restoreAllMocks ()
             electronMock?reset () |> ignore
+
+            // Creating the ARC starts a file watcher. Leaving it running while the folder is deleted makes
+            // chokidar reject with EPERM on Windows after the test has finished.
+            for vault in Seq.toArray ARC_VAULTS.Vaults.Values do
+                do! vault.StopFileWatcher()
+
             ARC_VAULTS.Vaults.Clear()
 
             do! host.CloseAll() |> Async.StartAsPromise
@@ -881,7 +902,7 @@ Vitest.describe (
                 try
                     try
                         let api = Main.IPC.IVersionControlApi.api (ipcEvent 65)
-                        vault.fileTree.Clear()
+                        vault.FileTreeWriter.Reset vault.isCaseInsensitive
 
                         let! succeeded =
                             api.materializeObject {
@@ -891,7 +912,7 @@ Vitest.describe (
                             }
 
                         expectDtoValue "successful materialization" succeeded |> ignore
-                        Vitest.expect(vault.fileTree.Count).toBe 0
+                        Vitest.expect(vault.FileTreeWriter.Tree.Count).toBe 0
 
                         materializationFails <- true
 
@@ -903,7 +924,7 @@ Vitest.describe (
                             }
 
                         expectDtoFailure "failed materialization" failed |> ignore
-                        Vitest.expect(vault.fileTree.Count).toBeGreaterThan 0
+                        Vitest.expect(vault.FileTreeWriter.Tree.Count).toBeGreaterThan 0
                     with error ->
                         do! cleanup ()
                         return raise error
@@ -1377,6 +1398,7 @@ Vitest.describe (
 
         Vitest.test (
             "a save stores a small dataset file as a large object",
+            largeObjectTestOptions,
             fun () ->
                 withFixture (fun fixture -> promise {
                     let vault = registerVault 62 fixture.RepoRoot
@@ -1388,6 +1410,10 @@ Vitest.describe (
                         (Main.Bindings.Filesystem.MkdirOptions(recursive = true))
 
                     writeText (join [| fixture.RepoRoot; datasetPath |]) (String.replicate 100 "r")
+
+                    // Payload folders load on demand, and the refresh after the save revalidates the loaded ones.
+                    let! datasetLoaded = vault.LoadDirectory "assays/a1/dataset"
+                    Vitest.expect(datasetLoaded.IsOk).toBe true
 
                     let! status = api.getStatus (request "dataset-status")
                     let version = (expectDtoValue "dataset status" status).Value.WorkspaceVersion
@@ -1408,17 +1434,139 @@ Vitest.describe (
                     let attributes = git fixture.RepoRoot [ "cat-file"; "-p"; "HEAD:.gitattributes" ]
                     let datasetAbsolutePath = join [| fixture.RepoRoot; datasetPath |]
 
-                    let datasetEntry =
-                        vault.fileTree.Values
-                        |> Seq.tryFind (fun entry ->
-                            Swate.Components.Shared.PathHelpers.pathsEqual entry.path datasetAbsolutePath
-                        )
-                        |> Option.defaultWith (fun () -> failwith "The refreshed file tree omitted the dataset file.")
+                    // The refreshed tree must still list the file.
+                    vault.FileTreeWriter.Tree.Entries
+                    |> Seq.tryFind (fun entry ->
+                        Swate.Components.Shared.PathHelpers.pathsEqual entry.path datasetAbsolutePath
+                    )
+                    |> Option.defaultWith (fun () -> failwith "The refreshed file tree omitted the dataset file.")
+                    |> ignore
 
                     Vitest.expect(datasetContent.StartsWith("version https://git-lfs.github.com/spec/v1")).toBe true
 
                     Vitest.expect(attributes.Contains(datasetPath)).toBe true
-                    Vitest.expect(datasetEntry.largeObject.IsSome).toBe true
+
+                    // The index lists the saved file as a large object whose content is on disk.
+                    vault.StartLargeObjectIndex()
+                    do! waitUntilIndexReady vault
+
+                    let listed =
+                        vault.GetLargeObjectIndexSnapshot().entries
+                        |> Array.tryFind (fun dto -> dto.Path = datasetPath)
+                        |> Option.defaultWith (fun () -> failwith "The large object index omitted the dataset file.")
+
+                    Vitest.expect(listed.IsMaterialized).toBe true
+                    Vitest.expect(listed.ObjectId.IsSome).toBe true
+                    vault.DisposeLargeObjectIndex()
+                })
+        )
+
+        Vitest.test (
+            "a save invalidates the large object index of the vault",
+            largeObjectTestOptions,
+            fun () ->
+                withFixture (fun fixture -> promise {
+                    let vault = registerVault 64 fixture.RepoRoot
+                    let api = Main.IPC.IVersionControlApi.api (ipcEvent 64)
+                    let listings = ref 0
+
+                    vault.LargeObjectListing <-
+                        fun _ _ -> promise {
+                            listings.Value <- listings.Value + 1
+                            return Ok [||]
+                        }
+
+                    vault.LargeObjectInvalidationDebounceMs <- 20
+                    vault.StartLargeObjectIndex()
+                    do! waitUntilIndexReady vault
+                    Vitest.expect(listings.Value).toBe 1
+
+                    writeText (join [| fixture.RepoRoot; "note.txt" |]) "note\n"
+                    let! status = api.getStatus (request "invalidate-status")
+                    let version = (expectDtoValue "invalidate status" status).Value.WorkspaceVersion
+
+                    let! created =
+                        api.createRevision {
+                            OperationId = "invalidate-save"
+                            Message = "Save note"
+                            Paths = [| "note.txt" |]
+                            ExpectedWorkspaceVersion = version
+                        }
+
+                    expectDtoValue "save note" created |> ignore
+
+                    let mutable waited = 0
+
+                    while listings.Value < 2 && waited < 5000 do
+                        do! Promise.sleep 20
+                        waited <- waited + 20
+
+                    Vitest.expect(listings.Value).toBe 2
+                    vault.DisposeLargeObjectIndex()
+                })
+        )
+
+        Vitest.test (
+            "the large object index lists pointer and materialized files from a real repository",
+            largeObjectTestOptions,
+            fun () ->
+                withFixture (fun fixture -> promise {
+                    let pointerPath = join [| fixture.RepoRoot; "pointer.psd" |]
+                    let downloadedPath = join [| fixture.RepoRoot; "downloaded.psd" |]
+
+                    git fixture.RepoRoot [ "lfs"; "track"; "*.psd" ] |> ignore
+                    writeText pointerPath "Pointer-like content.\n"
+                    writeText downloadedPath "Hydrated-like content.\n"
+
+                    git fixture.RepoRoot [ "add"; ".gitattributes"; "pointer.psd"; "downloaded.psd" ]
+                    |> ignore
+
+                    writeText pointerPath (git fixture.RepoRoot [ "lfs"; "pointer"; "--file"; pointerPath ])
+
+                    let index =
+                        Main.LargeObjectIndex.LargeObjectIndex(
+                            (fun context -> Main.LargeObjectIndex.listObjectsFromSession fixture.RepoRoot context),
+                            (fun () -> false),
+                            ignore,
+                            30000
+                        )
+
+                    index.Invalidate()
+
+                    let mutable waited = 0
+
+                    while (index.Snapshot false).state <> LargeObjectIndexStatus.Ready && waited < 30000 do
+                        do! Promise.sleep 50
+                        waited <- waited + 50
+
+                    let entries = (index.Snapshot false).entries
+
+                    let find path =
+                        entries
+                        |> Array.tryFind (fun dto -> dto.Path = path)
+                        |> Option.defaultWith (fun () -> failwith $"The index omitted {path}.")
+
+                    let pointer = find "pointer.psd"
+                    let downloaded = find "downloaded.psd"
+
+                    Vitest.expect(pointer.IsMaterialized).toBe false
+                    Vitest.expect(pointer.IsLocallyAvailable).toBe true
+                    Vitest.expect(pointer.SizeBytes |> Option.get).toBeGreaterThan 0
+                    Vitest.expect(downloaded.IsMaterialized).toBe true
+                    Vitest.expect(downloaded.IsLocallyAvailable).toBe true
+
+                    for dto in [ pointer; downloaded ] do
+                        Vitest
+                            .expect(
+                                System.Text.RegularExpressions.Regex.IsMatch(
+                                    dto.ObjectId |> Option.get,
+                                    "^[0-9a-fA-F]{64}$"
+                                )
+                            )
+                            .toBe
+                            true
+
+                    index.Dispose()
                 })
         )
 

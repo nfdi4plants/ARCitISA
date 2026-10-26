@@ -17,15 +17,25 @@ type Events =
     | Raw
     | All
 
+/// The part of fs.Stats that chokidar hands to the ignored callback. The value is absent during some directory reads.
+type IWatchedStats =
+    abstract member isDirectory: unit -> bool
+
+/// Chokidar's object form of awaitWriteFinish. Both values are milliseconds.
+[<Pojo>]
+type AwaitWriteFinishOptions(?stabilityThreshold: int, ?pollInterval: int) =
+    member val stabilityThreshold: int option = stabilityThreshold with get, set
+    member val pollInterval: int option = pollInterval with get, set
+
 [<Pojo>]
 type WatchOptions
     (
         ?persistent: bool,
-        ?ignored: U3<string, ResizeArray<string>, string -> bool>,
+        ?ignored: U4<string, ResizeArray<string>, (string -> bool), System.Func<string, IWatchedStats option, bool>>,
         ?ignoreInitial: bool,
         ?followSimlinks: bool,
         ?cwd: string,
-        ?awaitWriteFinish: bool,
+        ?awaitWriteFinish: U2<bool, AwaitWriteFinishOptions>,
         ?usePolling: bool,
         ?interval: int,
         ?binaryInterval: int
@@ -35,7 +45,7 @@ type WatchOptions
     member val ignoreInitial: bool option = ignoreInitial with get, set
     member val followSimlinks: bool option = followSimlinks with get, set
     member val cwd: string option = cwd with get, set
-    member val awaitWriteFinish: bool option = awaitWriteFinish with get, set
+    member val awaitWriteFinish = awaitWriteFinish with get, set
     member val usePolling: bool option = usePolling with get, set
     member val interval: int option = interval with get, set
     member val binaryInterval: int option = binaryInterval with get, set
@@ -46,12 +56,15 @@ type IWatched =
 
 type IWatcher =
     abstract member close: unit -> Promise<unit>
-    abstract member add: paths: string -> unit
-    abstract member add: paths: string[] -> unit
-    abstract member unwatch: paths: string -> Promise<unit>
-    abstract member unwatch: paths: string[] -> Promise<unit>
+    abstract member add: paths: string -> IWatcher
+    abstract member add: paths: string[] -> IWatcher
+    abstract member unwatch: paths: string -> IWatcher
+    abstract member unwatch: paths: string[] -> IWatcher
     abstract member on: eventName: Events * callback: (string -> unit) -> IWatcher
+    abstract member on: eventName: Events * callback: (exn -> unit) -> IWatcher
+    abstract member on: eventName: Events * callback: (unit -> unit) -> IWatcher
     abstract member on: eventName: Events * callback: (string -> string -> unit) -> IWatcher
+
     abstract member getWatched: unit -> IWatched
 
 
