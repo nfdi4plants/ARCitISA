@@ -301,8 +301,11 @@ module MainToRendererIpc =
 
     /// The new ARC root. isRename is true when the same ARC folder got a new name, so ARC-relative state such as
     /// expanded folders stays valid. The renderer pulls the file tree after it.
+    type PathChangeDto = {| path: string; isRename: bool |}
+
+    /// Tells the renderer that the open ARC root changed.
     type IPathChangeRendererApi = {
-        pathChange: {| path: string; isRename: bool |} option -> unit
+        pathChange: PathChangeDto option -> unit
     }
 
     type IRecentArcsRendererApi = {

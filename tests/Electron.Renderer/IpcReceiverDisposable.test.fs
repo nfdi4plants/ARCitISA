@@ -15,7 +15,7 @@ let private setBridgeProperty name value = window?(name) <- value
 let private clearBridgeProperty name =
     emitJsStatement name "delete window[$0]"
 
-type private PathChange = {| path: string; isRename: bool |}
+type private PathChange = PathChangeDto
 
 let private pathChange (path: string) : PathChange option =
     Some {| path = path; isRename = false |}
