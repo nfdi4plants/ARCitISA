@@ -4,6 +4,10 @@ open System.Collections.Generic
 open ARCtrl
 open Fable.Core
 open Main.ArcVault
+open Main.ArcVaultState
+open Main.ArcVaultLargeObjects
+open Main.ArcVaultFileTree
+open Main.ArcVaultFileWatcher
 open Main.ArcVaultHelper
 open Main.Bindings
 open Main.Bindings.Filesystem

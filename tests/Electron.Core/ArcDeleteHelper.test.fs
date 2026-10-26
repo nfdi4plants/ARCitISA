@@ -2,6 +2,10 @@ module ElectronCore.ArcDeleteHelperTests
 
 open Main.ARCtrlExtensions
 open Main.ArcVault
+open Main.ArcVaultState
+open Main.ArcVaultLargeObjects
+open Main.ArcVaultFileTree
+open Main.ArcVaultFileWatcher
 open Main.Bindings.Filesystem
 open Main.Bindings.Path
 open Main.IPC.Delete

@@ -48,6 +48,7 @@
     <Compile Include="VersionControl\TextDiffHandles.fs" />
     <Compile Include="IndexedFileTree.fs" />
     <Compile Include="Git\LargeObjectIndex.fs" />
+    <Compile Include="Git\GitStateStamp.fs" />
     <Compile Include="FileTreeCreator.fs" />
     <Compile Include="ArcVault\Types.fs" />
     <Compile Include="ArcVault\ArcVaultHelper.fs" />
@@ -56,6 +57,10 @@
     <Compile Include="ArcVault\WatcherHelpers.fs" />
     <Compile Include="ArcVault\FileImportAuthorization.fs" />
     <Compile Include="ArcVault\FileImportCoordinator.fs" />
+    <Compile Include="ArcVault\ArcVaultState.fs" />
+    <Compile Include="ArcVault\ArcVaultLargeObjects.fs" />
+    <Compile Include="ArcVault\ArcVaultFileTree.fs" />
+    <Compile Include="ArcVault\ArcVaultFileWatcher.fs" />
     <Compile Include="ArcVault\ArcVault.fs" />
     <Compile Include="Provenance\ProvenanceGroupingReader.fs" />
     <Compile Include="IPC\IPCHelper.fs" />

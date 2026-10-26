@@ -4,6 +4,10 @@ open Fable.Core
 open Main
 open Main.ARCtrlExtensions
 open Main.ArcVault
+open Main.ArcVaultState
+open Main.ArcVaultLargeObjects
+open Main.ArcVaultFileTree
+open Main.ArcVaultFileWatcher
 open Main.ArcVaultTypes
 open Main.Bindings.Filesystem
 open Main.Bindings.Path

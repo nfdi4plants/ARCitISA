@@ -14,6 +14,7 @@ open Swate.Electron.Shared.FileIOHelper
 open Swate.Electron.Shared.DTOs.NoteSearchDto
 open Node.Api
 open Main
+open Main.ArcVaultState
 open Main.Bindings
 open Main.ARCtrlExtensions
 open Main.ArcVaultHelper
