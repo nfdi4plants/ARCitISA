@@ -6,7 +6,6 @@ open Fable.Core.JsInterop
 open Main.ArcVaultTypes
 open Swate.Components.Shared
 open Swate.Electron.Shared.FileIOTypes
-open Swate.Electron.Shared.FileIOHelper
 open Swate.Electron.Shared.RenamePathRules
 open Main.Bindings.Filesystem
 open Main.Bindings.Path
@@ -299,11 +298,15 @@ module ArcFileSystemHelper =
         exn $"Cannot import '{path}' because its name starts or ends with a space."
 
     /// Picked items and the items inside picked folders pass the same name check.
+    /// Items named ".git" fail too, ignoring case, because git records a folder that holds one as a nested
+    /// repository without its files.
     let private validateImportedName (displayPath: string) (name: string) =
         match validateRenameName name with
         | Error validationError -> raise (exn $"Cannot import '{displayPath}': {validationError}")
         | Ok trimmed when trimmed <> name -> raise (whitespaceNameImportError displayPath)
-        | Ok _ -> ()
+        | Ok _ ->
+            if ArcEntityPathRules.isDisallowedGenericPathSegment name then
+                raise (exn $"Cannot import '{displayPath}' because '{name}' is not allowed inside an ARC.")
 
     /// Lists an imported source folder and everything inside it, every folder before its contents.
     /// `folderChain` holds the real paths of the folders on the way down, starting with the picked folder.
@@ -513,16 +516,9 @@ module ArcFileSystemHelper =
                 )
             )
 
-        let isInsideHiddenFolder (relativePath: string) =
-            relativePath.Split '/' |> Array.exists (isHiddenFileTreeEntry true)
-
         let emptyFolders =
             entries
-            |> Seq.filter (fun entry ->
-                entry.IsDirectory
-                && not (foldersWithContent.Contains entry.RelativePath)
-                && not (isInsideHiddenFolder entry.RelativePath)
-            )
+            |> Seq.filter (fun entry -> entry.IsDirectory && not (foldersWithContent.Contains entry.RelativePath))
             |> Seq.toArray
 
         for folder in emptyFolders do

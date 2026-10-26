@@ -73,27 +73,12 @@ let importedAbsolutePaths arcPath targetRelativePath (plannedPaths: PlannedImpor
     toAbsolutePaths plannedPaths.FolderPaths, toAbsolutePaths plannedPaths.FilePaths
 
 /// Builds the absolute folder and file paths that the file tree lists after an import. The result matches what
-/// `FileTreeCreator.getFileEntries` lists after a reload. It drops `.git` folders with everything inside them
-/// and the files the file tree hides, such as lock files and LFS backups. A file named `.git` stays, because
-/// git submodules and worktrees have one and the file tree lists it.
+/// `FileTreeCreator.getFileEntries` lists after a reload. It drops the files the file tree hides, such as lock
+/// files and LFS backups. The only folder name the file tree hides is ".git", and the import rejects it.
 let importedFileTreePaths arcPath targetRelativePath (plannedPaths: PlannedImportPaths) : string[] * string[] =
-    let segmentsOf (plannedPath: string) =
-        (PathHelpers.normalizePath plannedPath).Split '/'
-
-    let isHidden (isDirectory: bool) (plannedPath: string) =
-        let segments = segmentsOf plannedPath
-
-        let isInsideHiddenFolder =
-            [| 1 .. segments.Length - 1 |]
-            |> Array.exists (fun length ->
-                isHiddenFileTreeEntry true (String.Join("/", Array.truncate length segments))
-            )
-
-        isInsideHiddenFolder || isHiddenFileTreeEntry isDirectory plannedPath
-
     let visiblePlannedPaths = {
-        FolderPaths = plannedPaths.FolderPaths |> Array.filter (isHidden true >> not)
-        FilePaths = plannedPaths.FilePaths |> Array.filter (isHidden false >> not)
+        plannedPaths with
+            FilePaths = plannedPaths.FilePaths |> Array.filter (isHiddenFileTreeEntry false >> not)
     }
 
     importedAbsolutePaths arcPath targetRelativePath visiblePlannedPaths

@@ -1371,7 +1371,50 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "imports a folder with git files, ARC metadata names, lock files, README folders, LFS pointers and staging leftovers completely",
+            "rejects an item named .git inside a picked folder or as a picked item and writes nothing",
+            fun () ->
+                withAssayArc (fun arcPath -> promise {
+                    let sourceRoot = dirname arcPath
+                    let targetPath = "assays/AssayA/dataset"
+                    do! createRelativeDirectoryAsync arcPath targetPath
+
+                    let! folderSource = createExternalRunFolderAsync arcPath
+                    do! createRelativeDirectoryAsync folderSource ".git"
+                    do! writeRelativeFileAsync folderSource ".git/config" "git config"
+                    let! folderResult = importWithoutCancellation arcPath targetPath [| folderSource |]
+
+                    folderResult
+                    |> expectErrorContaining "Cannot import 'Run1/.git' because '.git' is not allowed inside an ARC."
+
+                    do! expectRelativePathExists arcPath $"{targetPath}/Run1" false
+                    do! expectNoTemporaryImportDirectory arcPath targetPath
+
+                    do! createRelativeDirectoryAsync sourceRoot "external2/RunB"
+                    do! writeRelativeFileAsync sourceRoot "external2/RunB/.GIT" "gitdir: ../x"
+
+                    let! fileResult =
+                        importWithoutCancellation arcPath targetPath [| absoluteArcPath sourceRoot "external2/RunB" |]
+
+                    fileResult |> expectErrorContaining "'.GIT' is not allowed inside an ARC"
+                    do! expectRelativePathExists arcPath $"{targetPath}/RunB" false
+                    do! expectNoTemporaryImportDirectory arcPath targetPath
+
+                    do! createRelativeDirectoryAsync sourceRoot "external3/.git"
+                    do! writeRelativeFileAsync sourceRoot "external3/.git/config" "git config"
+
+                    let! pickedResult =
+                        importWithoutCancellation arcPath targetPath [| absoluteArcPath sourceRoot "external3/.git" |]
+
+                    pickedResult
+                    |> expectErrorContaining "Cannot import '.git' because '.git' is not allowed inside an ARC."
+
+                    do! expectRelativePathExists arcPath $"{targetPath}/.git" false
+                    do! expectNoTemporaryImportDirectory arcPath targetPath
+                })
+        )
+
+        Vitest.test (
+            "imports a folder with ARC metadata names, lock files, README folders, LFS pointers and staging leftovers completely",
             fun () ->
                 withAssayArc (fun arcPath -> promise {
                     let stagingFolder = ".swate-import-" + String.replicate 32 "a"
@@ -1382,7 +1425,6 @@ Vitest.describe (
                         + "\nsize 12\n"
 
                     let files = [
-                        ".git/config", "git config"
                         "isa.assay.xlsx", "workbook"
                         "isa_datamap", "datamap"
                         "~$Book1.xlsx", "Excel lock file"
@@ -1393,8 +1435,6 @@ Vitest.describe (
                     ]
 
                     let! sourcePath = createExternalRunFolderAsync arcPath
-                    do! createRelativeDirectoryAsync sourcePath ".git"
-                    do! createRelativeDirectoryAsync sourcePath ".git/refs/tags"
                     do! createRelativeDirectoryAsync sourcePath "README.md"
                     do! createRelativeDirectoryAsync sourcePath stagingFolder
 
@@ -1410,9 +1450,6 @@ Vitest.describe (
                     for relativePath, content in files do
                         let! imported = readRelativeFileAsync arcPath $"assays/AssayA/dataset/Run1/{relativePath}"
                         Vitest.expect(imported).toBe (content)
-
-                    do! expectRelativePathExists arcPath "assays/AssayA/dataset/Run1/.git/refs/tags" true
-                    do! expectRelativePathExists arcPath "assays/AssayA/dataset/Run1/.git/refs/tags/.gitkeep" false
                 })
         )
 

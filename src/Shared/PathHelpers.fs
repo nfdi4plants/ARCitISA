@@ -285,7 +285,8 @@ module ArcEntityPathRules =
     /// The outdated DataMap file name. Loading an ARC renames such a file to `isa.datamap.xlsx`.
     let legacyDataMapFileName = "isa_datamap"
 
-    let private isDisallowedGenericPathSegment (segment: string) =
+    /// True for a path segment named ".git", ignoring case.
+    let isDisallowedGenericPathSegment (segment: string) =
         PathHelpers.pathMatchesAny disallowedGenericPathSegments segment
 
     /// Parses canonical ARC file targets from the tail of a path and supports absolute paths.

@@ -27,6 +27,12 @@ This rule applies to import only. An imported name that starts or ends with a sp
 
 The reason is that Windows drops trailing spaces and ARCitISA trims names when it renames or deletes, so ARCitISA could not handle an untrimmed name afterwards.
 
+### Items named .git
+
+Import rejects any file or folder named ".git", ignoring case, as a picked item and inside picked folders. The user sees a message and the import writes nothing.
+
+The reason is that git records a folder with its own ".git" inside the ARC as an embedded repository (a gitlink) without its files. None of those files reach the DataHUB, and the file tree hides ".git" folders, so the user cannot see why. A ".git" file, as git submodules and worktrees write, has the same effect when it points to an existing repository. A picked ".git" folder imported into the root of an ARC that has no ".git" folder yet would turn the ARC into that repository, with its history and remotes. The check is `ArcEntityPathRules.isDisallowedGenericPathSegment` in `src/Shared/PathHelpers.fs`, called from `validateImportedName` in `src/Electron/src/Main/IPC/FileSystemIO.fs`.
+
 ### Names that differ only in case
 
 Import treats names that differ only in upper and lower case as the same name. This holds on every operating system. Three cases stop the import:
@@ -64,15 +70,11 @@ New File, New Folder and Rename keep the location rules that existed before PR #
 - the protected names ".gitattributes", ".gitkeep" and "README.md". New Folder refuses all three names. New File refuses ".gitattributes" and ".gitkeep" and can create "README.md". Rename refuses these names as source and as target, and Delete refuses items with these names
 - the extension a file needs directly inside studies, assays, workflows or runs
 
-This PR only changed their messages (`describeBlockedGenericCreateTarget`), so the dialogs say why they refuse a name. The import menu entries appear where New File and New Folder do. The imported items themselves no longer go through these rules.
+This PR only changed their messages (`describeBlockedGenericCreateTarget`), so the dialogs say why they refuse a name. The import menu entries appear where New File and New Folder do. Apart from the ".git" rule above, the imported items no longer go through these rules.
 
 ## Dropped rules
 
 All code paths below are at commit 13056ca0. `FileSystemIO.fs` is `src/Electron/src/Main/IPC/FileSystemIO.fs`, `RenamePathRules.fs` is `src/Electron/src/Swate.Electron.Shared/RenamePathRules.fs` and `PathHelpers.fs` is `src/Shared/PathHelpers.fs`.
-
-### Nested git repositories
-
-Import rejected any item named ".git", inside an imported folder and as a picked item. This covered folders and files, such as the ".git" file of a git submodule or worktree. The reason is that git records a nested repository inside the ARC as an embedded repository without its files, and the file tree hides ".git" folders. The code was `ArcEntityPathRules.isDisallowedGenericPathSegment` in `PathHelpers.fs`, called from `collectExternalFolderEntries` and `inspectPickedItemAsync` in `FileSystemIO.fs` (error `disallowedSegmentImportError`). Without this rule, a picked folder named ".git" imported into the root of an ARC that has no ".git" folder yet turns the ARC into that repository, with its history and remotes. An ARC that already has a ".git" folder refuses the import, because the name exists. The import does not write a generated .gitkeep into empty folders inside an imported .git folder. A file named ".git" is now imported. The file tree lists it, but the file watcher ignores it, so changes that other programs make to it show up after the next reload. Git never commits a file named ".git". If the file points to a repository that exists, as the ".git" file of a worktree does, git treats the folder that holds it as a nested repository.
 
 ### ARC metadata file names
 
@@ -112,7 +114,7 @@ These items are now imported. The file tree still hides lock files and LFS backu
 
 ### New File and New Folder rules for imported items
 
-Imported items followed the New File and New Folder rules of the target folder: ARC metadata names, managed folders such as "dataset" in an assay or "assays" at the root, ".git", protected names and the extension rule directly inside studies, assays, workflows or runs. The reason is the same as for New File. The code was the call to `tryBuildGenericFileSystemChildPath` in `inspectPickedItemAsync`. The check ran after the "already exists" check (`ensureTargetDoesNotExist`), because a managed name such as "assays" usually exists at the target. The same call also checked the target folder, so an import could only add an item where New File or New Folder could. Now only the right-click menu decides where the import entries appear. The main process accepts any folder inside the ARC as the target.
+Imported items followed the New File and New Folder rules of the target folder: ARC metadata names, managed folders such as "dataset" in an assay or "assays" at the root, ".git", protected names and the extension rule directly inside studies, assays, workflows or runs. The reason is the same as for New File. The code was the call to `tryBuildGenericFileSystemChildPath` in `inspectPickedItemAsync`. The check ran after the "already exists" check (`ensureTargetDoesNotExist`), because a managed name such as "assays" usually exists at the target. The same call also checked the target folder, so an import could only add an item where New File or New Folder could. Now only the right-click menu decides where the import entries appear. The main process accepts any folder inside the ARC as the target. The ".git" part is active again as its own rule, see "Items named .git".
 
 ### Hidden file names in New File and Rename
 

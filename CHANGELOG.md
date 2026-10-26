@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - New files and folders and renamed items can't use names that Windows does not allow, such as names with a colon or names like CON and AUX, so the ARC can also be downloaded and used on Windows. #1429 (by @Etschbeijer)
 - "Import files" and "Import folders" stop with a message if a name does not work on Windows, for example a name with a colon or a device name like CON or AUX, or if a name starts or ends with a space. This covers everything inside picked folders, too. #1429 (by @Etschbeijer)
 - "Import files" and "Import folders" treat upper and lower case as the same. They stop with a message if an item with the same name, ignoring case, already exists in the target folder, or if two imported items in the same folder differ only in case. #1429 (by @Etschbeijer)
+- "Import files" and "Import folders" stop with a message for an item named ".git", picked or inside a picked folder, because its files would not be uploaded with the ARC. #1429 (by @Etschbeijer)
 - "Import files" and "Import folders" do not open the picker while ARCitISA is saving or importing. #1429 (by @Etschbeijer)
 - While files or folders are imported, the notice shows the current step and how many items are done. The taskbar progress now covers the whole import, including adding the items to the ARC. #1429 (by @Etschbeijer)
 - Creating and renaming items says why a name can't be used, for example for a "dataset" folder inside an assay or an ARC metadata file name. #1429 (by @Etschbeijer)

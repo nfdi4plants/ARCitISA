@@ -314,22 +314,13 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "importedFileTreePaths drops what the file tree hides after a reload, below the ARC root or a nested target",
+            "importedFileTreePaths drops the files the file tree hides after a reload, below the ARC root or a nested target",
             fun () ->
                 let staging = ".swate-import-" + String.replicate 32 "a"
 
                 let plannedPaths: PlannedImportPaths = {
-                    FolderPaths = [|
-                        "x"
-                        "x/.git"
-                        "x/.GIT/objects"
-                        $"x/{staging}"
-                        "x/README.md"
-                    |]
+                    FolderPaths = [| "x"; $"x/{staging}"; "x/README.md" |]
                     FilePaths = [|
-                        "x/.GIT/config"
-                        "x/.git/HEAD"
-                        "x/sub/.git"
                         "x/~$Book1.xlsx"
                         "x/isa_datamap"
                         $"x/{staging}/a.txt"
@@ -345,7 +336,6 @@ Vitest.describe (
                         $"{prefix}x/README.md"
                     |],
                     [|
-                        $"{prefix}x/sub/.git"
                         $"{prefix}x/{staging}/a.txt"
                         $"{prefix}x/README.md/inner.txt"
                         $"{prefix}x/data.csv"
@@ -361,37 +351,17 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "createImportedWatcherEvents claims nothing below a nested .git folder or for isa_datamap, and a file named .git only when the watcher reports it",
+            "createImportedWatcherEvents claims nothing for isa_datamap and claims a name that ends in .git",
             fun () ->
-                let events =
-                    importedEvents [| "x"; "x/sub"; "x/sub/.git"; "x/sub/.git/objects" |] [|
-                        "x/sub/.git/config"
-                        "x/sub/.git/objects/pack.bin"
-                        "x/isa_datamap"
-                        "x/sub2.git"
-                        "x/.git"
-                    |]
+                let events = importedEvents [| "x"; "x/sub" |] [| "x/isa_datamap"; "x/sub2.git" |]
 
                 let relativePaths = events |> Array.map _.RelativePath |> Array.toList
                 let prefix = "assays/AssayA/dataset/"
 
-                let gitFileIsReported =
-                    not (Main.ArcVaultHelper.isFileWatcherPathIgnoredFor $"C:/arc/{prefix}x/.git" (Some false))
-
                 Vitest.expect(relativePaths |> List.contains $"{prefix}x").toBe true
                 Vitest.expect(relativePaths |> List.contains $"{prefix}x/sub").toBe true
                 Vitest.expect(relativePaths |> List.contains $"{prefix}x/sub2.git").toBe true
-                Vitest.expect(relativePaths |> List.contains $"{prefix}x/.git").toBe gitFileIsReported
-
-                for ignoredPath in
-                    [
-                        "x/sub/.git"
-                        "x/sub/.git/objects"
-                        "x/sub/.git/config"
-                        "x/sub/.git/objects/pack.bin"
-                        "x/isa_datamap"
-                    ] do
-                    Vitest.expect(relativePaths |> List.contains $"{prefix}{ignoredPath}").toBe false
+                Vitest.expect(relativePaths |> List.contains $"{prefix}x/isa_datamap").toBe false
         )
 
         let advanceSeconds (seconds: int) =
@@ -5724,10 +5694,7 @@ Vitest.describe (
                     None
                     (fun vault api _ arcPath sourcePath -> promise {
                         let stagingName = ".swate-import-" + String.replicate 32 "a"
-                        do! mkdirWatcherDirectoryAsync (join [| sourcePath; ".git" |])
-                        do! writeWatcherTextFileAsync (join [| sourcePath; ".git"; "config" |]) "git config"
                         do! mkdirWatcherDirectoryAsync (join [| sourcePath; "sub" |])
-                        do! writeWatcherTextFileAsync (join [| sourcePath; "sub"; ".git" |]) "gitdir: ../elsewhere"
                         do! writeWatcherTextFileAsync (join [| sourcePath; "~$Book1.xlsx" |]) "Excel lock file"
                         do! mkdirWatcherDirectoryAsync (join [| sourcePath; stagingName |])
                         do! writeWatcherTextFileAsync (join [| sourcePath; stagingName; "a.txt" |]) "staged"
@@ -5744,7 +5711,7 @@ Vitest.describe (
                         let importedKeys (tree: System.Collections.Generic.Dictionary<string, FileEntry>) =
                             sortedTreeKeys tree |> Array.filter (fun key -> key.Contains "dataset/Run1")
 
-                        Vitest.expect(importedKeys reloadedTree |> Array.exists _.EndsWith("/sub/.git")).toBe true
+                        Vitest.expect(importedKeys reloadedTree |> Array.exists _.EndsWith("/data.csv")).toBe true
                         Vitest.expect(importedKeys vault.fileTree).toEqual (importedKeys reloadedTree)
                     })
         )
