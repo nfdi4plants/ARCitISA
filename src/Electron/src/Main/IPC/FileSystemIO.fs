@@ -214,7 +214,7 @@ let mapRenameDiskError (sourcePath: string) (targetPath: string) (renameError: e
 [<RequireQualifiedAccess>]
 module ArcFileSystemHelper =
 
-    exception internal ImportCancelledException
+    exception private ImportCancelledException
 
     type private ExternalFileImportEntry = {
         SourcePath: string

@@ -354,9 +354,6 @@ let loadWindow (window: BrowserWindow) = promise {
 let shouldUsePollingByDefault (platform: string) =
     System.String.Equals(platform, "win32", System.StringComparison.OrdinalIgnoreCase)
 
-let private currentNodePlatform () : string =
-    emitJsExpr () "process.platform" |> unbox<string>
-
 /// Decides whether the file watcher ignores a path. It ignores every path with a `.git` segment, files and
 /// folders alike, so it also ignores a file named `.git`, which the file tree lists. Of the other names the
 /// file tree hides, it ignores files only (such as lock files), so a folder named like a lock file is watched.
@@ -380,15 +377,8 @@ let internal isFileWatcherPathIgnoredByStats
         |> Option.map (fun stats -> stats.isDirectory ())
         |> isFileWatcherPathIgnoredFor path)
 
-/// Decides whether the file watcher polls. Without an explicit choice it polls on Windows only,
-/// because native Windows file events can keep handles that block app-initiated folder renames.
-let resolveFileWatcherPolling (usePolling: bool option) =
-    defaultArg usePolling (shouldUsePollingByDefault (currentNodePlatform ()))
-
 /// Starts a watcher on an ARC folder. It also ignores the paths for which isActiveStagingPath is true.
-let createFileWatcher (isActiveStagingPath: string -> bool) (path: string) (usePolling: bool option) =
-
-    let usePolling = resolveFileWatcherPolling usePolling
+let createFileWatcher (isActiveStagingPath: string -> bool) (path: string) (usePolling: bool) =
 
     let watcherOptions =
         if usePolling then

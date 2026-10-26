@@ -379,7 +379,7 @@ module ArcEntityPathRules =
             | StructuralArcPath.EntityFolder when isFile -> false
             | _ -> blocksGenericFileSystemTarget structuralPath
 
-        if not (String.IsNullOrWhiteSpace name) && isCanonicalArcFileName name then
+        if isCanonicalArcFileName name then
             Some $"'{name}' is reserved for ARC metadata."
         elif isBlockedStructuralPath then
             match structuralPath with
@@ -393,16 +393,11 @@ module ArcEntityPathRules =
         elif segments |> Array.exists isDisallowedGenericPathSegment then
             Some "'.git' is not allowed inside an ARC."
         elif
-            not isEmpty
-            && isProtectedTarget normalizedRelativePath structuralPath
+            isProtectedTarget normalizedRelativePath structuralPath
             && not isCreatableProtectedFile
         then
             Some $"ARCitISA protects the name '{name}', so it could not be renamed or deleted afterwards."
-        elif
-            isEmpty
-            || PathHelpers.containsPathTraversalSegments normalizedRelativePath
-            || segments.Length < 1
-        then
+        elif isEmpty || PathHelpers.containsPathTraversalSegments normalizedRelativePath then
             Some "The path must stay inside the ARC."
         else
             None

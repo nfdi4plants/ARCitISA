@@ -33,8 +33,7 @@ let (|ArcLoadCancelledException|_|) (error: exn) =
 
 exception ArcCreatedButClosedException of targetWindowId: int
 
-/// Tests shorten this delay to cover timeout behavior without waiting 30 seconds.
-let mutable closeWaitTimeoutMilliseconds = 30000
+let private closeWaitTimeoutMilliseconds = 30000
 
 /// A completed import keeps its marks until the watcher has reported none of its paths for the quiet time,
 /// and at most for the maximum time after the import completed. Polling reports a large import over many
@@ -775,15 +774,15 @@ module ArcVaultExtensions =
                 swatefailfn this.window.id "No path set for StartFileWatcher."
         }
 
-        member this.StartFileWatcher(?usePolling: bool) =
+        member this.StartFileWatcher() =
             if this.path.IsSome then
                 match this.watcher with
                 | Some _ -> ()
                 | None ->
-                    let usePolling = resolveFileWatcherPolling usePolling
+                    let usePolling = shouldUsePollingByDefault (Main.Bindings.Node.processPlatform ())
 
                     let watcher =
-                        createFileWatcher this.IsActiveImportStagingPath this.path.Value (Some usePolling)
+                        createFileWatcher this.IsActiveImportStagingPath this.path.Value usePolling
 
                     this.watcherUsesPolling <- usePolling
 

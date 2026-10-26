@@ -287,32 +287,60 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "the create target check and its block reason agree for every path",
+            "the create target check gives the expected reason for every kind of path",
             fun () ->
-                let paths = [
-                    ""
-                    "../x"
-                    "isa.investigation.xlsx"
-                    "assays/A/isa.assay.xlsx"
-                    "assays"
-                    "assays/AssayB"
-                    "assays/AssayB/dataset"
-                    "studies/S/protocols"
-                    "data/.git"
-                    "data/.git/config"
-                    "data/.gitkeep"
-                    "README.md"
-                    "data/README.md"
-                    "notes"
-                    "data/notes.md"
-                    "assays/AssayB/notes.md"
+                let inside = Some "The path must stay inside the ARC."
+
+                let reserved name =
+                    Some $"'{name}' is reserved for ARC metadata."
+
+                let mainFolder =
+                    Some "'assays' is one of the ARC's main folders, which ARCitISA manages itself."
+
+                let entityFolder =
+                    Some
+                        "'AssayB' is a study, assay, workflow or run folder, which ARCitISA creates through its own dialogs."
+
+                let managedFolder =
+                    Some "'dataset' is a folder that ARCitISA manages inside a study or assay."
+
+                let protectedName name =
+                    Some $"ARCitISA protects the name '{name}', so it could not be renamed or deleted afterwards."
+
+                let cases = [
+                    "", true, inside
+                    "", false, inside
+                    "../x", true, inside
+                    "../x", false, inside
+                    "isa.investigation.xlsx", true, reserved "isa.investigation.xlsx"
+                    "isa.investigation.xlsx", false, reserved "isa.investigation.xlsx"
+                    "assays/A/isa.assay.xlsx", true, reserved "isa.assay.xlsx"
+                    "assays/A/isa.assay.xlsx", false, reserved "isa.assay.xlsx"
+                    "assays", true, mainFolder
+                    "assays", false, mainFolder
+                    "assays/AssayB", false, entityFolder
+                    "assays/AssayB", true, None
+                    "assays/AssayB/dataset", true, managedFolder
+                    "assays/AssayB/dataset", false, managedFolder
+                    "data/.git", true, Some gitFolderMessage
+                    "data/.git", false, Some gitFolderMessage
+                    "data/.git/config", true, Some gitFolderMessage
+                    "data/.git/config", false, Some gitFolderMessage
+                    "data/.gitkeep", true, protectedName ".gitkeep"
+                    "data/.gitkeep", false, protectedName ".gitkeep"
+                    "README.md", true, None
+                    "README.md", false, protectedName "README.md"
+                    "data/README.md", true, None
+                    "data/README.md", false, protectedName "README.md"
+                    "data/notes.md", true, None
+                    "data/notes.md", false, None
                 ]
 
-                for isFile in [ true; false ] do
-                    for path in paths do
-                        Vitest
-                            .expect(ArcEntityPathRules.isGenericFileSystemCreateTargetAllowed isFile path)
-                            .toBe ((ArcEntityPathRules.describeBlockedGenericCreateTarget isFile path).IsNone)
+                for path, isFile, expected in cases do
+                    Vitest.expect(ArcEntityPathRules.describeBlockedGenericCreateTarget isFile path).toEqual expected
+
+                    Vitest.expect(ArcEntityPathRules.isGenericFileSystemCreateTargetAllowed isFile path).toBe
+                        expected.IsNone
         )
 
         Vitest.test (
