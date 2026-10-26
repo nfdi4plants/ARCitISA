@@ -2,8 +2,14 @@ namespace Swate.Components.JsBindings
 
 open Fable.Core
 open Fable.Core.JsInterop
+open Swate.Components.Util.WebWorker
 
 /// Typed binding for elkjs (https://github.com/kieler/elkjs), the bundled build without web workers.
+///
+/// ElkWorker.fs (Composite/GraphCanvas) runs this module inside a Web Worker. elk.bundled.js takes a missing
+/// `document` as the sign that it is itself the ELK worker, and then its constructor fails. The engine
+/// creation sets an empty `document` in a worker scope first, so ELK runs its layout on the worker thread.
+/// On the main thread nothing changes.
 module Elk =
 
     /// Keys are ELK option ids such as "org.eclipse.elk.algorithm", so the object is built with createObj.
@@ -80,8 +86,16 @@ module Elk =
     type private ElkEngine() =
         member _.layout(graph: ElkNode) : JS.Promise<ElkLayoutResult> = jsNative
 
+    [<Emit("if (typeof document === 'undefined') { self.document = {}; }")>]
+    let private stubDocument () : unit = jsNative
+
     // The first layout creates the engine. Later layouts reuse it.
-    let private engine = lazy (ElkEngine())
+    let private engine =
+        lazy
+            (if isWorkerScope () then
+                 stubDocument ()
+
+             ElkEngine())
 
     /// Runs ELK. The returned object is the input graph, filled with positions and edge sections.
     let layout (graph: ElkNode) : JS.Promise<ElkLayoutResult> = engine.Value.layout graph

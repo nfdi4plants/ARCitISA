@@ -19,6 +19,12 @@ module internal Swate.Components.Composite.GraphCanvas.GraphCanvasTests
 // New: the navigation epoch (A, B, A before B resolves), the list that stays closed when the box returns to
 // the width it was opened on, Space on a node, zoom bounds, zoom that survives a new view, and a new layout
 // function identity that starts no layout.
+//
+// The stale drawing cases cover a view change while the new layout is pending. The old drawing stays with its
+// stale and busy attributes. It ignores node clicks and shows no edge toggles. Export and the minimap ignore
+// input, and the focus stays on a toolbar control when the layout lands. A failed layout replaces the drawing
+// with the alert. The dimming of the old drawing and the loading indicator wait 200 ms, and so does the status
+// text of a layout with no drawing to keep.
 
 open Browser.Dom
 open Browser.Types
@@ -225,6 +231,7 @@ type private Props = {
     OnNodeClick: (string -> unit) option
     CenterNodeId: string option
     FocusOnMount: bool option
+    ImageFileName: string option
     LayoutSeam: LayoutFn option
 }
 
@@ -235,6 +242,7 @@ let private defaults: Props = {
     OnNodeClick = Some ignore
     CenterNodeId = None
     FocusOnMount = None
+    ImageFileName = None
     LayoutSeam = None
 }
 
@@ -247,6 +255,7 @@ let private canvas (props: Props) : ReactElement =
         ?onNodeClick = props.OnNodeClick,
         ?centerNodeId = props.CenterNodeId,
         ?focusOnMount = props.FocusOnMount,
+        ?imageFileName = props.ImageFileName,
         ?layout = props.LayoutSeam
     )
 
@@ -315,6 +324,15 @@ let private menuEl () : HTMLElement option =
 
 let private menuNow () : HTMLElement = (menuEl ()).Value
 let private statusEl () : HTMLElement = RTL.screen.getByTestId "graph-status"
+
+let private contentEl () : HTMLElement =
+    RTL.screen.getByTestId "graph-canvas-content"
+
+let private loadingEl () : HTMLElement = RTL.screen.getByTestId "graph-loading"
+
+let private loadingShown () : bool =
+    (loadingEl ()).getAttribute "data-shown" = "true"
+
 let private roleOf (el: HTMLElement) : string = el.getAttribute "role"
 let private labelOf (el: HTMLElement) : string = el.getAttribute "aria-label"
 let private focused () : obj = box document.activeElement
@@ -365,6 +383,27 @@ let private settle () : JS.Promise<unit> =
 let private isDisabled (el: HTMLElement) : bool = (el :?> HTMLButtonElement).disabled
 
 let private render (props: Props) : RenderResult = RTL.render (canvas props)
+
+// Draws the first view, then switches to a view whose layout the second function controls.
+let private switchView (props: Props) (second: LayoutFn) : JS.Promise<RenderResult * Props> = promise {
+    let seam = seamOf [ (fun n e x m o -> layoutGraph n e x m o); second ]
+
+    let first = { props with LayoutSeam = Some seam.Fn }
+
+    let result = render first
+    do! drawn ()
+
+    let next = {
+        first with
+            Nodes = [| plainNode "New" |]
+            Edges = [||]
+            ResetKey = "two"
+    }
+
+    result.rerender (canvas next)
+    do! eventually (fun () -> Vitest.expect(seam.Calls.Count).toBe 2)
+    return result, next
+}
 
 // Node rendering
 
@@ -650,6 +689,64 @@ Vitest.describe (
         )
 
         Vitest.test (
+            "leaves the focus on a control outside the canvas when the view changes",
+            fun () -> promise {
+                let page (props: Props) : ReactElement =
+                    Html.div [
+                        Html.button [ prop.testId "outside-button"; prop.text "Outside" ]
+                        canvas props
+                    ]
+
+                let result = RTL.render (page defaults)
+                do! drawn ()
+                let outside = RTL.screen.getByTestId "outside-button"
+                outside.focus ()
+
+                result.rerender (
+                    page {
+                        defaults with
+                            Nodes = [| plainNode "New" |]
+                            Edges = [||]
+                            ResetKey = "two"
+                    }
+                )
+
+                do! eventually (fun () -> nodeEl "New" |> ignore)
+                do! settle ()
+
+                Vitest.expect(focused ()).toBe (box outside)
+            }
+        )
+
+        Vitest.test (
+            "leaves the focus on a control outside the canvas when the canvas mounts anew with focusOnMount",
+            fun () -> promise {
+                let page (showCanvas: bool) : ReactElement =
+                    Html.div [
+                        Html.button [ prop.testId "outside-button"; prop.text "Outside" ]
+
+                        if showCanvas then
+                            canvas {
+                                defaults with
+                                    FocusOnMount = Some true
+                            }
+                        else
+                            Html.none
+                    ]
+
+                let result = RTL.render (page false)
+                let outside = RTL.screen.getByTestId "outside-button"
+                outside.focus ()
+
+                result.rerender (page true)
+                do! drawn ()
+                do! settle ()
+
+                Vitest.expect(focused ()).toBe (box outside)
+            }
+        )
+
+        Vitest.test (
             "moves focus to the container after the first layout when focusOnMount is set",
             fun () -> promise {
                 render {
@@ -839,17 +936,195 @@ Vitest.describe (
 
                 result.rerender (canvas (view "B"))
 
-                do! eventually (fun () -> Vitest.expect(roleOf (statusEl ())).toBe "status")
+                do! eventually (fun () -> Vitest.expect(contentEl().getAttribute "data-stale").toBe "true")
 
                 result.rerender (canvas (view "A"))
-                // The old drawing of A belongs to an earlier epoch, so the canvas says it lays out again.
-                Vitest.expect(roleOf (statusEl ())).toBe "status"
-                Vitest.expect(RTL.screen.queryByTestId("graph-node-a").IsNone).toBe true
+                // The old drawing of A belongs to an earlier epoch, so it stays as a stale drawing until A is laid out again.
+                Vitest.expect(contentEl().getAttribute "data-stale").toBe "true"
 
-                do! drawn ()
+                do! eventually (fun () -> Vitest.expect(contentEl().getAttribute "data-stale").toBe "false")
                 do! eventually (fun () -> Vitest.expect(focused ()).toBe (box (region ())))
                 // The scroll position is set again for the new epoch, here to the centered node.
                 Vitest.expect([| scrollLeftOf (region ()); scrollTopOf (region ()) |]).toEqual [| center - 150.0; 0.0 |]
+            }
+        )
+)
+
+// The drawing of the previous view while the layout of a new view is pending
+
+Vitest.describe (
+    "GraphCanvas stale drawing",
+    fun () ->
+        Vitest.test (
+            "keeps the old nodes inert until the layout of the new view resolves",
+            fun () -> promise {
+                let clicks = ResizeArray<string>()
+                let pending = deferred ()
+
+                let! _, next =
+                    switchView
+                        {
+                            defaults with
+                                OnNodeClick = Some clicks.Add
+                                ImageFileName = Some "graph.png"
+                        }
+                        (fun _ _ _ _ _ -> pending.Promise)
+
+                nodeEl "a" |> ignore
+                Vitest.expect(contentEl().getAttribute "data-stale").toBe "true"
+                Vitest.expect(contentEl().hasAttribute "inert").toBe true
+                Vitest.expect(region().getAttribute "aria-busy").toBe "true"
+                Vitest.expect((RTL.screen.getByTestId "graph-image-download").getAttribute "aria-disabled").toBe "true"
+
+                click (nodeEl "a")
+                Vitest.expect(clicks.Count).toBe 0
+
+                let! newLayout = realLayout next.Nodes next.Edges unlimited
+                do! RTL.act (fun () -> promise { pending.Resolve newLayout })
+                do! eventually (fun () -> nodeEl "New" |> ignore)
+
+                Vitest.expect(RTL.screen.queryByTestId("graph-node-a").IsNone).toBe true
+                Vitest.expect(contentEl().getAttribute "data-stale").toBe "false"
+                Vitest.expect(contentEl().hasAttribute "inert").toBe false
+                Vitest.expect(region().getAttribute "aria-busy").toBe "false"
+                Vitest.expect((RTL.screen.getByTestId "graph-image-download").getAttribute "aria-disabled").toBe "false"
+            }
+        )
+
+        Vitest.test (
+            "shows the loading indicator only when the new layout takes longer than 200 ms",
+            fun () -> promise {
+                let pending = deferred ()
+                let! _, next = switchView defaults (fun _ _ _ _ _ -> pending.Promise)
+
+                // The region is mounted from the start, so a screen reader announces the text when it appears.
+                Vitest.expect(roleOf (loadingEl ())).toBe "status"
+                Vitest.expect(loadingShown ()).toBe false
+                Vitest.expect((loadingEl ()).textContent).toBe ""
+                do! settle ()
+                Vitest.expect(loadingShown ()).toBe false
+
+                do!
+                    eventually (fun () ->
+                        Vitest.expect(loadingShown ()).toBe true
+                        Vitest.expect((loadingEl ()).textContent).not.toBe ""
+                    )
+
+                let! newLayout = realLayout next.Nodes next.Edges unlimited
+                do! RTL.act (fun () -> promise { pending.Resolve newLayout })
+                do! eventually (fun () -> Vitest.expect(loadingShown ()).toBe false)
+                Vitest.expect((loadingEl ()).textContent).toBe ""
+            }
+        )
+
+        Vitest.test (
+            "dims the stale drawing only when the new layout takes longer than 200 ms",
+            fun () -> promise {
+                let pending = deferred ()
+                let! _, next = switchView defaults (fun _ _ _ _ _ -> pending.Promise)
+
+                // The drawing is inert at once and dims later.
+                Vitest.expect(contentEl().getAttribute "data-stale").toBe "true"
+                Vitest.expect(contentEl().hasAttribute "inert").toBe true
+                Vitest.expect(contentEl().getAttribute "data-dimmed").toBe "false"
+
+                do! eventually (fun () -> Vitest.expect(contentEl().getAttribute "data-dimmed").toBe "true")
+
+                let! newLayout = realLayout next.Nodes next.Edges unlimited
+                do! RTL.act (fun () -> promise { pending.Resolve newLayout })
+                do! eventually (fun () -> Vitest.expect(contentEl().getAttribute "data-stale").toBe "false")
+                Vitest.expect(contentEl().getAttribute "data-dimmed").toBe "false"
+            }
+        )
+
+        Vitest.test (
+            "shows the status text of the first layout only after 200 ms",
+            fun () -> promise {
+                let pending = deferred ()
+
+                let seam = seamOf [ (fun _ _ _ _ _ -> pending.Promise) ]
+
+                render {
+                    defaults with
+                        LayoutSeam = Some seam.Fn
+                }
+                |> ignore
+
+                Vitest.expect(roleOf (statusEl ())).toBe "status"
+                // The text of the first layout is announced when it appears, so the region is not busy.
+                Vitest.expect(region().getAttribute "aria-busy").toBe "false"
+                Vitest.expect((statusEl ()).textContent).toBe ""
+                do! eventually (fun () -> Vitest.expect((statusEl ()).textContent).not.toBe "")
+            }
+        )
+
+        Vitest.test (
+            "replaces the stale drawing with the alert when the layout of the new view fails",
+            fun () -> promise {
+                silenceConsoleError ()
+                let reject = ref (fun (_: exn) -> ())
+
+                let failing: JS.Promise<GraphLayout> =
+                    Promise.create (fun _ rejecter -> reject.Value <- rejecter)
+
+                let! _ = switchView defaults (fun _ _ _ _ _ -> failing)
+                nodeEl "a" |> ignore
+
+                do! RTL.act (fun () -> promise { reject.Value(exn "elk failed") })
+
+                do! eventually (fun () -> Vitest.expect(roleOf (statusEl ())).toBe "alert")
+                Vitest.expect(RTL.screen.queryByTestId("graph-node-a").IsNone).toBe true
+                Vitest.expect(region().getAttribute "aria-busy").toBe "false"
+            }
+        )
+
+        Vitest.test (
+            "does not export while the drawing is stale",
+            fun () -> promise {
+                let pending = deferred ()
+
+                let! _ =
+                    switchView
+                        {
+                            defaults with
+                                ImageFileName = Some "graph.png"
+                        }
+                        (fun _ _ _ _ _ -> pending.Promise)
+
+                // Without the guard, the export fails in jsdom and shows a notice.
+                click (RTL.screen.getByTestId "graph-image-download")
+                do! RTL.act (fun () -> promise { do! Promise.sleep 200 })
+
+                Vitest.expect((RTL.screen.getByTestId "graph-image-notice").textContent).toBe ""
+            }
+        )
+
+        Vitest.test (
+            "draws the pills of the old drawing without edge toggles",
+            fun () -> promise {
+                let pending = deferred ()
+                let! _ = switchView defaults (fun _ _ _ _ _ -> pending.Promise)
+
+                edgeEl "ab" |> ignore
+                Vitest.expect((RTL.screen.queryByTestId "graph-edge-toggle-ab").IsNone).toBe true
+            }
+        )
+
+        Vitest.test (
+            "keeps the focus on a toolbar control when the layout of the new view lands",
+            fun () -> promise {
+                let pending = deferred ()
+                let! _, next = switchView defaults (fun _ _ _ _ _ -> pending.Promise)
+
+                let zoomOut = RTL.screen.getByTestId "graph-zoom-out"
+                zoomOut.focus ()
+
+                let! newLayout = realLayout next.Nodes next.Edges unlimited
+                do! RTL.act (fun () -> promise { pending.Resolve newLayout })
+                do! eventually (fun () -> nodeEl "New" |> ignore)
+                do! settle ()
+
+                Vitest.expect(focused ()).toBe (box zoomOut)
             }
         )
 )
@@ -1409,6 +1684,432 @@ Vitest.describe (
                 do! eventually (fun () -> Vitest.expect(focused ()).toBe (box (region ())))
 
                 Vitest.expect(svgWidth ()).toBe (original * 1.25)
+            }
+        )
+)
+
+// Image export. jsdom has no canvas, so a click on a button ends with the notice of a failed export.
+
+Vitest.describe (
+    "GraphCanvas image export",
+    fun () ->
+        Vitest.test (
+            "has no export buttons without an image file name",
+            fun () -> promise {
+                render defaults |> ignore
+                do! drawn ()
+
+                Vitest.expect((RTL.screen.queryByTestId "graph-image-download").IsNone).toBe true
+                Vitest.expect((RTL.screen.queryByTestId "graph-image-copy").IsNone).toBe true
+            }
+        )
+
+        Vitest.test (
+            "has the download button once a layout is drawn when it gets an image file name",
+            fun () -> promise {
+                render {
+                    defaults with
+                        ImageFileName = Some "graph.png"
+                }
+                |> ignore
+
+                Vitest.expect((RTL.screen.queryByTestId "graph-image-download").IsNone).toBe true
+
+                do! drawn ()
+
+                Vitest.expect((RTL.screen.queryByTestId "graph-image-download").IsSome).toBe true
+            }
+        )
+
+        // jsdom cannot draw the image, so an export fails there and ends with a notice. The tests use that notice.
+        let failedNotice (width: float) : JS.Promise<HTMLElement> = promise {
+            silenceConsoleError ()
+            stubBox width 400.0 width 400.0
+            setScrollSize width 400.0
+
+            render {
+                defaults with
+                    ImageFileName = Some "graph.png"
+            }
+            |> ignore
+
+            do! drawn ()
+            click (RTL.screen.getByTestId "graph-image-download")
+
+            do!
+                eventually (fun () ->
+                    Vitest.expect((RTL.screen.getByTestId "graph-image-notice").textContent).not.toBe ""
+                )
+
+            return RTL.screen.getByTestId "graph-image-notice"
+        }
+
+        Vitest.test (
+            "shows the notice outside the toolbar row, so the toolbar keeps its size",
+            fun () -> promise {
+                silenceConsoleError ()
+                stubBox 600.0 400.0 600.0 400.0
+                setScrollSize 600.0 400.0
+
+                render {
+                    defaults with
+                        ImageFileName = Some "graph.png"
+                }
+                |> ignore
+
+                do! drawn ()
+                let toolbar = (RTL.screen.getByTestId "graph-image-download").parentElement
+                let childrenBefore = toolbar.children.length
+
+                Vitest.expect(((RTL.screen.getByTestId "graph-image-notice").className).Contains "swt:sr-only").toBe
+                    true
+
+                click (RTL.screen.getByTestId "graph-image-download")
+
+                do!
+                    eventually (fun () ->
+                        Vitest
+                            .expect(((RTL.screen.getByTestId "graph-image-notice").className).Contains "swt:absolute")
+                            .toBe
+                            true
+                    )
+
+                let notice = RTL.screen.getByTestId "graph-image-notice"
+                Vitest.expect(toolbar.children.length).toBe childrenBefore
+                // The room is the box width minus the toolbar and its margins.
+                Vitest.expect(styleOf notice "max-width").toBe "300px"
+            }
+        )
+
+        Vitest.test (
+            "keeps the notice for screen readers in a box without room for it",
+            fun () -> promise {
+                let! notice = failedNotice 350.0
+
+                Vitest.expect(notice.className.Contains "swt:sr-only").toBe true
+                Vitest.expect(notice.className.Contains "swt:absolute").toBe false
+            }
+        )
+)
+
+// Minimap. The box shows 300x240 px of a scroll area of 5000x3000 px, so the graph overflows it.
+
+// The drawing starts 30px to the right of the root and 20px below it, when the root is not scrolled, and moves
+// with the scroll position as it does in a browser. The svg of the minimap sits at (100, 200).
+[<Emit("""(() => {
+    const original = Element.prototype.getBoundingClientRect;
+    const rect = (top, left, width, height) => ({ top, left, bottom: top + height, right: left + width, x: left, y: top, width, height, toJSON() {} });
+    Element.prototype.getBoundingClientRect = function () {
+        if (this.getAttribute('data-testid') === 'graph-canvas-content') return rect(20 - this.parentElement.scrollTop, 30 - this.parentElement.scrollLeft, 0, 0);
+        if (this.parentElement?.getAttribute('data-testid') === 'graph-minimap') return rect(200, 100, Number(this.getAttribute('width')), Number(this.getAttribute('height')));
+        return rect(0, 0, 0, 0);
+    };
+    globalThis.__graphRestoreRect = () => { Element.prototype.getBoundingClientRect = original };
+})()""")>]
+let private stubMinimapRects () : unit = jsNative
+
+Vitest.describe (
+    "GraphCanvas minimap",
+    fun () ->
+        let overflowBox () =
+            stubBox 300.0 240.0 300.0 240.0
+            setScrollSize 5000.0 3000.0
+
+        // What the canvas reads from the stubbed DOM.
+        let geometryAt (scrollLeft: float) (scrollTop: float) (zoom: float) : ScrollGeometry = {
+            ScrollLeft = scrollLeft
+            ScrollTop = scrollTop
+            ClientWidth = 300.0
+            ClientHeight = 240.0
+            ScrollWidth = 5000.0
+            ScrollHeight = 3000.0
+            OffsetX = 30.0
+            OffsetY = 20.0
+            Zoom = zoom
+        }
+
+        let minimapEl () : HTMLElement option =
+            RTL.screen.queryByTestId "graph-minimap"
+
+        let minimapSvg () : HTMLElement =
+            unbox<HTMLElement> (((minimapEl ()).Value).querySelector "svg")
+
+        let toggleButton () : HTMLElement =
+            RTL.screen.getByTestId "graph-minimap-toggle"
+
+        let minimapShown () : JS.Promise<unit> =
+            eventually (fun () -> Vitest.expect(minimapEl().IsSome).toBe true)
+
+        let numberAttribute (el: HTMLElement) (name: string) : float = float (el.getAttribute name)
+
+        let pointer (name: string) (x: float) (y: float) (buttons: int) =
+            RTL.fireEvent.custom (
+                name,
+                minimapSvg (),
+                {|
+                    clientX = x
+                    clientY = y
+                    button = 0
+                    buttons = buttons
+                    pointerId = 1
+                    isPrimary = true
+                    pointerType = "mouse"
+                |}
+            )
+
+        Vitest.test (
+            "draws a rect for every node and the visible part when the graph overflows the box",
+            fun () -> promise {
+                overflowBox ()
+                render defaults |> ignore
+                do! minimapShown ()
+                do! eventually (fun () -> RTL.screen.getByTestId "graph-minimap-viewport" |> ignore)
+
+                Vitest.expect(((minimapEl ()).Value).querySelectorAll("rect").length).toBe (nodes.Length + 1)
+                Vitest.expect((RTL.screen.queryByTestId "graph-minimap-toggle").IsSome).toBe true
+            }
+        )
+
+        Vitest.test (
+            "shows neither the minimap nor its toggle when the graph fits the box",
+            fun () -> promise {
+                render defaults |> ignore
+                do! drawn ()
+                do! settle ()
+
+                Vitest.expect(minimapEl().IsNone).toBe true
+                Vitest.expect((RTL.screen.queryByTestId "graph-minimap-toggle").IsNone).toBe true
+            }
+        )
+
+        for name, width, height in [ "narrow", 259.0, 240.0; "short", 300.0, 219.0 ] do
+            Vitest.test (
+                $"shows neither the minimap nor its toggle in a {name} box",
+                fun () -> promise {
+                    stubBox width height width height
+                    setScrollSize 5000.0 3000.0
+                    render defaults |> ignore
+                    do! drawn ()
+                    do! settle ()
+
+                    Vitest.expect(minimapEl().IsNone).toBe true
+                    Vitest.expect((RTL.screen.queryByTestId "graph-minimap-toggle").IsNone).toBe true
+                }
+            )
+
+        Vitest.test (
+            "hides and shows the minimap with the toggle, which reports its state",
+            fun () -> promise {
+                overflowBox ()
+                render defaults |> ignore
+                do! minimapShown ()
+                Vitest.expect((toggleButton ()).getAttribute "aria-pressed").toBe "true"
+
+                click (toggleButton ())
+                Vitest.expect(minimapEl().IsNone).toBe true
+                Vitest.expect((toggleButton ()).getAttribute "aria-pressed").toBe "false"
+
+                click (toggleButton ())
+                Vitest.expect(minimapEl().IsSome).toBe true
+                Vitest.expect((toggleButton ()).getAttribute "aria-pressed").toBe "true"
+            }
+        )
+
+        Vitest.test (
+            "hides the minimap while a pill list is open",
+            fun () -> promise {
+                overflowBox ()
+                render defaults |> ignore
+                do! minimapShown ()
+
+                // The box is too narrow for the pills to expand inline, so the toggle opens a list.
+                click (toggleEl "ab")
+                do! eventually (fun () -> Vitest.expect(menuEl().IsSome).toBe true)
+                Vitest.expect(minimapEl().IsNone).toBe true
+
+                press document.body "Escape"
+                do! eventually (fun () -> Vitest.expect(menuEl().IsNone).toBe true)
+                do! minimapShown ()
+            }
+        )
+
+        Vitest.test (
+            "keeps the focus on the zoom button when its click makes the graph overflow",
+            fun () -> promise {
+                stubBox 300.0 240.0 300.0 240.0
+                setScrollSize 300.0 240.0
+                render defaults |> ignore
+                do! drawn ()
+                Vitest.expect((RTL.screen.queryByTestId "graph-minimap-toggle").IsNone).toBe true
+
+                let zoomIn = RTL.screen.getByTestId "graph-zoom-in"
+                zoomIn.focus ()
+                setScrollSize 5000.0 3000.0
+                click zoomIn
+
+                do! minimapShown ()
+                Vitest.expect(RTL.screen.getByTestId ("graph-zoom-in")).toBe zoomIn
+                Vitest.expect(focused ()).toBe (box zoomIn)
+            }
+        )
+
+        Vitest.test (
+            "moves the focus to the region when the focused minimap toggle goes away with the old view",
+            fun () -> promise {
+                overflowBox ()
+                let pending = deferred ()
+                let! _, next = switchView defaults (fun _ _ _ _ _ -> pending.Promise)
+                do! minimapShown ()
+
+                // The new view fits the box, so the toggle goes away when its layout lands.
+                (toggleButton ()).focus ()
+                setScrollSize 300.0 240.0
+
+                let! newLayout = realLayout next.Nodes next.Edges unlimited
+                do! RTL.act (fun () -> promise { pending.Resolve newLayout })
+                do! eventually (fun () -> nodeEl "New" |> ignore)
+
+                do!
+                    eventually (fun () ->
+                        Vitest.expect((RTL.screen.queryByTestId "graph-minimap-toggle").IsNone).toBe true
+                    )
+
+                Vitest.expect(focused ()).toBe (box (region ()))
+            }
+        )
+
+        Vitest.test (
+            "moves the focus to the region when the focused minimap toggle goes away because the box shrinks",
+            fun () -> promise {
+                overflowBox ()
+                installResizeObserver ()
+                render defaults |> ignore
+                do! minimapShown ()
+
+                // Below 260 by 220 px the minimap does not fit, while the graph still overflows the box.
+                (toggleButton ()).focus ()
+                setBox 300.0 200.0 300.0 200.0
+                do! RTL.act (fun () -> promise { notifyResize () })
+
+                do!
+                    eventually (fun () ->
+                        Vitest.expect((RTL.screen.queryByTestId "graph-minimap-toggle").IsNone).toBe true
+                    )
+
+                Vitest.expect(focused ()).toBe (box (region ()))
+            }
+        )
+
+        Vitest.test (
+            "marks the visible part of the layout, which follows the scroll position and the zoom",
+            fun () -> promise {
+                overflowBox ()
+                stubMinimapRects ()
+                let! laid = realLayout nodes edges unlimited
+                render defaults |> ignore
+                do! minimapShown ()
+
+                let viewportEl () =
+                    RTL.screen.getByTestId "graph-minimap-viewport"
+
+                // The marker matches Minimap.viewport of the stubbed geometry, x, y, width and height.
+                let expectMarker (zoom: float) (scrollLeft: float) (scrollTop: float) : JS.Promise<unit> =
+                    let expected =
+                        (Minimap.viewport (geometryAt scrollLeft scrollTop zoom) laid.LayoutWidth laid.LayoutHeight)
+                            .Value
+
+                    eventually (fun () ->
+                        Vitest.expect(numberAttribute (viewportEl ()) "x").toBeCloseTo expected.Left
+                        Vitest.expect(numberAttribute (viewportEl ()) "y").toBeCloseTo expected.Top
+
+                        Vitest
+                            .expect(numberAttribute (viewportEl ()) "width")
+                            .toBeCloseTo (expected.Right - expected.Left)
+
+                        Vitest
+                            .expect(numberAttribute (viewportEl ()) "height")
+                            .toBeCloseTo (expected.Bottom - expected.Top)
+                    )
+
+                do! expectMarker 1.0 0.0 0.0
+
+                setScrollLeft (region ()) 200.0
+                setScrollTop (region ()) 30.0
+                RTL.fireEvent.custom ("scroll", region ())
+                do! expectMarker 1.0 200.0 30.0
+                let widthAtFullSize = numberAttribute (viewportEl ()) "width"
+
+                click (RTL.screen.getByTestId "graph-zoom-in")
+                do! expectMarker 1.25 200.0 30.0
+                Vitest.expect(numberAttribute (viewportEl ()) "width").toBeLessThan widthAtFullSize
+            }
+        )
+
+        Vitest.test (
+            "scrolls the canvas to the pressed point and follows the pointer only while the button is down",
+            fun () -> promise {
+                overflowBox ()
+                stubMinimapRects ()
+                let! laid = realLayout nodes edges unlimited
+                render defaults |> ignore
+                do! minimapShown ()
+
+                // The test graph is wide, so the drawing fills the frame from side to side and sits in the middle of
+                // its height. A pointer on the middle line then maps to the middle of the layout height.
+                let frame = minimapSvg ()
+                let frameWidth = numberAttribute frame "width"
+                let frameHeight = numberAttribute frame "height"
+                let k = Minimap.scale 300.0 240.0 laid.LayoutWidth laid.LayoutHeight
+                Vitest.expect(frameWidth).toBeCloseTo (k * laid.LayoutWidth)
+
+                let centered (fraction: float) =
+                    Minimap.centerOn (geometryAt 0.0 0.0 1.0) (fraction * laid.LayoutWidth) (laid.LayoutHeight / 2.0)
+
+                let left = 100.0
+                let middle = 200.0 + frameHeight / 2.0
+                let downLeft, downTop = centered 0.25
+                let moveLeft, moveTop = centered 0.75
+                // The two points differ, so a move that is ignored or misplaced shows.
+                Vitest.expect(moveLeft).toBeGreaterThan (downLeft + 1.0)
+
+                pointer "pointerDown" (left + 0.25 * frameWidth) middle 1
+                Vitest.expect(scrollLeftOf (region ())).toBeCloseTo downLeft
+                Vitest.expect(scrollTopOf (region ())).toBeCloseTo downTop
+
+                pointer "pointerMove" (left + 0.75 * frameWidth) middle 1
+                Vitest.expect(scrollLeftOf (region ())).toBeCloseTo moveLeft
+                Vitest.expect(scrollTopOf (region ())).toBeCloseTo moveTop
+
+                pointer "pointerMove" (left + 0.1 * frameWidth) middle 0
+                Vitest.expect(scrollLeftOf (region ())).toBeCloseTo moveLeft
+            }
+        )
+
+        Vitest.test (
+            "leaves the scroll position alone when the minimap is pressed while the drawing is stale",
+            fun () -> promise {
+                overflowBox ()
+                stubMinimapRects ()
+                let! laid = realLayout nodes edges unlimited
+                let pending = deferred ()
+                let! _ = switchView defaults (fun _ _ _ _ _ -> pending.Promise)
+                do! minimapShown ()
+
+                let frame = minimapSvg ()
+                let frameWidth = numberAttribute frame "width"
+                let frameHeight = numberAttribute frame "height"
+                let middle = 200.0 + frameHeight / 2.0
+
+                // A press that is not ignored would scroll to a point that differs from the start.
+                let pressedLeft, _ =
+                    Minimap.centerOn (geometryAt 0.0 0.0 1.0) (0.75 * laid.LayoutWidth) (laid.LayoutHeight / 2.0)
+
+                Vitest.expect(pressedLeft).toBeGreaterThan 1.0
+
+                pointer "pointerDown" (100.0 + 0.75 * frameWidth) middle 1
+                pointer "pointerMove" (100.0 + 0.5 * frameWidth) middle 1
+
+                Vitest.expect([| scrollLeftOf (region ()); scrollTopOf (region ()) |]).toEqual [| 0.0; 0.0 |]
             }
         )
 )

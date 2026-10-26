@@ -16,6 +16,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### ✨ Added
+
+- The provenance graph has an up button that takes you one level back and names that level. (by @caroott)
+- An overview above the provenance graph shows where you are in the ARC and lets you jump to a neighboring dataset, process, group or node. (by @caroott)
+- A minimap in the corner of the provenance graph shows the whole graph and the visible part, and a click or drag on it moves the view. (by @caroott)
+- The whole provenance graph can be saved as a PNG image or copied to paste into Slack or Teams. (by @caroott)
+
+### 🔄 Changed
+
+- Switching views in the provenance graph keeps the previous graph on screen until the new one is ready, so the view no longer flashes. (by @caroott)
+- The provenance graph lays out large graphs in the background, so the app stays responsive in the meantime. (by @caroott)
+
 ## 3.1.0 - 2026-10-21
 
 ### ✨ Added
