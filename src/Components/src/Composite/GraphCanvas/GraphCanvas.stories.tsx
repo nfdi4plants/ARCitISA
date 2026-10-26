@@ -2,6 +2,10 @@ import React from 'react';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 import { GraphCanvas } from './GraphCanvas.fs.js';
+import { svgMarkup } from './ImageExport.fs.js';
+import { Worker$ as ElkWorker } from './ElkWorker.fs.js';
+import { layoutGraph } from './Layout.fs.js';
+import { warmUpWorker } from '../../Util/WebWorker.test.helpers';
 import type { CanvasEdge, CanvasNode, CanvasPill } from './Types.fs.js';
 
 // The Fable records are classes in the generated types. The stories build plain objects with the same fields,
@@ -104,6 +108,8 @@ const meta = {
     onNodeClick: fn(),
   },
   component: GraphCanvas,
+  // The ELK worker script loads once here, so the 10 s waits of the stories measure the layout only.
+  loaders: [() => warmUpWorker(ElkWorker, { id: 'warm-up' })],
 } satisfies Meta<typeof GraphCanvas>;
 
 export default meta;
@@ -147,5 +153,281 @@ export const Compact: Story = {
     await waitFor(() => expect(canvas.getByTestId('graph-canvas-content')).toHaveAttribute('data-compact', 'true'), {
       timeout: 10000,
     });
+  },
+};
+
+// Six rows of five nodes. The graph is larger than the 480 by 320 px box in both directions, so the minimap appears.
+const gridNodes: CanvasNode[] = [];
+const gridEdges: CanvasEdge[] = [];
+
+for (let row = 0; row < 6; row++) {
+  for (let col = 0; col < 5; col++) {
+    gridNodes.push(node(`n-${row}-${col}`, `Step ${row + 1}.${col + 1}`, col === 0 ? 'study' : col === 4 ? 'run' : 'assay'));
+    if (col > 0) {
+      gridEdges.push(
+        edge(`e-${row}-${col}`, `n-${row}-${col - 1}`, `n-${row}-${col}`, 'neutral', [pill({ key: 'count', kind: 'count', value: String(col) })]),
+      );
+    }
+  }
+}
+
+export const Minimap: Story = {
+  args: {
+    nodes: gridNodes,
+    edges: gridEdges,
+    resetKey: 'minimap',
+  },
+  decorators: [
+    (Story) => (
+      <div style={{ width: 480, height: 320 }}>
+        <Story />
+      </div>
+    ),
+  ],
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    const minimap = await canvas.findByTestId('graph-minimap', {}, { timeout: 10000 });
+    // One rect per node and one for the visible part.
+    await waitFor(() => expect(minimap.querySelectorAll('rect')).toHaveLength(gridNodes.length + 1));
+
+    const root = canvas.getByTestId('graph-canvas');
+    const svg = minimap.querySelector('svg')!;
+    const area = svg.getBoundingClientRect();
+    svg.dispatchEvent(
+      new PointerEvent('pointerdown', {
+        bubbles: true,
+        cancelable: true,
+        pointerId: 1,
+        pointerType: 'mouse',
+        isPrimary: true,
+        button: 0,
+        buttons: 1,
+        clientX: area.left + area.width * 0.9,
+        clientY: area.top + area.height * 0.9,
+      }),
+    );
+
+    await waitFor(() => expect(root.scrollLeft > 0 || root.scrollTop > 0).toBe(true));
+  },
+};
+
+// The RGBA bytes that a CSS color resolves to. A canvas converts every color syntax that the browser knows.
+function rgbaOf(color: string): number[] {
+  const surface = document.createElement('canvas');
+  surface.width = surface.height = 1;
+  const context = surface.getContext('2d')!;
+  context.fillStyle = color;
+  context.fillRect(0, 0, 1, 1);
+  return Array.from(context.getImageData(0, 0, 1, 1).data);
+}
+
+// The computed base-100 color, read through a probe element inside the root as ImageExport.svgMarkup reads it.
+function base100Of(root: HTMLElement): string {
+  const probe = document.createElement('span');
+  probe.style.color = 'var(--color-base-100)';
+  root.appendChild(probe);
+  const color = getComputedStyle(probe).color;
+  probe.remove();
+  return color;
+}
+
+// The image holds the whole graph, also the nodes that are scrolled out of the 480 by 320 px box.
+export const ImageExport: Story = {
+  args: {
+    nodes: gridNodes,
+    edges: gridEdges,
+    resetKey: 'image-export',
+    imageFileName: 'graph.png',
+  },
+  decorators: [
+    (Story) => (
+      <div style={{ width: 480, height: 320 }}>
+        <Story />
+      </div>
+    ),
+  ],
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    const download = await canvas.findByTestId('graph-image-download', {}, { timeout: 10000 });
+    const root = canvas.getByTestId('graph-canvas');
+    const mainSvg = canvas.getByTestId('graph-canvas-content').querySelector('svg')!;
+
+    // The layout size is the viewBox of the main svg.
+    const viewBox = mainSvg.getAttribute('viewBox')!.split(' ').map(Number);
+    const [layoutWidth, layoutHeight] = [viewBox[2], viewBox[3]];
+
+    // The export must not depend on what is visible, so the canvas is zoomed in and scrolled to the middle first.
+    await userEvent.click(canvas.getByTestId('graph-zoom-in'));
+    await waitFor(() => expect(Number(mainSvg.getAttribute('width'))).toBeGreaterThan(layoutWidth));
+    root.scrollLeft = (root.scrollWidth - root.clientWidth) / 2;
+    root.scrollTop = (root.scrollHeight - root.clientHeight) / 2;
+
+    const rootBox = root.getBoundingClientRect();
+    const hidden = canvas.getAllByTestId(/^graph-node-/).find((node) => {
+      const box = node.getBoundingClientRect();
+      return box.right <= rootBox.left || box.left >= rootBox.right || box.bottom <= rootBox.top || box.top >= rootBox.bottom;
+    });
+    expect(hidden).toBeDefined();
+
+    // The markup is a standalone copy of the drawing. It holds computed colors and nothing interactive, and the background comes first.
+    const background = base100Of(root);
+    const markup = svgMarkup(mainSvg, root, layoutWidth, layoutHeight);
+    for (const forbidden of ['var(', 'color-mix(', ' class=', ' tabindex=', ' role=', ' aria-', ' data-testid=', '<title']) {
+      expect(markup).not.toContain(forbidden);
+    }
+    const copy = new DOMParser().parseFromString(markup, 'image/svg+xml').documentElement;
+    expect(copy.localName).toBe('svg');
+    expect(Number(copy.getAttribute('width'))).toBe(layoutWidth);
+    expect(Number(copy.getAttribute('height'))).toBe(layoutHeight);
+    expect(copy.getAttribute('viewBox')).toBe(`0 0 ${layoutWidth} ${layoutHeight}`);
+    expect(copy.firstElementChild!.localName).toBe('rect');
+    expect(copy.firstElementChild!.getAttribute('fill')).toBe(background);
+
+    // The click on the anchor is captured, so the story does not navigate or open a save dialog.
+    const originalClick = HTMLAnchorElement.prototype.click;
+    let saved: { download: string; href: string } | undefined;
+    HTMLAnchorElement.prototype.click = function (this: HTMLAnchorElement) {
+      saved = { download: this.download, href: this.href };
+    };
+
+    try {
+      await userEvent.click(download);
+      await waitFor(() => expect(saved).toBeDefined(), { timeout: 10000 });
+    } finally {
+      HTMLAnchorElement.prototype.click = originalClick;
+    }
+
+    expect(saved!.download).toBe('graph.png');
+    const png = await (await fetch(saved!.href)).blob();
+    expect(png.type).toBe('image/png');
+    const bitmap = await createImageBitmap(png);
+
+    // The image has the size of the layout at the factor 2, which this small graph gets, and keeps its proportions.
+    expect(Math.abs(bitmap.width - 2 * layoutWidth)).toBeLessThan(1);
+    expect(Math.abs(bitmap.height - 2 * layoutHeight)).toBeLessThan(1);
+    expect(Math.abs((bitmap.height * layoutWidth) / layoutHeight - bitmap.width)).toBeLessThanOrEqual(1 + layoutWidth / layoutHeight);
+
+    const surface = document.createElement('canvas');
+    surface.width = bitmap.width;
+    surface.height = bitmap.height;
+    const context = surface.getContext('2d', { willReadFrequently: true })!;
+    context.drawImage(bitmap, 0, 0);
+    bitmap.close();
+    const pixelAt = (x: number, y: number) => Array.from(context.getImageData(Math.floor(x), Math.floor(y), 1, 1).data);
+
+    // The top left corner shows the background of the page.
+    const corner = pixelAt(0, 0);
+    const expectedBackground = rgbaOf(background);
+    corner.forEach((channel, index) => expect(Math.abs(channel - expectedBackground[index])).toBeLessThanOrEqual(1));
+
+    // A node that is outside the visible area is in the image. Its colored stripe, at the middle of its height,
+    // differs from the background.
+    const [x, y] = hidden!.getAttribute('transform')!.match(/-?[\d.]+/g)!.map(Number);
+    const nodeHeight = Number(hidden!.querySelector('rect')!.getAttribute('height'));
+    expect(pixelAt((x + 2) * 2, (y + nodeHeight / 2) * 2).slice(0, 3)).not.toEqual(corner.slice(0, 3));
+
+    // The copy button needs a secure context and ClipboardItem. Where the browser has them, the button must be there.
+    const copyButton = canvas.queryByTestId('graph-image-copy');
+    if (window.isSecureContext) {
+      expect(copyButton).not.toBeNull();
+    }
+    if (!copyButton) {
+      return;
+    }
+
+    await waitFor(() => expect(copyButton).toHaveAttribute('aria-disabled', 'false'));
+    let item: ClipboardItem | undefined;
+    Object.defineProperty(navigator.clipboard, 'write', {
+      configurable: true,
+      value: async (items: ClipboardItem[]) => {
+        item = items[0];
+      },
+    });
+
+    try {
+      copyButton.click();
+      // write runs inside the click handler, before the image exists. A wait here would hide a lost user action.
+      expect(item).toBeDefined();
+    } finally {
+      // The stub is an own property of the instance, so deleting it brings back the method of the prototype.
+      delete (navigator.clipboard as { write?: unknown }).write;
+    }
+
+    const copied = await item!.getType('image/png');
+    expect(copied.type).toBe('image/png');
+    expect(copied.size).toBeGreaterThan(0);
+  },
+};
+
+// The workers that a story creates, the replies they send and the console warnings. beforeEach installs the
+// wrapper after the loaders have run and before the canvas mounts, and its cleanup removes it.
+type WorkerWatch = { urls: string[]; replies: { ok: boolean; res?: { children?: unknown[] } }[]; warnings: string[]; restore: () => void };
+
+function watchWorkers(): WorkerWatch {
+  const OriginalWorker = window.Worker;
+  const originalWarn = console.warn;
+  const watch: WorkerWatch = {
+    urls: [],
+    replies: [],
+    warnings: [],
+    restore: () => {
+      window.Worker = OriginalWorker;
+      console.warn = originalWarn;
+    },
+  };
+
+  window.Worker = class extends OriginalWorker {
+    constructor(url: string | URL, options?: WorkerOptions) {
+      super(url, options);
+      watch.urls.push(String(url));
+      this.addEventListener('message', (event) => watch.replies.push(event.data));
+    }
+  };
+  console.warn = (...args: unknown[]) => {
+    watch.warnings.push(args.map(String).join(' '));
+    originalWarn(...args);
+  };
+  return watch;
+}
+
+let workers: WorkerWatch;
+
+const watchWorkersBeforeEach = () => {
+  workers = watchWorkers();
+  return () => workers.restore();
+};
+
+const sizedBox = (Story: () => React.JSX.Element) => (
+  <div style={{ width: '100%', height: 480 }}>
+    <Story />
+  </div>
+);
+
+// The default layout runs ELK in a worker, and the worker answers with the laid out graph.
+export const RunsElkInAWorker: Story = {
+  decorators: [sizedBox],
+  beforeEach: watchWorkersBeforeEach,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    await canvas.findByTestId('graph-node-study', {}, { timeout: 10000 });
+
+    expect(workers.urls.some((url) => url.includes('ElkWorker'))).toBe(true);
+    await waitFor(() => expect(workers.replies.some((reply) => reply.ok && reply.res?.children?.length === nodes.length)).toBe(true));
+    expect(workers.warnings.filter((text) => text.includes('worker failed'))).toEqual([]);
+  },
+};
+
+// A canvas with its own layout function never runs ELK, so it starts no worker.
+export const LayoutFunctionStartsNoWorker: Story = {
+  args: { layout: layoutGraph as never },
+  decorators: [sizedBox],
+  beforeEach: watchWorkersBeforeEach,
+  play: async ({ canvasElement }) => {
+    await within(canvasElement).findByTestId('graph-node-study', {}, { timeout: 10000 });
+
+    expect(workers.urls).toEqual([]);
   },
 };

@@ -77,3 +77,42 @@ module Dom =
 
     [<Emit("$0.focus({ preventScroll: true })")>]
     let focusWithoutScroll (el: HTMLElement) : unit = jsNative
+
+    /// The computed style of an element, such as getComputedStyle returns it.
+    [<AllowNullLiteral>]
+    type ComputedStyle =
+        abstract getPropertyValue: name: string -> string
+
+    [<Emit("getComputedStyle($0)")>]
+    let computedStyle (el: Element) : ComputedStyle = jsNative
+
+    /// Sets one inline style property of any element, SVG elements included.
+    [<Emit("$0.style.setProperty($1, $2)")>]
+    let setElementStyleProperty (el: Element) (name: string) (value: string) : unit = jsNative
+
+    [<Emit("$0.style.removeProperty($1)")>]
+    let removeElementStyleProperty (el: Element) (name: string) : unit = jsNative
+
+    [<Emit("$0.getAttributeNames()")>]
+    let attributeNames (el: Element) : string[] = jsNative
+
+    /// The XML text of a node, such as an SVG element.
+    [<Emit("new XMLSerializer().serializeToString($0)")>]
+    let serializeToString (node: Node) : string = jsNative
+
+    [<Emit("URL.createObjectURL($0)")>]
+    let createObjectUrl (blob: Blob) : string = jsNative
+
+    [<Emit("URL.revokeObjectURL($0)")>]
+    let revokeObjectUrl (url: string) : unit = jsNative
+
+    /// Resolves when the image is loaded and can be drawn. Rejects when the source cannot be decoded.
+    [<Emit("$0.decode()")>]
+    let decodeImage (image: HTMLImageElement) : JS.Promise<unit> = jsNative
+
+    [<Emit("window.isSecureContext === true")>]
+    let isSecureContext () : bool = jsNative
+
+    /// The name of a thrown or rejected error, such as "NotAllowedError". Empty for values without a name.
+    [<Emit("($0 != null && typeof $0.name === 'string' ? $0.name : '')")>]
+    let errorName (value: obj) : string = jsNative
