@@ -58,7 +58,7 @@ The import never overwrites or merges. An existing item with the same name (see 
 
 The import follows symbolic links, including Windows junctions, and copies what a link points to as an ordinary file or folder under the link's name. The import stops at a link that leads back to a folder that contains it or to a folder above it, because the walk would never end. The import refuses such a link at once. It also stops when a link's target no longer exists, or when the walk goes through too many links. Two links to the same folder in different places are both copied in full. A link inside a picked folder that leads to the import target, or to a folder that contains it, stops the import. When a folder cannot be read because access is denied, as with some Windows compatibility junctions such as "My Music" in Documents, the import stops with a message.
 
-During an import, the watcher ignores the import's own staging folder, a folder named ".swate-import-" plus 32 hex digits inside the target folder. The import registers the folder before it creates it and releases it after its last attempt to remove it. If ARCitISA cannot remove the folder, it shows the folder in the file tree and watches it like any other folder.
+The import copies into a staging folder named ".swate-import-" plus 32 hex digits inside the target folder and removes it when it is done. The watcher ignores every path with such a folder name (`ArcVaultHelper.isFileWatcherPathIgnored`). This matters for an import directly into studies, assays, workflows or runs. There a metadata file inside the staging folder, such as "assays/.swate-import-<hex>/isa.assay.xlsx", would look like an entity file to the watcher. Inside data folders the watcher sees nothing anyway, because it watches only the ARC structure. When the import ends, it reconciles the target folder in the file tree (`tryImportExternalFiles` in `src/Electron/src/Main/IPC/IArcVaultsApi.fs`). If ARCitISA cannot remove the staging folder, the file tree lists it like any other folder.
 
 ## Rules kept from before this change
 
@@ -110,7 +110,7 @@ Inside picked folders the import skipped these names silently. As picked items i
 
 The reason is that the file tree and the file watcher hide these names and the ARC manages its own git files. A staging folder is a leftover copy of an interrupted import. The code was `isLeftOutOfImport` in `FileSystemIO.fs`. For files it used `ArcVaultHelper.isFileWatcherPathIgnored`, which also matched staging-folder names, and `ArcEntityPathRules.isArcManagedGitFileName` (`PathHelpers.fs`). For folders it used `isTemporaryImportPath`. `inspectPickedItemAsync` turned each case into its own error.
 
-These items are now imported. The file tree still hides lock files and LFS backups.
+These items are now imported. The file tree still hides files named like lock files or LFS backups. A folder with such a name stays visible.
 
 ### New File and New Folder rules for imported items
 
@@ -124,7 +124,7 @@ New File and Rename rejected file names that ARCitISA hides: lock-file names suc
 
 New File, New Folder and Rename rejected names like ".swate-import-" plus 32 hex digits. The reason is that the watcher ignores staging folders, so changes inside would not show up. The code was `isTemporaryImportPath`, `stagingFolderNameError` and `stagingFileNameError` in `validateNewItemName` in `RenamePathRules.fs`.
 
-The watcher now ignores only the staging folder of an import that is running, so a folder with such a name behaves like any other folder, including changes that other programs make inside it.
+The watcher still ignores folders with such a name. Directly inside studies, assays, workflows or runs, this keeps a metadata file in such a folder from turning into an entity. Everywhere else such a folder is a data folder, which the watcher does not watch anyway. The file tree lists it, and changes that other programs make inside it appear when the ARCitISA window gets focus or after "Refresh folder".
 
 ### Items inside a leftover staging folder
 
@@ -134,4 +134,4 @@ See the previous section for the current watcher behavior.
 
 ### Renaming the open ARC to a staging-folder name
 
-Rename refused a staging-folder name for the open ARC's folder. The reason is that the watcher would ignore the whole ARC. This is harmless now, because the watcher no longer ignores folders by this name. The code was the `isTemporaryImportPath` check in `tryBuildOpenArcRootRenamePlan` in `src/Electron/src/Main/ArcVault/ArcVaultHelper.fs`.
+Rename refused a staging-folder name for the open ARC's folder. The reason is that the watcher would ignore the whole ARC. This is harmless now, because the watcher checks its ignore rule on the path relative to the ARC folder, so the name of the ARC folder itself does not count (`ArcVaultHelper.isStructuralWatcherPathOfKind`). The code was the `isTemporaryImportPath` check in `tryBuildOpenArcRootRenamePlan` in `src/Electron/src/Main/ArcVault/ArcVaultHelper.fs`.

@@ -270,12 +270,16 @@ Vitest.describe (
     fun () ->
 
         Vitest.test (
-            "temporary import directory name is .swate-import- followed by 32 hex digits",
+            "temporary import directory name matches the watcher ignore convention",
             fun () ->
                 let directoryName = ArcFileSystemHelper.createTemporaryImportDirectoryName ()
                 let exactPattern = """^\.swate-import-[0-9a-f]{32}$"""
 
                 Vitest.expect(System.Text.RegularExpressions.Regex.IsMatch(directoryName, exactPattern)).toBe (true)
+
+                Vitest
+                    .expect(Main.ArcVaultHelper.isFileWatcherPathIgnored $"C:/arc/{directoryName}/file.txt")
+                    .toBe (true)
         )
 
         Vitest.test (

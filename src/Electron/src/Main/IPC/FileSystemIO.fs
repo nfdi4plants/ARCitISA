@@ -539,7 +539,7 @@ module ArcFileSystemHelper =
 
         return {
             TargetDirectory = targetDirectory
-            // The watcher ignores this folder while the import has it registered.
+            // The watcher ignores every path with a staging-folder name (ArcVaultHelper.isFileWatcherPathIgnored).
             TemporaryDirectory = join [| targetDirectory; createTemporaryImportDirectoryName () |]
             Entries = entries.ToArray()
         }

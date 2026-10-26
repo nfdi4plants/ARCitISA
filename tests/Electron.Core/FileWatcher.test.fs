@@ -956,6 +956,34 @@ Vitest.describe (
         )
 
         Vitest.test (
+            "a staging folder directly inside a zone folder does not look like an entity",
+            fun () ->
+                let staging = ".swate-import-0123456789abcdef0123456789abcdef"
+
+                Vitest.expect(isStructuralFileWatcherPath "/arc" "/arc/assays/A1/isa.assay.xlsx" None).toBe true
+
+                Vitest.expect(isStructuralFileWatcherPath "/arc" $"/arc/assays/{staging}/isa.assay.xlsx" None).toBe
+                    false
+        )
+
+        Vitest.test (
+            "an ARC folder named like a staging folder, or inside a staging folder or .git, is not hidden",
+            fun () ->
+                let staging = ".swate-import-0123456789abcdef0123456789abcdef"
+
+                for arcFolder in
+                    [
+                        $"/tmp/{staging}"
+                        $"/tmp/{staging}/arc"
+                        "/tmp/.git/arc"
+                    ] do
+                    let root = Main.FileTreeCreator.normalizeRootPath arcFolder
+
+                    Vitest.expect(isStructuralFileWatcherPath root (root + "/assays/A1/isa.assay.xlsx") None).toBe true
+                    Vitest.expect(isStructuralFileWatcherPath root "studies/S1/isa.study.xlsx" None).toBe true
+        )
+
+        Vitest.test (
             "SWATE_WATCH_POLLING forces polling on any platform",
             fun () ->
                 Vitest.expect(resolveFileWatcherPolling "linux" None None).toBe false

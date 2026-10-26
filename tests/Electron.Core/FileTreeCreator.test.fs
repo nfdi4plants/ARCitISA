@@ -100,12 +100,12 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "a .git file, a .git directory and LFS backup directories are ignored",
+            "a .git file and a .git directory are ignored, LFS backup names only for files",
             fun () ->
                 let hex = String.replicate 32 "b"
                 Vitest.expect(ignored ".git" ".git" false).toBe (true)
                 Vitest.expect(ignored ".git" "sub/.git" true).toBe (true)
-                Vitest.expect(ignored $"x.vcs-lfs-backup-{hex}" $"x.vcs-lfs-backup-{hex}" true).toBe (true)
+                Vitest.expect(ignored $"x.vcs-lfs-backup-{hex}" $"x.vcs-lfs-backup-{hex}" true).toBe (false)
                 Vitest.expect(ignored $"x.vcs-lfs-backup-{hex}" $"a/x.vcs-lfs-backup-{hex}" false).toBe (true)
                 Vitest.expect(ignored ".~$x.xlsx" "a/.~$x.xlsx" false).toBe (true)
                 Vitest.expect(ignored "~$x.xlsx" "a/~$x.xlsx" false).toBe (true)
@@ -114,7 +114,7 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "the tree scan skips ignored entries and keeps import staging folders",
+            "the tree scan skips ignored entries and keeps import staging folders and LFS-backup-named folders",
             fileTreeCreatorTestOptions,
             fun () -> promise {
                 let! rootPath = createTempDirectoryAsync ()
@@ -135,6 +135,7 @@ Vitest.describe (
                     do! writeUtf8FileAsync (join [| rootPath; ".git"; "config" |]) "x"
                     do! writeUtf8FileAsync (join [| rootPath; ".~$lock.xlsx" |]) "x"
                     do! writeUtf8FileAsync (join [| rootPath; "keep.txt" |]) "x"
+                    do! writeUtf8FileAsync (join [| rootPath; $"data.bin.vcs-lfs-backup-{hex}" |]) "x"
 
                     let! entries = scanEntries rootPath
 
@@ -146,6 +147,7 @@ Vitest.describe (
                             Array.sort [|
                                 basename (normalizeSlashes rootPath)
                                 stagingName
+                                $"old.vcs-lfs-backup-{hex}"
                                 "keep.txt"
                             |]
                         )
