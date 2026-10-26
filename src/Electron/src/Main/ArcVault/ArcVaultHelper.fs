@@ -401,7 +401,7 @@ let defaultFileWatcherTuning = {
 
 /// Keeps the permanent watcher on ARC structure. Chokidar often asks before it has stat data, so the path shape
 /// decides first and the stats only separate files from folders where the shape allows both.
-let isStructuralFileWatcherPath (arcPath: string) (candidatePath: string) (stats: Chokidar.IWatchedStats option) =
+let isStructuralWatcherPathOfKind (arcPath: string) (candidatePath: string) (isDirectory: bool option) =
     let absolutePath =
         if Main.Bindings.Path.isAbsolute candidatePath then
             candidatePath
@@ -414,9 +414,11 @@ let isStructuralFileWatcherPath (arcPath: string) (candidatePath: string) (stats
         // Import staging folders and git metadata are checked on the relative path, so a parent folder of the ARC
         // with such a name cannot hide the whole ARC.
         (relativePath = "" || not (isFileWatcherPathIgnored relativePath))
-        && ArcEntityPathRules.isStructuralWatcherPath
-            relativePath
-            (stats |> Option.map (fun value -> value.isDirectory ()))
+        && ArcEntityPathRules.isStructuralWatcherPath relativePath isDirectory
+
+/// The watcher's own decision, where chokidar's stats (when present) tell files from folders.
+let isStructuralFileWatcherPath (arcPath: string) (candidatePath: string) (stats: Chokidar.IWatchedStats option) =
+    isStructuralWatcherPathOfKind arcPath candidatePath (stats |> Option.map (fun value -> value.isDirectory ()))
 
 let createWatchOptions (path: string) (usePolling: bool) (tuning: FileWatcherTuning) =
     let ignored =

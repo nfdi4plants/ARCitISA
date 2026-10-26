@@ -140,7 +140,7 @@ type ArcVault with
                     join [| arcPath; relativeDirectory |]
                     |> PathHelpers.normalizePathKeepingWhitespace
 
-                match toTreeRelativePath arcPath absolute with
+                match toTreeRelativePath this.isCaseInsensitive arcPath absolute with
                 | None -> return Error(exn $"The path '{relativeDirectory}' is outside the ARC.")
                 | Some relativePath ->
                     let! outcome =
@@ -148,7 +148,8 @@ type ArcVault with
                             let! changed = reconcileFileTreeDirectoryAsync arcPath tree absolute
 
                             match tree.Children absolute with
-                            | Some children -> return changed, Ok(toRendererEntries arcPath children)
+                            | Some children ->
+                                return changed, Ok(toRendererEntries tree.CaseInsensitive arcPath children)
                             | None -> return changed, Error(exn $"The directory '{relativePath}' does not exist.")
                         })
 
@@ -177,7 +178,7 @@ type ArcVault with
                 join [| arcPath; relativePath |] |> PathHelpers.normalizePathKeepingWhitespace
 
             match
-                toTreeRelativePath arcPath absolute
+                toTreeRelativePath this.isCaseInsensitive arcPath absolute
                 |> Option.filter (fun relative -> relative <> "")
             with
             | None -> return Error(exn $"The path '{relativePath}' is outside the ARC.")
@@ -219,7 +220,7 @@ type ArcVault with
                     let! stats = statAsync absolutePath
 
                     match
-                        toTreeRelativePath root absolutePath
+                        toTreeRelativePath this.isCaseInsensitive root absolutePath
                         |> Option.filter (fun relative -> relative <> "")
                     with
                     | Some relativePath when stats.isFile () ->
@@ -248,9 +249,11 @@ type ArcVault with
             // Read inside the writer queue, so a job that is still running is never seen half done.
             let! outcome =
                 this.FileTreeWriter.EnqueueWithResult(fun tree -> promise {
-                    let entries = toRendererEntries arcPath tree.Entries
+                    let entries = toRendererEntries tree.CaseInsensitive arcPath tree.Entries
 
-                    let loaded = tree.LoadedDirectories |> Array.choose (toTreeRelativePath arcPath)
+                    let loaded =
+                        tree.LoadedDirectories
+                        |> Array.choose (toTreeRelativePath tree.CaseInsensitive arcPath)
 
                     return [||], (entries, loaded)
                 })

@@ -609,9 +609,7 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
                                                 importedEvents
                                                 |> Array.iter (fun event ->
                                                     vault.importedFileWatcherPaths.Add(
-                                                        PathHelpers.normalizePath (
-                                                            event.AbsolutePath.ToLowerInvariant()
-                                                        )
+                                                        WatcherHelpers.importedFileWatcherPathKey event
                                                     )
                                                     |> ignore
                                                 )
@@ -620,9 +618,7 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
                                                     importedEvents
                                                     |> Array.iter (fun event ->
                                                         vault.importedFileWatcherPaths.Remove(
-                                                            PathHelpers.normalizePath (
-                                                                event.AbsolutePath.ToLowerInvariant()
-                                                            )
+                                                            WatcherHelpers.importedFileWatcherPathKey event
                                                         )
                                                         |> ignore
                                                     )
@@ -662,7 +658,12 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
                                                     |> Promise.catch Error
 
                                                 match result with
-                                                | Ok ImportExternalFilesResult.Completed -> ()
+                                                | Ok ImportExternalFilesResult.Completed ->
+                                                    WatcherHelpers.releaseUnwatchedImportedPaths
+                                                        vault.path.Value
+                                                        (vault.fileWatcherState = FileWatcherState.Running)
+                                                        vault.importedFileWatcherPaths
+                                                        importedEvents
                                                 | _ -> releaseImportEventOwnership ()
 
                                                 // Partly copied files count too, so the tree is reconciled for every outcome.

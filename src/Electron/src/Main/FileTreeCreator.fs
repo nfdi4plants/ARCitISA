@@ -87,15 +87,22 @@ let detectCaseInsensitiveAsync (arcRoot: string) : JS.Promise<bool> =
 
 /// The ARC-relative path of an absolute path inside the root, "" for the root itself, and None for a path outside
 /// the root or one with traversal segments. A name that ends in whitespace keeps it, unlike in the helpers that trim.
-let toTreeRelativePath (repoRoot: string) (absolutePath: string) : string option =
+/// The root is compared without case only on a case-insensitive volume.
+let toTreeRelativePath (caseInsensitive: bool) (repoRoot: string) (absolutePath: string) : string option =
     let root = PathHelpers.normalizePathKeepingWhitespace repoRoot
     let path = PathHelpers.normalizePathKeepingWhitespace absolutePath
 
+    let comparison =
+        if caseInsensitive then
+            StringComparison.OrdinalIgnoreCase
+        else
+            StringComparison.Ordinal
+
     if String.IsNullOrEmpty root || String.IsNullOrEmpty path then
         None
-    elif String.Equals(path, root, StringComparison.OrdinalIgnoreCase) then
+    elif String.Equals(path, root, comparison) then
         Some ""
-    elif path.StartsWith(root + "/", StringComparison.OrdinalIgnoreCase) then
+    elif path.StartsWith(root + "/", comparison) then
         let relative = path.Substring(root.Length + 1)
 
         if
@@ -110,10 +117,10 @@ let toTreeRelativePath (repoRoot: string) (absolutePath: string) : string option
 
 /// Converts tree entries to the entries the renderer sees. Paths become ARC-relative and the root is "".
 /// Entries outside the ARC root are dropped.
-let toRendererEntries (repoRoot: string) (entries: seq<FileEntry>) : FileEntry[] =
+let toRendererEntries (caseInsensitive: bool) (repoRoot: string) (entries: seq<FileEntry>) : FileEntry[] =
     entries
     |> Seq.choose (fun entry ->
-        toTreeRelativePath repoRoot entry.path
+        toTreeRelativePath caseInsensitive repoRoot entry.path
         |> Option.map (fun relativePath -> { entry with path = relativePath })
     )
     |> Seq.toArray

@@ -364,9 +364,7 @@ type ArcVault with
             WatcherHelpers.queueFileWatcherEvent
                 (fun event ->
                     let isImportedPath =
-                        this.importedFileWatcherPaths.Remove(
-                            PathHelpers.normalizePath (event.AbsolutePath.ToLowerInvariant())
-                        )
+                        this.importedFileWatcherPaths.Remove(WatcherHelpers.importedFileWatcherPathKey event)
 
                     not isImportedPath
                     && (this.activeFileImport.IsSome || this.IsFileWatcherArcMergeEligible)
@@ -564,6 +562,8 @@ type ArcVault with
             swatelogfn this.window.id "Structural file watcher error: %s" error.Message
             this.FileWatcherToken <- token + 1
             this.CancelFileWatcherRestart()
+            // The restarted watcher skips files that already exist, so these keys could only swallow a later change.
+            this.importedFileWatcherPaths.Clear()
             let failedWatcher = this.watcher
             this.watcher <- None
             this.fileWatcherState <- FileWatcherState.Degraded error.Message
@@ -629,25 +629,26 @@ type ArcVault with
                                 this.FileWatcherRestartAttempt <- attempt
                                 this.ScheduleFileWatcherRestart error
                             else
-                                promise {
-                                    if this.watcher.IsNone && this.path.IsSome && not (this.window.isDestroyed ()) then
-                                        match! this.StartFileWatcherAsync() with
-                                        | FileWatcherStartOutcome.Ready -> do! this.EnqueueWatcherResync()
-                                        | FileWatcherStartOutcome.TimedOut -> this.ScheduleFileWatcherRestart None
-                                        | FileWatcherStartOutcome.Failed startError ->
-                                            this.ScheduleFileWatcherRestart(Some startError)
-                                        | FileWatcherStartOutcome.Stopped -> ()
-                                }
-                                |> Promise.catch (fun restartError ->
-                                    swatelogfn
-                                        this.window.id
-                                        "Unable to restart the structural file watcher: %s"
-                                        restartError.Message
-                                )
-                                |> Promise.start
+                                this.RunFileWatcherRestart()
                         )
                         steps.[min attempt (steps.Length - 1)]
                 )
+
+    /// One restart attempt: starts the watcher, resyncs on Ready and schedules the next attempt on a timeout or failure.
+    /// The backoff timer and a root rename that took over a pending restart both run it.
+    member internal this.RunFileWatcherRestart() : unit =
+        promise {
+            if this.watcher.IsNone && this.path.IsSome && not (this.window.isDestroyed ()) then
+                match! this.StartFileWatcherAsync() with
+                | FileWatcherStartOutcome.Ready -> do! this.EnqueueWatcherResync()
+                | FileWatcherStartOutcome.TimedOut -> this.ScheduleFileWatcherRestart None
+                | FileWatcherStartOutcome.Failed startError -> this.ScheduleFileWatcherRestart(Some startError)
+                | FileWatcherStartOutcome.Stopped -> ()
+        }
+        |> Promise.catch (fun restartError ->
+            swatelogfn this.window.id "Unable to restart the structural file watcher: %s" restartError.Message
+        )
+        |> Promise.start
 
     /// Catches up on changes that the watcher missed while it was down. The entity files are merged again
     /// and the loaded directories of the file tree are revalidated.

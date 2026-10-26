@@ -69,6 +69,26 @@ let createImportedFileWatcherEvents arcPath targetRelativePath sourceAbsolutePat
         buildWatcherEvent arcPath (Chokidar.Events.Add.ToString()) relativePath
     )
 
+/// The key under which an imported event is remembered, so the delayed watcher event can be matched and ignored.
+let importedFileWatcherPathKey (event: ArcVaultFileSystemEvent) =
+    PathHelpers.normalizePath (event.AbsolutePath.ToLowerInvariant())
+
+/// Forgets the imported paths that no delayed watcher event will consume. That is every path when the watcher is not
+/// running (ignoreInitial skips files that already exist) and the paths the structural watcher never reports. Imports
+/// are always files, so the shape check gets a file.
+let releaseUnwatchedImportedPaths
+    (arcPath: string)
+    (isWatcherRunning: bool)
+    (importedPaths: HashSet<string>)
+    (events: ArcVaultFileSystemEvent[])
+    =
+    for event in events do
+        if
+            not isWatcherRunning
+            || not (ArcVaultHelper.isStructuralWatcherPathOfKind arcPath event.AbsolutePath (Some false))
+        then
+            importedPaths.Remove(importedFileWatcherPathKey event) |> ignore
+
 /// An admitted unlink for a recreated file becomes a change. An add or change for a file that is
 /// missing at merge time is dropped, because the file is either mid-replacement (an add follows)
 /// or deleted (a real unlink follows), and converting it would remove an entity together with

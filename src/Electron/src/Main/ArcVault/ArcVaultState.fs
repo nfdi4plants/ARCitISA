@@ -117,11 +117,14 @@ type ArcVault(window: BrowserWindow) =
                     let directories =
                         change.ChangedDirectories
                         |> Array.choose (fun directory ->
-                            match toTreeRelativePath root directory, change.Tree.Children directory with
+                            match
+                                toTreeRelativePath change.Tree.CaseInsensitive root directory,
+                                change.Tree.Children directory
+                            with
                             | Some relativeDirectory, Some children ->
                                 let entry: FileTreeDirectoryChildrenDto = {|
                                     directoryPath = relativeDirectory
-                                    children = toRendererEntries root children
+                                    children = toRendererEntries change.Tree.CaseInsensitive root children
                                 |}
 
                                 Some entry
