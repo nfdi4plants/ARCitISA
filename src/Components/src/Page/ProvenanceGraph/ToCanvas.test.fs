@@ -882,6 +882,69 @@ Vitest.describe (
 )
 
 Vitest.describe (
+    "ProvenanceView.imageFileName",
+    fun () ->
+        let nameOf (view: ProvenanceView) =
+            ProvenanceView.imageFileName (ProvenanceView.crumbs Sample.index view)
+
+        let withLabels (labels: string list) : Crumb[] = [|
+            for label in "Datasets" :: labels ->
+                {
+                    Label = label
+                    Target = ProvenanceView.Datasets
+                }
+        |]
+
+        Vitest.test (
+            "names the datasets level after the datasets",
+            fun () -> Vitest.expect(nameOf ProvenanceView.Datasets).toBe "provenance-datasets.png"
+        )
+
+        Vitest.test (
+            "joins the labels after the root and replaces spaces, slashes and colons",
+            fun () ->
+                let name = nameOf (ProvenanceView.Groups("assays/A/", "assays/A/::p 1"))
+
+                Vitest.expect(name).toBe "provenance-assays_A_-assays_A_p_1.png"
+                Vitest.expect(System.Text.RegularExpressions.Regex.IsMatch(name, "^[A-Za-z0-9._-]+$")).toBe true
+        )
+
+        Vitest.test (
+            "cuts the labels to 100 characters",
+            fun () ->
+                let name = ProvenanceView.imageFileName (withLabels [ String.replicate 150 "a" ])
+
+                Vitest.expect(name).toBe ("provenance-" + String.replicate 100 "a" + ".png")
+        )
+
+        Vitest.test (
+            "trims separators again when the cut ends in one",
+            fun () ->
+                // The 100th character of the sanitized labels is an underscore.
+                let name =
+                    ProvenanceView.imageFileName (withLabels [ String.replicate 99 "a" + "/bbb" ])
+
+                Vitest.expect(name).toBe ("provenance-" + String.replicate 99 "a" + ".png")
+        )
+
+        Vitest.test (
+            "trims separators at the ends and falls back to the datasets when nothing is left",
+            fun () ->
+                Vitest.expect(ProvenanceView.imageFileName (withLabels [ "-x-"; "?" ])).toBe "provenance-x.png"
+                Vitest.expect(ProvenanceView.imageFileName (withLabels [ "///"; ":" ])).toBe "provenance-datasets.png"
+        )
+
+        Vitest.test (
+            "names a deep view after its level when no label has a Latin letter",
+            fun () ->
+                let view = ProvenanceView.Detail("日本語", "データ", "グループ")
+
+                Vitest.expect(nameOf view).toBe $"provenance-{ProvenanceView.kindText view}.png"
+                Vitest.expect(nameOf view <> "provenance-datasets.png").toBe true
+        )
+)
+
+Vitest.describe (
     "ProvenanceView.resetKey",
     fun () ->
         Vitest.test (

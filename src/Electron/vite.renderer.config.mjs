@@ -7,6 +7,11 @@ export default defineConfig({
     plugins: [
         react({
             include: /\.(js|jsx|ts|tsx)$/,
+            // Modules that run in a Web Worker stay out of Fast Refresh, because its runtime needs window. Fable
+            // emits them as .jsx files, so plugin-react would wrap them. The pattern lists the module graph of
+            // ElkWorker.fs, the only worker file of the renderer. Extend it when a worker imports a new module
+            // that defines a capitalized value.
+            exclude: /[\\/](ElkWorker|WebWorker|Elk)\.fs\.jsx$/,
         }),
         tailwindcss()
     ],

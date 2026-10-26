@@ -29,10 +29,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - "Import files" and "Import folders" do not open the picker while ARCitISA is saving or importing. #1429 (by @Etschbeijer)
 - While files or folders are imported, the notice shows the current step and how many items are done. The taskbar progress now covers the whole import, including adding the items to the ARC. #1429 (by @Etschbeijer)
 - Creating and renaming items says why a name can't be used, for example for a "dataset" folder inside an assay or an ARC metadata file name. #1429 (by @Etschbeijer)
+- Switching views in the provenance graph keeps the previous graph on screen until the new one is ready, so the view no longer flashes. (by @caroott)
+- The provenance graph lays out large graphs in the background, so the app stays responsive in the meantime. (by @caroott)
 
 ### 🐛 Fixed
 
 - Lock files of open Office documents, such as "~$Book1.xlsx", no longer appear in the file tree. #1429 (by @Etschbeijer)
+- The provenance graph has an up button that takes you one level back and names that level. (by @caroott)
+- An overview above the provenance graph shows where you are in the ARC and lets you jump to a neighboring dataset, process, group or node. (by @caroott)
+- A minimap in the corner of the provenance graph shows the whole graph and the visible part, and a click or drag on it moves the view. (by @caroott)
+- The whole provenance graph can be saved as a PNG image or copied to paste into Slack or Teams. (by @caroott)
 
 ## 3.1.0 - 2026-10-21
 
