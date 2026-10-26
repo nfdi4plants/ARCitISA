@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### ✨ Added
 
 - "Refresh folder" in the file tree's right-click menu reads a folder from disk again. (by @caroott)
+- The provenance graph has an up button that takes you one level back and names that level. (by @caroott)
+- An overview above the provenance graph shows where you are in the ARC and lets you jump to a neighboring dataset, process, group or node. (by @caroott)
+- A minimap in the corner of the provenance graph shows the whole graph and the visible part, and a click or drag on it moves the view. (by @caroott)
+- The whole provenance graph can be saved as a PNG image or copied to paste into Slack or Teams. (by @caroott)
 
 ### 🔄 Changed
 
@@ -36,10 +40,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - ARCitISA no longer keeps several CPU cores busy while a large ARC is open, because it watches only the ARC structure. #1340 (by @caroott, @Etschbeijer)
 - The file tree stays responsive in folders with thousands of files. #1340 (by @caroott, @Etschbeijer)
 - Renaming the ARC folder on Windows retries for longer and reports the reason when it fails. (by @caroott)
-- The provenance graph has an up button that takes you one level back and names that level. (by @caroott)
-- An overview above the provenance graph shows where you are in the ARC and lets you jump to a neighboring dataset, process, group or node. (by @caroott)
-- A minimap in the corner of the provenance graph shows the whole graph and the visible part, and a click or drag on it moves the view. (by @caroott)
-- The whole provenance graph can be saved as a PNG image or copied to paste into Slack or Teams. (by @caroott)
 
 ## 3.1.0 - 2026-10-21
 
