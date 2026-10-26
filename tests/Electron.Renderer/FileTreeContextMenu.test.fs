@@ -618,26 +618,7 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "an import staging folder offers no new items and no imports",
-            fun () ->
-                let path = $"data/.swate-import-{String.replicate 32 (string 'a')}"
-                let item = createFolderItem (PathHelpers.getNameFromPath path) (Some path)
-
-                let menuItemLabels =
-                    createComposedContextMenuItems (createContextMenuConfig ()) item
-                    |> groupedLabels
-
-                [
-                    "New File"
-                    "New Folder"
-                    "Import files"
-                    "Import folders"
-                ]
-                |> List.iter (fun label -> Vitest.expect(menuItemLabels).not.toContain (label))
-        )
-
-        Vitest.test (
-            "items inside an import staging folder offer no new items, imports or rename",
+            "an import staging folder and the items inside it offer new items and rename",
             fun () ->
                 let stagingFolder = $"data/.swate-import-{String.replicate 32 (string 'b')}"
 
@@ -645,28 +626,25 @@ Vitest.describe (
                     createComposedContextMenuItems (createContextMenuConfig ()) item
                     |> groupedLabels
 
-                let nestedFolder = createFolderItem "inner" (Some $"{stagingFolder}/inner")
-
-                [
-                    "New File"
-                    "New Folder"
-                    "Import files"
-                    "Import folders"
-                    "Rename"
-                ]
-                |> List.iter (fun label -> Vitest.expect(labelsFor nestedFolder).not.toContain (label))
-
                 let stagingItem =
                     createFolderItem (PathHelpers.getNameFromPath stagingFolder) (Some stagingFolder)
 
+                let nestedFolder = createFolderItem "inner" (Some $"{stagingFolder}/inner")
+
+                [ "New File"; "New Folder" ]
+                |> List.iter (fun label ->
+                    Vitest.expect(labelsFor stagingItem).toContain (label)
+                    Vitest.expect(labelsFor nestedFolder).toContain (label)
+                )
+
                 Vitest.expect(labelsFor stagingItem).toContain ("Rename")
                 Vitest.expect(labelsFor stagingItem).toContain ("Delete")
+                Vitest.expect(labelsFor nestedFolder).toContain ("Rename")
         )
 
         Vitest.test (
-            "an existing folder with the legacy DataMap name can still be renamed, deleted and filled",
+            "an existing folder with the legacy DataMap name can be renamed, deleted and filled",
             fun () ->
-                // New items may not get the name `isa_datamap`, but older ARCs must not get stuck with one.
                 let item = createFolderItem "isa_datamap" (Some "backup/isa_datamap")
 
                 let labels = [|

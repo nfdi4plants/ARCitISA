@@ -33,30 +33,6 @@ let private refreshVaultFileTree (vault: ArcVault) = promise {
     | None -> ()
 }
 
-/// The watcher ignores import staging folders, so deleting or renaming one would leave its tree entry behind.
-/// This applies the change to the tree directly. `newRelativePath` is the rename target, if any.
-let private applyStagingFolderTreeChange (vault: ArcVault) (oldRelativePath: string) (newRelativePath: string option) = promise {
-    let isStagingChange =
-        isTemporaryImportPath oldRelativePath
-        || newRelativePath |> Option.exists isTemporaryImportPath
-
-    match vault.path with
-    | Some arcPath when isStagingChange ->
-        let buildEvent (eventName: Chokidar.Events) (relativePath: string) =
-            WatcherHelpers.buildWatcherEvent
-                arcPath
-                (eventName.ToString())
-                (Main.Bindings.Path.join [| arcPath; relativePath |])
-
-        let addedEvents =
-            match newRelativePath with
-            | Some newPath when not (isTemporaryImportPath newPath) -> [ buildEvent Chokidar.Events.AddDir newPath ]
-            | _ -> []
-
-        do! vault.ApplyWatcherFileTreeEvents(buildEvent Chokidar.Events.UnlinkDir oldRelativePath :: addedEvents)
-    | _ -> ()
-}
-
 let private withLoadedArcVault<'T>
     (event: IpcMainInvokeEvent)
     (operation: ArcVault -> JS.Promise<Result<'T, exn>>)
@@ -663,6 +639,27 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
                                                 try
                                                     let! result =
                                                         ArcFileSystemHelper.importExternalFilesOnDisk
+                                                            (fun stagingDirectory ->
+                                                                vault.RegisterImportStagingDirectory
+                                                                    stagingDirectory
+
+                                                                (fun stillExists ->
+                                                                    vault.ReleaseImportStagingDirectory
+                                                                        stagingDirectory
+
+                                                                    // A folder that could not be removed stays on disk, so the tree lists it.
+                                                                    if stillExists then
+                                                                        vault.WatchLeftoverStagingFolder
+                                                                            stagingDirectory
+                                                                        |> Promise.catch (fun error ->
+                                                                            swatelogfn
+                                                                                vault.window.id
+                                                                                "Unable to list the leftover import staging folder: %s"
+                                                                                error.Message
+                                                                        )
+                                                                        |> ignore
+                                                                )
+                                                            )
                                                             vault.path.Value
                                                             request.targetRelativePath
                                                             sourceAbsolutePaths
@@ -704,7 +701,7 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
                                                     | Ok ImportExternalFilesResult.Completed, Some plannedPaths ->
                                                         try
                                                             let folderPaths, filePaths =
-                                                                WatcherHelpers.importedAbsolutePaths
+                                                                WatcherHelpers.importedFileTreePaths
                                                                     vault.path.Value
                                                                     request.targetRelativePath
                                                                     plannedPaths
@@ -935,13 +932,7 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
 
                             match! ArcFileSystemHelper.resolveDeletePathRouteAsync arcPath relativePath with
                             | ArcFileSystemHelper.DeletePathRoute.GenericItem _ ->
-                                let! deleteResult =
-                                    ArcFileSystemHelper.deleteGenericFileSystemItemOnDisk arcPath relativePath
-
-                                if deleteResult.IsOk then
-                                    do! applyStagingFolderTreeChange vault relativePath None
-
-                                return deleteResult
+                                return! ArcFileSystemHelper.deleteGenericFileSystemItemOnDisk arcPath relativePath
                             | ArcFileSystemHelper.DeletePathRoute.ArcEntity normalizedRelativePath ->
                                 match vault.arc with
                                 | None -> return Error(arcNotOpenError ())
@@ -1008,18 +999,7 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
                                 ArcFileSystemHelper.isGenericRenamePathAsync arcPath request.relativePath
 
                             if isGenericRename then
-                                let! renameResult =
-                                    ArcFileSystemHelper.renameGenericFileSystemItemOnDisk arcPath request
-
-                                if renameResult.IsOk then
-                                    let newRelativePath =
-                                        Swate.Electron.Shared.RenamePathRules.buildRenamedSiblingPath
-                                            request.relativePath
-                                            request.newName
-
-                                    do! applyStagingFolderTreeChange vault request.relativePath (Some newRelativePath)
-
-                                return renameResult
+                                return! ArcFileSystemHelper.renameGenericFileSystemItemOnDisk arcPath request
                             else
                                 match vault.arc with
                                 | None -> return Error(arcNotOpenError ())

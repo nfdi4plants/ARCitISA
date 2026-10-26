@@ -62,9 +62,6 @@ let readFileAsync (path: string) (encoding: TextEncoding) : JS.Promise<string> =
 [<Import("readFile", "fs/promises")>]
 let readFileBufferAsync (path: string) : JS.Promise<obj> = jsNative
 
-[<Import("readFile", "fs/promises")>]
-let readFileBytesAsync (path: string) : JS.Promise<byte[]> = jsNative
-
 [<Emit("$0.toString('base64')")>]
 let bufferToBase64 (buffer: obj) : string = jsNative
 

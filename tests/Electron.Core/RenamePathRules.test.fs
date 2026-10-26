@@ -199,32 +199,7 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "the legacy DataMap name cannot be created or used as a rename target",
-            fun () ->
-                // Loading an ARC renames any `isa_datamap` to `isa.datamap.xlsx`.
-                [
-                    ""
-                    "assays/AssayA"
-                    "assays/AssayA/dataset"
-                    "backup/assays/AssayA"
-                ]
-                |> List.iter (fun parentPath ->
-                    [ "isa_datamap"; "ISA_DATAMAP" ]
-                    |> List.iter (fun name ->
-                        [ true; false ]
-                        |> List.iter (fun isFile ->
-                            tryBuildGenericFileSystemChildPath isFile parentPath name
-                            |> expectErrorContaining legacyDataMapNameError
-                        )
-                    )
-                )
-
-                tryBuildGenericFileSystemRenameTargetPath true false "assays/AssayA/dataset/map.xlsx" "isa_datamap"
-                |> expectErrorContaining legacyDataMapNameError
-        )
-
-        Vitest.test (
-            "existing items with the legacy DataMap name can still be renamed, moved, deleted and used as parents",
+            "existing items with the legacy DataMap name can be renamed, moved, deleted and used as parents",
             fun () ->
                 let existingFolder = "backup/isa_datamap"
 
@@ -312,66 +287,44 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "names the file tree hides are rejected for new files and renamed files",
+            "names the file tree hides and import staging names are accepted for new items and renames",
             fun () ->
-                let lockMessage = "lock file of a document that is open in Office or LibreOffice"
-                let lfsMessage = "Git LFS backups"
                 let stagingName = $".swate-import-{hex32 'a'}"
+                let stagingFolder = $"data/{stagingName}"
 
-                [
-                    "~$draft.md", lockMessage
-                    ".~lock.a.xlsx#", lockMessage
-                    $"data.bin.vcs-lfs-backup-{hex32 'b'}", lfsMessage
+                let acceptedNames = [
+                    "~$notes.md"
+                    "isa_datamap"
+                    stagingName
+                    $"data.bin.vcs-lfs-backup-{hex32 'a'}"
                 ]
-                |> List.iter (fun (name, expectedMessagePart) ->
-                    tryBuildGenericFileSystemChildPath true "data" name
-                    |> expectErrorContaining expectedMessagePart
-                )
 
-                tryBuildGenericFileSystemRenameTargetPath true false "data/report.xlsx" "~$report.xlsx"
-                |> expectErrorContaining lockMessage
+                for name in acceptedNames do
+                    for isFile in [ true; false ] do
+                        match tryBuildGenericFileSystemChildPath isFile "data" name with
+                        | Ok targetPath -> Vitest.expect(targetPath).toBe ($"data/{name}")
+                        | Error errorMessage -> failwith errorMessage
 
-                // Folders named like lock files stay visible in the tree, so only the staging name is rejected for folders.
-                match tryBuildGenericFileSystemChildPath false "data" "~$archive.old" with
-                | Ok targetPath -> Vitest.expect(targetPath).toBe ("data/~$archive.old")
-                | Error errorMessage -> failwith errorMessage
+                for name in acceptedNames do
+                    match tryBuildGenericFileSystemRenameTargetPath true false "data/old.txt" name with
+                    | Ok targetPath -> Vitest.expect(targetPath).toBe ($"data/{name}")
+                    | Error errorMessage -> failwith errorMessage
 
-                match tryBuildGenericFileSystemRenameTargetPath false false "data/archive" "~$archive.old" with
-                | Ok targetPath -> Vitest.expect(targetPath).toBe ("data/~$archive.old")
-                | Error errorMessage -> failwith errorMessage
-
-                tryBuildGenericFileSystemChildPath false "data" stagingName
-                |> expectErrorContaining "import staging folders"
-
-                tryBuildGenericFileSystemRenameTargetPath false false "data/archive" stagingName
-                |> expectErrorContaining "import staging folders"
-        )
-
-        Vitest.test (
-            "files with an import staging name are rejected when created or renamed to",
-            fun () ->
-                let stagingName = $".swate-import-{hex32 'd'}"
-
-                tryBuildGenericFileSystemChildPath true "data" stagingName
-                |> expectErrorContaining "so the file would not show changes"
-
-                tryBuildGenericFileSystemRenameTargetPath true false "data/report.xlsx" stagingName
-                |> expectErrorContaining "so the file would not show changes"
-        )
-
-        Vitest.test (
-            "items inside an import staging folder cannot be renamed, the staging folder itself can",
-            fun () ->
-                let stagingFolder = $"data/.swate-import-{hex32 'e'}"
+                    match tryBuildGenericFileSystemRenameTargetPath false false "data/oldFolder" name with
+                    | Ok targetPath -> Vitest.expect(targetPath).toBe ($"data/{name}")
+                    | Error errorMessage -> failwith errorMessage
 
                 [ true; false ]
                 |> List.iter (fun isFile ->
-                    tryBuildGenericFileSystemRenameTargetPath isFile false $"{stagingFolder}/item" "renamed"
-                    |> expectErrorContaining "the renamed item would not show up"
+                    match tryBuildGenericFileSystemChildPath isFile stagingFolder "inner" with
+                    | Ok targetPath -> Vitest.expect(targetPath).toBe ($"{stagingFolder}/inner")
+                    | Error errorMessage -> failwith errorMessage
                 )
 
-                match tryBuildGenericFileSystemRenameTargetPath false false stagingFolder "restored" with
-                | Ok targetPath -> Vitest.expect(targetPath).toBe ("data/restored")
+                match
+                    tryBuildGenericFileSystemRenameTargetPath true false $"{stagingFolder}/item.txt" "renamed.txt"
+                with
+                | Ok targetPath -> Vitest.expect(targetPath).toBe ($"{stagingFolder}/renamed.txt")
                 | Error errorMessage -> failwith errorMessage
         )
 
@@ -386,21 +339,6 @@ Vitest.describe (
 
                 tryBuildGenericFileSystemRenameTargetPath false false "data/old" ".git"
                 |> expectErrorContaining gitFolderMessage
-        )
-
-        Vitest.test (
-            "nothing can be created inside an import staging folder",
-            fun () ->
-                let stagingFolder = $"data/.swate-import-{hex32 'c'}"
-
-                [ true; false ]
-                |> List.iter (fun isFile ->
-                    tryBuildGenericFileSystemChildPath isFile stagingFolder "notes.txt"
-                    |> expectErrorContaining "does not watch import staging folders"
-
-                    tryBuildGenericFileSystemChildPath isFile $"{stagingFolder}/inner" "notes.txt"
-                    |> expectErrorContaining "does not watch import staging folders"
-                )
         )
 
         Vitest.test (

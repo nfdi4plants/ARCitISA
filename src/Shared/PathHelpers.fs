@@ -274,8 +274,7 @@ module ArcEntityPathRules =
         else
             None
 
-    /// True for the file names ARCtrl reads as ARC metadata, such as `isa.assay.xlsx`, wherever they are.
-    let isCanonicalArcFileName (fileName: string) =
+    let private isCanonicalArcFileName (fileName: string) =
         PathHelpers.pathsEqual fileName ARCtrl.ArcPathHelper.InvestigationFileName
         || PathHelpers.pathsEqual fileName ARCtrl.ArcPathHelper.StudyFileName
         || PathHelpers.pathsEqual fileName ARCtrl.ArcPathHelper.AssayFileName
@@ -286,19 +285,7 @@ module ArcEntityPathRules =
     /// The outdated DataMap file name. Loading an ARC renames such a file to `isa.datamap.xlsx`.
     let legacyDataMapFileName = "isa_datamap"
 
-    let isLegacyDataMapFileName (fileName: string) =
-        PathHelpers.pathsEqual fileName legacyDataMapFileName
-
-    /// Rename and delete refuse items with these names, files and folders alike.
-    let isProtectedName (name: string) =
-        PathHelpers.pathMatchesAny protectedDeleteTargetNames name
-
-    let isArcManagedGitFileName (fileName: string) =
-        PathHelpers.pathMatchesAny protectedDeleteTargetNames fileName
-        && not (PathHelpers.pathMatchesAny creatableProtectedFileNames fileName)
-
-    /// True for a single path segment, such as `.git`, that no generic file or folder path may contain.
-    let isDisallowedGenericPathSegment (segment: string) =
+    let private isDisallowedGenericPathSegment (segment: string) =
         PathHelpers.pathMatchesAny disallowedGenericPathSegments segment
 
     /// Parses canonical ARC file targets from the tail of a path and supports absolute paths.

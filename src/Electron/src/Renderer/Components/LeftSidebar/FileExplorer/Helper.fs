@@ -147,9 +147,8 @@ let canCreateFileSystemItemIn (kind: FileSystemItemKind) (item: FileItem) =
     && (item.Path
         |> Option.map PathHelpers.normalizeCanonicalRelativePath
         |> Option.exists (fun path ->
-            not (isTemporaryImportPath path)
-            && (String.IsNullOrWhiteSpace path
-                || ArcEntityPathRules.isGenericFileSystemCreateParentAllowed (kind = FileSystemItemKind.File) path)
+            String.IsNullOrWhiteSpace path
+            || ArcEntityPathRules.isGenericFileSystemCreateParentAllowed (kind = FileSystemItemKind.File) path
         ))
 
 let canDeleteFileItem (item: FileItem) =
@@ -160,14 +159,7 @@ let canDeleteFileItem (item: FileItem) =
 let canRenameFileItem (item: FileItem) =
     item.Path
     |> Option.map PathHelpers.normalizeCanonicalRelativePath
-    |> Option.exists (fun path ->
-        // The watcher ignores staging folders, so a rename inside one would not show up. The staging folder itself can be renamed.
-        let isInsideStagingFolder =
-            PathHelpers.tryGetParentPath path |> Option.exists isTemporaryImportPath
-
-        not isInsideStagingFolder
-        && ArcEntityPathRules.isItemRenamePathAllowed (not item.IsDirectory) path
-    )
+    |> Option.exists (ArcEntityPathRules.isItemRenamePathAllowed (not item.IsDirectory))
 
 let tryGetArcEntityWorkbookName (folderPath: string) =
     ArcEntityPathRules.tryGetRenameEntityFolderTarget (PathHelpers.normalizePath folderPath)

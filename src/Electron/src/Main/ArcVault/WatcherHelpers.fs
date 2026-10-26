@@ -72,11 +72,36 @@ let importedAbsolutePaths arcPath targetRelativePath (plannedPaths: PlannedImpor
 
     toAbsolutePaths plannedPaths.FolderPaths, toAbsolutePaths plannedPaths.FilePaths
 
+/// Builds the absolute folder and file paths that the file tree lists after an import. The result matches what
+/// `FileTreeCreator.getFileEntries` lists after a reload. It drops `.git` folders with everything inside them
+/// and the files the file tree hides, such as lock files and LFS backups. A file named `.git` stays, because
+/// git submodules and worktrees have one and the file tree lists it.
+let importedFileTreePaths arcPath targetRelativePath (plannedPaths: PlannedImportPaths) : string[] * string[] =
+    let segmentsOf (plannedPath: string) =
+        (PathHelpers.normalizePath plannedPath).Split '/'
+
+    let isHidden (isDirectory: bool) (plannedPath: string) =
+        let segments = segmentsOf plannedPath
+
+        let isInsideHiddenFolder =
+            [| 1 .. segments.Length - 1 |]
+            |> Array.exists (fun length ->
+                isHiddenFileTreeEntry true (String.Join("/", Array.truncate length segments))
+            )
+
+        isInsideHiddenFolder || isHiddenFileTreeEntry isDirectory plannedPath
+
+    let visiblePlannedPaths = {
+        FolderPaths = plannedPaths.FolderPaths |> Array.filter (isHidden true >> not)
+        FilePaths = plannedPaths.FilePaths |> Array.filter (isHidden false >> not)
+    }
+
+    importedAbsolutePaths arcPath targetRelativePath visiblePlannedPaths
+
 /// Builds the watcher events of an import's planned folders and files. The polling watcher reports
 /// each new folder as addDir, and an unclaimed addDir would start a second ARC merge after the import.
-/// It builds no claim for planned paths the watcher ignores. Those are files named like a lock file or an
-/// LFS backup, and anything below git metadata or a staging folder. A folder named like a lock file gets
-/// a claim, because the watcher reports it.
+/// It builds no claim for planned paths that `ArcVaultHelper.isFileWatcherPathIgnoredFor` ignores, because
+/// the watcher never reports them. A folder gets a claim even when a file with its name would not.
 let createImportedWatcherEvents arcPath targetRelativePath (plannedPaths: PlannedImportPaths) =
     let folderPaths, filePaths =
         importedAbsolutePaths arcPath targetRelativePath plannedPaths

@@ -208,16 +208,13 @@ let getFileEntries (path: string) (openSession: bool) : Fable.Core.JS.Promise<Fi
                 let name = dirent.name
                 let isDir = dirent.isDirectory ()
 
-                if isDir then
-                    if not (isHiddenArcFolderName name) then
-                        let fullPath = join [| currentDir; name |] |> PathHelpers.normalizeSeparators
-                        entries.Add(FileEntry.create (name, fullPath, true, None))
-                        stack.Add(fullPath)
-                else
-                    let fullPath = join [| currentDir; name |] |> PathHelpers.normalizeSeparators
+                let fullPath = join [| currentDir; name |] |> PathHelpers.normalizeSeparators
 
-                    if not (isHiddenArcFilePath fullPath) then
-                        entries.Add(FileEntry.create (name, fullPath, false, None))
+                if not (isHiddenFileTreeEntry isDir fullPath) then
+                    entries.Add(FileEntry.create (name, fullPath, isDir, None))
+
+                    if isDir then
+                        stack.Add(fullPath)
             )
 
         let scannedEntries = entries.ToArray()

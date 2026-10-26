@@ -23,15 +23,28 @@ let isLegacyDataMapPath (path: string) =
         String.Equals(fileName, ArcEntityPathRules.legacyDataMapFileName, StringComparison.OrdinalIgnoreCase)
     )
 
-let isOfficeLockFilePath = RenamePathRules.isOfficeLockFilePath
-let isTemporaryImportPath = RenamePathRules.isTemporaryImportPath
-let isLfsBackupPath = RenamePathRules.isLfsBackupPath
+let isOfficeLockFilePath (path: string) =
+    Text.RegularExpressions.Regex.IsMatch(
+        PathHelpers.normalizeSeparators path,
+        """(^|/)(\.?~\$[^/]*\.[^/]+|\.~lock\.[^/]+#)$"""
+    )
+
+let isLfsBackupPath (path: string) =
+    Text.RegularExpressions.Regex.IsMatch(PathHelpers.normalizeSeparators path, """\.vcs-lfs-backup-[0-9a-fA-F]{32}$""")
 
 let isHiddenArcFilePath (path: string) =
     isOfficeLockFilePath path || isLfsBackupPath path || isLegacyDataMapPath path
 
 let isHiddenArcFolderName (name: string) =
     String.Equals(name, ".git", StringComparison.OrdinalIgnoreCase)
+
+/// Tells whether the file tree hides the entry at `path`. It checks only the last segment. The tree also lists
+/// nothing inside a hidden folder, so callers check the parent folders themselves.
+let isHiddenFileTreeEntry (isDirectory: bool) (path: string) =
+    if isDirectory then
+        isHiddenArcFolderName ((PathHelpers.normalizeSeparators path).TrimEnd('/').Split('/') |> Array.last)
+    else
+        isHiddenArcFilePath path
 
 let isRootFolderPath (rootFolderName: string) (candidateRelativePath: string) =
     match getNonEmptyPathParts candidateRelativePath with

@@ -125,6 +125,10 @@ type ArcVault(window: BrowserWindow) =
     member val internal importedPathOwners: Dictionary<string, int> = Dictionary() with get
     member val internal importedPathLeases: Dictionary<int, ImportedPathLease> = Dictionary() with get
     member val internal nextImportToken: int = 0 with get, set
+    /// Absolute staging folders of the imports that have not finished their cleanup. The watcher ignores them.
+    /// An import releases its folder after the last cleanup attempt. The set lives in memory only and outlives
+    /// watcher restarts, because an import keeps writing while the watcher restarts.
+    member val internal importStagingRoots: HashSet<string> = HashSet<string>() with get
     member val private isBusyWritingValue: bool = false with get, set
     member val private fileWatcherOwnWriteArcMergeSuppressionTimeout: int option = None with get, set
     member val activeFileImport: ActiveFileImport option = None with get, set
@@ -777,7 +781,10 @@ module ArcVaultExtensions =
                 | Some _ -> ()
                 | None ->
                     let usePolling = resolveFileWatcherPolling usePolling
-                    let watcher = createFileWatcher this.path.Value (Some usePolling)
+
+                    let watcher =
+                        createFileWatcher this.IsActiveImportStagingPath this.path.Value (Some usePolling)
+
                     this.watcherUsesPolling <- usePolling
 
                     let sendWatcherMessage = WindowSend.sender<IArcFileWatcherApi> this.window
@@ -791,6 +798,23 @@ module ArcVaultExtensions =
                     this.watcher <- Some watcher
             else
                 swatefailfn this.window.id "No path set for StartFileWatcher."
+
+        member this.RegisterImportStagingDirectory(absolutePath: string) =
+            this.importStagingRoots.Add absolutePath |> ignore
+
+        member this.ReleaseImportStagingDirectory(absolutePath: string) =
+            this.importStagingRoots.Remove absolutePath |> ignore
+
+        /// Chokidar passes absolute paths. A relative path resolves against the ARC path.
+        member this.IsActiveImportStagingPath(path: string) : bool =
+            this.importStagingRoots.Count > 0
+            && (let candidate =
+                    match this.path with
+                    | Some arcPath -> resolve [| arcPath; path |]
+                    | None -> path
+
+                this.importStagingRoots
+                |> Seq.exists (fun root -> PathHelpers.isSameOrDescendantPathForFsComparison candidate root))
 
         member this.ClearPendingFileWatcherState() =
             this.IncrementWatcherEpoch()
@@ -940,6 +964,24 @@ module ArcVaultExtensions =
             | Some watcher when not this.watcherUsesPolling && absoluteFolderPaths.Length > 0 ->
                 watcher.add absoluteFolderPaths
             | _ -> ()
+
+        /// Makes a staging folder that an import could not remove behave like a user folder. The watcher skipped
+        /// the folder while the import had it registered, so this adds it to the watcher in polling and native
+        /// mode and lists it with everything inside it in the file tree.
+        member this.WatchLeftoverStagingFolder(absolutePath: string) = promise {
+            match this.watcher with
+            | Some watcher -> watcher.add [| absolutePath |]
+            | None -> ()
+
+            let! entries = Main.FileTreeCreator.getFileEntries absolutePath false
+
+            let folderPaths = entries |> Array.filter _.isDirectory |> Array.map _.path
+
+            let filePaths =
+                entries |> Array.filter (fun entry -> not entry.isDirectory) |> Array.map _.path
+
+            do! this.AddImportedEntriesToFileTree(folderPaths, filePaths)
+        }
 
         member internal this.RestoreEmptyVaultAfterFailedInitialization() = promise {
             do! this.StopFileWatcher()

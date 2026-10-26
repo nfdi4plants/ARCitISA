@@ -218,13 +218,168 @@ Vitest.describe (
                     }
 
                 let ignored path stats =
-                    Main.ArcVaultHelper.isFileWatcherPathIgnoredByStats path stats
+                    Main.ArcVaultHelper.isFileWatcherPathIgnoredByStats (fun _ -> false) path stats
 
                 Vitest.expect(ignored "x/~$data.old" (Some(statsOf true))).toBe false
                 Vitest.expect(ignored "x/~$data.old/inner.txt" (Some(statsOf false))).toBe false
                 Vitest.expect(ignored "x/~$lock.xlsx" (Some(statsOf false))).toBe true
                 Vitest.expect(ignored "x/~$lock.xlsx" None).toBe false
-                Vitest.expect(ignored "x/.swate-import-0123456789abcdef0123456789abcdef" (Some(statsOf true))).toBe true
+        )
+
+        Vitest.test (
+            "the function chokidar calls ignores only the registered staging folder and what is inside it",
+            fun () ->
+                let statsOf (isDirectory: bool) =
+                    { new Main.Bindings.Chokidar.IWatchStats with
+                        member _.isDirectory() = isDirectory
+                    }
+
+                let staging = "C:/arc/x/.swate-import-" + String.replicate 32 "a"
+                let sibling = "C:/arc/x/.swate-import-" + String.replicate 32 "b"
+
+                let ignoredWith (isActive: string -> bool) path stats =
+                    Main.ArcVaultHelper.isFileWatcherPathIgnoredByStats isActive path stats
+
+                let registered path =
+                    path = staging || (path: string).StartsWith(staging + "/")
+
+                for stats in [ None; Some(statsOf true) ] do
+                    Vitest.expect(ignoredWith registered staging stats).toBe true
+
+                Vitest.expect(ignoredWith registered $"{staging}/a.txt" None).toBe true
+                Vitest.expect(ignoredWith registered $"{staging}/a.txt" (Some(statsOf false))).toBe true
+                Vitest.expect(ignoredWith registered sibling (Some(statsOf true))).toBe false
+                Vitest.expect(ignoredWith registered $"{sibling}/a.txt" (Some(statsOf false))).toBe false
+
+                for stats in [ None; Some(statsOf true) ] do
+                    Vitest.expect(ignoredWith (fun _ -> false) staging stats).toBe false
+
+                Vitest.expect(ignoredWith (fun _ -> false) $"{staging}/a.txt" (Some(statsOf false))).toBe false
+
+                let arcNamedLikeStaging = "C:/.swate-import-" + String.replicate 32 "c"
+                Vitest.expect(ignoredWith registered $"{arcNamedLikeStaging}/data.txt" (Some(statsOf false))).toBe false
+        )
+
+        Vitest.test (
+            "a vault ignores a registered staging folder by relative and absolute path until it is released",
+            fun () ->
+                let arcPath = resolve [| "registry-arc" |]
+                let vault = ArcVault(TestHelpers.testWindow ())
+                vault.path <- Some arcPath
+
+                let staging =
+                    join [|
+                        arcPath
+                        "data"
+                        ".swate-import-" + String.replicate 32 "a"
+                    |]
+
+                vault.RegisterImportStagingDirectory staging
+
+                Vitest.expect(vault.IsActiveImportStagingPath staging).toBe true
+                Vitest.expect(vault.IsActiveImportStagingPath(join [| staging; "a.txt" |])).toBe true
+
+                Vitest.expect(vault.IsActiveImportStagingPath("data/.swate-import-" + String.replicate 32 "a")).toBe
+                    true
+
+                Vitest
+                    .expect(
+                        vault.IsActiveImportStagingPath(
+                            "data/.swate-import-" + String.replicate 32 "a" + "/inner/a.txt"
+                        )
+                    )
+                    .toBe
+                    true
+
+                Vitest.expect(vault.IsActiveImportStagingPath "data/.swate-import-other").toBe false
+
+                vault.ClearPendingFileWatcherState()
+                Vitest.expect(vault.IsActiveImportStagingPath staging).toBe true
+
+                vault.ReleaseImportStagingDirectory staging
+                Vitest.expect(vault.IsActiveImportStagingPath staging).toBe false
+                Vitest.expect(vault.IsActiveImportStagingPath(join [| staging; "a.txt" |])).toBe false
+        )
+
+        Vitest.test (
+            "importedFileTreePaths drops what the file tree hides after a reload, below the ARC root or a nested target",
+            fun () ->
+                let staging = ".swate-import-" + String.replicate 32 "a"
+
+                let plannedPaths: PlannedImportPaths = {
+                    FolderPaths = [|
+                        "x"
+                        "x/.git"
+                        "x/.GIT/objects"
+                        $"x/{staging}"
+                        "x/README.md"
+                    |]
+                    FilePaths = [|
+                        "x/.GIT/config"
+                        "x/.git/HEAD"
+                        "x/sub/.git"
+                        "x/~$Book1.xlsx"
+                        "x/isa_datamap"
+                        $"x/{staging}/a.txt"
+                        "x/README.md/inner.txt"
+                        "x/data.csv"
+                    |]
+                }
+
+                let expectedFor (prefix: string) =
+                    [|
+                        $"{prefix}x"
+                        $"{prefix}x/{staging}"
+                        $"{prefix}x/README.md"
+                    |],
+                    [|
+                        $"{prefix}x/sub/.git"
+                        $"{prefix}x/{staging}/a.txt"
+                        $"{prefix}x/README.md/inner.txt"
+                        $"{prefix}x/data.csv"
+                    |]
+
+                Vitest
+                    .expect(WatcherHelpers.importedFileTreePaths "C:/arc" "" plannedPaths)
+                    .toEqual (expectedFor "C:/arc/")
+
+                Vitest
+                    .expect(WatcherHelpers.importedFileTreePaths "C:/arc" "assays/AssayA/dataset" plannedPaths)
+                    .toEqual (expectedFor "C:/arc/assays/AssayA/dataset/")
+        )
+
+        Vitest.test (
+            "createImportedWatcherEvents claims nothing below a nested .git folder or for isa_datamap, and a file named .git only when the watcher reports it",
+            fun () ->
+                let events =
+                    importedEvents [| "x"; "x/sub"; "x/sub/.git"; "x/sub/.git/objects" |] [|
+                        "x/sub/.git/config"
+                        "x/sub/.git/objects/pack.bin"
+                        "x/isa_datamap"
+                        "x/sub2.git"
+                        "x/.git"
+                    |]
+
+                let relativePaths = events |> Array.map _.RelativePath |> Array.toList
+                let prefix = "assays/AssayA/dataset/"
+
+                let gitFileIsReported =
+                    not (Main.ArcVaultHelper.isFileWatcherPathIgnoredFor $"C:/arc/{prefix}x/.git" (Some false))
+
+                Vitest.expect(relativePaths |> List.contains $"{prefix}x").toBe true
+                Vitest.expect(relativePaths |> List.contains $"{prefix}x/sub").toBe true
+                Vitest.expect(relativePaths |> List.contains $"{prefix}x/sub2.git").toBe true
+                Vitest.expect(relativePaths |> List.contains $"{prefix}x/.git").toBe gitFileIsReported
+
+                for ignoredPath in
+                    [
+                        "x/sub/.git"
+                        "x/sub/.git/objects"
+                        "x/sub/.git/config"
+                        "x/sub/.git/objects/pack.bin"
+                        "x/isa_datamap"
+                    ] do
+                    Vitest.expect(relativePaths |> List.contains $"{prefix}{ignoredPath}").toBe false
         )
 
         let advanceSeconds (seconds: int) =
@@ -4823,16 +4978,6 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "tryBuildOpenArcRootRenamePlan rejects names of import staging folders",
-            fun () ->
-                let stagingName = ".swate-import-" + String.replicate 32 "a"
-
-                match tryBuildOpenArcRootRenamePlan "C:/work/current-arc" stagingName with
-                | Ok _ -> failwith "Expected ARC root rename to reject a staging folder name."
-                | Error error -> Vitest.expect(error.Message).toContain ("import staging folders")
-        )
-
-        Vitest.test (
             "LoadArc repairs zero-byte canonical ARC workbooks before retrying",
             fun () ->
                 TestHelpers.withTempArcWith
@@ -5294,6 +5439,9 @@ let private pickAndImport (api: IArcVaultsApi) requestId = promise {
     | other -> return failwithf "Expected an authorization, received %A." other
 }
 
+let private sortedTreeKeys (tree: System.Collections.Generic.Dictionary<string, FileEntry>) =
+    tree.Keys |> Seq.map PathHelpers.normalizePath |> Seq.sort |> Seq.toArray
+
 let private importStatesOf (windowState: TestWindowState) =
     windowState.SentMessages
     |> Seq.filter (fun args -> args.Length > 0 && (string args.[0]).Contains("fileImportStateUpdate"))
@@ -5434,6 +5582,8 @@ Vitest.describe (
                         | Ok ImportExternalFilesResult.Completed -> ()
                         | other -> failwithf "Expected Completed, received %A." other
 
+                        Vitest.expect(vault.importStagingRoots.Count).toBe 0
+
                         let targetPath = join [| arcPath; importTarget; "Run1" |]
                         let! notes = ARCtrl.FileSystemHelper.readFileTextAsync (join [| targetPath; "notes.txt" |])
 
@@ -5569,98 +5719,34 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "refuses to import into an import staging folder and writes nothing",
+            "the file tree after an import equals the tree a reload builds",
             fun () ->
                 withImportVault
                     None
-                    (fun _ api _ arcPath _ -> promise {
-                        let stagingFolder = importTarget + "/.swate-import-" + String.replicate 32 "b"
+                    (fun vault api _ arcPath sourcePath -> promise {
+                        let stagingName = ".swate-import-" + String.replicate 32 "a"
+                        do! mkdirWatcherDirectoryAsync (join [| sourcePath; ".git" |])
+                        do! writeWatcherTextFileAsync (join [| sourcePath; ".git"; "config" |]) "git config"
+                        do! mkdirWatcherDirectoryAsync (join [| sourcePath; "sub" |])
+                        do! writeWatcherTextFileAsync (join [| sourcePath; "sub"; ".git" |]) "gitdir: ../elsewhere"
+                        do! writeWatcherTextFileAsync (join [| sourcePath; "~$Book1.xlsx" |]) "Excel lock file"
+                        do! mkdirWatcherDirectoryAsync (join [| sourcePath; stagingName |])
+                        do! writeWatcherTextFileAsync (join [| sourcePath; stagingName; "a.txt" |]) "staged"
+                        do! mkdirWatcherDirectoryAsync (join [| sourcePath; "README.md" |])
+                        do! writeWatcherTextFileAsync (join [| sourcePath; "README.md"; "inner.txt" |]) "inner"
+                        do! writeWatcherTextFileAsync (join [| sourcePath; "data.csv" |]) "a,b"
 
-                        do! mkdirWatcherDirectoryAsync (join [| arcPath; stagingFolder |])
+                        match! pickAndImport api "import-tree" with
+                        | Ok ImportExternalFilesResult.Completed -> ()
+                        | other -> failwithf "Expected Completed, received %A." other
 
-                        match! api.pickAbsolutePaths FileSystemItemKind.Folder with
-                        | Ok(Some authorizationId) ->
-                            match!
-                                api.tryImportExternalFiles {
-                                    requestId = "import-staging"
-                                    targetRelativePath = stagingFolder
-                                    authorizationId = authorizationId
-                                }
-                            with
-                            | Error error ->
-                                Vitest.expect(error.Message).toContain ("does not watch import staging folders")
-                            | other -> failwithf "Expected an error, received %A." other
-                        | other -> failwithf "Expected an authorization, received %A." other
+                        let! reloadedTree = Main.FileTreeCreator.getFileTree arcPath
 
-                        let! written = TestHelpers.pathExistsAsync (join [| arcPath; stagingFolder; "Run1" |])
-                        Vitest.expect(written).toBe false
-                    })
-        )
+                        let importedKeys (tree: System.Collections.Generic.Dictionary<string, FileEntry>) =
+                            sortedTreeKeys tree |> Array.filter (fun key -> key.Contains "dataset/Run1")
 
-        Vitest.test (
-            "deleting a staging folder removes it and its children from the file tree at once",
-            fun () ->
-                withImportVault
-                    None
-                    (fun vault api _ arcPath _ -> promise {
-                        let stagingFolder = importTarget + "/.swate-import-" + String.replicate 32 "c"
-
-                        do! mkdirWatcherDirectoryAsync (join [| arcPath; stagingFolder |])
-                        do! writeWatcherTextFileAsync (join [| arcPath; stagingFolder; "left-over.txt" |]) "x"
-
-                        let! scannedTree = Main.FileTreeCreator.getFileTree arcPath
-                        vault.SetFileTree scannedTree
-
-                        let hasStagingEntry () =
-                            vault.fileTree.Keys |> Seq.exists (fun key -> key.Contains ".swate-import-")
-
-                        Vitest.expect(hasStagingEntry ()).toBe true
-
-                        match! api.deletePath stagingFolder with
-                        | Ok() -> ()
-                        | Error error -> failwith error.Message
-
-                        Vitest.expect(hasStagingEntry ()).toBe false
-                    })
-        )
-
-        Vitest.test (
-            "renaming a staging folder swaps its file tree entries at once",
-            fun () ->
-                withImportVault
-                    None
-                    (fun vault api _ arcPath _ -> promise {
-                        let stagingFolder = importTarget + "/.swate-import-" + String.replicate 32 "d"
-
-                        do! mkdirWatcherDirectoryAsync (join [| arcPath; stagingFolder |])
-                        do! writeWatcherTextFileAsync (join [| arcPath; stagingFolder; "left-over.txt" |]) "x"
-
-                        let! scannedTree = Main.FileTreeCreator.getFileTree arcPath
-                        vault.SetFileTree scannedTree
-
-                        let hasStagingEntry () =
-                            vault.fileTree.Keys |> Seq.exists (fun key -> key.Contains ".swate-import-")
-
-                        Vitest.expect(hasStagingEntry ()).toBe true
-
-                        match!
-                            api.renamePath {
-                                relativePath = stagingFolder
-                                newName = "restored"
-                            }
-                        with
-                        | Ok() -> ()
-                        | Error error -> failwith error.Message
-
-                        Vitest.expect(hasStagingEntry ()).toBe false
-
-                        let restoredEntries =
-                            vault.fileTree.Values
-                            |> Seq.filter (fun entry -> entry.name = "restored")
-                            |> Seq.toArray
-
-                        Vitest.expect(restoredEntries.Length).toBe 1
-                        Vitest.expect(restoredEntries.[0].isDirectory).toBe true
+                        Vitest.expect(importedKeys reloadedTree |> Array.exists _.EndsWith("/sub/.git")).toBe true
+                        Vitest.expect(importedKeys vault.fileTree).toEqual (importedKeys reloadedTree)
                     })
         )
 
@@ -5692,6 +5778,55 @@ Vitest.describe (
                         | other -> failwithf "Expected Completed, received %A." other
 
                         Vitest.expect(addedPaths.ToArray()).toEqual [| join [| arcPath; importTarget; "Run1" |] |]
+                    })
+        )
+
+        Vitest.test (
+            "lists a leftover staging folder with its files and adds it to a polling watcher",
+            fun () ->
+                let addedPaths = ResizeArray<string>()
+
+                let watcher =
+                    { new Main.Bindings.Chokidar.IWatcher with
+                        member _.close() = Promise.lift ()
+                        member _.add(path: string) = addedPaths.Add path
+                        member _.add(paths: string[]) = addedPaths.AddRange paths
+                        member _.unwatch(_: string) = Promise.lift ()
+                        member _.unwatch(_: string[]) = Promise.lift ()
+                        member this.on(_: Main.Bindings.Chokidar.Events, _: string -> unit) = this
+                        member this.on(_: Main.Bindings.Chokidar.Events, _: string -> string -> unit) = this
+                        member _.getWatched() = unbox null
+                    }
+
+                withImportVault
+                    None
+                    (fun vault _ _ arcPath _ -> promise {
+                        vault.watcher <- Some watcher
+                        vault.watcherUsesPolling <- true
+
+                        let stagingFolder =
+                            join [|
+                                arcPath
+                                importTarget
+                                ".swate-import-" + String.replicate 32 "a"
+                            |]
+
+                        do! mkdirWatcherDirectoryAsync stagingFolder
+                        do! writeWatcherTextFileAsync (join [| stagingFolder; "left-over.txt" |]) "x"
+
+                        do! vault.WatchLeftoverStagingFolder stagingFolder
+
+                        Vitest.expect(addedPaths.ToArray()).toEqual [| stagingFolder |]
+
+                        let! reloadedTree = Main.FileTreeCreator.getFileTree arcPath
+
+                        let stagingKeys (tree: System.Collections.Generic.Dictionary<string, FileEntry>) =
+                            sortedTreeKeys tree |> Array.filter (fun key -> key.Contains ".swate-import-")
+
+                        Vitest.expect(stagingKeys vault.fileTree).toEqual (stagingKeys reloadedTree)
+
+                        Vitest.expect(stagingKeys vault.fileTree |> Array.exists _.EndsWith("/left-over.txt")).toBe
+                            true
                     })
         )
 )
