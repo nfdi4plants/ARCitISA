@@ -39,6 +39,18 @@ let private setShowOpenDialog (handler: obj -> obj -> obj) =
 let private setShowMessageBox (handler: obj -> obj -> obj) =
     electronMock?setShowMessageBox (handler) |> ignore
 
+let private recordingWatcher (addedPaths: ResizeArray<string>) : Main.Bindings.Chokidar.IWatcher =
+    { new Main.Bindings.Chokidar.IWatcher with
+        member _.close() = Promise.lift ()
+        member _.add(path: string) = addedPaths.Add path
+        member _.add(paths: string[]) = addedPaths.AddRange paths
+        member _.unwatch(_: string) = Promise.lift ()
+        member _.unwatch(_: string[]) = Promise.lift ()
+        member this.on(_: Main.Bindings.Chokidar.Events, _: string -> unit) = this
+        member this.on(_: Main.Bindings.Chokidar.Events, _: string -> string -> unit) = this
+        member _.getWatched() = unbox null
+    }
+
 let private ipcEventWithSenderId senderId : IpcMainInvokeEvent =
     createObj [ "sender" ==> createObj [ "id" ==> senderId ] ]
     |> unbox<IpcMainInvokeEvent>
@@ -548,20 +560,7 @@ Vitest.describe (
             fun () ->
                 let addedPaths = ResizeArray<string>()
 
-                let watcher =
-                    { new Main.Bindings.Chokidar.IWatcher with
-                        member _.close() = Promise.lift ()
-                        member _.add(path: string) = addedPaths.Add path
-                        member _.add(paths: string[]) = addedPaths.AddRange paths
-                        member _.unwatch(_: string) = Promise.lift ()
-                        member _.unwatch(_: string[]) = Promise.lift ()
-
-                        member this.on(_: Main.Bindings.Chokidar.Events, _: string -> unit) = this
-
-                        member this.on(_: Main.Bindings.Chokidar.Events, _: string -> string -> unit) = this
-
-                        member _.getWatched() = unbox null
-                    }
+                let watcher = recordingWatcher addedPaths
 
                 let watchImportedFolders usesPolling folders =
                     let vault = ArcVault(TestHelpers.testWindow ())
@@ -5755,17 +5754,7 @@ Vitest.describe (
             fun () ->
                 let addedPaths = ResizeArray<string>()
 
-                let watcher =
-                    { new Main.Bindings.Chokidar.IWatcher with
-                        member _.close() = Promise.lift ()
-                        member _.add(path: string) = addedPaths.Add path
-                        member _.add(paths: string[]) = addedPaths.AddRange paths
-                        member _.unwatch(_: string) = Promise.lift ()
-                        member _.unwatch(_: string[]) = Promise.lift ()
-                        member this.on(_: Main.Bindings.Chokidar.Events, _: string -> unit) = this
-                        member this.on(_: Main.Bindings.Chokidar.Events, _: string -> string -> unit) = this
-                        member _.getWatched() = unbox null
-                    }
+                let watcher = recordingWatcher addedPaths
 
                 withImportVault
                     None
@@ -5786,17 +5775,7 @@ Vitest.describe (
             fun () ->
                 let addedPaths = ResizeArray<string>()
 
-                let watcher =
-                    { new Main.Bindings.Chokidar.IWatcher with
-                        member _.close() = Promise.lift ()
-                        member _.add(path: string) = addedPaths.Add path
-                        member _.add(paths: string[]) = addedPaths.AddRange paths
-                        member _.unwatch(_: string) = Promise.lift ()
-                        member _.unwatch(_: string[]) = Promise.lift ()
-                        member this.on(_: Main.Bindings.Chokidar.Events, _: string -> unit) = this
-                        member this.on(_: Main.Bindings.Chokidar.Events, _: string -> string -> unit) = this
-                        member _.getWatched() = unbox null
-                    }
+                let watcher = recordingWatcher addedPaths
 
                 withImportVault
                     None

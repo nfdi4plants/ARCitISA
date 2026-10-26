@@ -287,6 +287,35 @@ Vitest.describe (
         )
 
         Vitest.test (
+            "the create target check and its block reason agree for every path",
+            fun () ->
+                let paths = [
+                    ""
+                    "../x"
+                    "isa.investigation.xlsx"
+                    "assays/A/isa.assay.xlsx"
+                    "assays"
+                    "assays/AssayB"
+                    "assays/AssayB/dataset"
+                    "studies/S/protocols"
+                    "data/.git"
+                    "data/.git/config"
+                    "data/.gitkeep"
+                    "README.md"
+                    "data/README.md"
+                    "notes"
+                    "data/notes.md"
+                    "assays/AssayB/notes.md"
+                ]
+
+                for isFile in [ true; false ] do
+                    for path in paths do
+                        Vitest
+                            .expect(ArcEntityPathRules.isGenericFileSystemCreateTargetAllowed isFile path)
+                            .toBe ((ArcEntityPathRules.describeBlockedGenericCreateTarget isFile path).IsNone)
+        )
+
+        Vitest.test (
             "names the file tree hides and import staging names are accepted for new items and renames",
             fun () ->
                 let stagingName = $".swate-import-{hex32 'a'}"

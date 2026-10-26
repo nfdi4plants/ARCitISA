@@ -298,6 +298,13 @@ module ArcFileSystemHelper =
     let private whitespaceNameImportError (path: string) =
         exn $"Cannot import '{path}' because its name starts or ends with a space."
 
+    /// Picked items and the items inside picked folders pass the same name check.
+    let private validateImportedName (displayPath: string) (name: string) =
+        match validateRenameName name with
+        | Error validationError -> raise (exn $"Cannot import '{displayPath}': {validationError}")
+        | Ok trimmed when trimmed <> name -> raise (whitespaceNameImportError displayPath)
+        | Ok _ -> ()
+
     /// Lists an imported source folder and everything inside it, every folder before its contents.
     /// `folderChain` holds the real paths of the folders on the way down, starting with the picked folder.
     /// Only a symbolic link needs a real path lookup. An ordinary child folder extends its parent's real path.
@@ -335,10 +342,7 @@ module ArcFileSystemHelper =
                 let sourcePath = join [| sourceDirectory; dirent.name |]
                 let relativePath = $"{relativeDirectory}/{dirent.name}"
 
-                match validateRenameName dirent.name with
-                | Error validationError -> raise (exn $"Cannot import '{relativePath}': {validationError}")
-                | Ok trimmed when trimmed <> dirent.name -> raise (whitespaceNameImportError relativePath)
-                | Ok _ -> ()
+                validateImportedName relativePath dirent.name
 
                 if not (seenNames.Add(dirent.name.ToLowerInvariant())) then
                     raise (
@@ -429,10 +433,7 @@ module ArcFileSystemHelper =
             let! sourceStats = resolveImportSourceAsync name (fun () -> statAsync absolutePath)
             let isDirectory = sourceStats.isDirectory ()
 
-            match validateRenameName name with
-            | Error validationError -> raise (exn $"Cannot import '{name}': {validationError}")
-            | Ok trimmed when trimmed <> name -> raise (whitespaceNameImportError name)
-            | Ok _ -> ()
+            validateImportedName name name
 
             match existingNames.TryGetValue(name.ToLowerInvariant()) with
             | true, existingName when existingName = name ->
