@@ -3,6 +3,10 @@ module ElectronCore.IpcArchitectureReviewTests
 open Main.Bindings.Path
 open Main.Bindings.Filesystem
 open Main.ArcVault
+open Main.ArcVaultState
+open Main.ArcVaultLargeObjects
+open Main.ArcVaultFileTree
+open Main.ArcVaultFileWatcher
 open Main.ArcVaultTypes
 open Main.FileImportAuthorization
 open Main.IPC.FileSystemIO

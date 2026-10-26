@@ -5,6 +5,10 @@ open Fable.Core
 open Fable.Core.JsInterop
 open Fable.Electron.Main
 open Main.ArcVault
+open Main.ArcVaultState
+open Main.ArcVaultLargeObjects
+open Main.ArcVaultFileTree
+open Main.ArcVaultFileWatcher
 open Fable.Electron
 open Main.Bindings.Filesystem
 open Main.Bindings.Path

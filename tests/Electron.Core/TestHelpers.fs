@@ -5,6 +5,7 @@ open Fable.Core.JsInterop
 open Fable.Electron
 open Fable.Electron.Main
 open Main
+open Main.ArcVaultState
 open Main.Bindings.Path
 open Main.VersionControl
 open Swate.Components.Composite.Authentication.Types

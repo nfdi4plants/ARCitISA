@@ -4,6 +4,7 @@ open Fable.Core
 open Fable.Electron
 open Fable.Electron.Main
 open Main
+open Main.ArcVaultState
 open Main.ArcVaultHelper
 
 [<AutoOpen>]

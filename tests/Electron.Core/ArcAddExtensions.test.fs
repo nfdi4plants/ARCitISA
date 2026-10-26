@@ -2,6 +2,10 @@ module ElectronCore.ArcAddExtensionsTests
 
 open Main.ArcMerge
 open Main.ArcVault
+open Main.ArcVaultState
+open Main.ArcVaultLargeObjects
+open Main.ArcVaultFileTree
+open Main.ArcVaultFileWatcher
 open Main.ARCtrlExtensions
 open Main.Bindings.Path
 open Swate.Components.Shared
