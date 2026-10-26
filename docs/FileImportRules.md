@@ -1,6 +1,6 @@
 # File import and name rules
 
-These rules cover the actions "Import files", "Import folders", "New File", "New Folder" and "Rename" in the ARCitISA file explorer. PR #1429 (branch feature/AddImportFolders) first added a large set of name and import rules. On 2026-10-23 the PR reduced them to a smaller set. This page lists the rules that stay active and keeps the dropped ones with the reason each existed and where its code lived. Commit 13056ca0 on feature/AddImportFolders is the last commit that contains every dropped rule. Read the code with `git show 13056ca0:<path>` to turn one back on.
+These rules cover the actions "Import files", "Import folders", "New File", "New Folder" and "Rename" in the ARCitISA file explorer. PR #1429 (branch feature/AddImportFolders) first added a large set of name and import rules. On 2026-10-23 the PR reduced them to a smaller set. This page lists the rules that stay active and keeps the dropped ones with the reason each existed and where its code lived. The last commit that contains every dropped rule is [13056ca0](https://github.com/nfdi4plants/ARCitISA/pull/1429/commits/13056ca04681d669299cec9aa655474c4e9c72da). The PR keeps it reachable after the branch is deleted. To read it locally, run `git fetch origin pull/1429/head` and then `git show 13056ca0:<path>`.
 
 ## Active rules
 
@@ -33,19 +33,19 @@ Import rejects any file or folder named ".git", ignoring case, as a picked item 
 
 The reason is that git records a folder with its own ".git" inside the ARC as an embedded repository (a gitlink) without its files. None of those files reach the DataHUB, and the file tree hides ".git" folders, so the user cannot see why. A ".git" file, as git submodules and worktrees write, has the same effect when it points to an existing repository. A picked ".git" folder imported into the root of an ARC that has no ".git" folder yet would turn the ARC into that repository, with its history and remotes. The check is `ArcEntityPathRules.isDisallowedGenericPathSegment` in `src/Shared/PathHelpers.fs`, called from `validateImportedName` in `src/Electron/src/Main/IPC/FileSystemIO.fs`.
 
-### Names that differ only in case
+### Names that differ only in case or Unicode form
 
-Import treats names that differ only in upper and lower case as the same name. This holds on every operating system. Three cases stop the import:
+Import treats names that differ only in upper and lower case as the same name. This holds on every operating system. Import also treats names that differ only in Unicode form as the same name, such as "Café.csv" written as one "é" character (NFC) and as "e" plus a combining accent (NFD). The checks compare names after NFC normalization and lower-casing. Three cases stop the import:
 
 - two picked items with such names
 - two items in the same folder inside a picked folder
 - a picked item whose name matches an item that already exists in the target folder
 
-The reason is that Windows and macOS treat such names as one, and an ARC has to work on all systems. The checks live in `inspectPickedItemAsync`, `createExternalFileImportPlan` and `collectExternalFolderEntries` in `src/Electron/src/Main/IPC/FileSystemIO.fs`.
+The reason is that Windows and macOS treat names that differ only in case as one, and macOS also treats the two Unicode forms as one. An ARC has to work on all systems. The checks live in `inspectPickedItemAsync`, `createExternalFileImportPlan` and `collectExternalFolderEntries` in `src/Electron/src/Main/IPC/FileSystemIO.fs`.
 
 ### No overwrite and no merge
 
-The import never overwrites or merges. An existing item with the same name (see the previous rule) stops the import. The import creates folders exclusively and publishes files with an exclusive copy or hard link, so a race cannot overwrite either. The case check runs while the import plans. The exclusive publish prevents overwrites, but on a case-sensitive file system an item created between planning and publishing can end up next to an imported item whose name differs only in case.
+The import never overwrites or merges. An existing item with the same name (see the previous rule) stops the import. The import creates folders exclusively and publishes files with an exclusive copy or hard link, so a race cannot overwrite either. The name check runs while the import plans. The exclusive publish prevents overwrites, but on a file system that keeps such names apart, an item created between planning and publishing can end up next to an imported item whose name differs only in case or Unicode form.
 
 ## Checks that are not name rules
 
@@ -74,7 +74,7 @@ This PR only changed their messages (`describeBlockedGenericCreateTarget`), so t
 
 ## Dropped rules
 
-All code paths below are at commit 13056ca0. `FileSystemIO.fs` is `src/Electron/src/Main/IPC/FileSystemIO.fs`, `RenamePathRules.fs` is `src/Electron/src/Swate.Electron.Shared/RenamePathRules.fs` and `PathHelpers.fs` is `src/Shared/PathHelpers.fs`.
+All code paths below are at commit [13056ca0](https://github.com/nfdi4plants/ARCitISA/pull/1429/commits/13056ca04681d669299cec9aa655474c4e9c72da). `FileSystemIO.fs` is `src/Electron/src/Main/IPC/FileSystemIO.fs`, `RenamePathRules.fs` is `src/Electron/src/Swate.Electron.Shared/RenamePathRules.fs` and `PathHelpers.fs` is `src/Shared/PathHelpers.fs`.
 
 ### ARC metadata file names
 

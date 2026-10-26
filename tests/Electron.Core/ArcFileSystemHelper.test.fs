@@ -1371,6 +1371,71 @@ Vitest.describe (
         )
 
         Vitest.test (
+            "rejects nested names that differ only in Unicode form and writes nothing",
+            TestOptions(skip = (nodePlatform () = "darwin")),
+            fun () ->
+                withAssayArc (fun arcPath -> promise {
+                    let! sourcePath = createExternalRunFolderAsync arcPath
+                    do! writeRelativeFileAsync sourcePath "raw/Caf\u00e9.csv" "nfc"
+                    do! writeRelativeFileAsync sourcePath "raw/Cafe\u0301.csv" "nfd"
+                    do! createRelativeDirectoryAsync arcPath "assays/AssayA/dataset"
+                    let! result = importWithoutCancellation arcPath "assays/AssayA/dataset" [| sourcePath |]
+
+                    result |> expectErrorContaining "already contains an item with the same name."
+                    do! expectRelativePathExists arcPath "assays/AssayA/dataset/Run1" false
+                    do! expectNoTemporaryImportDirectory arcPath "assays/AssayA/dataset"
+                })
+        )
+
+        Vitest.test (
+            "rejects a picked item that differs from an existing item only in Unicode form",
+            TestOptions(skip = (nodePlatform () = "darwin")),
+            fun () ->
+                withAssayArc (fun arcPath -> promise {
+                    let sourceRoot = dirname arcPath
+                    let targetPath = "assays/AssayA/dataset"
+                    do! createRelativeDirectoryAsync arcPath targetPath
+                    do! createRelativeDirectoryAsync sourceRoot "external"
+                    do! writeRelativeFileAsync arcPath $"{targetPath}/Caf\u00e9.csv" "existing"
+                    do! writeRelativeFileAsync sourceRoot "external/Cafe\u0301.csv" "picked"
+                    let! before = Main.Bindings.Filesystem.readdirAsync (absoluteArcPath arcPath targetPath)
+
+                    let! result =
+                        importWithoutCancellation arcPath targetPath [|
+                            absoluteArcPath sourceRoot "external/Cafe\u0301.csv"
+                        |]
+
+                    result
+                    |> expectErrorContaining
+                        "Cannot import 'Cafe\u0301.csv' because an item with that name already exists."
+
+                    let! after = Main.Bindings.Filesystem.readdirAsync (absoluteArcPath arcPath targetPath)
+                    Vitest.expect(after).toEqual (before)
+                    let! existing = readRelativeFileAsync arcPath $"{targetPath}/Caf\u00e9.csv"
+                    Vitest.expect(existing).toBe ("existing")
+
+                    do! createRelativeDirectoryAsync arcPath "assays/AssayA/dataset2"
+                    do! createRelativeDirectoryAsync sourceRoot "one"
+                    do! createRelativeDirectoryAsync sourceRoot "two"
+                    do! writeRelativeFileAsync sourceRoot "one/Caf\u00e9.csv" "one"
+                    do! writeRelativeFileAsync sourceRoot "two/cafe\u0301.csv" "two"
+
+                    let! duplicateResult =
+                        importWithoutCancellation arcPath "assays/AssayA/dataset2" [|
+                            absoluteArcPath sourceRoot "one/Caf\u00e9.csv"
+                            absoluteArcPath sourceRoot "two/cafe\u0301.csv"
+                        |]
+
+                    duplicateResult |> expectErrorContaining "Cannot import multiple items named"
+
+                    let! target2 =
+                        Main.Bindings.Filesystem.readdirAsync (absoluteArcPath arcPath "assays/AssayA/dataset2")
+
+                    Vitest.expect(target2.Length).toBe (0)
+                })
+        )
+
+        Vitest.test (
             "rejects an item named .git inside a picked folder or as a picked item and writes nothing",
             fun () ->
                 withAssayArc (fun arcPath -> promise {

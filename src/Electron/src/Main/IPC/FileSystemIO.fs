@@ -294,6 +294,9 @@ module ArcFileSystemHelper =
             return raise (toImportResolutionError displayPath error)
     }
 
+    let private toNfc (name: string) =
+        name.Normalize(System.Text.NormalizationForm.FormC)
+
     let private whitespaceNameImportError (path: string) =
         exn $"Cannot import '{path}' because its name starts or ends with a space."
 
@@ -319,6 +322,7 @@ module ArcFileSystemHelper =
     /// The walk follows symbolic links. A link keeps its own name and the copy step reads what it points to.
     /// The walk accepts only regular files and folders, judged by the resolved type.
     /// Names inside one folder that differ only by case fail, because they collide on Windows and macOS.
+    /// So do names that differ only in Unicode form (NFC vs NFD), which macOS treats as one name.
     /// Every nested name passes the same name check as a picked item, so a name with a backslash, which
     /// Linux and macOS allow, cannot become a phantom folder in the ARC. A name with leading or trailing
     /// white space fails too, because ARCitISA trims paths when it renames or deletes.
@@ -336,7 +340,7 @@ module ArcFileSystemHelper =
                     (fun () -> readdirWithTypesAsync sourceDirectory (ReaddirOptions(withFileTypes = true)))
 
             let entries = ResizeArray [ importEntry sourceDirectory relativeDirectory true ]
-            let seenNames = System.Collections.Generic.HashSet<string>()
+            let seenNames = System.Collections.Generic.Dictionary<string, string>()
 
             for dirent in dirents |> Array.sortBy _.name do
                 if isCancellationRequested () then
@@ -347,11 +351,20 @@ module ArcFileSystemHelper =
 
                 validateImportedName relativePath dirent.name
 
-                if not (seenNames.Add(dirent.name.ToLowerInvariant())) then
+                let nameKey = PathHelpers.normalizeForUnicodeComparison dirent.name
+
+                match seenNames.TryGetValue nameKey with
+                | true, seenName when toNfc seenName = toNfc dirent.name ->
+                    raise (
+                        exn
+                            $"Cannot import '{relativePath}' because its folder already contains an item with the same name."
+                    )
+                | true, _ ->
                     raise (
                         exn
                             $"Cannot import '{relativePath}' because its folder already contains an item with the same name, ignoring case."
                     )
+                | _ -> seenNames.[nameKey] <- dirent.name
 
                 let! isDirectory, isFile =
                     if dirent.isSymbolicLink () then
@@ -419,8 +432,9 @@ module ArcFileSystemHelper =
 
     /// Checks one picked file or folder and returns its entry, without looking inside a folder.
     /// The pick needs a valid name and must be a regular file or folder after following links. Its name must not
-    /// match an item in the target folder, ignoring case. `existingNames` maps the lower-case name of every item in
-    /// the target folder to its actual name. A picked folder must not be the target or contain it.
+    /// match an item in the target folder, ignoring case and Unicode form. `existingNames` maps the comparison key
+    /// (NFC, lower case) of every item in the target folder to its actual name. A picked folder must not be the
+    /// target or contain it.
     let private inspectPickedItemAsync
         targetDirectory
         (existingNames: System.Collections.Generic.Dictionary<string, string>)
@@ -438,8 +452,8 @@ module ArcFileSystemHelper =
 
             validateImportedName name name
 
-            match existingNames.TryGetValue(name.ToLowerInvariant()) with
-            | true, existingName when existingName = name ->
+            match existingNames.TryGetValue(PathHelpers.normalizeForUnicodeComparison name) with
+            | true, existingName when toNfc existingName = toNfc name ->
                 raise (exn $"Cannot import '{name}' because an item with that name already exists.")
             | true, existingName ->
                 raise (
@@ -466,7 +480,7 @@ module ArcFileSystemHelper =
         let existingNames = System.Collections.Generic.Dictionary<string, string>()
 
         for targetName in targetNames do
-            existingNames.[targetName.ToLowerInvariant()] <- targetName
+            existingNames.[PathHelpers.normalizeForUnicodeComparison targetName] <- targetName
 
         let pickedEntries = ResizeArray<ExternalFileImportEntry>()
 
@@ -476,7 +490,7 @@ module ArcFileSystemHelper =
 
         let duplicateName =
             pickedEntries.ToArray()
-            |> Array.groupBy (fun entry -> entry.RelativePath.ToLowerInvariant())
+            |> Array.groupBy (fun entry -> PathHelpers.normalizeForUnicodeComparison entry.RelativePath)
             |> Array.tryFind (fun (_, duplicates) -> duplicates.Length > 1)
 
         match duplicateName with
