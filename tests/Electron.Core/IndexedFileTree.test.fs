@@ -1118,10 +1118,76 @@ Vitest.describe (
                     .toEqual ([| "/arc/data " |])
 
                 Vitest
-                    .expect(FileTreeCreator.toTreeRelativePath "/arc" "/arc/assays/data ")
+                    .expect(FileTreeCreator.toTreeRelativePath false "/arc" "/arc/assays/data ")
                     .toEqual (Some "assays/data ")
 
                 Vitest.expect(tree.RemoveSubtree "/arc/data /x.txt").toEqual ([| "/arc/data " |])
+        )
+)
+
+Vitest.describe (
+    "toTreeRelativePath",
+    fun () ->
+        Vitest.test (
+            "ignores the root's case only on a case-insensitive volume",
+            fun () ->
+                Vitest.expect(FileTreeCreator.toTreeRelativePath false "/data/ARC" "/data/arc/x").toEqual None
+                Vitest.expect(FileTreeCreator.toTreeRelativePath true "/data/ARC" "/data/arc/x").toEqual (Some "x")
+                Vitest.expect(FileTreeCreator.toTreeRelativePath false "/data/ARC" "/data/arc").toEqual None
+                Vitest.expect(FileTreeCreator.toTreeRelativePath true "/data/ARC" "/data/arc").toEqual (Some "")
+        )
+
+        Vitest.test (
+            "keeps a path with the exact root case under both flags",
+            fun () ->
+                for caseInsensitive in [ false; true ] do
+                    Vitest
+                        .expect(FileTreeCreator.toTreeRelativePath caseInsensitive "/data/ARC" "/data/ARC/x/y")
+                        .toEqual (Some "x/y")
+
+                    Vitest
+                        .expect(FileTreeCreator.toTreeRelativePath caseInsensitive "/data/ARC" "/data/ARC")
+                        .toEqual (Some "")
+        )
+
+        Vitest.test (
+            "rejects traversal segments and paths outside the root under both flags",
+            fun () ->
+                for caseInsensitive in [ false; true ] do
+                    Vitest
+                        .expect(FileTreeCreator.toTreeRelativePath caseInsensitive "/data/ARC" "/data/ARC/../x")
+                        .toEqual
+                        None
+
+                    Vitest.expect(FileTreeCreator.toTreeRelativePath caseInsensitive "/data/ARC" "/data/ARCx/y").toEqual
+                        None
+
+                    Vitest.expect(FileTreeCreator.toTreeRelativePath caseInsensitive "" "/data/ARC/x").toEqual None
+        )
+
+        Vitest.test (
+            "LoadDirectory refuses a path that differs from the root only by case on a case-sensitive volume",
+            fun () -> promise {
+                let! parent = TestHelpers.createTempDirectoryAsync "swate-case-root-"
+
+                try
+                    let root = join [| parent; "ARC" |]
+                    do! mkdirAsync' root
+                    do! mkdirAsync' (join [| parent; "arc"; "x" |])
+
+                    let vault = ArcVault(TestHelpers.testWindow ())
+                    vault.path <- Some root
+                    vault.isCaseInsensitive <- false
+
+                    match! vault.LoadDirectory "../arc/x" with
+                    | Ok _ -> failwith "Expected the path to be refused."
+                    | Error error -> Vitest.expect(error.Message).toContain "outside the ARC"
+
+                    do! TestHelpers.removeDirectoryAsync parent
+                with error ->
+                    do! TestHelpers.removeDirectoryAsync parent
+                    return raise error
+            }
         )
 )
 

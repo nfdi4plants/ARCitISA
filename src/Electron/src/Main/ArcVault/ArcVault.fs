@@ -349,6 +349,8 @@ module ArcVaultExtensions =
             | Some _ when this.isBusyWriting -> return Error(busyWritingError ())
             | Some currentPath ->
                 let hadWatcher = this.watcher.IsSome
+                // A watcher that went down and waits for its backoff restart must come back on the renamed folder.
+                let hadPendingRestart = this.FileWatcherRestartTimeout.IsSome
 
                 if hadWatcher then
                     do! this.StopFileWatcher()
@@ -399,8 +401,8 @@ module ArcVaultExtensions =
                         newName
                         renameError.Message
 
-                    if hadWatcher then
-                        this.StartFileWatcher()
+                    if hadWatcher || hadPendingRestart then
+                        this.RunFileWatcherRestart()
 
                     // The renderer keeps the badges of the previous index while the replacement lists again.
                     match previousReady with
@@ -436,15 +438,8 @@ module ArcVaultExtensions =
                                 renamedPath
                                 loadError.Message
 
-                    if hadWatcher then
-                        try
-                            this.StartFileWatcher()
-                        with watcherError ->
-                            swatelogfn
-                                this.window.id
-                                "ARC folder was renamed to '%s', but file watcher restart failed: %s"
-                                renamedPath
-                                watcherError.Message
+                    if hadWatcher || hadPendingRestart then
+                        this.RunFileWatcherRestart()
 
                     do! this.EnqueueFileTreeScan()
 

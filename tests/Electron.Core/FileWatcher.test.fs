@@ -502,6 +502,229 @@ Vitest.describe (
         )
 
         Vitest.test (
+            "a completed import releases the paths that the structural watcher does not report",
+            fun () ->
+                let events =
+                    WatcherHelpers.createImportedFileWatcherEvents "/arc" "assays/A1" [|
+                        "/src/isa.assay.xlsx"
+                        "/src/data.csv"
+                    |]
+
+                let imported =
+                    HashSet<string>(events |> Array.map WatcherHelpers.importedFileWatcherPathKey)
+
+                WatcherHelpers.releaseUnwatchedImportedPaths "/arc" true imported events
+
+                Vitest.expect(imported |> Seq.toArray).toEqual [|
+                    WatcherHelpers.importedFileWatcherPathKey events.[0]
+                |]
+        )
+
+        Vitest.test (
+            "a file imported into a zone folder is released because it is a file",
+            fun () ->
+                let events =
+                    WatcherHelpers.createImportedFileWatcherEvents "/arc" "assays" [| "/src/notes.txt" |]
+
+                let imported =
+                    HashSet<string>(events |> Array.map WatcherHelpers.importedFileWatcherPathKey)
+
+                WatcherHelpers.releaseUnwatchedImportedPaths "/arc" true imported events
+
+                Vitest.expect(imported.Count).toBe 0
+        )
+
+        Vitest.test (
+            "a completed import releases every path when the watcher is not running",
+            fun () ->
+                let events =
+                    WatcherHelpers.createImportedFileWatcherEvents "/arc" "assays/A1" [|
+                        "/src/isa.assay.xlsx"
+                        "/src/data.csv"
+                    |]
+
+                let imported =
+                    HashSet<string>(events |> Array.map WatcherHelpers.importedFileWatcherPathKey)
+
+                WatcherHelpers.releaseUnwatchedImportedPaths "/arc" false imported events
+
+                Vitest.expect(imported.Count).toBe 0
+        )
+
+        Vitest.test (
+            "a root rename resyncs after the restart it took over reaches ready",
+            fun () ->
+                withTempArc
+                    seedEntities
+                    (fun arcPath -> promise {
+                        let vault = newVault arcPath
+                        let watchedRoots = ResizeArray<string>()
+                        let fake = createFakeWatcher ()
+
+                        vault.FileWatcherFactory <-
+                            fun root polling ->
+                                watchedRoots.Add root
+                                readyShortlyFactory fake root polling
+
+                        vault.FileWatcherRestartTimeout <- Some(JS.setTimeout ignore 60000)
+
+                        try
+                            match! vault.RenameOpenArcRoot "renamed-pending-restart" with
+                            | Error error -> failwith error.Message
+                            | Ok renamedPath ->
+                                // The resync replays the entity files as watcher events.
+                                do!
+                                    waitUntil
+                                        "the resync events"
+                                        5000
+                                        (fun () ->
+                                            vault.fileWatcherPendingEvents.Count > 0
+                                            || vault.fileWatcherReloadArcTimeout.IsSome
+                                        )
+
+                                Vitest.expect(watchedRoots.ToArray()).toEqual [| renamedPath |]
+                                Vitest.expect(vault.FileWatcherRestartTimeout.IsNone).toBe true
+                                vault.CancelFileWatcherRestart()
+                                do! vault.StopFileWatcher()
+                        finally
+                            vault.CancelFileWatcherRestart()
+                            vault.ClearPendingFileWatcherState()
+                    })
+        )
+
+        Vitest.test (
+            "a root rename schedules a new restart when the taken-over start times out",
+            fun () ->
+                withTempArc
+                    seedEntities
+                    (fun arcPath -> promise {
+                        let vault = newVault arcPath
+                        vault.FileWatcherReadinessTimeoutMs <- 30
+                        vault.FileWatcherRestartBackoffMs <- [| 60000 |]
+                        let fake = createFakeWatcher ()
+                        vault.FileWatcherFactory <- fun _ _ -> unbox<Chokidar.IWatcher> fake
+                        vault.FileWatcherRestartTimeout <- Some(JS.setTimeout ignore 60000)
+
+                        try
+                            match! vault.RenameOpenArcRoot "renamed-restart-timeout" with
+                            | Error error -> failwith error.Message
+                            | Ok _ ->
+                                do!
+                                    waitUntil
+                                        "the next restart"
+                                        5000
+                                        (fun () -> vault.FileWatcherRestartTimeout.IsSome)
+
+                                vault.CancelFileWatcherRestart()
+                                do! vault.StopFileWatcher()
+                        finally
+                            vault.CancelFileWatcherRestart()
+                            vault.ClearPendingFileWatcherState()
+                    })
+        )
+
+        Vitest.test (
+            "a root rename schedules a backoff restart when the restarted running watcher times out",
+            fun () ->
+                withTempArc
+                    seedEntities
+                    (fun arcPath -> promise {
+                        let vault = newVault arcPath
+                        let created = ResizeArray<obj>()
+
+                        vault.FileWatcherFactory <-
+                            fun root polling ->
+                                let fake = createFakeWatcher ()
+                                created.Add fake
+
+                                if created.Count = 1 then
+                                    readyShortlyFactory fake root polling
+                                else
+                                    unbox<Chokidar.IWatcher> fake
+
+                        let! _ = vault.StartFileWatcherAsync()
+                        vault.FileWatcherReadinessTimeoutMs <- 30
+                        vault.FileWatcherRestartBackoffMs <- [| 60000 |]
+
+                        try
+                            match! vault.RenameOpenArcRoot "renamed-running-timeout" with
+                            | Error error -> failwith error.Message
+                            | Ok _ ->
+                                do!
+                                    waitUntil
+                                        "the backoff restart"
+                                        5000
+                                        (fun () -> vault.FileWatcherRestartTimeout.IsSome)
+
+                                Vitest.expect(created.Count).toBe 2
+                        finally
+                            vault.CancelFileWatcherRestart()
+                            vault.ClearPendingFileWatcherState()
+                    })
+        )
+
+        Vitest.test (
+            "a watcher error forgets the imported paths",
+            fun () ->
+                withTempArc
+                    seedEntities
+                    (fun arcPath -> promise {
+                        let vault = newVault arcPath
+                        vault.FileWatcherRestartBackoffMs <- [| 60000 |]
+                        let fake = createFakeWatcher ()
+                        vault.FileWatcherFactory <- readyShortlyFactory fake
+                        let! _ = vault.StartFileWatcherAsync()
+
+                        try
+                            vault.importedFileWatcherPaths.Add "/arc/.gitattributes" |> ignore
+                            emitError fake "watch failed" "EIO"
+
+                            Vitest.expect(vault.importedFileWatcherPaths.Count).toBe 0
+                        finally
+                            vault.CancelFileWatcherRestart()
+                            vault.ClearPendingFileWatcherState()
+
+                        do! vault.StopFileWatcher()
+                    })
+        )
+
+        Vitest.test (
+            "a failed root rename runs the restart that was pending",
+            fun () ->
+                withTempArc
+                    seedEntities
+                    (fun arcPath -> promise {
+                        let vault = newVault arcPath
+                        let watchedRoots = ResizeArray<string>()
+                        let fake = createFakeWatcher ()
+
+                        vault.FileWatcherFactory <-
+                            fun root polling ->
+                                watchedRoots.Add root
+                                readyShortlyFactory fake root polling
+
+                        mkdirSync
+                            (join [| dirname arcPath; "existing-pending-restart" |])
+                            (MkdirOptions(recursive = true))
+
+                        vault.FileWatcherRestartTimeout <- Some(JS.setTimeout ignore 60000)
+
+                        try
+                            match! vault.RenameOpenArcRoot "existing-pending-restart" with
+                            | Ok _ -> failwith "Expected the rename to reject an existing destination."
+                            | Error _ ->
+                                do! waitUntil "the watcher on the old root" 5000 (fun () -> vault.watcher.IsSome)
+                                Vitest.expect(watchedRoots.ToArray()).toEqual [| arcPath |]
+                                Vitest.expect(vault.FileWatcherRestartTimeout.IsNone).toBe true
+                                vault.CancelFileWatcherRestart()
+                                do! vault.StopFileWatcher()
+                        finally
+                            vault.CancelFileWatcherRestart()
+                            vault.ClearPendingFileWatcherState()
+                    })
+        )
+
+        Vitest.test (
             "no tree snapshot is scanned while the ARC initializes",
             fun () ->
                 withTempArc
