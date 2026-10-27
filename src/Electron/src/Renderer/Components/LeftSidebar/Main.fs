@@ -54,12 +54,7 @@ let private FileImportStatusNotice () =
                                         prop.custom ("aria-hidden", "true")
                                         prop.text statusText
                                     ]
-                                    Html.progress [
-                                        prop.className "swt:progress swt:progress-primary swt:w-full"
-                                        prop.value activeImport.progress.completedItems
-                                        prop.max activeImport.progress.totalItems
-                                        prop.ariaLabel "Import progress"
-                                    ]
+                                    FileImportProgressBar activeImport.progress
                                 ]
                             ]
                         else

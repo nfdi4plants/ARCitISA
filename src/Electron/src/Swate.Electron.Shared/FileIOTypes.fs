@@ -111,6 +111,20 @@ type FileImportProgress = {
     totalItems: int
 }
 
+module FileImportProgress =
+
+    let overallFraction (progress: FileImportProgress) =
+        let fractionDone =
+            if progress.totalItems <= 0 then
+                0.0
+            else
+                float progress.completedItems / float progress.totalItems
+
+        match progress.step with
+        | FileImportStep.Scanning -> 0.0
+        | FileImportStep.Copying -> 0.5 * fractionDone
+        | FileImportStep.Publishing -> 0.5 + 0.5 * fractionDone
+
 type ActiveFileImportState = {
     requestId: string
     phase: FileImportPhase

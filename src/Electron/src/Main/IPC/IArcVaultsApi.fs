@@ -593,12 +593,6 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
                             // before the notice closes.
 
                             let publishImportProgress (progress: FileImportProgress) =
-                                let fractionDone =
-                                    if progress.totalItems <= 0 then
-                                        0.0
-                                    else
-                                        float progress.completedItems / float progress.totalItems
-
                                 match progress.step with
                                 | FileImportStep.Scanning ->
                                     vault.window.setProgressBar (
@@ -607,16 +601,10 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
                                             Enums.BrowserWindow.SetProgressBar.Options.Mode.Indeterminate
                                         )
                                     )
-                                | FileImportStep.Copying ->
-                                    vault.window.setProgressBar (
-                                        0.5 * fractionDone,
-                                        BrowserWindow.SetProgressBar.Options(
-                                            Enums.BrowserWindow.SetProgressBar.Options.Mode.Normal
-                                        )
-                                    )
+                                | FileImportStep.Copying
                                 | FileImportStep.Publishing ->
                                     vault.window.setProgressBar (
-                                        0.5 + 0.5 * fractionDone,
+                                        FileImportProgress.overallFraction progress,
                                         BrowserWindow.SetProgressBar.Options(
                                             Enums.BrowserWindow.SetProgressBar.Options.Mode.Normal
                                         )

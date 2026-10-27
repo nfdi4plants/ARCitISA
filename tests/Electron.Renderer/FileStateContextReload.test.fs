@@ -853,6 +853,35 @@ Vitest.describe (
             Renderer.Components.LeftSidebar.FileImportStatus.showsFileImportProgressBar
 
         Vitest.test (
+            "maps both import steps onto one continuous overall fraction",
+            fun () ->
+                for step, completed, expected in
+                    [
+                        FileImportStep.Copying, 0, 0.0
+                        FileImportStep.Copying, 1, 0.125
+                        FileImportStep.Copying, 4, 0.5
+                        FileImportStep.Publishing, 0, 0.5
+                        FileImportStep.Publishing, 1, 0.625
+                        FileImportStep.Publishing, 4, 1.0
+                    ] do
+                    let progress = (state FileImportPhase.Copying step completed 4).progress
+                    Vitest.expect(FileImportProgress.overallFraction progress).toBe expected
+        )
+
+        Vitest.test (
+            "keeps scanning and unknown item totals at the start of their step",
+            fun () ->
+                for step, expected in
+                    [
+                        FileImportStep.Scanning, 0.0
+                        FileImportStep.Copying, 0.0
+                        FileImportStep.Publishing, 0.5
+                    ] do
+                    let progress = (state FileImportPhase.Copying step 0 0).progress
+                    Vitest.expect(FileImportProgress.overallFraction progress).toBe expected
+        )
+
+        Vitest.test (
             "shows the cancelling text first",
             fun () ->
                 Vitest

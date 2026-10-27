@@ -1,6 +1,16 @@
 module Renderer.Components.LeftSidebar.FileImportStatus
 
+open Feliz
 open Swate.Electron.Shared.FileIOTypes
+
+[<ReactComponent>]
+let internal FileImportProgressBar (progress: FileImportProgress) =
+    Html.progress [
+        prop.className "swt:progress swt:progress-primary swt:w-full"
+        prop.value (FileImportProgress.overallFraction progress)
+        prop.max 1.0
+        prop.ariaLabel "Import progress"
+    ]
 
 let fileImportStatusText (state: ActiveFileImportState) (isCancelling: bool) : string =
     let progress = state.progress
