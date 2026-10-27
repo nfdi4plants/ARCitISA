@@ -86,6 +86,7 @@
     <Compile Include="Api\GitHubReleases.test.fs" />
     <Compile Include="Util\DateTimeExtensions.fs" />
     <Compile Include="Util\Extensions.fs" />
+    <Compile Include="Util\Interop.fs" />
     <Compile Include="Util\ReactHooks.fs" />
     <Compile Include="Util\UserOS.fs" />
     <Compile Include="ARCtrl\TermCollection.fs" />
@@ -140,6 +141,7 @@
     <Compile Include="Primitive\CardGrid\CardGrid.fs" />
     <Compile Include="Primitive\ContextMenu\Types.fs" />
     <Compile Include="Primitive\ContextMenu\ContextMenu.fs" />
+    <Compile Include="Primitive\ContextMenu\ContextMenu.test.rtl.fs" />
     <Compile Include="Primitive\ComboBox\Types.fs" />
     <Compile Include="Primitive\ComboBox\ComboBox.fs" />
     <Compile Include="Primitive\Dropdown\Dropdown.fs" />
@@ -251,6 +253,7 @@
     <Compile Include="Composite\Widgets\JsonImport\JsonImport.fs" />
     <Compile Include="Composite\Widgets\JsonExport\JsonExport.fs" />
     <Compile Include="Composite\Widgets\BuildingBlockWidget\Dropdown.fs" />
+    <Compile Include="Composite\Widgets\BuildingBlockWidget\Dropdown.sample.fs" />
     <Compile Include="Composite\Widgets\BuildingBlockWidget\BuildingBlockWidget.fs" />
     <Compile Include="Composite\Widgets\CellInsertion.fs" />
     <Compile Include="Composite\Widgets\FilePickerWidget.fs" />
@@ -329,6 +332,7 @@
     <Compile Include="Page\Metadata\FormComponents\PersonsInput\PersonSearchDialog.fs" />
     <Compile Include="Page\Metadata\FormComponents\PersonsInput\PersonImportDialog.fs" />
     <Compile Include="Page\Metadata\FormComponents\PersonsInput\PersonsInput.fs" />
+    <Compile Include="Page\Metadata\FormComponents\PersonsInput\PersonsInput.sample.fs" />
     <Compile Include="Page\Metadata\FormComponents\PersonsInput\PersonsInput.test.rtl.fs" />
     <Compile Include="Page\Metadata\FormComponents\PersonsInput\PersonImportDialog.test.rtl.fs" />
     <Compile Include="Page\Metadata\FormComponents\PublicationsInput\Types.fs" />
@@ -336,6 +340,7 @@
     <Compile Include="Page\Metadata\FormComponents\PublicationsInput\Lookup.test.fs" />
     <Compile Include="Page\Metadata\FormComponents\PublicationsInput\PublicationSearchDialog.fs" />
     <Compile Include="Page\Metadata\FormComponents\PublicationsInput\PublicationsInput.fs" />
+    <Compile Include="Page\Metadata\FormComponents\PublicationsInput\PublicationsInput.sample.fs" />
     <Compile Include="Page\Metadata\FormComponents\PublicationsInput\PublicationsInput.test.rtl.fs" />
     <Compile Include="Page\Metadata\FormComponents\OntologySourceReferencesInput.fs" />
     <Compile Include="Page\Metadata\TemplateMetadata.fs" />

@@ -2,9 +2,7 @@ import React from "react";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, fireEvent, fn, userEvent, waitFor, within } from "storybook/test";
 import { Main as GitSidebarComponent } from "./GitSidebar.fs.js";
-import {
-  FSharpResult$2_Ok,
-} from "../../fable_modules/fable-library-ts.5.0.0-alpha.21/Result.ts";
+import { okResult } from "../../Util/Interop.fs.js";
 
 const noop = () => {};
 const noopWithArg = (_arg: unknown) => {};
@@ -17,7 +15,7 @@ const noopWithDownloadPreference = (_downloadLargeFiles: boolean) => {};
 const noopOpenRemoteRepository = () => {};
 const cancelOperationSpy = fn();
 const noopSelectChange = (_change: unknown) =>
-  Promise.resolve(FSharpResult$2_Ok<void, string>(undefined));
+  Promise.resolve(okResult<void, string>(undefined));
 
 const baseCallbacks = {
   OnRefresh: noop,
@@ -327,7 +325,7 @@ export const SlowOpenDoesNotGreyRows: Story = {
     callbacks: buildCallbacks({
       OnSelectChange: () =>
         new Promise((resolve) => {
-          window.setTimeout(() => resolve(FSharpResult$2_Ok<void, string>(undefined)), 250);
+          window.setTimeout(() => resolve(okResult<void, string>(undefined)), 250);
         }),
     }),
     downloadLargeFiles: true,
