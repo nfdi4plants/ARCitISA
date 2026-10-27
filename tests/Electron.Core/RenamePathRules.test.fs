@@ -9,8 +9,7 @@ let private mainFolderMessage =
 
 let private reservedMetadataMessage = "is reserved for ARC metadata."
 
-let private protectedNameMessage =
-    "so it could not be renamed or deleted afterwards."
+let private protectedNameMessage = "so it could not be renamed afterwards."
 
 let private gitFolderMessage = "'.git' is not allowed inside an ARC."
 let private extensionRequiredMessage = "file extension"
@@ -152,9 +151,26 @@ Vitest.describe (
         Vitest.test (
             "native structural child matching is case-insensitive",
             fun () ->
-                Vitest.expect(ArcEntityPathRules.isDeletePathAllowed "assays/OldAssay/DataSet").toBe (false)
-                Vitest.expect(ArcEntityPathRules.isDeletePathAllowed "studies/StudyA/Protocols").toBe (false)
-                Vitest.expect(ArcEntityPathRules.isDeletePathAllowed "studies/StudyA/Resources").toBe (false)
+                Vitest
+                    .expect(
+                        ArcEntityPathRules.classifyDeleteTarget "assays/OldAssay/DataSet"
+                        |> ArcEntityPathRules.isDeleteTargetAllowed
+                    )
+                    .toBe (false)
+
+                Vitest
+                    .expect(
+                        ArcEntityPathRules.classifyDeleteTarget "studies/StudyA/Protocols"
+                        |> ArcEntityPathRules.isDeleteTargetAllowed
+                    )
+                    .toBe (false)
+
+                Vitest
+                    .expect(
+                        ArcEntityPathRules.classifyDeleteTarget "studies/StudyA/Resources"
+                        |> ArcEntityPathRules.isDeleteTargetAllowed
+                    )
+                    .toBe (false)
         )
 
         Vitest.test (
@@ -270,8 +286,7 @@ Vitest.describe (
                 |> expectErrorContaining "'isa.investigation.xlsx' is reserved for ARC metadata."
 
                 tryBuildGenericFileSystemChildPath true "data" ".gitkeep"
-                |> expectErrorContaining
-                    "ARCitISA protects the name '.gitkeep', so it could not be renamed or deleted afterwards."
+                |> expectErrorContaining "ARCitISA protects the name '.gitkeep', so it could not be renamed afterwards."
 
                 tryBuildGenericFileSystemChildPath false "data" ".git"
                 |> expectErrorContaining gitFolderMessage
@@ -305,7 +320,7 @@ Vitest.describe (
                     Some "'dataset' is a folder that ARCitISA manages inside a study or assay."
 
                 let protectedName name =
-                    Some $"ARCitISA protects the name '{name}', so it could not be renamed or deleted afterwards."
+                    Some $"ARCitISA protects the name '{name}', so it could not be renamed afterwards."
 
                 let cases = [
                     "", true, inside
@@ -423,8 +438,83 @@ Vitest.describe (
                 tryBuildGenericFileSystemChildPath false "" "README.md"
                 |> expectErrorContaining protectedNameMessage
 
-                Vitest.expect(ArcEntityPathRules.isDeletePathAllowed "README.md").toBe (false)
+                Vitest
+                    .expect(
+                        ArcEntityPathRules.classifyDeleteTarget "README.md"
+                        |> ArcEntityPathRules.isDeleteTargetAllowed
+                    )
+                    .toBe (true)
+
                 Vitest.expect(ArcEntityPathRules.isRenamePathAllowed "assays/AssayA/README.md").toBe (false)
+        )
+
+        Vitest.test (
+            "deletion allows reserved generic names for files and folders while keeping path boundaries",
+            fun () ->
+                for parent in
+                    [
+                        ""
+                        "assays"
+                        "assays/AssayA"
+                        "assays/AssayA/dataset/Run1/empty"
+                    ] do
+                    for name in [ ".gitkeep"; ".GITATTRIBUTES"; "ReadMe.md" ] do
+                        let path = if parent = "" then name else $"{parent}/{name}"
+
+                        for isFile in [ true; false ] do
+                            Vitest.expect(ArcEntityPathRules.isItemDeletePathAllowed isFile path).toBe true
+
+                        Vitest.expect(ArcEntityPathRules.isRenamePathAllowed path).toBe false
+
+                for path in
+                    [
+                        "../README.md"
+                        "data/../.gitkeep"
+                        ".git/.gitkeep"
+                        "data/.git/README.md"
+                        "assays/../isa.assay.xlsx"
+                        "assays/.git/isa.assay.xlsx"
+                        "assays/AssayA/dataset"
+                        "studies/StudyA/protocols"
+                        "studies/StudyA/resources"
+                        "isa.investigation.xlsx"
+                    ] do
+                    Vitest
+                        .expect(
+                            ArcEntityPathRules.classifyDeleteTarget path
+                            |> ArcEntityPathRules.isDeleteTargetAllowed
+                        )
+                        .toBe
+                        false
+        )
+
+        Vitest.test (
+            "delete classification uses item kind independently of creation and rename name reservations",
+            fun () ->
+                let path = "assays/README.md"
+                let fileTarget = ArcEntityPathRules.classifyDeleteItemTarget true path
+                let folderTarget = ArcEntityPathRules.classifyDeleteItemTarget false path
+
+                Vitest.expect(fileTarget).toEqual (ArcEntityPathRules.DeletePathClassification.GenericTarget path)
+
+                Vitest
+                    .expect(folderTarget)
+                    .toEqual (
+                        ArcEntityPathRules.DeletePathClassification.EntityFolderTarget(
+                            ArcEntityPathRules.AddZone.Assays,
+                            "README.md",
+                            path
+                        )
+                    )
+
+                Vitest.expect(ArcEntityPathRules.isDeleteTargetAllowed fileTarget).toBe true
+                Vitest.expect(ArcEntityPathRules.isDeleteTargetAllowed folderTarget).toBe true
+                Vitest.expect(ArcEntityPathRules.isRenamePathAllowed path).toBe false
+
+                Vitest.expect(ArcEntityPathRules.buildFallbackUnlinkPaths path |> List.toArray).toEqual [|
+                    "assays/README.md/isa.assay.xlsx"
+                    "assays/README.md/isa.datamap.xlsx"
+                |]
         )
 
         Vitest.test (
@@ -458,16 +548,16 @@ Vitest.describe (
                 ]
                 |> List.iter (fun (zone, canonicalFileName) ->
                     [
-                        $"{zone}/overview.md", true
-                        $"{zone}/LICENSE", true
-                        $"{zone}/.DS_Store", true
-                        $"{zone}/{canonicalFileName}", false
-                        $"{zone}/isa.datamap.xlsx", false
-                        $"{zone}/readme.md", false
+                        $"{zone}/overview.md", true, true
+                        $"{zone}/LICENSE", true, true
+                        $"{zone}/.DS_Store", true, true
+                        $"{zone}/{canonicalFileName}", false, false
+                        $"{zone}/isa.datamap.xlsx", false, false
+                        $"{zone}/readme.md", true, false
                     ]
-                    |> List.iter (fun (path, expected) ->
-                        Vitest.expect(ArcEntityPathRules.isItemDeletePathAllowed true path).toBe (expected)
-                        Vitest.expect(ArcEntityPathRules.isItemRenamePathAllowed true path).toBe (expected)
+                    |> List.iter (fun (path, canDelete, canRename) ->
+                        Vitest.expect(ArcEntityPathRules.isItemDeletePathAllowed true path).toBe canDelete
+                        Vitest.expect(ArcEntityPathRules.isItemRenamePathAllowed true path).toBe canRename
                     )
 
                     Vitest.expect(ArcEntityPathRules.isItemDeletePathAllowed false $"{zone}/Entity1").toBe (true)

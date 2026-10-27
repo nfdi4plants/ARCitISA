@@ -204,10 +204,13 @@ module ArcEntityPathRules =
         | ProtectedEntityChildFolder
         | OtherPath
 
-    let private protectedDeleteTargetNames = [ ".gitattributes"; ".gitkeep"; "readme.md" ]
+    let private protectedCreateAndRenameTargetNames = [ ".gitattributes"; ".gitkeep"; "readme.md" ]
     let private creatableProtectedFileNames = [ "readme.md" ]
     let private protectedRenameRootFolderNames = [ "notes" ]
     let private disallowedGenericPathSegments = [ ".git" ]
+
+    let private hasRestrictedGenericName relativePath =
+        PathHelpers.isProtectedDeleteTarget protectedCreateAndRenameTargetNames relativePath
 
     let private normalizeRelativePath (path: string) =
         path |> PathHelpers.normalizeCanonicalRelativePath
@@ -297,7 +300,7 @@ module ArcEntityPathRules =
     let private isProtectedTarget normalizedRelativePath =
         function
         | StructuralArcPath.ProtectedEntityChildFolder -> true
-        | _ -> PathHelpers.isProtectedDeleteTarget protectedDeleteTargetNames normalizedRelativePath
+        | _ -> hasRestrictedGenericName normalizedRelativePath
 
     let private tryParseCanonicalArcFileTargetFromSegments (segments: string[]) =
         if segments.Length = 0 then
@@ -329,6 +332,12 @@ module ArcEntityPathRules =
 
     /// The outdated DataMap file name. Loading an ARC renames such a file to `isa.datamap.xlsx`.
     let legacyDataMapFileName = "isa_datamap"
+
+    /// Metadata files that ARC loading reads directly inside an entity folder.
+    let isEntityMetadataFileName zone fileName =
+        PathHelpers.pathsEqual fileName (zoneEntityFileName zone)
+        || PathHelpers.pathsEqual fileName ARCtrl.ArcPathHelper.DataMapFileName
+        || PathHelpers.pathsEqual fileName legacyDataMapFileName
 
     /// True for a path segment named ".git", ignoring case.
     let isDisallowedGenericPathSegment (segment: string) =
@@ -381,14 +390,20 @@ module ArcEntityPathRules =
                 | None -> false
             | _ -> false
 
+    let private isSafeDeletePath (relativePath: string) =
+        not (String.IsNullOrWhiteSpace relativePath)
+        && not (PathHelpers.containsPathTraversalSegments relativePath)
+        && not (relativePath |> splitPathSegments |> Array.exists isDisallowedGenericPathSegment)
+
+    /// Classifies a path's ARC role. Entity folder paths are candidates until their metadata is checked on disk.
     let classifyDeleteTarget (relativePath: string) =
         let normalizedRelativePath = normalizeRelativePath relativePath
         let segments = normalizedRelativePath |> splitPathSegments
         let structuralPath = classifyStructuralArcPath segments
 
-        if String.IsNullOrWhiteSpace normalizedRelativePath then
+        if not (isSafeDeletePath normalizedRelativePath) then
             DeletePathClassification.DisallowedTarget normalizedRelativePath
-        elif isProtectedTarget normalizedRelativePath structuralPath then
+        elif structuralPath = StructuralArcPath.ProtectedEntityChildFolder then
             DeletePathClassification.ProtectedTarget normalizedRelativePath
         else
             match segments with
@@ -403,8 +418,6 @@ module ArcEntityPathRules =
                 | None -> DeletePathClassification.GenericTarget normalizedRelativePath
             | [| zoneSegment; identifier |] ->
                 match tryParseZone zoneSegment with
-                | Some zone when identifier.StartsWith(".", StringComparison.Ordinal) ->
-                    DeletePathClassification.AddZoneDescendantTarget(zone, normalizedRelativePath)
                 | Some zone -> DeletePathClassification.EntityFolderTarget(zone, identifier, normalizedRelativePath)
                 | None -> DeletePathClassification.GenericTarget normalizedRelativePath
             | [| zoneSegment; identifier; fileName |] ->
@@ -482,7 +495,7 @@ module ArcEntityPathRules =
             isProtectedTarget normalizedRelativePath structuralPath
             && not isCreatableProtectedFile
         then
-            Some $"ARCitISA protects the name '{name}', so it could not be renamed or deleted afterwards."
+            Some $"ARCitISA protects the name '{name}', so it could not be renamed afterwards."
         elif isEmpty || PathHelpers.containsPathTraversalSegments normalizedRelativePath then
             Some "The path must stay inside the ARC."
         else
@@ -518,7 +531,7 @@ module ArcEntityPathRules =
     let isGenericFileSystemFileTargetAllowed (relativePath: string) =
         isGenericFileSystemPathAllowed false true relativePath
 
-    /// Checks a new generic file or folder path. Unlike rename and delete targets, a missing
+    /// Checks a new generic file or folder path. Unlike rename targets, a missing
     /// protected file such as `readme.md` may be created.
     let isGenericFileSystemCreateTargetAllowed (isFile: bool) (relativePath: string) =
         isGenericFileSystemPathAllowed true isFile relativePath
@@ -535,23 +548,27 @@ module ArcEntityPathRules =
         else
             Error errorMessage
 
-    let isDeletePathAllowed (relativePath: string) =
+    /// Refines the path's role when the entry kind is known. A collection-root file is not an entity folder.
+    let classifyDeleteItemTarget (isFile: bool) (relativePath: string) =
         match classifyDeleteTarget relativePath with
-        | DeletePathClassification.CanonicalFileTarget(CanonicalArcFileTarget.EntityFile _, _)
-        | DeletePathClassification.CanonicalFileTarget(CanonicalArcFileTarget.DataMapFile _, _)
-        | DeletePathClassification.EntityFolderTarget _ -> true
+        | DeletePathClassification.EntityFolderTarget(_, _, path) when isFile ->
+            DeletePathClassification.GenericTarget path
+        | target -> target
+
+    /// Applies deletion permissions to a classified target, independently of creation and rename name rules.
+    let isDeleteTargetAllowed target =
+        match target with
+        | DeletePathClassification.CanonicalFileTarget(CanonicalArcFileTarget.EntityFile _, path)
+        | DeletePathClassification.CanonicalFileTarget(CanonicalArcFileTarget.DataMapFile _, path)
+        | DeletePathClassification.EntityFolderTarget(_, _, path) -> isSafeDeletePath path
         | DeletePathClassification.GenericTarget normalizedRelativePath
         | DeletePathClassification.AddZoneDescendantTarget(_, normalizedRelativePath) ->
-            isGenericFileSystemTargetAllowed normalizedRelativePath
+            isSafeDeletePath normalizedRelativePath
+            && not (isCanonicalArcFileName (PathHelpers.getFileName normalizedRelativePath))
         | _ -> false
 
-    /// Like `isDeletePathAllowed` when the caller knows whether the item is a file. A file directly
-    /// inside an add zone has the path shape of an entity folder but is deleted as a generic file.
     let isItemDeletePathAllowed (isFile: bool) (relativePath: string) =
-        match classifyDeleteTarget relativePath with
-        | DeletePathClassification.EntityFolderTarget(_, _, normalizedRelativePath) when isFile ->
-            isGenericFileSystemFileTargetAllowed normalizedRelativePath
-        | _ -> isDeletePathAllowed relativePath
+        classifyDeleteItemTarget isFile relativePath |> isDeleteTargetAllowed
 
     /// The path that a delete of `relativePath` removes from disk. Deleting a canonical entity
     /// workbook removes the whole entity folder, so the scope of the workbook is its parent folder.
@@ -654,7 +671,7 @@ module ArcEntityPathRules =
         if
             String.IsNullOrWhiteSpace normalizedRelativePath
             || PathHelpers.containsPathTraversalSegments normalizedRelativePath
-            || PathHelpers.isProtectedDeleteTarget protectedDeleteTargetNames normalizedRelativePath
+            || hasRestrictedGenericName normalizedRelativePath
         then
             false
         else

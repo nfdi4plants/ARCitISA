@@ -67,10 +67,12 @@ New File, New Folder and Rename keep the location rules that existed before PR #
 - ARC metadata names such as "isa.assay.xlsx"
 - the folders ARCitISA manages: studies, assays, workflows, runs and their entity folders, "protocols" and "resources" inside a study, and "dataset" and "protocols" inside an assay
 - ".git" in a path
-- the protected names ".gitattributes", ".gitkeep" and "README.md". New Folder refuses all three names. New File refuses ".gitattributes" and ".gitkeep" and can create "README.md". Rename refuses these names as source and as target, and Delete refuses items with these names
+- the protected names ".gitattributes", ".gitkeep" and "README.md". New Folder refuses all three names. New File refuses ".gitattributes" and ".gitkeep" and can create "README.md". Rename refuses these names as source and as target
 - the extension a file needs directly inside studies, assays, workflows or runs
 
 This PR only changed their messages (`describeBlockedGenericCreateTarget`), so the dialogs say why they refuse a name. The import menu entries appear where New File and New Folder do. Apart from the ".git" rule above, the imported items no longer go through these rules.
+
+Delete has its own permission rules. Files and folders named ".gitkeep", ".gitattributes" and "README.md" can be deleted, including generated empty-folder markers. Directly inside studies, assays, workflows and runs, ordinary files and folders use filesystem deletion. A folder containing entity or datamap metadata uses ARC deletion, with the same metadata names and file-kind checks as ARC loading. ARC-managed folders and the investigation file remain protected.
 
 ## Dropped rules
 

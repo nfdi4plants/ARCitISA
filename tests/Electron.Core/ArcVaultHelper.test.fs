@@ -5510,6 +5510,55 @@ Vitest.describe (
         )
 
         Vitest.test (
+            "deletes imported README, attributes and generated markers through IPC and updates the tree",
+            fun () ->
+                withImportVault
+                    (Some("README.md", "imported documentation"))
+                    (fun vault api _ arcPath sourcePath -> promise {
+                        do! mkdirWatcherDirectoryAsync (join [| sourcePath; "empty" |])
+                        do! writeWatcherTextFileAsync (join [| sourcePath; ".gitattributes" |]) "*.bin filter=lfs"
+                        do! vault.EnqueueFileTreeScan()
+
+                        match! vault.LoadDirectory importTarget with
+                        | Ok _ -> ()
+                        | Error error -> failwith error.Message
+
+                        match! pickAndImport api "import-delete" with
+                        | Ok ImportExternalFilesResult.Completed -> ()
+                        | other -> failwithf "Expected Completed, received %A." other
+
+                        let importedRoot = $"{importTarget}/Run1"
+
+                        for directory in [ importedRoot; $"{importedRoot}/empty" ] do
+                            match! vault.LoadDirectory directory with
+                            | Ok _ -> ()
+                            | Error error -> failwith error.Message
+
+                        for relativePath in
+                            [
+                                $"{importedRoot}/README.md"
+                                $"{importedRoot}/.gitattributes"
+                                $"{importedRoot}/empty/.gitkeep"
+                            ] do
+                            let absolutePath = join [| arcPath; relativePath |]
+                            Vitest.expect(vault.FileTreeWriter.Tree.TryFind(absolutePath).IsSome).toBe true
+
+                            match! api.deletePath relativePath with
+                            | Ok() -> ()
+                            | Error error -> failwith error.Message
+
+                            let! exists = TestHelpers.pathExistsAsync absolutePath
+                            Vitest.expect(exists).toBe false
+                            Vitest.expect(vault.FileTreeWriter.Tree.TryFind(absolutePath).IsNone).toBe true
+
+                        let! notes =
+                            ARCtrl.FileSystemHelper.readFileTextAsync (join [| arcPath; importedRoot; "notes.txt" |])
+
+                        Vitest.expect(notes).toBe "run notes"
+                    })
+        )
+
+        Vitest.test (
             "releases the import's marks at once when the import fails",
             fun () ->
                 withImportVault

@@ -143,6 +143,6 @@ let tryBuildGenericFileSystemRenameTargetPath
                     // Creating a protected name such as README.md is allowed, renaming to it is not.
                     let name = PathHelpers.getFileName targetPath
 
-                    Error $"ARCitISA protects the name '{name}', so it could not be renamed or deleted afterwards."
+                    Error $"ARCitISA protects the name '{name}', so it could not be renamed afterwards."
             else
                 validateNewItemName targetPath

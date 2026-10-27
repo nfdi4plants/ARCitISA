@@ -598,7 +598,7 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "items directly inside ARC collection roots: generic files and entity folders get rename and delete, canonical and README files don't",
+            "collection-root files keep their action rules and README files offer delete",
             fun () ->
                 let labelsFor item = [|
                     yield! renameContextMenuItems [] ignore item |> List.map _.Label
@@ -612,12 +612,34 @@ Vitest.describe (
 
                     Vitest.expect(fileItem "overview.md" |> labelsFor).toEqual ([| "Rename"; "Delete" |])
                     Vitest.expect(fileItem canonicalFileName |> labelsFor).toEqual ([||])
-                    Vitest.expect(fileItem "README.md" |> labelsFor).toEqual ([||])
+                    Vitest.expect(fileItem "README.md" |> labelsFor).toEqual ([| "Delete" |])
 
                     Vitest
                         .expect(createFolderItem "Entity1" (Some $"{zone}/Entity1") |> labelsFor)
                         .toEqual ([| "Rename"; "Delete" |])
                 )
+        )
+
+        Vitest.test (
+            "reserved-name files and folders offer Delete and call the requested item",
+            fun () ->
+                for parent in [ ""; "assays"; "assays/AssayA/dataset/Run1/empty" ] do
+                    for name in [ ".gitkeep"; ".GITATTRIBUTES"; "ReadMe.md" ] do
+                        let path = if parent = "" then name else $"{parent}/{name}"
+
+                        for item in
+                            [
+                                createFileItem name (Some path)
+                                createFolderItem name (Some path)
+                            ] do
+                            let requested = ResizeArray<string>()
+
+                            let menuItems =
+                                deleteContextMenuItems [] (fun target -> requested.Add target.Id) item
+
+                            Vitest.expect(menuItems |> List.map _.Label |> List.toArray).toEqual [| "Delete" |]
+                            menuItems.Head.OnClick()
+                            Vitest.expect(requested.ToArray()).toEqual [| item.Id |]
         )
 
         Vitest.test (

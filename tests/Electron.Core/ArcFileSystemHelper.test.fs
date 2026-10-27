@@ -2046,7 +2046,7 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "creates missing README files and keeps them protected",
+            "creates missing README files and allows deleting them",
             fun () ->
                 withAssayArc (fun arcPath -> promise {
                     let! rootReadmePath =
@@ -2065,17 +2065,146 @@ Vitest.describe (
                     Vitest.expect(assayReadmePath).toBe ("assays/AssayA/attachments/README.md")
                     do! expectRelativePathExists arcPath assayReadmePath true
 
-                    for readmePath in [ rootReadmePath; assayReadmePath ] do
-                        let! deleteResult = ArcFileSystemHelper.deleteGenericFileSystemItemOnDisk arcPath readmePath
-                        expectErrorContaining "protected files" deleteResult
-                        do! expectRelativePathExists arcPath readmePath true
-
                     let! existingReadmeResult =
                         ArcFileSystemHelper.createFileSystemItemOnDisk
                             arcPath
                             (createItemRequest "" "README.md" FileSystemItemKind.File)
 
                     expectErrorContaining "already exists" existingReadmeResult
+
+                    for readmePath in [ rootReadmePath; assayReadmePath ] do
+                        do! deleteItemOrFail arcPath readmePath
+                        do! expectRelativePathExists arcPath readmePath false
+                })
+        )
+
+        Vitest.test (
+            "deletes imported reserved-name files, folders and generated empty-folder markers",
+            fun () ->
+                withAssayArc (fun arcPath -> promise {
+                    let! sourcePath = createExternalRunFolderAsync arcPath
+                    do! createRelativeDirectoryAsync arcPath "assays/AssayA/dataset"
+
+                    for name in [ ".gitkeep"; ".gitattributes"; "README.md" ] do
+                        do! writeRelativeFileAsync sourcePath name "imported file"
+                        do! createRelativeDirectoryAsync sourcePath $"named-folders/{name}"
+                        do! writeRelativeFileAsync sourcePath $"named-folders/{name}/inner.txt" "folder content"
+
+                    do!
+                        importCollectingPlannedFiles arcPath "assays/AssayA/dataset" [| sourcePath |]
+                        |> Promise.map ignore
+
+                    let importedRoot = "assays/AssayA/dataset/Run1"
+
+                    let paths = [
+                        $"{importedRoot}/empty/.gitkeep"
+                        for name in [ ".gitkeep"; ".gitattributes"; "README.md" ] do
+                            $"{importedRoot}/{name}"
+                            $"{importedRoot}/named-folders/{name}"
+                    ]
+
+                    for path in paths do
+                        do! expectRelativePathExists arcPath path true
+                        do! expectDeleteRoute arcPath path (ArcFileSystemHelper.DeletePathRoute.GenericItem path)
+                        do! deleteItemOrFail arcPath path
+                        do! expectRelativePathExists arcPath path false
+
+                    let! notes = readRelativeFileAsync arcPath $"{importedRoot}/notes.txt"
+                    Vitest.expect(notes).toBe "run notes"
+                    do! expectRelativePathExists arcPath "assays/AssayA/isa.assay.xlsx" true
+                })
+        )
+
+        Vitest.test (
+            "deletes ordinary files and folders directly inside collection roots as generic items",
+            fun () ->
+                withAssayArc (fun arcPath -> promise {
+                    for zone in [ "studies"; "assays"; "workflows"; "runs" ] do
+                        do! createRelativeDirectoryAsync arcPath zone
+
+                        for name in
+                            [
+                                ".gitkeep"
+                                ".gitattributes"
+                                "README.md"
+                                "backup"
+                                "notes.md"
+                            ] do
+                            let path = $"{zone}/{name}"
+                            do! writeRelativeFileAsync arcPath path "file content"
+                            do! expectDeleteRoute arcPath path (ArcFileSystemHelper.DeletePathRoute.GenericItem path)
+                            do! deleteItemOrFail arcPath path
+                            do! expectRelativePathExists arcPath path false
+
+                            do! createRelativeDirectoryAsync arcPath path
+                            do! writeRelativeFileAsync arcPath $"{path}/inner.txt" "folder content"
+                            do! expectDeleteRoute arcPath path (ArcFileSystemHelper.DeletePathRoute.GenericItem path)
+                            do! deleteItemOrFail arcPath path
+                            do! expectRelativePathExists arcPath path false
+
+                    do! expectRelativePathExists arcPath "assays/AssayA/isa.assay.xlsx" true
+                })
+        )
+
+        Vitest.test (
+            "structural metadata keeps collection folders on the entity delete route regardless of their name",
+            fun () ->
+                withAssayArc (fun arcPath -> promise {
+                    for zone, folder, metadataName in
+                        [
+                            "assays", "README.md", "ISA.ASSAY.XLSX"
+                            "studies", "README.md", "ISA.STUDY.XLSX"
+                            "workflows", "README.md", "ISA.WORKFLOW.XLSX"
+                            "runs", "README.md", "ISA.RUN.XLSX"
+                            "assays", ".gitkeep", "isa.assay.xlsx"
+                            "assays", ".gitattributes", "isa.assay.xlsx"
+                            "assays", "MapOnly", "ISA.DATAMAP.XLSX"
+                            "assays", "LegacyOnly", "ISA_DATAMAP"
+                        ] do
+                        let path = $"{zone}/{folder}"
+                        let! exists = TestHelpers.pathExistsAsync (absoluteArcPath arcPath path)
+
+                        if exists then
+                            do! deleteItemOrFail arcPath path
+
+                        do! createRelativeDirectoryAsync arcPath path
+                        // Invalid metadata must still go through ARC validation before deletion.
+                        do! writeRelativeFileAsync arcPath $"{path}/{metadataName}" "invalid workbook"
+                        do! expectDeleteRoute arcPath path (ArcFileSystemHelper.DeletePathRoute.ArcEntity path)
+
+                        let! result = ArcFileSystemHelper.deleteGenericFileSystemItemOnDisk arcPath path
+                        result |> expectErrorContaining "safe non-entity paths"
+                        do! expectRelativePathExists arcPath $"{path}/{metadataName}" true
+                })
+        )
+
+        Vitest.test (
+            "a directory named like an entity workbook does not make its parent an ARC entity",
+            fun () ->
+                withAssayArc (fun arcPath -> promise {
+                    let path = "assays/Backup"
+                    do! createRelativeDirectoryAsync arcPath $"{path}/isa.assay.xlsx"
+                    do! writeRelativeFileAsync arcPath $"{path}/isa.assay.xlsx/notes.txt" "payload"
+                    do! expectDeleteRoute arcPath path (ArcFileSystemHelper.DeletePathRoute.GenericItem path)
+                    do! deleteItemOrFail arcPath path
+                    do! expectRelativePathExists arcPath path false
+                })
+        )
+
+        Vitest.test (
+            "deleting a collection-root folder link removes the link and keeps its target",
+            fun () ->
+                withAssayArc (fun arcPath -> promise {
+                    let target = join [| dirname arcPath; "outside" |]
+                    do! mkdirAsync target
+                    do! writeRelativeFileAsync target "notes.txt" "keep the target"
+                    let link = "assays/LinkedPayload"
+                    do! TestHelpers.createFolderLinkAsync target (absoluteArcPath arcPath link)
+                    do! expectDeleteRoute arcPath link (ArcFileSystemHelper.DeletePathRoute.GenericItem link)
+                    do! deleteItemOrFail arcPath link
+                    do! expectRelativePathExists arcPath link false
+                    let! content = readRelativeFileAsync target "notes.txt"
+                    Vitest.expect(content).toBe "keep the target"
                 })
         )
 
@@ -2155,7 +2284,7 @@ Vitest.describe (
                             "assays/AssayA"
                             (ArcFileSystemHelper.DeletePathRoute.ArcEntity "assays/AssayA")
 
-                    // A missing path keeps the entity route, so only real files take the generic route.
+                    // A missing path keeps the entity route so the existing missing-entity error is preserved.
                     do!
                         expectDeleteRoute
                             arcPath
@@ -2181,12 +2310,11 @@ Vitest.describe (
                     | ArcFileSystemHelper.DeletePathRoute.Rejected _ -> ()
                     | route -> failwith $"Expected investigation delete to be rejected, but it routed to {route}."
 
-                    let! readmeRoute =
-                        ArcFileSystemHelper.resolveDeletePathRouteAsync arcPath "assays/AssayA/README.md"
-
-                    match readmeRoute with
-                    | ArcFileSystemHelper.DeletePathRoute.Rejected _ -> ()
-                    | route -> failwith $"Expected README delete to be rejected, but it routed to {route}."
+                    do!
+                        expectDeleteRoute
+                            arcPath
+                            "assays/AssayA/README.md"
+                            (ArcFileSystemHelper.DeletePathRoute.GenericItem "assays/AssayA/README.md")
 
                     // A file with a canonical ARC name directly inside an add zone is neither an entity nor a generic file.
                     do! writeRelativeFileAsync arcPath "assays/isa.investigation.xlsx" ""

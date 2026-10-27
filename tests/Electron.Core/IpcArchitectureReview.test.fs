@@ -380,15 +380,56 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "isDeletePathAllowed permits safe non-ARC filesystem targets",
+            "delete permissions allow safe filesystem and entity targets",
             fun () ->
-                Vitest.expect(ArcEntityPathRules.isDeletePathAllowed "studies/StudyA/isa.study.xlsx").toBe (true)
-                Vitest.expect(ArcEntityPathRules.isDeletePathAllowed "test.fsx").toBe (true)
-                Vitest.expect(ArcEntityPathRules.isDeletePathAllowed "studies").toBe (false)
-                Vitest.expect(ArcEntityPathRules.isDeletePathAllowed "studies/StudyA/resources").toBe (false)
-                Vitest.expect(ArcEntityPathRules.isDeletePathAllowed "studies/StudyA/dataset/raw.tsv").toBe (true)
-                Vitest.expect(ArcEntityPathRules.isDeletePathAllowed "README.md").toBe (false)
-                Vitest.expect(ArcEntityPathRules.isDeletePathAllowed "../studies/StudyA/isa.study.xlsx").toBe (false)
+                Vitest
+                    .expect(
+                        ArcEntityPathRules.classifyDeleteTarget "studies/StudyA/isa.study.xlsx"
+                        |> ArcEntityPathRules.isDeleteTargetAllowed
+                    )
+                    .toBe (true)
+
+                Vitest
+                    .expect(
+                        ArcEntityPathRules.classifyDeleteTarget "test.fsx"
+                        |> ArcEntityPathRules.isDeleteTargetAllowed
+                    )
+                    .toBe (true)
+
+                Vitest
+                    .expect(
+                        ArcEntityPathRules.classifyDeleteTarget "studies"
+                        |> ArcEntityPathRules.isDeleteTargetAllowed
+                    )
+                    .toBe (false)
+
+                Vitest
+                    .expect(
+                        ArcEntityPathRules.classifyDeleteTarget "studies/StudyA/resources"
+                        |> ArcEntityPathRules.isDeleteTargetAllowed
+                    )
+                    .toBe (false)
+
+                Vitest
+                    .expect(
+                        ArcEntityPathRules.classifyDeleteTarget "studies/StudyA/dataset/raw.tsv"
+                        |> ArcEntityPathRules.isDeleteTargetAllowed
+                    )
+                    .toBe (true)
+
+                Vitest
+                    .expect(
+                        ArcEntityPathRules.classifyDeleteTarget "README.md"
+                        |> ArcEntityPathRules.isDeleteTargetAllowed
+                    )
+                    .toBe (true)
+
+                Vitest
+                    .expect(
+                        ArcEntityPathRules.classifyDeleteTarget "../studies/StudyA/isa.study.xlsx"
+                        |> ArcEntityPathRules.isDeleteTargetAllowed
+                    )
+                    .toBe (false)
         )
 
         Vitest.test (

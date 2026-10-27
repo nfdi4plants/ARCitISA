@@ -138,16 +138,16 @@ let tests =
         testCase "delete and rename classifiers treat hidden files in add-zone roots as generic targets"
         <| fun _ ->
             let deleteClassification =
-                ArcEntityPathRules.classifyDeleteTarget "assays/.DS_Store"
+                ArcEntityPathRules.classifyDeleteItemTarget true "assays/.DS_Store"
 
             match deleteClassification with
-            | ArcEntityPathRules.DeletePathClassification.AddZoneDescendantTarget(ArcEntityPathRules.AddZone.Assays,
-                                                                                  normalizedPath) ->
+            | ArcEntityPathRules.DeletePathClassification.GenericTarget normalizedPath ->
                 Expect.equal normalizedPath "assays/.DS_Store" "The hidden file path should remain unchanged."
-            | _ -> failwith "Expected a generic assay-zone descendant classification."
+            | _ -> failwith "Expected a generic delete target."
 
             Expect.isTrue
-                (ArcEntityPathRules.isDeletePathAllowed "assays/.DS_Store")
+                (ArcEntityPathRules.classifyDeleteTarget "assays/.DS_Store"
+                 |> ArcEntityPathRules.isDeleteTargetAllowed)
                 "Safe hidden files in add-zone roots should be deletable."
 
             let renameClassification =
@@ -162,54 +162,65 @@ let tests =
                 (ArcEntityPathRules.isRenamePathAllowed "assays/.DS_Store")
                 "Safe hidden files in add-zone roots should be renameable."
 
-        testCase "isDeletePathAllowed keeps broad add-zone descendants"
+        testCase "delete permissions keep broad add-zone descendants"
         <| fun _ ->
             Expect.isTrue
-                (ArcEntityPathRules.isDeletePathAllowed "assays/MyAssay/notes/custom.txt")
+                (ArcEntityPathRules.classifyDeleteTarget "assays/MyAssay/notes/custom.txt"
+                 |> ArcEntityPathRules.isDeleteTargetAllowed)
                 "Any descendant under add zones should remain deletable."
 
             Expect.isTrue
-                (ArcEntityPathRules.isDeletePathAllowed "test.fsx")
+                (ArcEntityPathRules.classifyDeleteTarget "test.fsx"
+                 |> ArcEntityPathRules.isDeleteTargetAllowed)
                 "Safe root-level generic files should be deletable."
 
-        testCase "isDeletePathAllowed rejects protected targets"
+        testCase "delete permissions allow generic names and reject structural folders"
         <| fun _ ->
-            Expect.isFalse
-                (ArcEntityPathRules.isDeletePathAllowed "workflows/MyWorkflow/readme.md")
-                "Protected files should remain non-deletable."
+            Expect.isTrue
+                (ArcEntityPathRules.classifyDeleteTarget "workflows/MyWorkflow/readme.md"
+                 |> ArcEntityPathRules.isDeleteTargetAllowed)
+                "README files should be deletable."
+
+            Expect.isTrue
+                (ArcEntityPathRules.classifyDeleteTarget "assays/MyAssay/.gitattributes"
+                 |> ArcEntityPathRules.isDeleteTargetAllowed)
+                ".gitattributes files should be deletable."
 
             Expect.isFalse
-                (ArcEntityPathRules.isDeletePathAllowed "assays/MyAssay/.gitattributes")
-                ".gitattributes should remain non-deletable."
-
-            Expect.isFalse
-                (ArcEntityPathRules.isDeletePathAllowed "assays/MyAssay/dataset")
+                (ArcEntityPathRules.classifyDeleteTarget "assays/MyAssay/dataset"
+                 |> ArcEntityPathRules.isDeleteTargetAllowed)
                 "Assay dataset folders should remain non-deletable."
 
             Expect.isFalse
-                (ArcEntityPathRules.isDeletePathAllowed "studies/MyStudy/protocols")
+                (ArcEntityPathRules.classifyDeleteTarget "studies/MyStudy/protocols"
+                 |> ArcEntityPathRules.isDeleteTargetAllowed)
                 "Study protocol folders should remain non-deletable."
 
             Expect.isFalse
-                (ArcEntityPathRules.isDeletePathAllowed "studies/MyStudy/resources")
+                (ArcEntityPathRules.classifyDeleteTarget "studies/MyStudy/resources"
+                 |> ArcEntityPathRules.isDeleteTargetAllowed)
                 "Study resource folders should remain non-deletable."
 
             Expect.isTrue
-                (ArcEntityPathRules.isDeletePathAllowed "assays/MyAssay/dataset/raw.bin")
+                (ArcEntityPathRules.classifyDeleteTarget "assays/MyAssay/dataset/raw.bin"
+                 |> ArcEntityPathRules.isDeleteTargetAllowed)
                 "Files below structural dataset folders should remain deletable."
 
         testCase "native structural child folder matching is case-insensitive"
         <| fun _ ->
             Expect.isFalse
-                (ArcEntityPathRules.isDeletePathAllowed "assays/MyAssay/DataSet")
+                (ArcEntityPathRules.classifyDeleteTarget "assays/MyAssay/DataSet"
+                 |> ArcEntityPathRules.isDeleteTargetAllowed)
                 "Assay dataset folders should stay protected with non-canonical casing."
 
             Expect.isFalse
-                (ArcEntityPathRules.isDeletePathAllowed "studies/MyStudy/Protocols")
+                (ArcEntityPathRules.classifyDeleteTarget "studies/MyStudy/Protocols"
+                 |> ArcEntityPathRules.isDeleteTargetAllowed)
                 "Study protocol folders should stay protected with non-canonical casing."
 
             Expect.isFalse
-                (ArcEntityPathRules.isDeletePathAllowed "studies/MyStudy/Resources")
+                (ArcEntityPathRules.classifyDeleteTarget "studies/MyStudy/Resources"
+                 |> ArcEntityPathRules.isDeleteTargetAllowed)
                 "Study resource folders should stay protected with non-canonical casing."
 
         testCase "buildFallbackUnlinkPaths maps entity folder to canonical files"

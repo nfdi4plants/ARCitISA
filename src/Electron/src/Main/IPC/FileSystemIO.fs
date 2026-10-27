@@ -911,40 +911,64 @@ module ArcFileSystemHelper =
     let private genericDeleteRejected =
         DeletePathRoute.Rejected "Deletion is only allowed for safe non-ARC filesystem items inside the ARC."
 
-    /// Chooses the delete operation for `relativePath`. Files directly inside an add zone have the
-    /// path shape of entity folders, so the disk is checked before the ARC entity route is chosen.
+    /// Refines a path's role with its entry kind and the same structural metadata names used by ARC loading.
+    /// An absent folder keeps its candidate role so the entity delete reports the missing entity as before.
+    let private classifyDeleteTargetOnDiskAsync arcPath relativePath = promise {
+        let! isFile = isFileAsync arcPath relativePath
+        let target = ArcEntityPathRules.classifyDeleteItemTarget isFile relativePath
+
+        match target with
+        | ArcEntityPathRules.DeletePathClassification.EntityFolderTarget(zone, _, path) ->
+            try
+                let! entries = readdirWithTypesAsync (join [| arcPath; path |]) (ReaddirOptions(withFileTypes = true))
+
+                let hasMetadata =
+                    entries
+                    |> Array.exists (fun entry ->
+                        entry.isFile () && ArcEntityPathRules.isEntityMetadataFileName zone entry.name
+                    )
+
+                return
+                    if hasMetadata then
+                        target
+                    else
+                        ArcEntityPathRules.DeletePathClassification.GenericTarget path
+            with error ->
+                match tryGetNodeErrorCode error with
+                | Some "ENOENT"
+                | Some "ENOTDIR" -> return target
+                | _ -> return raise error
+        | _ -> return target
+    }
+
     let resolveDeletePathRouteAsync (arcPath: string) (relativePath: string) : JS.Promise<DeletePathRoute> = promise {
-        let normalizedRelativePath =
-            relativePath |> PathHelpers.normalizeCanonicalRelativePath
+        let! target = classifyDeleteTargetOnDiskAsync arcPath relativePath
 
-        let! isAddZoneRootFile = isAddZoneRootFileAsync arcPath normalizedRelativePath
-
-        match ArcEntityPathRules.classifyDeleteTarget normalizedRelativePath with
-        | ArcEntityPathRules.DeletePathClassification.EntityFolderTarget _ when isAddZoneRootFile ->
-            if ArcEntityPathRules.isGenericFileSystemFileTargetAllowed normalizedRelativePath then
-                return DeletePathRoute.GenericItem normalizedRelativePath
-            else
-                return genericDeleteRejected
-        | ArcEntityPathRules.DeletePathClassification.EntityFolderTarget _
+        match target with
+        | ArcEntityPathRules.DeletePathClassification.GenericTarget path
+        | ArcEntityPathRules.DeletePathClassification.AddZoneDescendantTarget(_, path) when
+            ArcEntityPathRules.isDeleteTargetAllowed target
+            ->
+            return DeletePathRoute.GenericItem path
+        | ArcEntityPathRules.DeletePathClassification.EntityFolderTarget(_, _, path)
         | ArcEntityPathRules.DeletePathClassification.CanonicalFileTarget(ArcEntityPathRules.CanonicalArcFileTarget.EntityFile _,
-                                                                          _) ->
-            return DeletePathRoute.ArcEntity normalizedRelativePath
+                                                                          path) when
+            ArcEntityPathRules.isDeleteTargetAllowed target
+            ->
+            return DeletePathRoute.ArcEntity path
         | ArcEntityPathRules.DeletePathClassification.CanonicalFileTarget(ArcEntityPathRules.CanonicalArcFileTarget.DataMapFile _,
-                                                                          normalizedDataMapPath) ->
+                                                                          normalizedDataMapPath) when
+            ArcEntityPathRules.isDeleteTargetAllowed target
+            ->
             return DeletePathRoute.DataMap normalizedDataMapPath
-        | ArcEntityPathRules.DeletePathClassification.GenericTarget normalizedGenericPath
-        | ArcEntityPathRules.DeletePathClassification.AddZoneDescendantTarget(_, normalizedGenericPath) ->
-            if ArcEntityPathRules.isDeletePathAllowed normalizedGenericPath then
-                return DeletePathRoute.GenericItem normalizedGenericPath
-            else
-                return genericDeleteRejected
         | ArcEntityPathRules.DeletePathClassification.CanonicalFileTarget(ArcEntityPathRules.CanonicalArcFileTarget.InvestigationFile,
                                                                           _) ->
             return DeletePathRoute.Rejected "Deleting the investigation file is not supported."
         | ArcEntityPathRules.DeletePathClassification.ProtectedTarget _ ->
             return
-                DeletePathRoute.Rejected "Deleting protected files (for example .gitkeep or readme.md) is not allowed."
-        | ArcEntityPathRules.DeletePathClassification.DisallowedTarget _ -> return genericDeleteRejected
+                DeletePathRoute.Rejected
+                    "Deleting ARC-managed folders (for example dataset or protocols) is not allowed."
+        | _ -> return genericDeleteRejected
     }
 
     /// True when `relativePath` is renamed with the generic rename instead of the ARC entity rename,
@@ -1098,13 +1122,9 @@ module ArcFileSystemHelper =
     let private deleteGenericRouteOnDisk (arcPath: string) (route: DeletePathRoute) : JS.Promise<Result<unit, exn>> = promise {
         let genericDeletePath =
             match route with
-            | DeletePathRoute.GenericItem normalizedRelativePath -> Ok normalizedRelativePath
-            | DeletePathRoute.DataMap normalizedDataMapPath when
-                ArcEntityPathRules.isDeletePathAllowed normalizedDataMapPath
-                ->
-                Ok normalizedDataMapPath
+            | DeletePathRoute.GenericItem normalizedRelativePath
+            | DeletePathRoute.DataMap normalizedRelativePath -> Ok normalizedRelativePath
             | DeletePathRoute.Rejected message -> Error message
-            | DeletePathRoute.DataMap _
             | DeletePathRoute.ArcEntity _ ->
                 Error "Generic filesystem delete is only supported for safe non-entity paths."
 
