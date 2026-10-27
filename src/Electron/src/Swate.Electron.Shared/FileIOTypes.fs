@@ -8,7 +8,6 @@ type FileEntry = {
     name: string
     isDirectory: bool
     path: string
-    largeObject: ObjectStateDto option
 }
 
 [<AutoOpen>]
@@ -21,38 +20,10 @@ module FileEntryExtensions =
 
     type FileEntry with
 
-        static member create
-            (name: string, path: string, isDirectory: bool, ?largeObject: ObjectStateDto option)
-            : FileEntry =
-            {
-                name = name
-                path = path
-                isDirectory = isDirectory
-                largeObject = defaultArg largeObject None
-            }
-
-type FileTreeNode = {
-    name: string
-    isDirectory: bool
-    path: string
-    largeObject: ObjectStateDto option
-    children: Dictionary<string, FileTreeNode>
-} with
-
-    static member create
-        (
-            name: string,
-            isDirectory: bool,
-            path: string,
-            children: Dictionary<string, FileTreeNode>,
-            ?largeObject: ObjectStateDto option
-        ) =
-        {
+        static member create(name: string, path: string, isDirectory: bool) : FileEntry = {
             name = name
-            isDirectory = isDirectory
             path = path
-            largeObject = defaultArg largeObject None
-            children = children
+            isDirectory = isDirectory
         }
 
 [<RequireQualifiedAccess; StringEnum>]
@@ -70,11 +41,24 @@ type FileContentType =
     | ISA_Workflow
     | ISA_Datamap
     | CLI
+    /// A file without text preview. The noPreview field of the DTO holds its size and the reason.
+    | NoPreview
+
+/// Why a file has no preview.
+[<RequireQualifiedAccess; StringEnum>]
+type NoPreviewReason =
+    | TooLarge
+    | Binary
 
 type FileContentDTO = {|
     fileType: FileContentType
     content: string
     path: string
+    noPreview:
+        {|
+            sizeBytes: float
+            reason: NoPreviewReason
+        |} option
 |}
 
 type RenamePathRequest = {

@@ -9,18 +9,27 @@
     <Compile Include="ArcVaultHelper.test.fs" />
     <Compile Include="DataHubBrowserTarget.test.fs" />
     <Compile Include="JsonImportWidget.test.fs" />
+    <Compile Include="FileTreeStore.test.fs" />
     <Compile Include="FileStateContextReload.test.fs" />
     <Compile Include="FileSystemHelper.test.fs" />
     <Compile Include="FileTreeFileTargetWorkflow.test.fs" />
     <Compile Include="FileTreeMaterialization.test.fs" />
+    <Compile Include="FileTreePerformance.test.fs" />
     <Compile Include="FileTreeContextMenu.test.fs" />
+    <Compile Include="FileTreeContextMenu.test.rtl.fs" />
+    <Compile Include="FileWatcherNotice.test.rtl.fs" />
     <Compile Include="FileTreeDeleteWorkflow.test.fs" />
     <Compile Include="FileTreeRenameWorkflow.test.fs" />
+    <Compile Include="FileTreeFreeLfsModal.test.rtl.fs" />
     <Compile Include="GitWorkflow.test.fs" />
     <Compile Include="GitDiffPageWorkflow.test.fs" />
     <Compile Include="GitWorkflowUnitResult.test.fs" />
     <Compile Include="GitLabCreateProject.test.fs" />
     <Compile Include="LfsActivityContext.test.fs" />
+    <Compile Include="LargeObjectStore.test.fs" />
+    <Compile Include="LargeObjectStore.test.rtl.fs" />
+    <Compile Include="FileExplorerStateReconciliation.test.rtl.fs" />
+    <Compile Include="FileTreeExpansionContext.test.rtl.fs" />
     <Compile Include="NoteSearchInterop.test.fs" />
     <Compile Include="ProvenanceGraphPage.test.fs" />
   </ItemGroup>
@@ -29,5 +38,6 @@
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Vitest" />
+    <PackageReference Include="Vitest.ReactTestingLibrary" />
   </ItemGroup>
 </Project>

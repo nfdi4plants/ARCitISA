@@ -349,7 +349,7 @@ const LfsContextMenuFileExplorer = () => {
             freeLocalLfsCopy,
           )
         }
-        getItemStatusAction={(item) => fileExplorerGitLfsPillAction(item, downloadLfsFile, freeLocalLfsCopy)}
+        getItemStatusAction={(item) => fileExplorerGitLfsPillAction(item, downloadLfsFile)}
       />
       <div data-testid="lfs-download-count">Downloads: {downloadCount}</div>
       <div data-testid="lfs-free-count">Freed: {freeCount}</div>
@@ -477,7 +477,7 @@ const BusyLfsRowFileExplorer = () => {
         }
         canDeleteItem={() => true}
         onDeleteItem={() => {}}
-        getItemStatusAction={(item) => fileExplorerGitLfsPillAction(item, () => {}, () => {})}
+        getItemStatusAction={(item) => fileExplorerGitLfsPillAction(item, () => {})}
         truncateOverflowingItemNames={true}
       />
     </div>
@@ -485,7 +485,7 @@ const BusyLfsRowFileExplorer = () => {
 };
 
 const lfsRowLabel = (canvasElement: HTMLElement, id: string) => {
-  const row = canvasElement.querySelector(`li[data-file-item-id="${id}"]`);
+  const row = canvasElement.querySelector(`[role="treeitem"][data-file-item-id="${id}"]`);
 
   if (!(row instanceof HTMLElement)) {
     throw new Error(`Expected file row ${id}.`);
@@ -548,6 +548,113 @@ const expectLongNameControlsToStayVisible = async (canvasElement: HTMLElement, i
   });
 };
 
+const narrowLfsPointerName = "a-very-long-pointer-file-name-for-the-sequencing-run.fastq.gz";
+const narrowLfsDownloadedName = "a-very-long-downloaded-file-name-for-the-alignment.bam";
+
+const createNarrowLfsItems = () =>
+  ofArray([
+    Object.assign(
+      createStableFolder("data", "data", "narrow-data", [
+        Object.assign(createStableFolder("raw", "data/raw", "narrow-raw", [
+          Object.assign(createStableFile(narrowLfsPointerName, "data/raw/pointer.fastq.gz", "narrow-pointer"), {
+            IsLFS: true,
+            Downloaded: false,
+            IsLFSPointer: true,
+            SizeFormatted: "42 MB",
+          }),
+          Object.assign(createStableFile(narrowLfsDownloadedName, "data/raw/downloaded.bam", "narrow-downloaded"), {
+            IsLFS: true,
+            Downloaded: true,
+            IsLFSPointer: false,
+            SizeFormatted: "14 MB",
+          }),
+        ]), { IsExpanded: true }),
+      ]),
+      { IsExpanded: true },
+    ),
+  ]);
+
+const NarrowLfsFileExplorer = () => {
+  const [selectedPath, setSelectedPath] = React.useState("none");
+  const items = React.useMemo(createNarrowLfsItems, []);
+
+  return (
+    <div>
+      <div data-testid="narrow-lfs-viewport" style={{ width: 240, overflow: "hidden" }}>
+        <FileExplorer
+          initialItems={items}
+          onItemClick={(item) => setSelectedPath(item.Path ?? "none")}
+          getItemActions={() =>
+            ofArray([new ContextMenuItem("Rename", "swt:fluent--edit-24-regular", () => {}, undefined)])
+          }
+          canDeleteItem={() => true}
+          onDeleteItem={() => {}}
+          getItemStatusAction={(item) => fileExplorerGitLfsPillAction(item, () => {})}
+          truncateOverflowingItemNames={true}
+        />
+      </div>
+      <div data-testid="narrow-lfs-selected">Selected: {selectedPath}</div>
+    </div>
+  );
+};
+
+export const LfsRowsKeepTheirNameAtNarrowWidth: StoryObj<typeof NarrowLfsFileExplorer> = {
+  render: () => <NarrowLfsFileExplorer />,
+
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const viewport = await canvas.findByTestId("narrow-lfs-viewport");
+
+    for (const name of [narrowLfsPointerName, narrowLfsDownloadedName]) {
+      const label = await canvas.findByText(name);
+      const row = label.closest("div[data-file-item-id]") as HTMLElement;
+
+      await waitFor(() => {
+        const viewportRect = viewport.getBoundingClientRect();
+        const pill = within(row).getByTitle(/LFS/);
+
+        expect(label.getBoundingClientRect().width).toBeGreaterThanOrEqual(64);
+        expect(pill.getBoundingClientRect().right).toBeLessThanOrEqual(viewportRect.right + 1);
+      });
+    }
+
+    // The row is narrower than 16rem, so the pill drops its size segment.
+    expect(canvas.getByText("42 MB")).not.toBeVisible();
+    expect(canvas.getByText("14 MB")).not.toBeVisible();
+
+    const downloadedName = await canvas.findByText(narrowLfsDownloadedName);
+    await userEvent.click(downloadedName);
+    await waitFor(() =>
+      expect(canvas.getByTestId("narrow-lfs-selected")).toHaveTextContent("Selected: data/raw/downloaded.bam"),
+    );
+  },
+};
+
+const ScrollingLfsFileExplorer = () => {
+  const items = React.useMemo(createNarrowLfsItems, []);
+
+  return (
+    <div style={{ width: 240 }}>
+      <FileExplorer
+        initialItems={items}
+        getItemStatusAction={(item) => fileExplorerGitLfsPillAction(item, () => {})}
+      />
+    </div>
+  );
+};
+
+export const DefaultModeScrollsHorizontallyForLongNames: StoryObj<typeof ScrollingLfsFileExplorer> = {
+  render: () => <ScrollingLfsFileExplorer />,
+
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await canvas.findByText(narrowLfsDownloadedName);
+    const scrollContainer = await canvas.findByTestId("file-explorer-scroll-container");
+
+    await waitFor(() => expect(scrollContainer.scrollWidth).toBeGreaterThan(scrollContainer.clientWidth));
+  },
+};
+
 const meta: Meta<typeof FileExplorerExample> = {
   title: "Page Components/FileExplorer",
   component: FileExplorerExample,
@@ -583,14 +690,14 @@ export const DirectoryArrowsReflectLoadability: StoryObj<typeof LazyLoadDirector
     const canvas = within(canvasElement);
 
     // A folder row reports aria-expanded only when it can expand.
-    const emptyFolder = await canvas.findByRole("button", { name: "Empty Folder" });
+    const emptyFolder = await canvas.findByRole("treeitem", { name: "Empty Folder" });
     await expect(emptyFolder).not.toHaveAttribute("aria-expanded");
 
-    const lazyFolder = await canvas.findByRole("button", { name: "Lazy Folder" });
+    const lazyFolder = await canvas.findByRole("treeitem", { name: "Lazy Folder" });
     await expect(lazyFolder).toHaveAttribute("aria-expanded", "false");
     await expect(canvas.queryByText("Lazy Child.txt")).toBeNull();
 
-    await userEvent.click(lazyFolder);
+    await userEvent.click(within(lazyFolder).getByRole("button", { name: "Lazy Folder" }));
 
     await waitFor(() => {
       expect(canvas.getByText("Lazy Child.txt")).toBeInTheDocument();
@@ -608,12 +715,12 @@ export const SelectingLazyDirectoryMaterializesChildren: StoryObj<typeof LazyLoa
     await userEvent.click(await canvas.findByText("Lazy Folder"));
 
     await waitFor(() => expect(canvas.getByText("Lazy Child.txt")).toBeInTheDocument());
-    await expect(canvas.getByRole("button", { name: "Lazy Folder" })).toHaveAttribute("aria-expanded", "true");
+    await expect(canvas.getByRole("treeitem", { name: "Lazy Folder" })).toHaveAttribute("aria-expanded", "true");
 
     await userEvent.click(await canvas.findByText("Lazy Folder"));
 
     await waitFor(() => expect(canvas.queryByText("Lazy Child.txt")).toBeNull());
-    await expect(canvas.getByRole("button", { name: "Lazy Folder" })).toHaveAttribute("aria-expanded", "false");
+    await expect(canvas.getByRole("treeitem", { name: "Lazy Folder" })).toHaveAttribute("aria-expanded", "false");
   },
 };
 
@@ -645,7 +752,7 @@ export const InitialExpandedHintIsApplied: StoryObj<typeof InitiallyExpandedFile
     const canvas = within(canvasElement);
 
     await expect(await canvas.findByText("Initially Visible.txt")).toBeInTheDocument();
-    await expect(canvas.getByRole("button", { name: "Initially Expanded" })).toHaveAttribute("aria-expanded", "true");
+    await expect(canvas.getByRole("treeitem", { name: "Initially Expanded" })).toHaveAttribute("aria-expanded", "true");
   },
 };
 
@@ -660,10 +767,11 @@ export const SelectedFileHighlightPersistsAfterParentReopen: StoryObj<typeof Sel
     await expect(selectedFileLabel).toHaveClass(/swt:text-primary/);
 
     // The parent row is highlighted as part of the selected path.
-    const parentFolder = await canvas.findByRole("button", { name: "Selected Parent" });
+    const parentFolder = await canvas.findByRole("treeitem", { name: "Selected Parent" });
     await expect(parentFolder).toHaveAttribute("aria-expanded", "true");
-    await expect(parentFolder.closest("[data-file-item-id]")).toHaveClass(/swt:bg-base-300/);
-    await userEvent.click(parentFolder);
+    const parentButton = within(parentFolder).getByRole("button", { name: "Selected Parent" });
+    await expect(parentButton.closest("[data-file-item-id]")).toHaveClass(/swt:bg-base-300/);
+    await userEvent.click(parentButton);
 
     await waitFor(() => {
       expect(canvas.queryByText("selected-report.txt")).toBeNull();
@@ -718,7 +826,7 @@ export const CollapsedDirectoryStaysClosedAfterLazySiblingLoads: StoryObj<typeof
     await waitFor(() => expect(canvas.getByText("Lazy Child.txt")).toBeInTheDocument());
 
     await expect(canvas.queryByText("selected-report.txt")).toBeNull();
-    await expect(canvas.getByRole("button", { name: "Selected Parent" })).toHaveAttribute("aria-expanded", "false");
+    await expect(canvas.getByRole("treeitem", { name: "Selected Parent" })).toHaveAttribute("aria-expanded", "false");
   },
 };
 
@@ -849,9 +957,10 @@ export const LfsContextMenuStates: StoryObj<typeof LfsContextMenuFileExplorer> =
     await userEvent.click(pointerPill);
     await waitFor(() => expect(canvas.getByTestId("lfs-download-count")).toHaveTextContent("Downloads: 1"));
 
-    const downloadedPill = await canvas.findByLabelText("Free local LFS copy Downloaded LFS. LFS Downloaded - 14 MB");
+    const downloadedPill = await canvas.findByLabelText("LFS Downloaded - 14 MB");
+    expect(downloadedPill.tagName).not.toBe("BUTTON");
     await userEvent.click(downloadedPill);
-    await waitFor(() => expect(canvas.getByTestId("lfs-free-count")).toHaveTextContent("Freed: 1"));
+    expect(canvas.getByTestId("lfs-free-count")).toHaveTextContent("Freed: 0");
 
     const downloadedFile = await canvas.findByText("Downloaded LFS");
     const downloadedItem = downloadedFile.closest("[data-file-item-id]");
@@ -867,6 +976,8 @@ export const LfsContextMenuStates: StoryObj<typeof LfsContextMenuFileExplorer> =
     await expect(enabledMenuItem).toBeVisible();
     await expect(enabledMenuItem).not.toHaveClass("swt:opacity-50");
     await expect(disabledDownloadMenuItem).toHaveClass("swt:opacity-50");
+    await userEvent.click(enabledMenuItem);
+    await waitFor(() => expect(canvas.getByTestId("lfs-free-count")).toHaveTextContent("Freed: 1"));
 
     await userEvent.click(document.body);
 
@@ -953,5 +1064,76 @@ export const LongNamesKeepInlineControlsVisible: StoryObj<typeof TruncatedOverfl
   play: async ({ canvasElement }) => {
     await expectLongNameControlsToStayVisible(canvasElement, veryLongFolderName);
     await expectLongNameControlsToStayVisible(canvasElement, veryLongFileName);
+  },
+};
+
+const LARGE_TREE_FILE_COUNT = 10000;
+
+const LargeTreeFileExplorer = () => {
+  const items = React.useMemo(
+    () =>
+      ofArray(
+        Array.from({ length: LARGE_TREE_FILE_COUNT }, (_, index) =>
+          createStableFile(`file-${index + 1}.txt`, `data/file-${index + 1}.txt`, `large-${index + 1}`),
+        ),
+      ),
+    [],
+  );
+
+  return (
+    <div data-testid="large-tree-viewport" style={{ height: 400, width: 320 }}>
+      <FileExplorer initialItems={items} truncateOverflowingItemNames={true} />
+    </div>
+  );
+};
+
+export const LargeTreeRendersOnlyVisibleRows: StoryObj<typeof LargeTreeFileExplorer> = {
+  render: () => <LargeTreeFileExplorer />,
+
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    await canvas.findByText("file-1.txt");
+    await expect(canvas.getAllByRole("treeitem").length).toBeLessThan(100);
+
+    const scrollContainer = await canvas.findByTestId("file-explorer-scroll-container");
+    scrollContainer.scrollTop = scrollContainer.scrollHeight;
+
+    await waitFor(() => expect(canvas.getByText(`file-${LARGE_TREE_FILE_COUNT}.txt`)).toBeInTheDocument());
+    await expect(canvas.getAllByRole("treeitem").length).toBeLessThan(100);
+    await expect(canvas.getByRole("tree")).toBeInTheDocument();
+  },
+};
+
+export const RefreshFolderIsOfferedForEveryDirectory: StoryObj<typeof LazyLoadDirectoryFileExplorer> = {
+  render: () => {
+    const refreshed: string[] = [];
+    return (
+      <div>
+        <FileExplorer
+          initialItems={ofArray([
+            createStableFolder("Empty Folder", "empty", "empty-folder", []),
+            createStableFile("notes.txt", "notes.txt", "notes"),
+          ])}
+          onRefreshDirectory={(item: FileItem) => {
+            refreshed.push(item.Id);
+            document.body.dataset.refreshed = refreshed.join(",");
+          }}
+        />
+      </div>
+    );
+  },
+
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const folder = await canvas.findByText("Empty Folder");
+
+    fireEvent.contextMenu(folder, { clientX: 24, clientY: 24, bubbles: true });
+    await userEvent.click(await screen.findByText("Refresh folder"));
+
+    await waitFor(() => expect(document.body.dataset.refreshed).toBe("empty-folder"));
+
+    fireEvent.contextMenu(await canvas.findByText("notes.txt"), { clientX: 24, clientY: 24, bubbles: true });
+    await waitFor(() => expect(screen.queryByText("Refresh folder")).toBeNull());
   },
 };

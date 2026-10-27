@@ -1,28 +1,39 @@
 module Renderer.Context.FileStateContext
 
-open System.Collections.Generic
 open Fable.Core
 open Feliz
 open Swate.Components
 open Swate.Components.Shared
 open Swate.Electron.Shared.FileIOTypes
+open Swate.Electron.Shared.IPCTypes
 open Swate.Electron.Shared.IPCTypes.MainToRendererIpc
 open Renderer
+open Renderer.Context.FileTreeStore
 
 type FileState = {
-    FileTree: FileEntry[]
     Selection: ArcSelection
 } with
 
-    static member init() : FileState = {
-        FileTree = [||]
-        Selection = ArcSelection.empty
-    }
+    static member init() : FileState = { Selection = ArcSelection.empty }
+
+/// Size and modification time of one file, as of the last stat or the last change push.
+type FileContentStamp = {
+    Path: string
+    SizeBytes: float
+    MtimeMs: float
+    /// True for a stamp that the app recorded after its own write. It is the new baseline, not an outside change.
+    OwnWrite: bool
+}
 
 type FileStateController = {
     state: FileState
-    fileTreeIsLoading: bool
-    refreshFileTree: unit -> unit
+    fileTreeStore: FileTreeStore
+    /// Calls the listener for every fileContentChanged push. Returns the function that removes the listener.
+    subscribeFileContentChanged: (FileContentStamp -> unit) -> (unit -> unit)
+    /// True when the last pathChange renamed the open ARC folder, so ARC-relative state stays valid.
+    rootChangeIsRename: bool
+    /// Whether the structural file watcher of the open ARC works.
+    fileWatcher: FileWatcherStateDto
     setSelection: ArcSelection -> unit
     updateSelection: (ArcSelection -> ArcSelection) -> unit
     activeFileImport: ActiveFileImportState option
@@ -31,12 +42,19 @@ type FileStateController = {
     cancelFileImport: unit -> JS.Promise<Result<unit, exn>>
 }
 
+let runningFileWatcher: FileWatcherStateDto = {|
+    state = FileWatcherStatus.Running
+    reason = ""
+|}
+
 let FileStateCtx =
     React.createContext<FileStateController> (
         {
             state = FileState.init ()
-            fileTreeIsLoading = true
-            refreshFileTree = ignore
+            fileTreeStore = FileTreeStore()
+            subscribeFileContentChanged = fun _ -> ignore
+            rootChangeIsRename = false
+            fileWatcher = runningFileWatcher
             setSelection = ignore
             updateSelection = ignore
             activeFileImport = None
@@ -49,8 +67,16 @@ let FileStateCtx =
 [<Hook>]
 let useFileStateCtx () = React.useContext FileStateCtx
 
-type FileTreeSnapshotLoader = unit -> JS.Promise<Result<Dictionary<string, FileEntry>, exn>>
+type FileTreeSnapshotLoader = unit -> JS.Promise<Result<FileTreeSnapshotDto, exn>>
 type ActiveFileImportLoader = unit -> JS.Promise<Result<ActiveFileImportState option, exn>>
+
+/// The ARC the file tree belongs to. changeVersion grows with every pathChange, so a pull also happens when the
+/// path stays the same, for example when the same ARC is opened again.
+type FileTreeSource = {
+    arcRootPath: string option
+    isRename: bool
+    changeVersion: int
+}
 
 type FileImportApi = {
     loadActiveImport: ActiveFileImportLoader
@@ -59,42 +85,121 @@ type FileImportApi = {
     cancelImport: string -> JS.Promise<Result<unit, exn>>
 }
 
-let private fileTreeFromDictionary (fileTreeDict: Dictionary<string, FileEntry>) = fileTreeDict.Values |> Seq.toArray
-
 [<ReactComponent>]
 let FileStateCtxProviderWithSnapshots
-    (loadFileTreeSnapshot: FileTreeSnapshotLoader, fileImportApi: FileImportApi, children: ReactElement)
-    =
+    (
+        source: FileTreeSource,
+        loadFileTreeSnapshot: FileTreeSnapshotLoader,
+        fileImportApi: FileImportApi,
+        children: ReactElement
+    ) =
     let selection, setSelectionState = React.useStateWithUpdater ArcSelection.empty
     let isFilePickerOpenRef = React.useRef false
     let isCancellingFileImport, setIsCancellingFileImport = React.useState false
+    let store, _ = React.useState (fun () -> FileTreeStore())
+    let fileWatcher, setFileWatcher = React.useState runningFileWatcher
+    // Counts the pulls. A result that belongs to an older pull or an older root is dropped.
+    let requestCounter = React.useRef 0
+    let previousRootRef = React.useRef (None: string option)
+    let contentListeners = React.useRef (ResizeArray<FileContentStamp -> unit>())
+    // The pull reads the loader through a ref, so it stays stable and still uses the loader of the latest commit.
+    let loaderRef = React.useRef loadFileTreeSnapshot
+    React.useLayoutEffect (fun () -> loaderRef.current <- loadFileTreeSnapshot)
 
-    let fileTree =
-        Renderer.MainSyncedState.useMainSyncedState {
-            initial = [||]
-            load =
-                fun () -> promise {
-                    match! loadFileTreeSnapshot () with
-                    | Ok fileTreeDict -> return fileTreeFromDictionary fileTreeDict
-                    | Error ex -> return raise ex
+    // The subscription is created before the pull effect runs, so updates that arrive during the pull reach the
+    // store, which buffers them until the snapshot is applied.
+    React.useEffect (
+        (fun () ->
+            let dispose =
+                Renderer.IpcReceiver.subscribeProxyReceiver<IFileTreeRendererApi> {
+                    fileTreeDirectoryUpdate = store.ApplyDirectoryUpdate
+                    fileContentChanged =
+                        fun change ->
+                            let stamp = {
+                                Path = change.path
+                                SizeBytes = change.sizeBytes
+                                MtimeMs = change.mtimeMs
+                                OwnWrite = false
+                            }
+
+                            for listener in contentListeners.current.ToArray() do
+                                listener stamp
+                    fileWatcherStateChanged = setFileWatcher
+                    largeObjectIndexUpdate = Renderer.Context.LargeObjectStore.forwardToActiveStore
                 }
-            subscribe =
-                fun setFileTree ->
-                    Renderer.IpcReceiver.subscribeProxyReceiver<IFileTreeRendererApi> {
-                        fileTreeUpdate = fileTreeFromDictionary >> setFileTree
+
+            { new System.IDisposable with
+                member _.Dispose() = dispose ()
+            }
+        ),
+        [| box store |]
+    )
+
+    let pull =
+        React.useCallback (
+            (fun (hasRoot: bool) ->
+                requestCounter.current <- requestCounter.current + 1
+                let requestId = requestCounter.current
+
+                if not hasRoot then
+                    store.Reset()
+                    setFileWatcher runningFileWatcher
+                else
+                    store.BeginLoad()
+
+                    let isCurrent () = requestCounter.current = requestId
+
+                    let fail (message: string) =
+                        if isCurrent () then
+                            store.FailLoad()
+                            console.error ("Failed to load file tree snapshot.", message)
+
+                    promise {
+                        match! loaderRef.current () with
+                        | Ok snapshot ->
+                            if isCurrent () then
+                                store.ApplySnapshot snapshot
+                                setFileWatcher snapshot.fileWatcher
+                        | Error error -> fail error.Message
                     }
-            onError = fun ex -> console.error ("Failed to load file tree snapshot.", ex.Message)
-            dependencies = [||]
-        }
+                    |> Promise.catch (fun error -> fail error.Message)
+                    |> Promise.start
+            ),
+            [| box store |]
+        )
+
+    React.useEffect (
+        (fun () ->
+            // Data of another root must not stay visible when the pull for the new root fails.
+            if previousRootRef.current <> source.arcRootPath then
+                store.Reset()
+
+            previousRootRef.current <- source.arcRootPath
+            pull source.arcRootPath.IsSome
+
+            { new System.IDisposable with
+                member _.Dispose() =
+                    requestCounter.current <- requestCounter.current + 1
+            }
+        ),
+        [|
+            box source.arcRootPath
+            box source.changeVersion
+            box pull
+        |]
+    )
+
+    let subscribeFileContentChanged =
+        React.useCallback (
+            (fun (listener: FileContentStamp -> unit) ->
+                contentListeners.current.Add listener
+                fun () -> contentListeners.current.Remove listener |> ignore
+            ),
+            [||]
+        )
 
     let fileState =
-        React.useMemo (
-            (fun _ -> {
-                FileTree = fileTree.state
-                Selection = selection
-            }),
-            [| box fileTree.state; box selection |]
-        )
+        React.useMemo ((fun _ -> { Selection = selection }), [| box selection |])
 
     let activeFileImport =
         Renderer.MainSyncedState.useMainSyncedState {
@@ -167,8 +272,10 @@ let FileStateCtxProviderWithSnapshots
         React.useMemo (
             (fun _ -> {
                 state = fileState
-                fileTreeIsLoading = fileTree.isLoading
-                refreshFileTree = fileTree.refresh
+                fileTreeStore = store
+                subscribeFileContentChanged = subscribeFileContentChanged
+                rootChangeIsRename = source.isRename
+                fileWatcher = fileWatcher
                 setSelection = fun selection -> setSelectionState (fun _ -> selection |> ArcSelection.normalize)
                 updateSelection =
                     fun update ->
@@ -180,7 +287,10 @@ let FileStateCtxProviderWithSnapshots
             }),
             [|
                 box fileState
-                box fileTree.isLoading
+                box store
+                box source.isRename
+                box fileWatcher
+                box source.arcRootPath
                 box activeFileImport.state
                 box isCancellingFileImport
             |]

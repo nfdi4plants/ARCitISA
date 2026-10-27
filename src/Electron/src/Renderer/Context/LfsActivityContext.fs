@@ -46,28 +46,39 @@ module LfsActivityState =
             )
             |> Map.ofSeq
 
-    /// A Free briefly replaces the file on disk, so the listing can miss a busy path. Adding the
-    /// last known entry back keeps the row and its busy state until the action ends. The same
-    /// array comes back when nothing is missing, so callers can memoize on it.
-    let withBusyEntries (activities: Map<string, LfsActivity>) (entries: FileEntry[]) : FileEntry[] =
-        if entries.Length = 0 || activities.IsEmpty then
-            entries
+    /// A Free briefly replaces the file on disk, so the listing of a folder can miss a busy file. The last known
+    /// entry of each busy file in this folder is added back, which keeps its row until the action ends. The same
+    /// array comes back when nothing is missing.
+    let withBusyChildren
+        (activities: Map<string, LfsActivity>)
+        (directoryPath: string)
+        (children: FileEntry[])
+        : FileEntry[] =
+        if activities.IsEmpty then
+            children
         else
-            let listedPaths =
-                entries
-                |> Array.map (fun entry -> PathHelpers.normalizePath entry.path)
-                |> Set.ofArray
+            let parent = PathHelpers.normalizePath directoryPath
 
-            let missingEntries =
+            let missing =
                 activities
                 |> Map.toArray
                 |> Array.choose (fun (_, activity) -> activity.Entry)
-                |> Array.filter (fun entry -> not (listedPaths.Contains(PathHelpers.normalizePath entry.path)))
+                |> Array.filter (fun entry ->
+                    PathHelpers.tryGetParentPath entry.path |> Option.defaultValue "" = parent
+                    && not (
+                        children
+                        |> Array.exists (fun child ->
+                            PathHelpers.pathsEqual
+                                (PathHelpers.normalizePath child.path)
+                                (PathHelpers.normalizePath entry.path)
+                        )
+                    )
+                )
 
-            if missingEntries.Length = 0 then
-                entries
+            if missing.Length = 0 then
+                children
             else
-                Array.append entries missingEntries
+                Array.append children missing
 
 type LfsActivityController = {
     /// Activities of the open ARC, keyed by the ARC-relative path.

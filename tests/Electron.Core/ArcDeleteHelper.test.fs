@@ -2,6 +2,10 @@ module ElectronCore.ArcDeleteHelperTests
 
 open Main.ARCtrlExtensions
 open Main.ArcVault
+open Main.ArcVaultState
+open Main.ArcVaultLargeObjects
+open Main.ArcVaultFileTree
+open Main.ArcVaultFileWatcher
 open Main.Bindings.Filesystem
 open Main.Bindings.Path
 open Main.IPC.Delete
@@ -55,6 +59,43 @@ Vitest.describe (
                                 arcPath
                                 [| "assays"; "DeleteAssay" |]
                                 (fun arc -> arc.ContainsAssay("DeleteAssay"))
+                    })
+        )
+
+        Vitest.test (
+            "deletes an assay whose folder holds payload files",
+            fun () ->
+                withTempArc
+                    (fun arc -> arc.AddAssay(ArcAssay("PayloadAssay")))
+                    (fun arcPath -> promise {
+                        let assayFolder = join [| arcPath; "assays"; "PayloadAssay" |]
+
+                        let! _ =
+                            mkdirAsync (join [| assayFolder; "dataset"; "nested" |]) (MkdirOptions(recursive = true))
+
+                        do!
+                            writeFileAsync
+                                (join [| assayFolder; "dataset"; "raw.bin" |])
+                                "raw payload"
+                                TextEncoding.Utf8
+
+                        do!
+                            writeFileAsync
+                                (join [| assayFolder; "dataset"; "nested"; "deep.txt" |])
+                                "nested payload"
+                                TextEncoding.Utf8
+
+                        let! loadResult = ARC.LoadAsyncSwate arcPath
+                        let arc = TestHelpers.expectLoadedArc loadResult
+                        let! deletedArc = deleteEntityOrFail arcPath "assays/PayloadAssay" arc
+
+                        Vitest.expect(deletedArc.ContainsAssay("PayloadAssay")).toBe (false)
+
+                        do!
+                            assertDeletedOnDisk
+                                arcPath
+                                [| "assays"; "PayloadAssay" |]
+                                (fun arc -> arc.ContainsAssay("PayloadAssay"))
                     })
         )
 

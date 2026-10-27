@@ -17,9 +17,12 @@
     <Compile Include="ArcMerge\DataMapEvents.test.fs" />
     <Compile Include="ArcMerge\EdgeCases.test.fs" />
     <Compile Include="FileTreeCompaction.test.fs" />
+    <Compile Include="ArcLoadExtensions.test.fs" />
     <Compile Include="FileTreeCreator.test.fs" />
+    <Compile Include="IndexedFileTree.test.fs" />
     <Compile Include="ArcFileMutationHelper.test.fs" />
     <Compile Include="ArcVaultHelper.test.fs" />
+    <Compile Include="FileWatcher.test.fs" />
     <Compile Include="ArcPersonsReader.test.fs" />
     <Compile Include="ArcNodesReader.test.fs" />
     <Compile Include="ArcAddExtensions.test.fs" />
@@ -30,6 +33,7 @@
     <Compile Include="EnsureNotesFolder.test.fs" />
     <Compile Include="IpcArchitectureReview.test.fs" />
     <Compile Include="ArcFileSystemHelper.test.fs" />
+    <Compile Include="FilesystemBindings.test.fs" />
     <Compile Include="RenamePathRules.test.fs" />
     <Compile Include="ProvenanceGroupingReader.test.fs" />
     <Compile Include="ProvenanceGraphReader.test.fs" />
@@ -41,6 +45,8 @@
     <Compile Include="VersionControlSessionHost.test.fs" />
     <Compile Include="VersionControlLakeFs.test.fs" />
     <Compile Include="VersionControlTextDiff.test.fs" />
+    <Compile Include="LargeObjectIndex.test.fs" />
+    <Compile Include="LargeObjectIndexVault.test.fs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Electron\src\Main\Main.fsproj" />
