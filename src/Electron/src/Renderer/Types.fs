@@ -219,9 +219,8 @@ type PageState =
     | ArcFilePage of arcFile: ArcFiles * requestedView: ActiveView option
     | MarkdownPage of string
     | PDFPage of string
-    | PNGImage of string
-    | JPGImage of string
-    | SVGImage of string
+    | ImagePage of FileContentType * string
+    | HtmlPage of string
     | TextPage of string
     | UnknownPage
     | LargeFilePage of path: string * sizeBytes: float * reason: NoPreviewReason
@@ -244,9 +243,12 @@ type PageState =
         match dto.fileType with
         | FileContentType.Markdown -> PageState.MarkdownPage dto.content
         | FileContentType.PDF -> PageState.PDFPage dto.content
-        | FileContentType.PNGImage -> PageState.PNGImage dto.content
-        | FileContentType.JPGImage -> PageState.JPGImage dto.content
-        | FileContentType.SVGImage -> PageState.SVGImage dto.content
+        | FileContentType.PNG
+        | FileContentType.JPG
+        | FileContentType.SVG
+        | FileContentType.GIF
+            -> PageState.ImagePage(dto.fileType, dto.content)
+        | FileContentType.Html -> PageState.HtmlPage dto.content
         | FileContentType.FileContentTypeIsPlainTextVariant -> PageState.TextPage dto.content
         | FileContentType.FileContentTypeIsISAFileVariant ->
             let arcfile = FileContentDTO.toArcFile dto

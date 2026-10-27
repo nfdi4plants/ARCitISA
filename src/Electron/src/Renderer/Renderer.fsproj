@@ -63,6 +63,7 @@
     <Compile Include="Components\MainContent\ArcFilePreviewTarget.fs" />
     <Compile Include="Components\MainContent\TextPreviewTarget.fs" />
     <Compile Include="Components\MainContent\MarkdownEditorTarget.fs" />
+    <Compile Include="Components\MainContent\HtmlViewer.fs" />
     <Compile Include="Components\MainContent\ImageViewer.fs" />
     <Compile Include="Components\MainContent\PDFViewer.fs" />
     <Compile Include="Components\MainContent\UnknownPreviewTarget.fs" />

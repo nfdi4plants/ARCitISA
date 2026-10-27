@@ -50,6 +50,10 @@ Vitest.describe (
                 Vitest
                     .expect(FileContentDTO.inferTextFileTypeFromPath "assays/assay_1/notes.txt")
                     .toEqual (FileContentType.PlainText)
+
+                Vitest
+                    .expect(FileContentDTO.inferTextFileTypeFromPath "images/animation.GIF")
+                    .toEqual (FileContentType.GIF)
         )
 
         Vitest.test (

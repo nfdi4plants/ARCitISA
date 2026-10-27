@@ -3,6 +3,7 @@ module Renderer.Components.MainContent.Main
 open Feliz
 open Renderer.Types
 open Swate.Electron.Shared
+open Swate.Electron.Shared.FileIOTypes
 open Renderer.Components.MainContent.ArcFilePreviewTarget
 open Renderer.Components.MainContent.DataHubBrowserTarget
 open Renderer.Components.MainContent.EmptySelectionTarget
@@ -128,9 +129,17 @@ let Main (appRootPath: ArcRootPath, pageState: PageState option) =
                             [ PDFViewer.DisplayPDF.Main(content) ],
                             fallback = LazyComponents.FullPageLoadingSpinner("Loading pdf...")
                         )
-                    | Some _, Some(PageState.PNGImage content) -> ImageViewer.Main("image/png", content)
-                    | Some _, Some(PageState.JPGImage content) -> ImageViewer.Main("image/jpeg", content)
-                    | Some _, Some(PageState.SVGImage content) -> ImageViewer.Main("image/svg+xml", content)
+                    | Some _, Some(PageState.ImagePage(fileType, content)) ->
+                        let mimeType =
+                            match fileType with
+                            | FileContentType.PNG -> "image/png"
+                            | FileContentType.JPG -> "image/jpeg"
+                            | FileContentType.SVG -> "image/svg+xml"
+                            | FileContentType.GIF -> "image/gif"
+                            | _ -> "application/octet-stream"
+
+                        ImageViewer.Main(mimeType, content)
+                    | Some _, Some(PageState.HtmlPage content) -> HtmlViewer.Main(content)
                     | Some _, Some(PageState.TextPage content) -> TextPreviewTarget content
                     | Some _, Some PageState.UnknownPage -> UnknownPreviewTarget()
                     | Some _, Some(PageState.LargeFilePage(path, sizeBytes, reason)) ->

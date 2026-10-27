@@ -306,7 +306,7 @@ Vitest.describe (
                 Vitest
                     .expect(
                         FileExplorerStateReconciliation.shouldResetPageStateAfterSelectionRemoval (
-                            Some(RendererPageState.PNGImage "png")
+                            Some(RendererPageState.ImagePage(FileContentType.PNG, "png"))
                         )
                     )
                     .toBe (true)
@@ -315,7 +315,7 @@ Vitest.describe (
                 Vitest
                     .expect(
                         FileExplorerStateReconciliation.shouldResetPageStateAfterSelectionRemoval (
-                            Some(RendererPageState.JPGImage "jpg")
+                            Some(RendererPageState.ImagePage(FileContentType.JPG, "jpg"))
                         )
                     )
                     .toBe (true)
@@ -323,7 +323,7 @@ Vitest.describe (
                 Vitest
                     .expect(
                         FileExplorerStateReconciliation.shouldResetPageStateAfterSelectionRemoval (
-                            Some(RendererPageState.JPGImage "jpeg")
+                            Some(RendererPageState.ImagePage(FileContentType.JPG, "jpeg"))
                         )
                     )
                     .toBe (true)
@@ -331,7 +331,7 @@ Vitest.describe (
                 Vitest
                     .expect(
                         FileExplorerStateReconciliation.shouldResetPageStateAfterSelectionRemoval (
-                            Some(RendererPageState.SVGImage "svg")
+                            Some(RendererPageState.ImagePage(FileContentType.SVG, "svg"))
                         )
                     )
                     .toBe (true)
@@ -478,10 +478,10 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "fromFileContentDTO displays png files to the appropriate image page state",
+            "fromFileContentDTO maps png files to ImagePage",
             fun () ->
                 let dto: FileContentDTO = {|
-                    fileType = FileContentType.PNGImage
+                    fileType = FileContentType.PNG
                     content = "PNG image content"
                     path = "images/my-image.png"
                 |}
@@ -489,15 +489,16 @@ Vitest.describe (
                 let pageState = RendererPageState.fromFileContentDTO dto
 
                 match pageState with
-                | RendererPageState.PNGImage pngContent -> Vitest.expect(pngContent).toBe ("PNG image content")
-                | _ -> failwith "Expected PNGImage for PNG file content DTO."
+                | RendererPageState.ImagePage(FileContentType.PNG, pngContent) ->
+                    Vitest.expect(pngContent).toBe ("PNG image content")
+                | _ -> failwith "Expected ImagePage for PNG file content DTO."
         )
 
         Vitest.test (
-            "fromFileContentDTO displays jpg files to the appropriate image page state",
+            "fromFileContentDTO maps jpg files to ImagePage",
             fun () ->
                 let dto: FileContentDTO = {|
-                    fileType = FileContentType.JPGImage
+                    fileType = FileContentType.JPG
                     content = "JPG image content"
                     path = "images/my-image.jpg"
                 |}
@@ -505,15 +506,16 @@ Vitest.describe (
                 let pageState = RendererPageState.fromFileContentDTO dto
 
                 match pageState with
-                | RendererPageState.JPGImage jpgContent -> Vitest.expect(jpgContent).toBe ("JPG image content")
-                | _ -> failwith "Expected JPGImage for JPG file content DTO."
+                | RendererPageState.ImagePage(FileContentType.JPG, jpgContent) ->
+                    Vitest.expect(jpgContent).toBe ("JPG image content")
+                | _ -> failwith "Expected ImagePage for JPG file content DTO."
         )
 
         Vitest.test (
-            "fromFileContentDTO displays svg files to the appropriate image page state",
+            "fromFileContentDTO maps svg files to ImagePage",
             fun () ->
                 let dto: FileContentDTO = {|
-                    fileType = FileContentType.SVGImage
+                    fileType = FileContentType.SVG
                     content = "SVG content"
                     path = "images/my-image.svg"
                 |}
@@ -521,8 +523,43 @@ Vitest.describe (
                 let pageState = RendererPageState.fromFileContentDTO dto
 
                 match pageState with
-                | RendererPageState.SVGImage svgContent -> Vitest.expect(svgContent).toBe ("<svg>SVG content</svg>")
-                | _ -> failwith "Expected SVGImage for SVG file content DTO."
+                | RendererPageState.ImagePage(FileContentType.SVG, svgContent) ->
+                    Vitest.expect(svgContent).toBe ("SVG content")
+                | _ -> failwith "Expected ImagePage for SVG file content DTO."
+        )
+
+        Vitest.test (
+            "fromFileContentDTO maps gif files to ImagePage",
+            fun () ->
+                let dto: FileContentDTO = {|
+                    fileType = FileContentType.GIF
+                    content = "GIF content"
+                    path = "images/my-image.gif"
+                |}
+
+                let pageState = RendererPageState.fromFileContentDTO dto
+
+                match pageState with
+                | RendererPageState.ImagePage(FileContentType.GIF, gifContent) ->
+                    Vitest.expect(gifContent).toBe ("GIF content")
+                | _ -> failwith "Expected ImagePage for GIF file content DTO."
+        )
+
+        Vitest.test (
+            "fromFileContentDTO maps html files to HtmlPage",
+            fun () ->
+                let dto: FileContentDTO = {|
+                    fileType = FileContentType.Html
+                    content = "<html><body>Hello</body></html>"
+                    path = "web/my-page.html"
+                |}
+
+                let pageState = RendererPageState.fromFileContentDTO dto
+
+                match pageState with
+                | RendererPageState.HtmlPage(FileContentType.Html, htmlContent) ->
+                    Vitest.expect(htmlContent).toBe ("<html><body>Hello</body></html>")
+                | _ -> failwith "Expected HtmlPage for HTML file content DTO."
         )
 
         
