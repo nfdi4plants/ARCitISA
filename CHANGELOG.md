@@ -45,7 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### 🐛 Fixed
 
-- Lock files of open Office documents, such as "~$Book1.xlsx", no longer appear in the file tree. #1429 (by @Etschbeijer)
+- The file tree now also hides additional Office lock files such as "~$Report.docx", and LibreOffice lock files such as ~$Report.docx and ".~lock.notes.odt#". #1429 (by @Etschbeijer)
 - File names of Git LFS files stay visible in narrow file tree rows. The badge drops its text and size first. (by @caroott)
 - ARCitISA no longer keeps several CPU cores busy while a large ARC is open, because it watches only the ARC structure. #1340 (by @caroott, @Etschbeijer)
 - The file tree stays responsive in folders with thousands of files. #1340 (by @caroott, @Etschbeijer)
