@@ -48,6 +48,9 @@ Check this whenever you update Fable or Fable.Remoting, or every few months.
      compatibility step from [run-tests.yml](../../.github/workflows/run-tests.yml).
    - Keep [JsonWireFormat.test.fs](../Components/src/Api/JsonWireFormat.test.fs). It tests the
      Swate API DTOs, not the library.
+   - Re-enable NuGet publishing by removing the `nuget` matrix exclusion in
+     [release-pipeline.yml](../../.github/workflows/release-pipeline.yml) after verifying that a
+     consumer of the packed NuGet package compiles with the fixed upstream dependencies.
 
 ## What is patched
 
@@ -76,8 +79,10 @@ therefore copied as projects next to this one:
 
 These projects keep the original package and assembly names, but are not packable. The npm
 package of Swate.Components contains the fix, because it is compiled in. The NuGet package does
-not: `dotnet pack` probably declares a dependency on the stock `Fable.Remoting.Client 7.32.0`
-instead. Publishing a fixed NuGet package therefore needs the upstream release.
+not: `dotnet pack` declares a dependency on the stock `Fable.Remoting.Client 7.32.0`
+instead. NuGet publishing is therefore disabled through a matrix exclusion in
+[release-pipeline.yml](../../.github/workflows/release-pipeline.yml) until the fixed upstream
+dependencies can be shipped.
 
 ## Tests
 
