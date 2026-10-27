@@ -1451,6 +1451,86 @@ Vitest.describe (
         )
 
         Vitest.test (
+            "real-path ancestry preserves case and matches whole path segments",
+            fun () ->
+                let contains = ArcFileSystemHelper.isSameOrDescendantRealPath
+
+                Vitest.expect(contains "/tmp/x/data/arc/folder" "/tmp/x/Data").toBe false
+                Vitest.expect(contains "/tmp/src/a" "/tmp/src/A").toBe false
+                Vitest.expect(contains "/tmp/src/a" "/tmp/src/a").toBe true
+                Vitest.expect(contains "/tmp/src/a/child" "/tmp/src/a/").toBe true
+                Vitest.expect(contains "/tmp/src/another" "/tmp/src/a").toBe false
+                Vitest.expect(contains "/tmp/src/a" "/").toBe true
+        )
+
+        Vitest.test (
+            "imports a source beside a case-distinct ancestor of the target",
+            TestOptions(skip = (nodePlatform () <> "linux")),
+            fun () ->
+                withAssayArc (fun arcPath -> promise {
+                    do! createRelativeDirectoryAsync arcPath "data/arc/folder"
+                    do! createRelativeDirectoryAsync arcPath "Data"
+                    do! writeRelativeFileAsync arcPath "Data/notes.txt" "case-distinct source"
+
+                    do!
+                        importCollectingPlannedFiles arcPath "data/arc/folder" [| absoluteArcPath arcPath "Data" |]
+                        |> Promise.map ignore
+
+                    let! content = readRelativeFileAsync arcPath "data/arc/folder/Data/notes.txt"
+                    Vitest.expect(content).toBe "case-distinct source"
+                    do! expectNoTemporaryImportDirectory arcPath "data/arc/folder"
+                })
+        )
+
+        Vitest.test (
+            "rejects a differently cased alias of the source on Windows",
+            TestOptions(skip = (nodePlatform () <> "win32")),
+            fun () ->
+                withAssayArc (fun arcPath -> promise {
+                    do! createRelativeDirectoryAsync arcPath "backup/inner"
+                    let sourcePath = absoluteArcPath arcPath "BACKUP"
+                    let! result = importWithoutCancellation arcPath "backup/inner" [| sourcePath |]
+
+                    result |> expectErrorContaining "Cannot import folder 'BACKUP' into itself."
+                    do! expectRelativePathExists arcPath "backup/inner/BACKUP" false
+                    do! expectNoTemporaryImportDirectory arcPath "backup/inner"
+                })
+        )
+
+        Vitest.test (
+            "imports a nested link to a case-distinct sibling of the source",
+            TestOptions(skip = (nodePlatform () <> "linux")),
+            fun () ->
+                withAssayArc (fun arcPath -> promise {
+                    let sourceRoot = dirname arcPath
+                    do! createRelativeDirectoryAsync sourceRoot "external/a"
+                    do! createRelativeDirectoryAsync sourceRoot "external/A"
+                    do! writeRelativeFileAsync sourceRoot "external/A/notes.txt" "linked sibling"
+                    let sourcePath = absoluteArcPath sourceRoot "external/a"
+
+                    do!
+                        TestHelpers.createFolderLinkAsync
+                            (absoluteArcPath sourceRoot "external/A")
+                            (join [| sourcePath; "link" |])
+
+                    do! createRelativeDirectoryAsync arcPath "assays/AssayA/dataset"
+
+                    do!
+                        importCollectingPlannedFiles arcPath "assays/AssayA/dataset" [| sourcePath |]
+                        |> Promise.map ignore
+
+                    let! content = readRelativeFileAsync arcPath "assays/AssayA/dataset/a/link/notes.txt"
+
+                    let! stats =
+                        Main.Bindings.Filesystem.lstatAsync (absoluteArcPath arcPath "assays/AssayA/dataset/a/link")
+
+                    Vitest.expect(content).toBe "linked sibling"
+                    Vitest.expect(stats.isSymbolicLink ()).toBe false
+                    do! expectNoTemporaryImportDirectory arcPath "assays/AssayA/dataset"
+                })
+        )
+
+        Vitest.test (
             "imports nested file and folder links as ordinary files and folders with the content of their targets",
             TestOptions(skip = not (TestHelpers.canCreateFileLinks ())),
             fun () ->

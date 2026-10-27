@@ -305,6 +305,13 @@ module ArcFileSystemHelper =
             if ArcEntityPathRules.isDisallowedGenericPathSegment name then
                 raise (exn $"Cannot import '{displayPath}' because '{name}' is not allowed inside an ARC.")
 
+    let internal caseInsensitivePathCheck (path: string) (existingPath: string) =
+        let normalizedPath = PathHelpers.normalizePathKeepingWhitespace path
+        let normalizedAncestorPath = PathHelpers.normalizePathKeepingWhitespace existingPath
+
+        String.Equals(normalizedPath, normalizedAncestorPath, StringComparison.Ordinal)
+        || normalizedPath.StartsWith(normalizedAncestorPath + "/", StringComparison.Ordinal)
+
     /// Lists an imported source folder and everything inside it, every folder before its contents.
     /// `folderChain` holds the real paths of the folders on the way down, starting with the picked folder.
     /// Only a symbolic link needs a real path lookup. An ordinary child folder extends its parent's real path.
@@ -373,9 +380,7 @@ module ArcFileSystemHelper =
                             promise {
                                 let! linkRealPath = tryResolveRealPathAsync sourcePath
 
-                                if
-                                    PathHelpers.isSameOrDescendantPathForFsComparison realTargetDirectory linkRealPath
-                                then
+                                if caseInsensitivePathCheck realTargetDirectory linkRealPath then
                                     raise (
                                         exn
                                             $"Cannot import '{relativePath}' because it links to the import target or a folder that contains it."
@@ -390,9 +395,7 @@ module ArcFileSystemHelper =
                         folderChain |> List.contains realPath
                         || (dirent.isSymbolicLink ()
                             && folderChain
-                               |> List.exists (fun chainEntry ->
-                                   PathHelpers.isSameOrDescendantPathForFsComparison chainEntry realPath
-                               ))
+                               |> List.exists (fun chainEntry -> caseInsensitivePathCheck chainEntry realPath))
                     then
                         raise (
                             exn $"Cannot import '{relativePath}' because it links back to a folder that contains it."
@@ -416,12 +419,10 @@ module ArcFileSystemHelper =
         }
 
     let private isImportIntoItselfAsync targetDirectory sourceDirectory = promise {
-        if PathHelpers.isSameOrDescendantPathForFsComparison targetDirectory sourceDirectory then
-            return true
-        else
-            let! realTargetDirectory = tryResolveRealPathAsync targetDirectory
-            let! realSourceDirectory = tryResolveRealPathAsync sourceDirectory
-            return PathHelpers.isSameOrDescendantPathForFsComparison realTargetDirectory realSourceDirectory
+        let! realTargetDirectory = tryResolveRealPathAsync targetDirectory
+        let! realSourceDirectory = tryResolveRealPathAsync sourceDirectory
+
+        return caseInsensitivePathCheck realTargetDirectory realSourceDirectory
     }
 
     /// Checks one picked file or folder and returns its entry, without looking inside a folder.
