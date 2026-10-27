@@ -84,7 +84,7 @@ Import rejected the names isa.investigation.xlsx, isa.study.xlsx, isa.assay.xlsx
 
 Import, New File, New Folder and Rename rejected the name "isa_datamap". The reason is that loading the ARC renames such a file to isa.datamap.xlsx, and the file tree hides it. The code was `ArcEntityPathRules.legacyDataMapFileName` and `isLegacyDataMapFileName` in `PathHelpers.fs`, the message `legacyDataMapNameError` and the check in `validateNewItemName` in `RenamePathRules.fs`, and the calls in `collectExternalFolderEntries` and `inspectPickedItemAsync`.
 
-Loading the ARC renames an imported file named "isa_datamap" to isa.datamap.xlsx (`LoadAsync.migrateLegacyDataMapPathsAsync` in `src/Electron/src/Main/ARCtrlExtensions/LoadAsync.fs`). If isa.datamap.xlsx already exists in the same folder, the imported file stays and the file tree hides it.
+ARC loading discovers only structural paths. An imported file named "isa_datamap" is renamed to isa.datamap.xlsx only when it sits directly inside the entity folder. If isa.datamap.xlsx already exists in that folder, the legacy file stays and the file tree hides it. When an imported file is deeper in a data folder, it is not discovered during ARC loading and is never passed to the migration. It keeps its name after a reload and stays hidden in the file tree.
 
 ### Folders named like a protected file
 
