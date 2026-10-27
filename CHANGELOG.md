@@ -43,6 +43,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Large ARCs open faster. The file tree shows the ARC structure first and reads other folders when you expand them. #1340 (by @caroott, @Etschbeijer)
 - Changes that other programs make inside data folders appear when the ARCitISA window gets focus, or after "Refresh folder". #1340 (by @caroott)
 - Git LFS badges come from one background listing per ARC. They update after Git operations in ARCitISA, and after changes made outside it when the window gets focus. #1340 (by @caroott, @Etschbeijer)
+- Switching views in the provenance graph keeps the previous graph on screen until the new one is ready, so the view no longer flashes. (by @caroott)
+- The provenance graph lays out large graphs in the background, so the app stays responsive in the meantime. (by @caroott)
 
 ### 🐛 Fixed
 
@@ -56,12 +58,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### ✨ Added
 
 - Add "Import Person" functionality to all metadata sections. #1367 (by @Freymaurer)
+- Linux releases include an Arch Linux package (`.pkg.tar.zst`), an `.AppImage` and a `.zip` of the unpacked app, for distributions that cannot install the `.deb` or `.rpm`. The `.deb`, `.rpm` and `.zip` packages are now also provided for `arm64`. #1433 (by @caroott)
 
 ### 🔄 Changed
 
 - Sidebar action buttons are now grouped by functionality. Added open and create ARC buttons. (by @Freymaurer)
 - Empty table view now switches to a term search or template search view, instead of opening a modal. #1417 (by @Freymaurer)
 - In empty tables, the "Utilization of prior tables" feature, now allows importing inputs/outputs from all across the ARC. (by @Freymaurer)
+- Clicking a folder or its arrow in the file tree expands or collapses it. A study, assay, workflow or run folder also opens its metadata, while other folders keep the current view open. (by @Etschbeijer)
+- The right-click menu offers "Open" only for files and for folders that have metadata. (by @Etschbeijer)
 
 ### 🐛 Fixed
 

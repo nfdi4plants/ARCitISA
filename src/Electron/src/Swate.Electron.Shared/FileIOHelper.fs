@@ -213,6 +213,7 @@ module FileContentType =
         | FileContentType.GIF -> None
         | FileContentType.NoPreview -> None
         | FileContentType.Html -> None
+        | FileContentType.NoPreview -> None
 
     /// Maps ARCtrl DTOType values to custom file content types.
     let ofArcContractDTOType (dtoType: DTOType) : FileContentType =
