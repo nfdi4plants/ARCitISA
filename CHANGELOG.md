@@ -46,7 +46,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### 🐛 Fixed
 
 - Files and folders named ".gitkeep", ".gitattributes" or "README.md" can be deleted from the file tree, including the ".gitkeep" files generated for empty imported folders. #1429 (by @Etschbeijer)
-- The file tree now also hides additional Office lock files such as "~$Report.docx", and LibreOffice lock files such as ~$Report.docx and ".~lock.notes.odt#". #1429 (by @Etschbeijer)
+- The file tree now hides Office lock files for additional document types, such as "~$Report.docx", and LibreOffice lock files such as ".~lock.notes.odt#". #1429 (by @Etschbeijer)
 - File names of Git LFS files stay visible in narrow file tree rows. The badge drops its text and size first. (by @caroott)
 - ARCitISA no longer keeps several CPU cores busy while a large ARC is open, because it watches only the ARC structure. #1340 (by @caroott, @Etschbeijer)
 - The file tree stays responsive in folders with thousands of files. #1340 (by @caroott, @Etschbeijer)
