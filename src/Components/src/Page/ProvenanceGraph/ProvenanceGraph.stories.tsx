@@ -2,9 +2,7 @@ import React from 'react';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, userEvent, waitFor, within } from 'storybook/test';
 import { ProvenanceGraph } from './ProvenanceGraph.fs.js';
-import { emptyIndex, index, wipIndex } from './ProvenanceGraph.sample.fs.js';
-import { ProvenanceGraphData_ofInvestigation, ProvenanceIndex_ofData } from '../../../../Shared/ProvenanceGraph/BuildIndex.fs.ts';
-import { ArcAssay, ArcInvestigation } from '../../fable_modules/ARCtrl.Core.3.0.0-beta.12/ArcTypes.fs.js';
+import { emptyIndex, index, shortLabelsIndex, wipIndex } from './ProvenanceGraph.sample.fs.js';
 
 // The page fills its parent, so every story gives it a box with a height.
 const box = (width: number | string, height: number) => (Story: React.ComponentType) => (
@@ -280,24 +278,8 @@ export const OverviewHoldsStill: Story = {
 
 // Three datasets with labels shorter than the minimum width of a chip. The chips keep the minimum width in every
 // state, so a chip that becomes the selected one does not shrink.
-const shortLabels = ProvenanceIndex_ofData(
-  ProvenanceGraphData_ofInvestigation(
-    ArcInvestigation.create(
-      'Short-example',
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      [ArcAssay.create('S1'), ArcAssay.create('S2'), ArcAssay.create('S3')],
-    ),
-  ),
-);
-
 export const OverviewShortLabels: Story = {
-  args: { index: shortLabels },
+  args: { index: shortLabelsIndex },
   decorators: [box('100%', 480)],
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);

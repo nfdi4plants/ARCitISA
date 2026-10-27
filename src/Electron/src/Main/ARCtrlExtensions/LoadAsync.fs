@@ -111,7 +111,7 @@ module ArcLoadExtensions =
 
                     let allowedFileNames = [|
                         ArcEntityPathRules.zoneEntityFileName entity.Zone
-                        ArcPathHelper.DataMapFileName
+                        ArcPathHelper.DatamapFileName
                         LegacyDataMapFileName
                     |]
 

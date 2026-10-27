@@ -128,20 +128,20 @@ let pathExistsAsync (path: string) : JS.Promise<bool> = promise {
 
 /// Adds a study, assay, workflow and run that each carry a DataMap.
 let addDataMapToAllEntityTypes (arc: ARC) =
-    let study = ArcStudy("Study With DataMap")
-    study.DataMap <- Some(DataMap.init ())
+    let study = ArcStudy("Study With Datamap")
+    study.Datamap <- Some(Datamap.init ())
     arc.AddStudy(study)
 
     let assay = ArcAssay("Assay With DataMap")
-    assay.DataMap <- Some(DataMap.init ())
+    assay.Datamap <- Some(Datamap.init ())
     arc.AddAssay(assay)
 
     let workflow = ArcWorkflow("Workflow With DataMap")
-    workflow.DataMap <- Some(DataMap.init ())
+    workflow.Datamap <- Some(Datamap.init ())
     arc.AddWorkflow(workflow)
 
     let run = ArcRun("Run With DataMap")
-    run.DataMap <- Some(DataMap.init ())
+    run.Datamap <- Some(Datamap.init ())
     arc.AddRun(run)
 
 let loadArcAsync (arcPath: string) : JS.Promise<ARC> = promise {

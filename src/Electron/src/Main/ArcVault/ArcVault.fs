@@ -99,7 +99,7 @@ module ArcVaultExtensions =
                             let contracts = arc.GetUpdateContractsSwate()
                             let writtenPaths = contractWrittenPaths contracts
 
-                            match! ARCtrl.Contract.fullFillContractBatchAsync arcPath contracts with
+                            match! ARCtrl.Contract.fullFillContractBatchAsync true arcPath contracts with
                             | Error errors -> return Error(exn (PathHelpers.formatContractErrors errors))
                             | Ok _ ->
                                 this.RefreshHasUnsavedArcChangesFlag()

@@ -169,6 +169,20 @@ let index: ProvenanceIndex = ProvenanceIndex.ofData data
 let emptyIndex: ProvenanceIndex =
     ProvenanceIndex.ofData (ProvenanceGraphData.ofInvestigation (ArcInvestigation.init "Empty-example"))
 
+/// Three datasets whose short labels exercise the overview's minimum chip width.
+let shortLabelsIndex: ProvenanceIndex =
+    ArcInvestigation.create (
+        identifier = "Short-example",
+        assays =
+            ResizeArray [
+                ArcAssay.create (identifier = "S1")
+                ArcAssay.create (identifier = "S2")
+                ArcAssay.create (identifier = "S3")
+            ]
+    )
+    |> ProvenanceGraphData.ofInvestigation
+    |> ProvenanceIndex.ofData
+
 /// An ARC with unfinished rows, as a draft has them. Unfinished rows show as nodes without a connection.
 let wipIndex: ProvenanceIndex =
     ProvenanceIndex.ofData (ProvenanceGraphData.ofInvestigation (Fixtures.workInProgress ()))

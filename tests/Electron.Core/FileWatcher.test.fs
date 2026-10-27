@@ -374,7 +374,10 @@ Vitest.describe (
                             waitUntil
                                 "the revalidated tree"
                                 10000
-                                (fun () -> (vault.FileTreeWriter.Tree.TryFind(root + "/missed")).IsSome)
+                                (fun () ->
+                                    vault.FileTreeWriter.TreeVersion > scanCountBefore
+                                    && (vault.FileTreeWriter.Tree.TryFind(root + "/missed")).IsSome
+                                )
 
                         Vitest.expect(vault.FileTreeWriter.TreeVersion).toBe (scanCountBefore + 1)
                         do! waitUntil "the reload to settle" 10000 (fun () -> isWatcherQuiet vault)

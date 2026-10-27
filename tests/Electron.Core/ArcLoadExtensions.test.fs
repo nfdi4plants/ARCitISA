@@ -214,10 +214,10 @@ Vitest.describe (
                         let loadedArc = TestHelpers.expectLoadedArc loadResult
 
                         Vitest.expect(loadedArc.Identifier).toBe ("BoundedArc")
-                        Vitest.expect(loadedArc.GetStudy("Study With DataMap").DataMap.IsSome).toBe (true)
-                        Vitest.expect(loadedArc.GetAssay("Assay With DataMap").DataMap.IsSome).toBe (true)
-                        Vitest.expect(loadedArc.GetWorkflow("Workflow With DataMap").DataMap.IsSome).toBe (true)
-                        Vitest.expect(loadedArc.GetRun("Run With DataMap").DataMap.IsSome).toBe (true)
+                        Vitest.expect(loadedArc.GetStudy("Study With Datamap").Datamap.IsSome).toBe (true)
+                        Vitest.expect(loadedArc.GetAssay("Assay With DataMap").Datamap.IsSome).toBe (true)
+                        Vitest.expect(loadedArc.GetWorkflow("Workflow With DataMap").Datamap.IsSome).toBe (true)
+                        Vitest.expect(loadedArc.GetRun("Run With DataMap").Datamap.IsSome).toBe (true)
                     })
         )
 
@@ -248,7 +248,7 @@ Vitest.describe (
                     "LegacyDataMapArc"
                     (fun arc ->
                         let assay = ArcAssay("Legacy Assay")
-                        assay.DataMap <- Some(DataMap.init ())
+                        assay.Datamap <- Some(Datamap.init ())
                         arc.AddAssay assay
                     )
                     (fun arcPath -> promise {
@@ -259,14 +259,14 @@ Vitest.describe (
                                 "Legacy Assay"
                             |]
 
-                        let canonicalPath = join [| assayFolder; ArcPathHelper.DataMapFileName |]
+                        let canonicalPath = join [| assayFolder; ArcPathHelper.DatamapFileName |]
                         let legacyPath = join [| assayFolder; LegacyDataMapFileName |]
                         do! renameAsync canonicalPath legacyPath
 
                         let! loadResult = ARC.LoadAsyncSwate arcPath
                         let loadedArc = TestHelpers.expectLoadedArc loadResult
 
-                        Vitest.expect(loadedArc.GetAssay("Legacy Assay").DataMap.IsSome).toBe (true)
+                        Vitest.expect(loadedArc.GetAssay("Legacy Assay").Datamap.IsSome).toBe (true)
                         Vitest.expect(existsSync legacyPath).toBe (false)
                         Vitest.expect(existsSync canonicalPath).toBe (true)
                     })

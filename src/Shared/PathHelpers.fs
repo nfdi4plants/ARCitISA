@@ -374,7 +374,7 @@ module ArcEntityPathRules =
                 | Some zone ->
                     mayBeFile
                     && (PathHelpers.pathsEqual fileName (zoneEntityFileName zone)
-                        || PathHelpers.pathsEqual fileName ARCtrl.ArcPathHelper.DataMapFileName)
+                        || PathHelpers.pathsEqual fileName ARCtrl.ArcPathHelper.DatamapFileName)
                 | None -> false
             | _ -> false
 
