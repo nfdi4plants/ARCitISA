@@ -592,14 +592,7 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
                             // do unrelated external ARC changes. The import reconciles its target folder in the file tree
                             // before the notice closes.
 
-                            let publisher =
-                                FileImportCoordinator.createThrottledStatePublisher
-                                    100
-                                    (fun activeImport ->
-                                        FileImportCoordinator.publishState vault.window (Some activeImport)
-                                    )
-
-                            let reportImportProgress (progress: FileImportProgress) =
+                            let publishImportProgress (progress: FileImportProgress) =
                                 let fractionDone =
                                     if progress.totalItems <= 0 then
                                         0.0
@@ -634,6 +627,18 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
                                     activeImport.State.requestId = request.requestId
                                     && activeImport.State.phase = FileImportPhase.Copying
                                     ->
+                                    FileImportCoordinator.publishState vault.window (Some activeImport)
+                                | _ -> ()
+
+                            let publisher =
+                                FileImportCoordinator.createThrottledProgressPublisher 100 publishImportProgress
+
+                            let reportImportProgress (progress: FileImportProgress) =
+                                match vault.activeFileImport with
+                                | Some activeImport when
+                                    activeImport.State.requestId = request.requestId
+                                    && activeImport.State.phase = FileImportPhase.Copying
+                                    ->
                                     let updatedImport = {
                                         activeImport with
                                             State = {
@@ -643,8 +648,9 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
                                     }
 
                                     vault.activeFileImport <- Some updatedImport
-                                    publisher.Report updatedImport
                                 | _ -> ()
+
+                                publisher.Report progress
 
                             return!
                                 IPCHelper.withExclusiveBusyWriting

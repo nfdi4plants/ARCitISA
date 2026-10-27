@@ -5111,32 +5111,24 @@ Vitest.describe (
 )
 
 Vitest.describe (
-    "File import state publisher",
+    "File import progress publisher",
     fun () ->
-        let importAt step completed total : FileImportCoordinator.ActiveFileImport = {
-            State = {
-                requestId = "throttled"
-                phase = FileImportPhase.Copying
-                progress = {
-                    step = step
-                    completedItems = completed
-                    totalItems = total
-                }
-            }
-            AbortController = Abort.AbortController.create ()
-            Completion = JS.Constructors.Promise.resolve (Ok ImportExternalFilesResult.Completed)
+        let importAt step completed total : FileImportProgress = {
+            step = step
+            completedItems = completed
+            totalItems = total
         }
 
-        let withFakeTimers (body: ResizeArray<int> -> FileImportCoordinator.ThrottledStatePublisher -> unit) =
+        let withFakeTimers (body: ResizeArray<int> -> FileImportCoordinator.ThrottledProgressPublisher -> unit) =
             Vitest.vi.useFakeTimers () |> ignore
 
             try
                 let published = ResizeArray<int>()
 
                 let publisher =
-                    FileImportCoordinator.createThrottledStatePublisher
+                    FileImportCoordinator.createThrottledProgressPublisher
                         100
-                        (fun activeImport -> published.Add activeImport.State.progress.completedItems)
+                        (fun progress -> published.Add progress.completedItems)
 
                 body published publisher
             finally
@@ -5164,6 +5156,19 @@ Vitest.describe (
                     publisher.Report(importAt FileImportStep.Copying 1 100)
                     publisher.Report(importAt FileImportStep.Publishing 2 100)
                     Vitest.expect(published.ToArray() |> Array.map string).toEqual ([| 1; 2 |] |> Array.map string)
+                )
+        )
+
+        Vitest.test (
+            "publishes a finished step at once and replaces the pending report",
+            fun () ->
+                withFakeTimers (fun published publisher ->
+                    publisher.Report(importAt FileImportStep.Copying 1 100)
+                    publisher.Report(importAt FileImportStep.Copying 2 100)
+                    publisher.Report(importAt FileImportStep.Copying 100 100)
+                    Vitest.expect(published.ToArray() |> Array.map string).toEqual ([| 1; 100 |] |> Array.map string)
+                    Vitest.vi.advanceTimersByTime 500 |> ignore
+                    Vitest.expect(published.ToArray() |> Array.map string).toEqual ([| 1; 100 |] |> Array.map string)
                 )
         )
 
@@ -5366,6 +5371,51 @@ Vitest.describe (
 
                             Vitest.expect(notes).toBe "run notes"
                         | other -> failwithf "Expected an authorization, received %A." other
+                    })
+        )
+
+        Vitest.test (
+            "throttles taskbar progress with renderer progress and clears it when the import completes",
+            fun () ->
+                withImportVault
+                    None
+                    (fun _ api windowState _ _ -> promise {
+                        let taskbarProgress = ResizeArray<float>()
+
+                        windowState.Window?setProgressBar <-
+                            (fun (value: float) (_options: obj) -> taskbarProgress.Add value)
+
+                        Vitest.vi.useFakeTimers (
+                            {|
+                                toFake = [| "setTimeout"; "clearTimeout"; "performance" |]
+                            |}
+                        )
+                        |> ignore
+
+                        try
+                            match! pickAndImport api "import-taskbar" with
+                            | Ok ImportExternalFilesResult.Completed -> ()
+                            | other -> failwithf "Expected Completed, received %A." other
+
+                            // Scanning, the start and finish of both steps, then the reset. Intermediate
+                            // per-item reports share the renderer's throttle and never reach the taskbar.
+                            Vitest
+                                .expect(taskbarProgress.ToArray() |> Array.map string)
+                                .toEqual ([| 0.0; 0.0; 0.5; 0.5; 1.0; -1.0 |] |> Array.map string)
+
+                            let progressStates =
+                                importStatesOf windowState
+                                |> Array.choose id
+                                |> Array.filter (fun state -> state.phase = FileImportPhase.Copying)
+                                |> Array.distinctBy _.progress
+
+                            Vitest.expect(progressStates.Length).toBe 5
+                            Vitest.expect(progressStates.[0].progress.step).toEqual FileImportStep.Scanning
+
+                            Vitest.vi.advanceTimersByTime 1000 |> ignore
+                            Vitest.expect(taskbarProgress.Count).toBe 6
+                        finally
+                            Vitest.vi.useRealTimers () |> ignore
                     })
         )
 

@@ -1453,7 +1453,7 @@ Vitest.describe (
         Vitest.test (
             "real-path ancestry preserves case and matches whole path segments",
             fun () ->
-                let contains = ArcFileSystemHelper.isSameOrDescendantRealPath
+                let contains = ArcFileSystemHelper.caseInsensitivePathCheck
 
                 Vitest.expect(contains "/tmp/x/data/arc/folder" "/tmp/x/Data").toBe false
                 Vitest.expect(contains "/tmp/src/a" "/tmp/src/A").toBe false
