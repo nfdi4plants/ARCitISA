@@ -310,7 +310,7 @@ Vitest.describe (
                         )
                     )
                     .toBe (true)
-                
+
 
                 Vitest
                     .expect(
@@ -562,7 +562,7 @@ Vitest.describe (
                 | _ -> failwith "Expected HtmlPage for HTML file content DTO."
         )
 
-        
+
 
         Vitest.test (
             "fromFileContentDTO opens an ARC workbook without tables on Metadata",
