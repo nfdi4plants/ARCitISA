@@ -26,7 +26,7 @@ module ArcMergeHelper =
         Workflows = Set.empty
     }
 
-    let private cloneDataMapOption (dataMap: DataMap option) : DataMap option =
+    let private cloneDataMapOption (dataMap: Datamap option) : Datamap option =
         dataMap |> Option.map DataMapCopyWorkaround.copy
 
     let internal parseFileEvents (events: FileEvent list) : ParsedFileEvent list =
@@ -90,8 +90,8 @@ module ArcMergeHelper =
         (setLocal: int -> 'entity -> unit)
         (addLocal: 'entity -> unit)
         (copyEntity: 'entity -> 'entity)
-        (getDataMap: 'entity -> DataMap option)
-        (setDataMap: 'entity -> DataMap option -> unit)
+        (getDataMap: 'entity -> Datamap option)
+        (setDataMap: 'entity -> Datamap option -> unit)
         =
         let copyEntityPreservingDataMapLabels sourceEntity =
             let targetEntity = copyEntity sourceEntity
@@ -125,8 +125,8 @@ module ArcMergeHelper =
         (id: string)
         (tryGetLocal: string -> 'entity option)
         (tryGetRemote: string -> 'entity option)
-        (getDataMap: 'entity -> DataMap option)
-        (setDataMap: 'entity -> DataMap option -> unit)
+        (getDataMap: 'entity -> Datamap option)
+        (setDataMap: 'entity -> Datamap option -> unit)
         =
         match tryGetLocal id, tryGetRemote id with
         | Some localEntity, Some remoteEntity ->
@@ -136,7 +136,7 @@ module ArcMergeHelper =
     let private applyDataMapUnlink
         (id: string)
         (tryGetLocal: string -> 'entity option)
-        (setDataMap: 'entity -> DataMap option -> unit)
+        (setDataMap: 'entity -> Datamap option -> unit)
         =
         match tryGetLocal id with
         | None -> ()
@@ -165,8 +165,8 @@ module ArcMergeHelper =
                 (fun idx assay -> arcLocal.Assays.[idx] <- assay)
                 (fun assay -> arcLocal.AddAssay(assay))
                 (fun (assay: ArcAssay) -> assay.Copy())
-                (fun (assay: ArcAssay) -> assay.DataMap)
-                (fun (assay: ArcAssay) dataMap -> assay.DataMap <- dataMap)
+                (fun (assay: ArcAssay) -> assay.Datamap)
+                (fun (assay: ArcAssay) dataMap -> assay.Datamap <- dataMap)
         | ArcEntityRef.Assay id, EventName.Unlink ->
             applyEntityUnlink id (fun id -> arcLocal.ContainsAssay(id)) (fun id -> arcLocal.RemoveAssay(id))
         | ArcEntityRef.AssayDataMap id, (EventName.Add | EventName.Change) ->
@@ -174,13 +174,13 @@ module ArcMergeHelper =
                 id
                 (fun id -> arcLocal.TryGetAssay(id))
                 (fun id -> arcRemote.TryGetAssay(id))
-                (fun (assay: ArcAssay) -> assay.DataMap)
-                (fun (assay: ArcAssay) dataMap -> assay.DataMap <- dataMap)
+                (fun (assay: ArcAssay) -> assay.Datamap)
+                (fun (assay: ArcAssay) dataMap -> assay.Datamap <- dataMap)
         | ArcEntityRef.AssayDataMap id, EventName.Unlink ->
             applyDataMapUnlink
                 id
                 (fun id -> arcLocal.TryGetAssay(id))
-                (fun (assay: ArcAssay) dataMap -> assay.DataMap <- dataMap)
+                (fun (assay: ArcAssay) dataMap -> assay.Datamap <- dataMap)
         | ArcEntityRef.Study id, (EventName.Add | EventName.Change) ->
             applyEntityAddOrChange
                 id
@@ -194,8 +194,8 @@ module ArcMergeHelper =
                 (fun idx study -> arcLocal.Studies.[idx] <- study)
                 (fun study -> arcLocal.AddStudy(study))
                 (fun (study: ArcStudy) -> study.Copy())
-                (fun (study: ArcStudy) -> study.DataMap)
-                (fun (study: ArcStudy) dataMap -> study.DataMap <- dataMap)
+                (fun (study: ArcStudy) -> study.Datamap)
+                (fun (study: ArcStudy) dataMap -> study.Datamap <- dataMap)
         | ArcEntityRef.Study id, EventName.Unlink ->
             applyEntityUnlink id (fun id -> arcLocal.ContainsStudy(id)) (fun id -> arcLocal.RemoveStudy(id))
         | ArcEntityRef.StudyDataMap id, (EventName.Add | EventName.Change) ->
@@ -203,13 +203,13 @@ module ArcMergeHelper =
                 id
                 (fun id -> arcLocal.TryGetStudy(id))
                 (fun id -> arcRemote.TryGetStudy(id))
-                (fun (study: ArcStudy) -> study.DataMap)
-                (fun (study: ArcStudy) dataMap -> study.DataMap <- dataMap)
+                (fun (study: ArcStudy) -> study.Datamap)
+                (fun (study: ArcStudy) dataMap -> study.Datamap <- dataMap)
         | ArcEntityRef.StudyDataMap id, EventName.Unlink ->
             applyDataMapUnlink
                 id
                 (fun id -> arcLocal.TryGetStudy(id))
-                (fun (study: ArcStudy) dataMap -> study.DataMap <- dataMap)
+                (fun (study: ArcStudy) dataMap -> study.Datamap <- dataMap)
         | ArcEntityRef.Run id, (EventName.Add | EventName.Change) ->
             applyEntityAddOrChange
                 id
@@ -220,8 +220,8 @@ module ArcMergeHelper =
                 (fun idx run -> arcLocal.Runs.[idx] <- run)
                 (fun run -> arcLocal.AddRun(run))
                 (fun (run: ArcRun) -> run.Copy())
-                (fun (run: ArcRun) -> run.DataMap)
-                (fun (run: ArcRun) dataMap -> run.DataMap <- dataMap)
+                (fun (run: ArcRun) -> run.Datamap)
+                (fun (run: ArcRun) dataMap -> run.Datamap <- dataMap)
         | ArcEntityRef.Run id, EventName.Unlink ->
             applyEntityUnlink id (fun id -> arcLocal.ContainsRun(id)) (fun id -> arcLocal.DeleteRun(id))
         | ArcEntityRef.RunDataMap id, (EventName.Add | EventName.Change) ->
@@ -229,13 +229,13 @@ module ArcMergeHelper =
                 id
                 (fun id -> arcLocal.TryGetRun(id))
                 (fun id -> arcRemote.TryGetRun(id))
-                (fun (run: ArcRun) -> run.DataMap)
-                (fun (run: ArcRun) dataMap -> run.DataMap <- dataMap)
+                (fun (run: ArcRun) -> run.Datamap)
+                (fun (run: ArcRun) dataMap -> run.Datamap <- dataMap)
         | ArcEntityRef.RunDataMap id, EventName.Unlink ->
             applyDataMapUnlink
                 id
                 (fun id -> arcLocal.TryGetRun(id))
-                (fun (run: ArcRun) dataMap -> run.DataMap <- dataMap)
+                (fun (run: ArcRun) dataMap -> run.Datamap <- dataMap)
         | ArcEntityRef.Workflow id, (EventName.Add | EventName.Change) ->
             applyEntityAddOrChange
                 id
@@ -249,8 +249,8 @@ module ArcMergeHelper =
                 (fun idx workflow -> arcLocal.Workflows.[idx] <- workflow)
                 (fun workflow -> arcLocal.AddWorkflow(workflow))
                 (fun (workflow: ArcWorkflow) -> workflow.Copy())
-                (fun (workflow: ArcWorkflow) -> workflow.DataMap)
-                (fun (workflow: ArcWorkflow) dataMap -> workflow.DataMap <- dataMap)
+                (fun (workflow: ArcWorkflow) -> workflow.Datamap)
+                (fun (workflow: ArcWorkflow) dataMap -> workflow.Datamap <- dataMap)
         | ArcEntityRef.Workflow id, EventName.Unlink ->
             applyEntityUnlink id (fun id -> arcLocal.ContainsWorkflow(id)) (fun id -> arcLocal.DeleteWorkflow(id))
         | ArcEntityRef.WorkflowDataMap id, (EventName.Add | EventName.Change) ->
@@ -258,13 +258,13 @@ module ArcMergeHelper =
                 id
                 (fun id -> arcLocal.TryGetWorkflow(id))
                 (fun id -> arcRemote.TryGetWorkflow(id))
-                (fun (workflow: ArcWorkflow) -> workflow.DataMap)
-                (fun (workflow: ArcWorkflow) dataMap -> workflow.DataMap <- dataMap)
+                (fun (workflow: ArcWorkflow) -> workflow.Datamap)
+                (fun (workflow: ArcWorkflow) dataMap -> workflow.Datamap <- dataMap)
         | ArcEntityRef.WorkflowDataMap id, EventName.Unlink ->
             applyDataMapUnlink
                 id
                 (fun id -> arcLocal.TryGetWorkflow(id))
-                (fun (workflow: ArcWorkflow) dataMap -> workflow.DataMap <- dataMap)
+                (fun (workflow: ArcWorkflow) dataMap -> workflow.Datamap <- dataMap)
         | ArcEntityRef.Unknown _, _ -> ()
 
 [<AutoOpen>]

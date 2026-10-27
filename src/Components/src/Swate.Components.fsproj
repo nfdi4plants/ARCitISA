@@ -28,11 +28,11 @@
     <PackageReference Include="ARCtrl.Core" />
     <PackageReference Include="ARCtrl.Javascript" />
     <PackageReference Include="ARCtrl.Spreadsheet" />
-    <PackageReference Include="Fable.Remoting.Client" />
     <PackageReference Include="Fable.Fetch" />
     <PackageReference Include="Fable.React.Types" />
     <PackageReference Include="Fable.Core" />
     <PackageReference Include="Feliz" />
+    <PackageReference Include="Feliz.CompilerPlugins" />
     <PackageReference Include="Feliz.UseElmish" />
     <PackageReference Include="Fable.Browser.Dom" />
     <PackageReference Include="Vitest" />
@@ -62,6 +62,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\Shared\Swate.Components.Core.fsproj" />
+    <ProjectReference Include="..\..\Fable.Remoting.Client.Compatibility\Fable.Remoting.Client.fsproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -90,10 +91,12 @@
     <Compile Include="ARCtrl\TermCollection.fs" />
     <Compile Include="ARCtrl\Helper.fs" />
     <Compile Include="ARCtrl\ArcIO.fs" />
+    <Compile Include="ARCtrl\JsonCompatibility.fs" />
     <Compile Include="ARCtrl\EmptyColumnJson.fs" />
     <Compile Include="ARCtrl\Json.fs" />
     <Compile Include="ARCtrl\TableFiles.test.helpers.fs" />
     <Compile Include="ARCtrl\Json.test.fs" />
+    <Compile Include="ARCtrl\JsonCompatibility.test.fs" />
     <Compile Include="ARCtrl\EmptyColumnJson.test.fs" />
     <Compile Include="ARCtrl\Types\CompositeCellDiscriminate.fs" />
     <Compile Include="ARCtrl\Types\CompositeHeaderDiscriminate.fs" />
@@ -112,6 +115,7 @@
     <Compile Include="ARCtrl\Extensions\Template.fs" />
     <Compile Include="Api\Helper.fs" />
     <Compile Include="Api\SwateApi.fs" />
+    <Compile Include="Api\JsonWireFormat.test.fs" />
     <Compile Include="Api\GitLabApi.fs" />
     <Compile Include="Api\TIBApi.fs" />
 

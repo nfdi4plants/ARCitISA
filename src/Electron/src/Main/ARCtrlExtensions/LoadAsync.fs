@@ -52,9 +52,9 @@ module ArcLoadExtensions =
 
                 let canonicalRelativePath =
                     if parentPath = "." then
-                        ArcPathHelper.DataMapFileName
+                        ArcPathHelper.DatamapFileName
                     else
-                        join [| parentPath; ArcPathHelper.DataMapFileName |]
+                        join [| parentPath; ArcPathHelper.DatamapFileName |]
                     |> PathHelpers.normalizePath
 
                 let legacyAbsolutePath = join [| arcPath; relativePath |]
@@ -153,7 +153,7 @@ module ArcLoadExtensions =
 
             match fileSize with
             | Some size when size = 0.0 ->
-                match! fullFillContractBatchAsync arcPath (spec.CreateContracts identifier) with
+                match! fullFillContractBatchAsync true arcPath (spec.CreateContracts identifier) with
                 | Ok _ -> return true
                 | Error _ -> return false
             | _ -> return false
@@ -183,7 +183,7 @@ module ArcLoadExtensions =
             let arc = ARC.fromFilePaths paths
             let contracts = arc.GetReadContracts()
 
-            match! fullFillContractBatchAsync arcPath contracts with
+            match! fullFillContractBatchAsync true arcPath contracts with
             | Ok fulfilledContracts ->
                 arc.SetISAFromContracts fulfilledContracts
                 return Ok arc

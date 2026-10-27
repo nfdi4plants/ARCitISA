@@ -330,7 +330,7 @@ Vitest.describe (
             "DataMap tree changes reload a stale open parent preview",
             fun () ->
                 let assay = ArcAssay.init "DataMapAssay"
-                assay.DataMap <- Some(DataMap.init ())
+                assay.Datamap <- Some(Datamap.init ())
 
                 let pageState =
                     Some(RendererPageState.ArcFilePage(ArcFiles.Assay assay, Some ActiveView.DataMap))
@@ -352,7 +352,7 @@ Vitest.describe (
                     .expect(FileExplorerStateReconciliation.tryGetDataMapMismatchReload fileTree pageState)
                     .toEqual (Some("assays/DataMapAssay/isa.assay.xlsx", Some ActiveView.Metadata))
 
-                assay.DataMap <- None
+                assay.Datamap <- None
 
                 Vitest
                     .expect(FileExplorerStateReconciliation.tryGetDataMapMismatchReload fileTreeWithDataMap pageState)
@@ -363,7 +363,7 @@ Vitest.describe (
                         RendererPageState.ArcFilePage(
                             ArcFiles.DataMap(
                                 Some(DatamapParentInfo.create "DataMapAssay" DataMapParent.Assay),
-                                DataMap.init ()
+                                Datamap.init ()
                             ),
                             Some ActiveView.DataMap
                         )
@@ -442,7 +442,7 @@ Vitest.describe (
 
                 let dto =
                     Swate.Electron.Shared.FileIOHelper.FileContentDTO.fromArcFile (
-                        ArcFiles.DataMap(Some parent, DataMap.init ())
+                        ArcFiles.DataMap(Some parent, Datamap.init ())
                     )
                     |> Option.defaultWith (fun () -> failwith "Expected a DataMap DTO.")
 

@@ -21,7 +21,7 @@ Vitest.describe (
             fun () ->
                 let arc = MockData.createCleanArc ()
                 Vitest.expect(arc.hasInMemoryChanges ()).toBe (false)
-                arc.Assays.[0].DataMap <- Some(DataMap.init ())
+                arc.Assays.[0].Datamap <- Some(Datamap.init ())
                 Vitest.expect(arc.hasInMemoryChanges ()).toBe (true)
         )
 )

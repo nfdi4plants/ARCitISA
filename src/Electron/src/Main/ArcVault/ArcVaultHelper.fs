@@ -23,7 +23,7 @@ let private pathDynamic: obj = importAll "path"
 
 /// This function mutably sets the datamap on the correct parent based on the datamap parent info included in the file content DTO.
 /// It also ensures that the static hash is preserved to avoid unnecessary changes to the ARC when saving a datamap.
-let private setDataMapByParentInfo (arc: ARC) (dmpi: DatamapParentInfo) (dm: DataMap) : Result<unit, exn> =
+let private setDataMapByParentInfo (arc: ARC) (dmpi: DatamapParentInfo) (dm: Datamap) : Result<unit, exn> =
     try
         arc.TryGetDataMap dmpi
         |> Option.iter (fun currentDataMap -> dm.StaticHash <- currentDataMap.StaticHash)

@@ -22,6 +22,12 @@ module ProjectPaths =
     let electronRendererTestsPath = Path.GetFullPath "tests/Electron.Renderer"
     let componentTestsPath = Path.GetFullPath "src/Components"
 
+    let simpleJsonCompatibilityTestsPath =
+        Path.GetFullPath "tests/Fable.SimpleJson.Compatibility"
+
+    let remotingCompatibilityTestsPath =
+        Path.GetFullPath "tests/Fable.Remoting.Client.Compatibility"
+
     let dockerComposePath = Path.GetFullPath ".db/docker-compose.yml"
     let dockerFilePath = Path.GetFullPath "build/Dockerfile.publish"
 

@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="FakeXmlHttpRequest.fs" />
+    <Compile Include="Proxy.test.fs" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Fable.Remoting.Client.Compatibility\Fable.Remoting.Client.fsproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Vitest" />
+  </ItemGroup>
+</Project>

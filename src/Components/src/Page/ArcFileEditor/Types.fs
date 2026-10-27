@@ -7,7 +7,7 @@ open Swate.Components.Composite.Widgets.Types
 
 type AddRowsTarget =
     | Table of ArcTable
-    | DataMap of DataMap
+    | DataMap of Datamap
 
 [<RequireQualifiedAccess>]
 type ActiveView =

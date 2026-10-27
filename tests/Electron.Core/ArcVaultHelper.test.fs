@@ -1429,19 +1429,19 @@ let private arctrlDefaultGitignoreContent () =
 
 let private addDataMapToAllEntityTypes (arc: ARC) =
     let study = ArcStudy("Study With DataMap")
-    study.DataMap <- Some(DataMap.init ())
+    study.Datamap <- Some(Datamap.init ())
     arc.AddStudy(study)
 
     let assay = ArcAssay("Assay With DataMap")
-    assay.DataMap <- Some(DataMap.init ())
+    assay.Datamap <- Some(Datamap.init ())
     arc.AddAssay(assay)
 
     let workflow = ArcWorkflow("Workflow With DataMap")
-    workflow.DataMap <- Some(DataMap.init ())
+    workflow.Datamap <- Some(Datamap.init ())
     arc.AddWorkflow(workflow)
 
     let run = ArcRun("Run With DataMap")
-    run.DataMap <- Some(DataMap.init ())
+    run.Datamap <- Some(Datamap.init ())
     arc.AddRun(run)
 
 let private tryGetDirtyStateMessage (args: obj array) =
@@ -1484,17 +1484,17 @@ Vitest.describe (
             "DataMap add synchronization preserves the persisted static-hash baseline",
             fun () ->
                 let parentInfo = DatamapParentInfo.create "DataMapAssay" DataMapParent.Assay
-                let persistedDataMap = DataMap.init ()
+                let persistedDataMap = Datamap.init ()
                 persistedDataMap.StaticHash <- 123
                 let persistedAssay = ArcAssay("DataMapAssay")
-                persistedAssay.DataMap <- Some persistedDataMap
+                persistedAssay.Datamap <- Some persistedDataMap
                 let persistedArc = ARC("PersistedArc")
                 persistedArc.AddAssay persistedAssay
 
-                let localDataMap = DataMap.init ()
+                let localDataMap = Datamap.init ()
                 localDataMap.StaticHash <- 456
                 let localAssay = ArcAssay("DataMapAssay")
-                localAssay.DataMap <- Some localDataMap
+                localAssay.Datamap <- Some localDataMap
                 let localArc = ARC("LocalArc")
                 localArc.AddAssay localAssay
 
@@ -1504,8 +1504,8 @@ Vitest.describe (
                     (ArcFiles.DataMap(Some parentInfo, persistedDataMap))
 
                 Vitest.expect(persistedDataMap.StaticHash).toBe (123)
-                Vitest.expect(persistedArc.GetAssay("DataMapAssay").DataMap.Value.StaticHash).toBe (123)
-                Vitest.expect(localArc.GetAssay("DataMapAssay").DataMap.Value.StaticHash).toBe (123)
+                Vitest.expect(persistedArc.GetAssay("DataMapAssay").Datamap.Value.StaticHash).toBe (123)
+                Vitest.expect(localArc.GetAssay("DataMapAssay").Datamap.Value.StaticHash).toBe (123)
         )
 
         Vitest.test (
@@ -4439,14 +4439,14 @@ Vitest.describe (
                         Vitest.expect(vault.arc.Value.hasInMemoryChanges ()).toBe (false)
 
                         let loadedArc = vault.arc.Value
-                        Vitest.expect(loadedArc.GetAssay("Assay With DataMap").DataMap.Value.StaticHash).not.toBe (0)
-                        Vitest.expect(loadedArc.GetStudy("Study With DataMap").DataMap.Value.StaticHash).not.toBe (0)
+                        Vitest.expect(loadedArc.GetAssay("Assay With DataMap").Datamap.Value.StaticHash).not.toBe (0)
+                        Vitest.expect(loadedArc.GetStudy("Study With DataMap").Datamap.Value.StaticHash).not.toBe (0)
 
                         Vitest
-                            .expect(loadedArc.GetWorkflow("Workflow With DataMap").DataMap.Value.StaticHash)
+                            .expect(loadedArc.GetWorkflow("Workflow With DataMap").Datamap.Value.StaticHash)
                             .not.toBe (0)
 
-                        Vitest.expect(loadedArc.GetRun("Run With DataMap").DataMap.Value.StaticHash).not.toBe (0)
+                        Vitest.expect(loadedArc.GetRun("Run With DataMap").Datamap.Value.StaticHash).not.toBe (0)
                     })
         )
 

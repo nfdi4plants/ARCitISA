@@ -9,12 +9,12 @@ module InMemoryChangesExtensions =
     // Used to handle initiated but empty datamaps that have a StaticHash of 0, which would otherwise be indistinguishable from unchanged datamaps.
     let private cleanEmptyDataMapStaticHash = System.Int32.MinValue
 
-    let cleanDataMapStaticHash (dataMap: DataMap) =
+    let cleanDataMapStaticHash (dataMap: Datamap) =
         let hash = dataMap.GetHashCode()
 
         if hash = 0 then cleanEmptyDataMapStaticHash else hash
 
-    let private baselineDataMapStaticHash (dataMap: DataMap option) =
+    let private baselineDataMapStaticHash (dataMap: Datamap option) =
         dataMap |> Option.iter (fun dm -> dm.StaticHash <- cleanDataMapStaticHash dm)
 
     /// Sets the current loaded ARC state as the clean in-memory baseline.
@@ -24,34 +24,34 @@ module InMemoryChangesExtensions =
 
         for study in arc.Studies do
             study.StaticHash <- study.GetLightHashCode()
-            baselineDataMapStaticHash study.DataMap
+            baselineDataMapStaticHash study.Datamap
 
         for assay in arc.Assays do
             assay.StaticHash <- assay.GetLightHashCode()
-            baselineDataMapStaticHash assay.DataMap
+            baselineDataMapStaticHash assay.Datamap
 
         for workflow in arc.Workflows do
             workflow.StaticHash <- workflow.GetLightHashCode()
-            baselineDataMapStaticHash workflow.DataMap
+            baselineDataMapStaticHash workflow.Datamap
 
         for run in arc.Runs do
             run.StaticHash <- run.GetLightHashCode()
-            baselineDataMapStaticHash run.DataMap
+            baselineDataMapStaticHash run.Datamap
 
         arc.StaticHash <- arc.GetLightHashCode()
 
-    type DataMap with
+    type Datamap with
         member this.hasInMemoryChanges() : bool =
             if this.StaticHash = cleanEmptyDataMapStaticHash then
                 this.GetHashCode() <> 0
             else
                 this.StaticHash = 0 || this.StaticHash <> this.GetHashCode()
 
-    let private hasStaticHashOrDataMapChanges staticHash lightHash (dataMap: DataMap option) =
+    let private hasStaticHashOrDataMapChanges staticHash lightHash (dataMap: Datamap option) =
         staticHash <> lightHash
         || (dataMap |> Option.exists (fun dm -> dm.hasInMemoryChanges ()))
 
-    let private syncDataMapStaticHash (sourceDataMap: DataMap option) (targetDataMap: DataMap option) =
+    let private syncDataMapStaticHash (sourceDataMap: Datamap option) (targetDataMap: Datamap option) =
         match sourceDataMap, targetDataMap with
         | Some sourceDataMap, Some targetDataMap -> targetDataMap.StaticHash <- sourceDataMap.StaticHash
         | _ -> ()
@@ -72,7 +72,7 @@ module InMemoryChangesExtensions =
         (targetEntities: seq<'Entity>)
         (tryGetSource: string -> 'Entity option)
         (getIdentifier: 'Entity -> string)
-        (getDataMap: 'Entity -> DataMap option)
+        (getDataMap: 'Entity -> Datamap option)
         =
         for targetEntity in targetEntities do
             targetEntity
@@ -89,25 +89,25 @@ module InMemoryChangesExtensions =
             target.Assays
             source.TryGetAssay
             (fun (assay: ArcAssay) -> assay.Identifier)
-            (fun assay -> assay.DataMap)
+            (fun assay -> assay.Datamap)
 
         preserveEntityDataMapLabels
             target.Studies
             source.TryGetStudy
             (fun (study: ArcStudy) -> study.Identifier)
-            (fun study -> study.DataMap)
+            (fun study -> study.Datamap)
 
         preserveEntityDataMapLabels
             target.Runs
             source.TryGetRun
             (fun (run: ArcRun) -> run.Identifier)
-            (fun run -> run.DataMap)
+            (fun run -> run.Datamap)
 
         preserveEntityDataMapLabels
             target.Workflows
             source.TryGetWorkflow
             (fun (workflow: ArcWorkflow) -> workflow.Identifier)
-            (fun workflow -> workflow.DataMap)
+            (fun workflow -> workflow.Datamap)
 
     /// Syncs static hashes from source ARC to target ARC for matching entities.
     /// This keeps ARCtrl update contract generation scoped to actual changes.
@@ -124,7 +124,7 @@ module InMemoryChangesExtensions =
             (fun (study: ArcStudy) -> study.Identifier)
             (fun sourceStudy targetStudy ->
                 targetStudy.StaticHash <- sourceStudy.StaticHash
-                syncDataMapStaticHash sourceStudy.DataMap targetStudy.DataMap
+                syncDataMapStaticHash sourceStudy.Datamap targetStudy.Datamap
             )
 
         syncEntityStaticHashes
@@ -133,7 +133,7 @@ module InMemoryChangesExtensions =
             (fun (assay: ArcAssay) -> assay.Identifier)
             (fun sourceAssay targetAssay ->
                 targetAssay.StaticHash <- sourceAssay.StaticHash
-                syncDataMapStaticHash sourceAssay.DataMap targetAssay.DataMap
+                syncDataMapStaticHash sourceAssay.Datamap targetAssay.Datamap
             )
 
         syncEntityStaticHashes
@@ -142,7 +142,7 @@ module InMemoryChangesExtensions =
             (fun (workflow: ArcWorkflow) -> workflow.Identifier)
             (fun sourceWorkflow targetWorkflow ->
                 targetWorkflow.StaticHash <- sourceWorkflow.StaticHash
-                syncDataMapStaticHash sourceWorkflow.DataMap targetWorkflow.DataMap
+                syncDataMapStaticHash sourceWorkflow.Datamap targetWorkflow.Datamap
             )
 
         syncEntityStaticHashes
@@ -151,7 +151,7 @@ module InMemoryChangesExtensions =
             (fun (run: ArcRun) -> run.Identifier)
             (fun sourceRun targetRun ->
                 targetRun.StaticHash <- sourceRun.StaticHash
-                syncDataMapStaticHash sourceRun.DataMap targetRun.DataMap
+                syncDataMapStaticHash sourceRun.Datamap targetRun.Datamap
             )
 
     /// Copies ARC and preserves static hashes so unchanged entities are not treated as newly created.
@@ -163,19 +163,19 @@ module InMemoryChangesExtensions =
 
     type ArcAssay with
         member this.hasInMemoryChanges() =
-            hasStaticHashOrDataMapChanges this.StaticHash (this.GetLightHashCode()) this.DataMap
+            hasStaticHashOrDataMapChanges this.StaticHash (this.GetLightHashCode()) this.Datamap
 
     type ArcStudy with
         member this.hasInMemoryChanges() =
-            hasStaticHashOrDataMapChanges this.StaticHash (this.GetLightHashCode()) this.DataMap
+            hasStaticHashOrDataMapChanges this.StaticHash (this.GetLightHashCode()) this.Datamap
 
     type ArcRun with
         member this.hasInMemoryChanges() =
-            hasStaticHashOrDataMapChanges this.StaticHash (this.GetLightHashCode()) this.DataMap
+            hasStaticHashOrDataMapChanges this.StaticHash (this.GetLightHashCode()) this.Datamap
 
     type ArcWorkflow with
         member this.hasInMemoryChanges() =
-            hasStaticHashOrDataMapChanges this.StaticHash (this.GetLightHashCode()) this.DataMap
+            hasStaticHashOrDataMapChanges this.StaticHash (this.GetLightHashCode()) this.Datamap
 
     type ARC with
         member this.hasInMemoryChanges() =

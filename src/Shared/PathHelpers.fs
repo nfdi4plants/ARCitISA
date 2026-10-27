@@ -268,7 +268,7 @@ module ArcEntityPathRules =
             | None -> None
             | Some zone when PathHelpers.pathsEqual fileName (zoneEntityFileName zone) ->
                 Some(CanonicalArcFileTarget.EntityFile(zone, identifier))
-            | Some zone when PathHelpers.pathsEqual fileName ARCtrl.ArcPathHelper.DataMapFileName ->
+            | Some zone when PathHelpers.pathsEqual fileName ARCtrl.ArcPathHelper.DatamapFileName ->
                 Some(CanonicalArcFileTarget.DataMapFile(zone, identifier))
             | Some _ -> None
         else
@@ -280,7 +280,7 @@ module ArcEntityPathRules =
         || PathHelpers.pathsEqual fileName ARCtrl.ArcPathHelper.AssayFileName
         || PathHelpers.pathsEqual fileName ARCtrl.ArcPathHelper.WorkflowFileName
         || PathHelpers.pathsEqual fileName ARCtrl.ArcPathHelper.RunFileName
-        || PathHelpers.pathsEqual fileName ARCtrl.ArcPathHelper.DataMapFileName
+        || PathHelpers.pathsEqual fileName ARCtrl.ArcPathHelper.DatamapFileName
 
     let private containsDisallowedGenericPathSegment (segments: string[]) =
         segments
@@ -326,7 +326,7 @@ module ArcEntityPathRules =
                         CanonicalArcFileTarget.EntityFile(zone, identifier),
                         normalizedRelativePath
                     )
-                | Some zone when PathHelpers.pathsEqual fileName ARCtrl.ArcPathHelper.DataMapFileName ->
+                | Some zone when PathHelpers.pathsEqual fileName ARCtrl.ArcPathHelper.DatamapFileName ->
                     DeletePathClassification.CanonicalFileTarget(
                         CanonicalArcFileTarget.DataMapFile(zone, identifier),
                         normalizedRelativePath
@@ -452,7 +452,7 @@ module ArcEntityPathRules =
 
     let private canonicalDataMapFilePath zone identifier =
         let zoneFolder = zoneFolderName zone
-        $"{zoneFolder}/{identifier}/{ARCtrl.ArcPathHelper.DataMapFileName}"
+        $"{zoneFolder}/{identifier}/{ARCtrl.ArcPathHelper.DatamapFileName}"
 
     let private canonicalEntityFolderPath zone identifier =
         let zoneFolder = zoneFolderName zone
@@ -507,7 +507,7 @@ module ArcEntityPathRules =
                     match tryParseZone zoneSegment with
                     | Some zone when PathHelpers.pathsEqual fileName (zoneEntityFileName zone) ->
                         RenamePathClassification.CanonicalEntityFileTarget(zone, identifier, normalizedRelativePath)
-                    | Some zone when PathHelpers.pathsEqual fileName ARCtrl.ArcPathHelper.DataMapFileName ->
+                    | Some zone when PathHelpers.pathsEqual fileName ARCtrl.ArcPathHelper.DatamapFileName ->
                         RenamePathClassification.CanonicalDataMapFileTarget(zone, identifier, normalizedRelativePath)
                     | _ -> RenamePathClassification.GenericTarget normalizedRelativePath
                 | _ ->

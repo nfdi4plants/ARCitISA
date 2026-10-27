@@ -51,6 +51,11 @@ jobs:
       - name: Run Components tests
         run: dotnet run --project ./build/Build.fsproj -- test run components
 
+      # Remove with the compatibility projects, see src/Fable.SimpleJson.Compatibility/README.md.
+      - name: Run Fable.SimpleJson and Fable.Remoting.Client compatibility tests
+        if: ${{ !cancelled() }}
+        run: dotnet run --project ./build/Build.fsproj -- test run compatibility
+
   electron:
     name: electron
     runs-on: ubuntu-latest

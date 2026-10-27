@@ -38,7 +38,7 @@ module ArcWriteExtensions =
 
     type ARC with
 
-        /// Hotfix for #618, not fixed in the consumed ARCtrl 3.0.0-beta.12.
+        /// Keeps the managed-payload workaround for #618.
         /// Mirrors ARCtrl.GetWriteContracts except that it emits only managed ARC payload contracts instead of
         /// iterating the complete filesystem model, where stale or Git metadata paths could be recreated.
         member this.GetWriteContractsSwate(?skipUpdateFS: bool) =
@@ -52,7 +52,7 @@ module ArcWriteExtensions =
 
             filemap.Add(
                 ARCtrl.ArcPathHelper.InvestigationFileName,
-                (DTOType.ISA_Investigation, investigationConverter this |> box |> DTO.Spreadsheet)
+                (DTOType.ISA_Investigation, investigationConverter this |> DTO.Spreadsheet)
             )
 
             this.StaticHash <- this.GetLightHashCode()
@@ -63,16 +63,16 @@ module ArcWriteExtensions =
 
                 filemap.Add(
                     Identifier.Study.fileNameFromIdentifier s.Identifier,
-                    (DTOType.ISA_Study, ArcStudy.toFsWorkbook s |> box |> DTO.Spreadsheet)
+                    (DTOType.ISA_Study, ArcStudy.toFsWorkbook s |> DTO.Spreadsheet)
                 )
 
-                if s.DataMap.IsSome (*&& datamapFile*) then
-                    let dm = s.DataMap.Value
+                if s.Datamap.IsSome (*&& datamapFile*) then
+                    let dm = s.Datamap.Value
                     dm.StaticHash <- dm.GetHashCode()
 
                     filemap.Add(
                         Identifier.Study.datamapFileNameFromIdentifier s.Identifier,
-                        (DTOType.ISA_Datamap, Spreadsheet.DataMap.toFsWorkbook dm |> box |> DTO.Spreadsheet)
+                        (DTOType.ISA_Datamap, Spreadsheet.Datamap.toFsWorkbook dm |> DTO.Spreadsheet)
                     )
 
             )
@@ -83,16 +83,16 @@ module ArcWriteExtensions =
 
                 filemap.Add(
                     Identifier.Assay.fileNameFromIdentifier a.Identifier,
-                    (DTOType.ISA_Assay, ArcAssay.toFsWorkbook a |> box |> DTO.Spreadsheet)
+                    (DTOType.ISA_Assay, ArcAssay.toFsWorkbook a |> DTO.Spreadsheet)
                 )
 
-                if a.DataMap.IsSome (*&& datamapFile*) then
-                    let dm = a.DataMap.Value
+                if a.Datamap.IsSome (*&& datamapFile*) then
+                    let dm = a.Datamap.Value
                     dm.StaticHash <- dm.GetHashCode()
 
                     filemap.Add(
                         Identifier.Assay.datamapFileNameFromIdentifier a.Identifier,
-                        (DTOType.ISA_Datamap, Spreadsheet.DataMap.toFsWorkbook dm |> box |> DTO.Spreadsheet)
+                        (DTOType.ISA_Datamap, Spreadsheet.Datamap.toFsWorkbook dm |> DTO.Spreadsheet)
                     )
             )
 
@@ -102,17 +102,17 @@ module ArcWriteExtensions =
 
                 filemap.Add(
                     Identifier.Workflow.fileNameFromIdentifier w.Identifier,
-                    (DTOType.ISA_Workflow, ArcWorkflow.toFsWorkbook w |> box |> DTO.Spreadsheet)
+                    (DTOType.ISA_Workflow, ArcWorkflow.toFsWorkbook w |> DTO.Spreadsheet)
                 )
                 //if w.CWLDescription.IsSome then
                 //    failwith "Not implemented yet: CWL description in ARC.GetWriteContracts"
-                if w.DataMap.IsSome (*&& datamapFile*) then
-                    let dm = w.DataMap.Value
+                if w.Datamap.IsSome (*&& datamapFile*) then
+                    let dm = w.Datamap.Value
                     dm.StaticHash <- dm.GetHashCode()
 
                     filemap.Add(
                         Identifier.Workflow.datamapFileNameFromIdentifier w.Identifier,
-                        (DTOType.ISA_Datamap, Spreadsheet.DataMap.toFsWorkbook dm |> box |> DTO.Spreadsheet)
+                        (DTOType.ISA_Datamap, Spreadsheet.Datamap.toFsWorkbook dm |> DTO.Spreadsheet)
                     )
             )
 
@@ -122,19 +122,19 @@ module ArcWriteExtensions =
 
                 filemap.Add(
                     Identifier.Run.fileNameFromIdentifier r.Identifier,
-                    (DTOType.ISA_Run, ArcRun.toFsWorkbook r |> box |> DTO.Spreadsheet)
+                    (DTOType.ISA_Run, ArcRun.toFsWorkbook r |> DTO.Spreadsheet)
                 )
                 //if r.CWLDescription.IsSome then
                 //    failwith "Not implemented yet: CWL description in ARC.GetWriteContracts"
                 //if r.CWLInput.Count > 0 then
                 //    failwith "Not implemented yet: CWL YAML input in ARC.GetWriteContracts"
-                if r.DataMap.IsSome (*&& datamapFile*) then
-                    let dm = r.DataMap.Value
+                if r.Datamap.IsSome (*&& datamapFile*) then
+                    let dm = r.Datamap.Value
                     dm.StaticHash <- dm.GetHashCode()
 
                     filemap.Add(
                         Identifier.Run.datamapFileNameFromIdentifier r.Identifier,
-                        (DTOType.ISA_Datamap, Spreadsheet.DataMap.toFsWorkbook dm |> box |> DTO.Spreadsheet)
+                        (DTOType.ISA_Datamap, Spreadsheet.Datamap.toFsWorkbook dm |> DTO.Spreadsheet)
                     )
             )
 
@@ -157,7 +157,8 @@ module ArcWriteExtensions =
 
         /// Hotfix for #618. Writes only contracts selected by GetWriteContractsSwate.
         member this.TryWriteAsyncSwate(arcPath: string) =
-            this.GetWriteContractsSwate() |> fullFillContractBatchAsync arcPath
+            // CREATE contracts overwrote existing managed payloads before ARCtrl added this flag.
+            this.GetWriteContractsSwate() |> fullFillContractBatchAsync true arcPath
 
         /// Writes only managed update contracts. This prevents ARC save from overwriting unmanaged text files
         /// such as notes with empty content when ARCtrl falls back to full write contracts.
@@ -166,4 +167,4 @@ module ArcWriteExtensions =
             |> Array.filter (isUnmanagedPlainTextCreateContract >> not)
 
         member this.TryUpdateAsyncSwate(arcPath: string) =
-            this.GetUpdateContractsSwate() |> fullFillContractBatchAsync arcPath
+            this.GetUpdateContractsSwate() |> fullFillContractBatchAsync true arcPath

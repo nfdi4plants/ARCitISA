@@ -98,12 +98,12 @@ type Model = {
 
     member this.DataMapOrDefault =
         match this.ArcFile with
-        | Some(ArcFiles.Assay a) when a.DataMap.IsSome -> a.DataMap.Value
-        | Some(ArcFiles.Run r) when r.DataMap.IsSome -> r.DataMap.Value
-        | Some(ArcFiles.Workflow w) when w.DataMap.IsSome -> w.DataMap.Value
-        | Some(ArcFiles.Study(s, _)) when s.DataMap.IsSome -> s.DataMap.Value
+        | Some(ArcFiles.Assay a) when a.Datamap.IsSome -> a.Datamap.Value
+        | Some(ArcFiles.Run r) when r.Datamap.IsSome -> r.Datamap.Value
+        | Some(ArcFiles.Workflow w) when w.Datamap.IsSome -> w.Datamap.Value
+        | Some(ArcFiles.Study(s, _)) when s.Datamap.IsSome -> s.Datamap.Value
         | Some(ArcFiles.DataMap(_, d)) -> d
-        | _ -> DataMap.init ()
+        | _ -> Datamap.init ()
 
     member this.GetAssay() =
         match this.ArcFile with
@@ -130,7 +130,7 @@ type Msg =
     | UpdateHeader of columIndex: int * CompositeHeader
     | UpdateActiveView of ActiveView
     | MoveColumn of current: int * next: int
-    | UpdateDatamap of DataMap option
+    | UpdateDatamap of Datamap option
     | UpdateDataMapDataContextAt of index: int * DataContext
     | AddTable of ArcTable
     | UpdateTable of ArcTable

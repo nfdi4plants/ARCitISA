@@ -440,7 +440,7 @@ type FileTree =
             promise {
                 match!
                     ArcFileApiHelper.withArcFileRequest
-                        (ArcFiles.DataMap(Some parentInfo, DataMap.init ()))
+                        (ArcFiles.DataMap(Some parentInfo, Datamap.init ()))
                         Api.ipcArcVaultApi.addArcFile
                 with
                 | Error exn -> applyCreateError exn.Message

@@ -64,7 +64,7 @@ Vitest.describe (
                 withTempArc
                     (fun arc ->
                         let assay = ArcAssay("DataMapAssay")
-                        assay.DataMap <- Some(DataMap.init ())
+                        assay.Datamap <- Some(Datamap.init ())
                         arc.AddAssay assay
                     )
                     (fun arcPath -> promise {
@@ -75,7 +75,7 @@ Vitest.describe (
                         match! arc.TryDeleteDataMapAsync(arcPath, parentInfo) with
                         | Error error -> failwith error.Message
                         | Ok() ->
-                            Vitest.expect(arc.GetAssay("DataMapAssay").DataMap.IsNone).toBe (true)
+                            Vitest.expect(arc.GetAssay("DataMapAssay").Datamap.IsNone).toBe (true)
 
                             let! dataMapExists =
                                 pathExistsAsync (join [| arcPath; "assays"; "DataMapAssay"; "isa.datamap.xlsx" |])
@@ -83,7 +83,7 @@ Vitest.describe (
                             Vitest.expect(dataMapExists).toBe (false)
 
                             let! persistedArc = loadArcAsync arcPath
-                            Vitest.expect(persistedArc.GetAssay("DataMapAssay").DataMap.IsNone).toBe (true)
+                            Vitest.expect(persistedArc.GetAssay("DataMapAssay").Datamap.IsNone).toBe (true)
                     })
         )
 
@@ -93,19 +93,19 @@ Vitest.describe (
                 withTempArc
                     (fun arc ->
                         let assay = ArcAssay("TargetAssay")
-                        assay.DataMap <- Some(DataMap.init ())
+                        assay.Datamap <- Some(Datamap.init ())
                         arc.AddAssay assay
 
                         let study = ArcStudy("TargetStudy")
-                        study.DataMap <- Some(DataMap.init ())
+                        study.Datamap <- Some(Datamap.init ())
                         arc.AddStudy study
 
                         let run = ArcRun("TargetRun")
-                        run.DataMap <- Some(DataMap.init ())
+                        run.Datamap <- Some(Datamap.init ())
                         arc.AddRun run
 
                         let workflow = ArcWorkflow("TargetWorkflow")
-                        workflow.DataMap <- Some(DataMap.init ())
+                        workflow.Datamap <- Some(Datamap.init ())
                         arc.AddWorkflow workflow
 
                         arc.AddStudy(ArcStudy("UnreadableUnrelatedStudy"))
@@ -180,7 +180,7 @@ Vitest.describe (
                 withTempArc
                     (fun arc ->
                         let study = ArcStudy("DataMapStudy")
-                        study.DataMap <- Some(DataMap.init ())
+                        study.Datamap <- Some(Datamap.init ())
                         arc.AddStudy study
                     )
                     (fun arcPath -> promise {
@@ -191,7 +191,7 @@ Vitest.describe (
                         match! arc.TryDeleteDataMapAsync(arcPath, parentInfo) with
                         | Error error -> failwith error.Message
                         | Ok() ->
-                            Vitest.expect(arc.GetStudy("DataMapStudy").DataMap.IsNone).toBe (true)
+                            Vitest.expect(arc.GetStudy("DataMapStudy").Datamap.IsNone).toBe (true)
 
                             let! dataMapExists =
                                 pathExistsAsync (join [| arcPath; "studies"; "DataMapStudy"; "isa.datamap.xlsx" |])
@@ -206,7 +206,7 @@ Vitest.describe (
                 withTempArc
                     (fun arc ->
                         let workflow = ArcWorkflow("DataMapWorkflow")
-                        workflow.DataMap <- Some(DataMap.init ())
+                        workflow.Datamap <- Some(Datamap.init ())
                         arc.AddWorkflow workflow
                     )
                     (fun arcPath -> promise {
@@ -217,7 +217,7 @@ Vitest.describe (
                         match! arc.TryDeleteDataMapAsync(arcPath, parentInfo) with
                         | Error error -> failwith error.Message
                         | Ok() ->
-                            Vitest.expect(arc.GetWorkflow("DataMapWorkflow").DataMap.IsNone).toBe (true)
+                            Vitest.expect(arc.GetWorkflow("DataMapWorkflow").Datamap.IsNone).toBe (true)
 
                             let! dataMapExists =
                                 pathExistsAsync (
@@ -239,7 +239,7 @@ Vitest.describe (
                 withTempArc
                     (fun arc ->
                         let run = ArcRun("DataMapRun")
-                        run.DataMap <- Some(DataMap.init ())
+                        run.Datamap <- Some(Datamap.init ())
                         arc.AddRun run
                     )
                     (fun arcPath -> promise {
@@ -250,7 +250,7 @@ Vitest.describe (
                         match! arc.TryDeleteDataMapAsync(arcPath, parentInfo) with
                         | Error error -> failwith error.Message
                         | Ok() ->
-                            Vitest.expect(arc.GetRun("DataMapRun").DataMap.IsNone).toBe (true)
+                            Vitest.expect(arc.GetRun("DataMapRun").Datamap.IsNone).toBe (true)
 
                             let! dataMapExists =
                                 pathExistsAsync (join [| arcPath; "runs"; "DataMapRun"; "isa.datamap.xlsx" |])
