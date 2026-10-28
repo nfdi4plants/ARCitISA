@@ -565,7 +565,7 @@ type FileTree =
         let createConfig applyError : FileTreeCreateWorkflow.CreateConfig = {
             setIsCreating = setIsDialogBusy
             applyError = applyError
-            revealInTree = expansionCtx.revealPath
+            revealInTree = expansionCtx.revealPaths
             closeCreateModal = closeDialog
         }
 
@@ -731,8 +731,7 @@ type FileTree =
         let importExternalPaths (kind: FileSystemItemKind) (targetRelativePath: string) = promise {
             let! result = fileStateCtx.importExternalPaths kind targetRelativePath
 
-            Helper.importRevealPath result targetRelativePath
-            |> Option.iter expansionCtx.revealPath
+            Helper.importRevealPaths result targetRelativePath |> expansionCtx.revealPaths
 
             return result |> Result.map ignore
         }

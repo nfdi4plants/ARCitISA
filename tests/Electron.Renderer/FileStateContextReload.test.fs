@@ -102,7 +102,7 @@ let private source (arcRootPath: string option) (changeVersion: int) : FileTreeS
 let private fileImportApi loadActiveImport = {
     loadActiveImport = loadActiveImport
     pickAbsolutePaths = fun _ -> JS.Constructors.Promise.resolve (Ok None)
-    runImport = fun _ -> JS.Constructors.Promise.resolve (Ok ImportExternalFilesResult.Completed)
+    runImport = fun _ -> JS.Constructors.Promise.resolve (Ok(ImportExternalFilesResult.Completed [||]))
     cancelImport = fun _ -> JS.Constructors.Promise.resolve (Ok())
 }
 
@@ -328,7 +328,7 @@ Vitest.describe (
 
                 let! result = runImportExternalPaths api
 
-                Vitest.expect(result).toEqual (Ok(Some ImportExternalFilesResult.Completed))
+                Vitest.expect(result).toEqual (Ok(Some(ImportExternalFilesResult.Completed [||])))
             }
         )
 

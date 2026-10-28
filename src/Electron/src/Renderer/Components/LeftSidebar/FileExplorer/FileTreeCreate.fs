@@ -11,7 +11,7 @@ module FileTreeCreateWorkflow =
     type CreateConfig = {
         setIsCreating: bool -> unit
         applyError: string -> unit
-        revealInTree: string -> unit
+        revealInTree: string list -> unit
         closeCreateModal: unit -> unit
     }
 
@@ -24,7 +24,7 @@ module FileTreeCreateWorkflow =
             (fun () -> promise {
                 match! create () with
                 | Ok createdPath ->
-                    config.revealInTree createdPath
+                    config.revealInTree [ createdPath ]
                     config.closeCreateModal ()
                     return Ok()
                 | Error exn -> return Error exn.Message

@@ -275,7 +275,7 @@ type ArcVault with
     /// come from the import. If that cleanup failed, the leftover files stay unmarked.
     member this.ReleaseImportedFileEventsAfterImport(token: int, result: Result<ImportExternalFilesResult, exn>) =
         match result with
-        | Ok ImportExternalFilesResult.Completed when this.fileWatcherState = FileWatcherState.Running ->
+        | Ok(ImportExternalFilesResult.Completed _) when this.fileWatcherState = FileWatcherState.Running ->
             match this.importedPathLeases.TryGetValue token with
             | true, lease when lease.CompletedAt.IsNone ->
                 let now = Main.Bindings.Node.performanceNow ()

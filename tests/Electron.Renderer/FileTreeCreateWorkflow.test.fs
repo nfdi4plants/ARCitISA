@@ -39,7 +39,7 @@ let private createProbe () = {
 let private createConfig (probe: CreateProbe) : FileTreeCreateWorkflow.CreateConfig = {
     setIsCreating = fun busy -> probe.Busy <- busy
     applyError = fun message -> probe.Errors <- probe.Errors @ [ message ]
-    revealInTree = fun path -> probe.Revealed <- probe.Revealed @ [ path ]
+    revealInTree = fun paths -> probe.Revealed <- probe.Revealed @ paths
     closeCreateModal = fun () -> probe.Closed <- true
 }
 

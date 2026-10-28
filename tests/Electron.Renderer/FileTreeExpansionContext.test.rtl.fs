@@ -1021,7 +1021,7 @@ let private unusedLoad (_: string) =
     JS.Constructors.Promise.resolve (Error(exn "unused"))
 
 Vitest.describe (
-    "FileTreeExpansionContext revealPath",
+    "FileTreeExpansionContext revealPaths",
     fun () ->
         Vitest.test (
             "opens the folders above a file that is in the tree",
@@ -1033,7 +1033,7 @@ Vitest.describe (
 
                 mount store (apiWith (newCalls ()) unusedLoad) view |> ignore
 
-                do! RTL.act (fun () -> promise { ctx.Value.Value.revealPath "data/sub/f.txt" })
+                do! RTL.act (fun () -> promise { ctx.Value.Value.revealPaths [ "data/sub/f.txt" ] })
 
                 do!
                     waitFor (fun () ->
@@ -1058,7 +1058,7 @@ Vitest.describe (
 
                 mount store (apiWith calls load) view |> ignore
 
-                do! RTL.act (fun () -> promise { ctx.Value.Value.revealPath "data/sub/f.txt" })
+                do! RTL.act (fun () -> promise { ctx.Value.Value.revealPaths [ "data/sub/f.txt" ] })
                 do! waitFor (fun () -> calls.Loads.Count = 1)
                 do! Promise.sleep 30
 
@@ -1087,13 +1087,83 @@ Vitest.describe (
 
                 mount store (apiWith (newCalls ()) load) view |> ignore
 
-                do! RTL.act (fun () -> promise { ctx.Value.Value.revealPath "data/sub" })
+                do! RTL.act (fun () -> promise { ctx.Value.Value.revealPaths [ "data/sub" ] })
 
                 do!
                     waitFor (fun () ->
                         ctx.Value.Value.expandedIds.Contains "data"
                         && ctx.Value.Value.expandedIds.Contains "data/sub"
                     )
+            }
+        )
+
+        Vitest.test (
+            "waits for every path to be in the tree and then opens the folders among them",
+            fun () -> promise {
+                let ctx = ref None
+                let store = newStore ()
+                store.ApplyDirectoryUpdate(update 2 "data" [ dir "data/A" ])
+                store.ApplyDirectoryUpdate(update 3 "data/A" [ dir "data/A/raw" ])
+                let view = Probe(fun value -> ctx.Value <- Some value)
+
+                let version = ref 10
+
+                let load (path: string) =
+                    version.Value <- version.Value + 1
+                    JS.Constructors.Promise.resolve (Ok(update version.Value path []))
+
+                mount store (apiWith (newCalls ()) load) view |> ignore
+
+                do!
+                    RTL.act (fun () -> promise {
+                        ctx.Value.Value.revealPaths [ "data/A"; "data/A/raw"; "data/A/docs" ]
+                    })
+
+                do! Promise.sleep 30
+                Vitest.expect(ctx.Value.Value.expandedIds.Contains "data/A/raw").toBe false
+
+                do!
+                    RTL.act (fun () -> promise {
+                        store.ApplyDirectoryUpdate(update 4 "data/A" [ dir "data/A/raw"; dir "data/A/docs" ])
+                    })
+
+                do!
+                    waitFor (fun () ->
+                        [ "data"; "data/A"; "data/A/raw"; "data/A/docs" ]
+                        |> List.forall ctx.Value.Value.expandedIds.Contains
+                    )
+            }
+        )
+
+        Vitest.test (
+            "loads a folder that is not loaded yet when imported folders lie below it",
+            fun () -> promise {
+                let calls = newCalls ()
+                let ctx = ref None
+                let store = newStore ()
+                store.ApplyDirectoryUpdate(update 2 "data" [ dir "data/A" ])
+                let view = Probe(fun value -> ctx.Value <- Some value)
+                let version = ref 10
+
+                let load (path: string) =
+                    version.Value <- version.Value + 1
+
+                    if path = "data/A" then
+                        JS.Constructors.Promise.resolve (Ok(update version.Value path [ dir "data/A/raw" ]))
+                    else
+                        JS.Constructors.Promise.resolve (Ok(update version.Value path []))
+
+                mount store (apiWith calls load) view |> ignore
+
+                do! RTL.act (fun () -> promise { ctx.Value.Value.revealPaths [ "data/A"; "data/A/raw" ] })
+
+                do!
+                    waitFor (fun () ->
+                        [ "data"; "data/A"; "data/A/raw" ]
+                        |> List.forall ctx.Value.Value.expandedIds.Contains
+                    )
+
+                Vitest.expect(calls.Loads.Contains "data/A").toBe true
             }
         )
 
@@ -1106,7 +1176,7 @@ Vitest.describe (
 
                 mount store (apiWith (newCalls ()) unusedLoad) view |> ignore
 
-                do! RTL.act (fun () -> promise { ctx.Value.Value.revealPath "data/sub/f.txt" })
+                do! RTL.act (fun () -> promise { ctx.Value.Value.revealPaths [ "data/sub/f.txt" ] })
                 do! waitFor (fun () -> ctx.Value.Value.expandedIds.Contains "data/sub")
 
                 do! RTL.act (fun () -> promise { ctx.Value.Value.setExpandedIds (Set.ofList [ "data" ]) })
@@ -1122,7 +1192,7 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "a revealPath from an earlier ARC is ignored",
+            "a revealPaths from an earlier ARC is ignored",
             fun () -> promise {
                 let calls = newCalls ()
                 let ctx = ref None
@@ -1136,10 +1206,10 @@ Vitest.describe (
                     | _ -> JS.Constructors.Promise.resolve (Ok(update 3 "data/sub" [ file "data/sub/f.txt" ]))
 
                 let env = mount store (apiWith calls load) view
-                let earlierRevealPath = ctx.Value.Value.revealPath
+                let earlierRevealPaths = ctx.Value.Value.revealPaths
 
                 do! RTL.act (fun () -> promise { env.SetRoot "other" false })
-                do! RTL.act (fun () -> promise { earlierRevealPath "data/sub/f.txt" })
+                do! RTL.act (fun () -> promise { earlierRevealPaths [ "data/sub/f.txt" ] })
 
                 do! Promise.sleep 30
                 Vitest.expect(calls.Loads.Count).toBe 0
@@ -1160,7 +1230,7 @@ Vitest.describe (
 
                 mount store (apiWith calls load) view |> ignore
 
-                do! RTL.act (fun () -> promise { ctx.Value.Value.revealPath "data/f.txt" })
+                do! RTL.act (fun () -> promise { ctx.Value.Value.revealPaths [ "data/f.txt" ] })
                 do! waitFor (fun () -> calls.Loads.Count = 1)
                 do! Promise.sleep 30
 
@@ -1172,7 +1242,7 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "a revealPath retries a folder that failed before",
+            "a revealPaths retries a folder that failed before",
             fun () -> promise {
                 let calls = newCalls ()
                 let ctx = ref None
@@ -1187,13 +1257,13 @@ Vitest.describe (
                 mount store (apiWith calls load) (Probe(fun value -> ctx.Value <- Some value))
                 |> ignore
 
-                do! RTL.act (fun () -> promise { ctx.Value.Value.revealPath "data/f.txt" })
+                do! RTL.act (fun () -> promise { ctx.Value.Value.revealPaths [ "data/f.txt" ] })
                 do! waitFor (fun () -> calls.Loads.Count = 1)
                 do! Promise.sleep 30
 
                 Vitest.expect(isLoaded store.Snapshot "data").toBe false
 
-                do! RTL.act (fun () -> promise { ctx.Value.Value.revealPath "data/f.txt" })
+                do! RTL.act (fun () -> promise { ctx.Value.Value.revealPaths [ "data/f.txt" ] })
                 do! waitFor (fun () -> ctx.Value.Value.expandedIds.Contains "data")
 
                 Vitest.expect(isLoaded store.Snapshot "data").toBe true
