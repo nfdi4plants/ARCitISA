@@ -150,8 +150,6 @@ type FileTree =
 
         let rootEntry = Renderer.Context.FileTreeStore.tryFind snapshot ""
 
-        let revealInTree (path: string) = expansionCtx.revealPath path
-
         let fileItem =
             React.useMemo (
                 (fun () ->
@@ -448,7 +446,7 @@ type FileTree =
                         {
                             setIsCreating = setIsDialogBusy
                             applyError = applyCreateError
-                            revealInTree = revealInTree
+                            revealInTree = expansionCtx.revealPath
                             closeCreateModal = closeDialog
                         }
                         Api.ipcArcVaultApi.addArcFile
@@ -466,7 +464,7 @@ type FileTree =
                             {
                                 setIsCreating = setIsDialogBusy
                                 applyError = applyFileSystemCreateError
-                                revealInTree = revealInTree
+                                revealInTree = expansionCtx.revealPath
                                 closeCreateModal = closeDialog
                             }
                             Api.ipcArcVaultApi.createFileSystemItem
@@ -481,7 +479,7 @@ type FileTree =
                 {
                     setIsCreating = ignore
                     applyError = applyCreateError
-                    revealInTree = revealInTree
+                    revealInTree = expansionCtx.revealPath
                     closeCreateModal = ignore
                 }
                 Api.ipcArcVaultApi.addArcFile
@@ -529,7 +527,7 @@ type FileTree =
 
         let importExternalFiles (targetRelativePath: string) = promise {
             let! result = fileStateCtx.importExternalFiles targetRelativePath
-            importRevealPath result targetRelativePath |> Option.iter revealInTree
+            importRevealPath result targetRelativePath |> Option.iter expansionCtx.revealPath
             return result |> Result.map ignore
         }
 
