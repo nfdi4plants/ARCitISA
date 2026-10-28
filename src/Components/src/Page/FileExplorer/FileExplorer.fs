@@ -151,14 +151,6 @@ type FileExplorer =
             ?canDeleteItem: FileItem -> bool,
             ?onDeleteItem: FileItem -> unit,
             ?selectedItemId: string option,
-            // Opens the folders down to this item once per id, without selecting it. While the same id stays
-            // set, the user can close those folders again. Clearing the prop or passing another id lets an id
-            // reveal again. An id whose item is not in the items yet applies when the item arrives. A folder
-            // target opens itself only if its children are loaded at that moment. The component calls neither
-            // onDirectoryExpansionChange nor onExpandedIdsChange for the folders it opens. It applies only while
-            // the component manages the expansion itself, so a parent that passes expandedIds opens the folders
-            // on its own.
-            ?revealItemId: string,
             ?onDirectoryExpansionChange: FileItem -> bool -> unit,
             ?onExpansionChange: FileItem -> bool -> unit,
             ?delegateHorizontalScrollToParent: bool,
@@ -259,18 +251,6 @@ type FileExplorer =
                         dispatch (FileExplorerLogic.ExpandMany ancestorIds)
             ),
             [| box selectedId; box (not selectedPath.IsEmpty) |]
-        )
-
-        React.useEffect (
-            (fun () ->
-                if not isExpansionControlled then
-                    dispatch (FileExplorerLogic.RevealItem(revealItemId, items))
-            ),
-            [|
-                box initialItems
-                box revealItemId
-                box isExpansionControlled
-            |]
         )
 
         let currentLatest: FileExplorerTypes.Latest = {

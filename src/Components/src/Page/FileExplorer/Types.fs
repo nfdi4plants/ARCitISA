@@ -321,26 +321,6 @@ module ContextMenuItem =
 
 module FileExplorerLogic =
 
-    let private expandedIdsFromPath itemId items =
-        let pathItems =
-            match FileTree.getPath itemId items [] with
-            | Some pathItems -> pathItems
-            | None -> []
-
-        pathItems
-        |> List.take (max 0 (List.length pathItems - 1))
-        |> List.choose (fun item -> if item.Children.IsSome then Some item.Id else None)
-        |> Set.ofList
-
-    /// The folders to open so the item can be seen: its parent folders, and the item itself when it is a folder.
-    let private revealedIdsFromPath itemId items =
-        let ownId =
-            match FileTree.findItem itemId items with
-            | Some item when item.IsDirectory && item.Children.IsSome -> Set.singleton item.Id
-            | _ -> Set.empty
-
-        expandedIdsFromPath itemId items |> Set.union ownId
-
     let rec private collectExpandedIds acc items =
         items
         |> List.fold
@@ -403,20 +383,16 @@ module FileExplorerLogic =
     type Model = {
         SelectedId: string option
         ExpandedIds: Set<string>
-        /// The reveal id whose folders are already open. It stays None while the current id waits for its item.
-        LastRevealId: string option
     }
 
     type Msg =
         | SetExpanded of itemId: string * isExpanded: bool
         | ExpandMany of Set<string>
         | SelectItem of string
-        | RevealItem of revealItemId: string option * items: FileItem list
 
     let init items = {
         SelectedId = None
         ExpandedIds = collectExpandedIds Set.empty items
-        LastRevealId = None
     }
 
     let update msg model =
@@ -436,17 +412,6 @@ module FileExplorerLogic =
           }
 
         | SelectItem itemId -> { model with SelectedId = Some itemId }
-
-        | RevealItem(revealItemId, items) ->
-            match revealItemId with
-            | Some itemId when model.LastRevealId = Some itemId -> model
-            | Some itemId when (FileTree.findItem itemId items).IsSome -> {
-                model with
-                    LastRevealId = Some itemId
-                    ExpandedIds = Set.union model.ExpandedIds (revealedIdsFromPath itemId items)
-              }
-            | _ when model.LastRevealId.IsNone -> model
-            | _ -> { model with LastRevealId = None }
 
 /// The stable callbacks of a tree row. The rows read them through the latest props of the explorer,
 /// so a memoized row calls the current functions even when its own props did not change.

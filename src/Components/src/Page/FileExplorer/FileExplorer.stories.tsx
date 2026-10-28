@@ -258,36 +258,6 @@ const ExpansionRefreshFileExplorer = () => {
   );
 };
 
-const RevealFileExplorer = () => {
-  const [siblingAdded, setSiblingAdded] = React.useState(false);
-  const [revealId, setRevealId] = React.useState<string | undefined>(undefined);
-
-  const items = React.useMemo(() => {
-    const report = createStableFile("report.txt", "arc/studies/study-one/report.txt", "report");
-    const studyOne = createStableFolder("Study One", "arc/studies/study-one", "study-one", [report]);
-    const studies = createStableFolder("Studies", "arc/studies", "studies", [studyOne]);
-
-    return ofArray(siblingAdded ? [studies, createStableFile("notes.txt", "arc/notes.txt", "notes")] : [studies]);
-  }, [siblingAdded]);
-
-  return (
-    <div className="swt:p-4 swt:space-y-4">
-      <div className="swt:flex swt:gap-2">
-        <button type="button" onClick={() => setRevealId("report")}>
-          Reveal report
-        </button>
-        <button type="button" onClick={() => setRevealId(undefined)}>
-          Clear reveal
-        </button>
-        <button type="button" onClick={() => setSiblingAdded(true)}>
-          Add sibling
-        </button>
-      </div>
-      <FileExplorer initialItems={items} revealItemId={revealId} />
-    </div>
-  );
-};
-
 const DeleteActionFileExplorer = () => {
   const [lastDeleted, setLastDeleted] = React.useState<string>("none");
   const [lastAction, setLastAction] = React.useState<string>("none");
@@ -857,41 +827,6 @@ export const CollapsedDirectoryStaysClosedAfterLazySiblingLoads: StoryObj<typeof
 
     await expect(canvas.queryByText("selected-report.txt")).toBeNull();
     await expect(canvas.getByRole("treeitem", { name: "Selected Parent" })).toHaveAttribute("aria-expanded", "false");
-  },
-};
-
-export const RevealOpensFoldersWithoutSelecting: StoryObj<typeof RevealFileExplorer> = {
-  render: () => <RevealFileExplorer />,
-
-  play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-
-    await canvas.findByRole("button", { name: "Studies" });
-    await expect(canvas.queryByText("report.txt")).toBeNull();
-
-    await userEvent.click(canvas.getByRole("button", { name: "Reveal report" }));
-    await waitFor(() => expect(canvas.getByText("report.txt")).toBeInTheDocument());
-    await expect(canvas.getByRole("treeitem", { name: "Studies" })).toHaveAttribute("aria-expanded", "true");
-    await expect(canvas.getByRole("treeitem", { name: "Study One" })).toHaveAttribute("aria-expanded", "true");
-    // Revealing opens the folders only. Nothing is highlighted as selected.
-    await expect(canvasElement.querySelector('[class~="swt:text-primary"]')).toBeNull();
-    await expect(canvasElement.querySelector('[data-file-item-id][class~="swt:bg-base-300"]')).toBeNull();
-
-    await userEvent.click(canvas.getByRole("button", { name: "Studies" }));
-    await waitFor(() => expect(canvas.queryByText("report.txt")).toBeNull());
-
-    // New items with the same reveal id do not reopen a folder the user closed.
-    // The reveal runs in an effect after the new items render, so the check waits a moment before it reads the folder.
-    await userEvent.click(canvas.getByRole("button", { name: "Add sibling" }));
-    await canvas.findByText("notes.txt");
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    await expect(canvas.getByRole("treeitem", { name: "Studies" })).toHaveAttribute("aria-expanded", "false");
-    await expect(canvas.queryByText("report.txt")).toBeNull();
-
-    // Clearing the id and setting it again counts as a new reveal.
-    await userEvent.click(canvas.getByRole("button", { name: "Clear reveal" }));
-    await userEvent.click(canvas.getByRole("button", { name: "Reveal report" }));
-    await waitFor(() => expect(canvas.getByText("report.txt")).toBeInTheDocument());
   },
 };
 

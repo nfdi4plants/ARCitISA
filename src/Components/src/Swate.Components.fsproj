@@ -377,7 +377,6 @@
     <Compile Include="Page\GitComparison\GitPagedDiffViewer.fs" />
     <Compile Include="Page\GitComparison\GitMergeConflictViewer.fs" />
     <Compile Include="Page\FileExplorer\Types.fs" />
-    <Compile Include="Page\FileExplorer\Types.test.fs" />
     <Compile Include="Page\FileExplorer\Helper.fs" />
     <Compile Include="Page\FileExplorer\FileExplorerGitLfsHelper.fs" />
     <Compile Include="Page\FileExplorer\FileExplorerGitLfsHelper.test.fs" />

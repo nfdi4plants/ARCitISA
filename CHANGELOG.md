@@ -33,7 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Git LFS badges come from one background listing per ARC. They update after Git operations in ARCitISA, and after changes made outside it when the window gets focus. #1340 (by @caroott, @Etschbeijer)
 - Switching views in the provenance graph keeps the previous graph on screen until the new one is ready, so the view no longer flashes. (by @caroott)
 - The provenance graph lays out large graphs in the background, so the app stays responsive in the meantime. (by @caroott)
-- Creating a file, folder, study, assay, workflow, run or DataMap in the File Explorer now opens the folders that lead to it, so you can see it right away. The new item is no longer opened, so the table you are working on stays open. (by @Etschbeijer)
+- Creating a file, folder, study, assay, workflow, run or DataMap in the File Explorer now opens the folders that lead to it, so you can see it right away. (by @Etschbeijer)
 - After importing files, the File Explorer opens the folder you imported into. (by @Etschbeijer)
 
 ### 🐛 Fixed
