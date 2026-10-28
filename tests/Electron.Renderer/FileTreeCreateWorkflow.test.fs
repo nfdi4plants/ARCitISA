@@ -164,7 +164,7 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "createDataMap reveals the path of the DataMap parent",
+            "createDataMap reveals the new DataMap file",
             fun () -> promise {
                 let probe = createProbe ()
                 let parentInfo = DatamapParentInfo.create "A" DataMapParent.Assay
