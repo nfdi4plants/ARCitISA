@@ -353,22 +353,55 @@ module FileExplorerLogic =
             )
             acc
 
-    let rec private collectIds acc items =
-        items
-        |> List.fold
-            (fun accIds item ->
-                let next = Set.add item.Id accIds
+    /// A directory can expand when its children are not loaded yet (None) or when it has children.
+    /// Some [] is a known empty directory.
+    let canExpandDirectory (item: FileItem) =
+        item.IsDirectory
+        && (
+            match item.Children with
+            | Some children -> not (List.isEmpty children)
+            | None -> true
+        )
 
-                match item.Children with
-                | Some children -> collectIds next children
-                | None -> next
+    /// One visible row of the tree in display order.
+    type VisibleRow = {
+        Id: string
+        Item: FileItem
+        Depth: int
+        SetSize: int
+        PosInSet: int
+    }
+
+    /// Rows that are visible with the given expanded directories, in display order. Children of
+    /// collapsed directories and of directories without loaded children are not visible.
+    let flattenVisibleRows (expandedIds: Set<string>) (items: FileItem list) : VisibleRow[] =
+        let rows = ResizeArray<VisibleRow>()
+
+        let rec walk depth (siblings: FileItem list) =
+            let setSize = List.length siblings
+
+            siblings
+            |> List.iteri (fun index item ->
+                rows.Add {
+                    Id = item.Id
+                    Item = item
+                    Depth = depth
+                    SetSize = setSize
+                    PosInSet = index + 1
+                }
+
+                if item.IsDirectory && expandedIds.Contains item.Id then
+                    match item.Children with
+                    | Some children -> walk (depth + 1) children
+                    | None -> ()
             )
-            acc
 
+        walk 0 items
+        rows.ToArray()
+
+    /// State the component keeps when the parent does not control expansion or selection.
     type Model = {
-        Items: FileItem list
         SelectedId: string option
-        SelectedPath: FileItem list
         ExpandedIds: Set<string>
         /// The reveal id whose folders are already open. It stays None while the current id waits for its item.
         LastRevealId: string option
@@ -376,13 +409,12 @@ module FileExplorerLogic =
 
     type Msg =
         | SetExpanded of itemId: string * isExpanded: bool
+        | ExpandMany of Set<string>
         | SelectItem of string
-        | UpdateItems of FileItem list * selectedItemId: string option option * revealItemId: string option
+        | RevealItem of revealItemId: string option * items: FileItem list
 
     let init items = {
-        Items = items
         SelectedId = None
-        SelectedPath = []
         ExpandedIds = collectExpandedIds Set.empty items
         LastRevealId = None
     }
@@ -398,64 +430,45 @@ module FileExplorerLogic =
 
             { model with ExpandedIds = expandedIds }
 
-        | SelectItem itemId ->
-            let path =
-                match FileTree.getPath itemId model.Items [] with
-                | Some p -> p
-                | None -> []
+        | ExpandMany itemIds -> {
+            model with
+                ExpandedIds = Set.union model.ExpandedIds itemIds
+          }
 
-            {
+        | SelectItem itemId -> { model with SelectedId = Some itemId }
+
+        | RevealItem(revealItemId, items) ->
+            match revealItemId with
+            | Some itemId when model.LastRevealId = Some itemId -> model
+            | Some itemId when (FileTree.findItem itemId items).IsSome -> {
                 model with
-                    SelectedId = Some itemId
-                    SelectedPath = path
-            }
+                    LastRevealId = Some itemId
+                    ExpandedIds = Set.union model.ExpandedIds (revealedIdsFromPath itemId items)
+              }
+            | _ when model.LastRevealId.IsNone -> model
+            | _ -> { model with LastRevealId = None }
 
-        | UpdateItems(items, selectedItemId, revealItemId) ->
-            let validIds = collectIds Set.empty items
+/// The stable callbacks of a tree row. The rows read them through the latest props of the explorer,
+/// so a memoized row calls the current functions even when its own props did not change.
+type TreeRowHandlers = {
+    GetItemIconClass: FileItem -> string option
+    GetItemActions: FileItem -> ContextMenuItem list
+    GetItemStatusAction: FileItem -> ContextMenuItem option
+    CanCreateItem: FileItem -> bool
+    OnCreateItem: (FileItem -> unit) option
+    CanDeleteItem: FileItem -> bool
+    OnDeleteItem: (FileItem -> unit) option
+    /// Selects the file or toggles the directory with the given row id.
+    OnRowClick: string -> unit
+}
 
-            let persistedExpanded =
-                model.ExpandedIds |> Set.filter (fun id -> validIds.Contains id)
-
-            let persistedSelectedId = model.SelectedId |> Option.filter validIds.Contains
-
-            let nextSelectedId =
-                selectedItemId
-                |> Option.map (Option.filter validIds.Contains)
-                |> Option.defaultValue persistedSelectedId
-
-            let selectionChanged = nextSelectedId <> model.SelectedId
-
-            let selectedPath =
-                match nextSelectedId with
-                | Some itemId ->
-                    match FileTree.getPath itemId items [] with
-                    | Some path -> path
-                    | None -> []
-                | None -> []
-
-            let expandedFromSelection =
-                if selectionChanged then
-                    nextSelectedId
-                    |> Option.map (fun itemId -> expandedIdsFromPath itemId items)
-                    |> Option.defaultValue Set.empty
-                else
-                    Set.empty
-
-            let expandedFromReveal, lastRevealId =
-                match revealItemId with
-                | Some itemId when model.LastRevealId = Some itemId -> Set.empty, Some itemId
-                | Some itemId when (FileTree.findItem itemId items).IsSome ->
-                    revealedIdsFromPath itemId items, Some itemId
-                | _ -> Set.empty, None
-
-            {
-                model with
-                    Items = items
-                    LastRevealId = lastRevealId
-                    SelectedId = nextSelectedId
-                    SelectedPath = selectedPath
-                    ExpandedIds =
-                        persistedExpanded
-                        |> Set.union expandedFromSelection
-                        |> Set.union expandedFromReveal
-            }
+type TreeRowProps = {
+    Row: FileExplorerLogic.VisibleRow
+    IsSelected: bool
+    /// Selected rows and the ancestors of the selected row.
+    IsHighlighted: bool
+    IsExpanded: bool
+    Handlers: TreeRowHandlers
+    /// Mirrors truncateOverflowingItemNames of the explorer.
+    TruncateNames: bool
+}

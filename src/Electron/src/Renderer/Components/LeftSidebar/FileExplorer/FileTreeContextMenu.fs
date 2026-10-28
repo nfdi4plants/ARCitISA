@@ -114,6 +114,11 @@ let openContextMenuItems (config: ContextMenuConfig) (item: FileItem) =
         yield! pathActionContextMenuItemsForRelativePath config.pathActionConfig item relativePath
       ]
 
+let refreshContextMenuItems (refreshDirectory: FileItem -> unit) (item: FileItem) = [
+    if item.IsDirectory && item.Path.IsSome then
+        ContextMenuItem.create "Refresh folder" "swt:fluent--arrow-sync-24-regular" (fun () -> refreshDirectory item)
+]
+
 let copyPathContextMenuItems (arcRootPath: string option) (item: FileItem) = [
     match tryGetRelativeItemPath item with
     | Some relativePath ->
@@ -269,6 +274,7 @@ let createContextMenuItems (config: ContextMenuConfig) arcScopeId =
     fun item ->
         withDividers [
             openContextMenuItems config item
+            refreshContextMenuItems config.refreshDirectory item
             copyPathContextMenuItems config.arcRootPath item
             fileSystemCreateContextMenuItems config.openFileSystemCreateModal item
             dataMapContextMenuItems config.createDataMap config.requestDeleteItem config.tryFindDataMapItemByPath item

@@ -20,7 +20,7 @@ type FileExplorerItem =
 
             prop.type'.button
             prop.className [
-                "swt:btn swt:btn-ghost swt:btn-square swt:btn-xs swt:opacity-0 swt:transition-opacity swt:group-hover:opacity-100 swt:focus:opacity-100"
+                "swt:btn swt:btn-ghost swt:btn-square swt:btn-xs swt:shrink-0 swt:opacity-0 swt:transition-opacity swt:group-hover:opacity-100 swt:focus:opacity-100"
 
                 match className with
                 | Some className -> className
@@ -197,7 +197,18 @@ type FileExplorerItem =
                             prop.className $"swt:iconify {statusIconClassName} swt:size-3"
                         ]
 
-                    Html.span [ prop.text (defaultArg item.LfsActivity "LFS") ]
+                    Html.span [
+                        // Below this container width only the icon stays. The sr-only span below keeps the status readable.
+                        prop.ariaHidden true
+                        prop.className "swt:@max-[12rem]:hidden"
+                        prop.text (defaultArg item.LfsActivity "LFS")
+                    ]
+
+                    // Screen readers skip aria-label on a span and the label above is display:none in narrow rows.
+                    Html.span [
+                        prop.className "swt:sr-only"
+                        prop.text statusAccessibilityText
+                    ]
                 ]
             ]
 
@@ -207,9 +218,12 @@ type FileExplorerItem =
             match visibleSize with
             | Some size ->
                 Html.span [
+                    // The sr-only status text already includes the size.
+                    prop.ariaHidden true
                     prop.className [
                         "swt:badge"
                         "swt:badge-sm"
+                        "swt:@max-[16rem]:hidden"
                         "swt:rounded-none"
                         "swt:border-0"
                         segmentCursorClass
@@ -239,7 +253,7 @@ type FileExplorerItem =
                 prop.disabled isActionDisabled
                 yield!
                     commonProps [
-                        "swt:inline-flex swt:m-0 swt:overflow-hidden swt:rounded-full swt:border swt:border-base-300 swt:bg-transparent swt:p-0 swt:align-middle swt:transition-colors"
+                        "swt:inline-flex swt:min-w-0 swt:m-0 swt:overflow-hidden swt:rounded-full swt:border swt:border-base-300 swt:bg-transparent swt:p-0 swt:align-middle swt:transition-colors"
 
                         if isActionDisabled then
                             "swt:cursor-not-allowed swt:opacity-70"
@@ -257,7 +271,7 @@ type FileExplorerItem =
             Html.span [
                 yield!
                     commonProps [
-                        "swt:inline-flex swt:overflow-hidden swt:rounded-full swt:border swt:border-base-300"
+                        "swt:inline-flex swt:min-w-0 swt:overflow-hidden swt:rounded-full swt:border swt:border-base-300"
                     ]
                 prop.onClick stopPillClick
             ]
@@ -287,8 +301,9 @@ type FileExplorerItem =
             ?onDeleteItem: FileItem -> unit,
             ?canDeleteItem: FileItem -> bool,
             ?statusAction: ContextMenuItem,
-            ?children: ReactElement
+            ?truncateNames: bool
         ) =
+        let truncateNames = defaultArg truncateNames false
         let canCreateItem = defaultArg canCreateItem (fun (_: FileItem) -> false)
         let itemActions = defaultArg itemActions []
         let canDeleteItem = defaultArg canDeleteItem (fun (_: FileItem) -> false)
@@ -303,129 +318,31 @@ type FileExplorerItem =
             else
                 "swt:iconify swt:fluent--caret-right-24-filled swt:size-4 swt:shrink-0"
 
-        let rowChildren = [
-            Html.div [
-                prop.custom ("data-file-item-id", item.Id)
-                prop.className [
-                    "swt:group swt:w-full swt:px-2 swt:py-1 swt:cursor-default"
-                    rowHighlightClass
-                ]
-                prop.style [ style.display.flex; style.width (length.percent 100) ]
-                prop.onClick onDirectorySelect
+        Html.div [
+            prop.custom ("data-file-item-id", item.Id)
+            prop.className [
+                "swt:group swt:w-full swt:px-2 swt:py-1 swt:cursor-default"
 
-                prop.children [
-                    Html.div [
-                        prop.className "swt:flex swt:w-full swt:min-w-0 swt:items-center swt:gap-2"
-                        prop.children [
-                            Html.button [
-                                prop.type'.button
-                                prop.className
-                                    "swt:flex swt:min-w-0 swt:flex-1 swt:items-center swt:gap-2 swt:bg-transparent swt:border-0 swt:p-0 swt:text-left swt:cursor-default"
-                                prop.onClick onDirectorySelect
+                if truncateNames then
+                    "swt:@container"
 
-                                if canExpandDirectory then
-                                    prop.ariaExpanded isExpanded
-
-                                prop.children [
-                                    Html.i [
-                                        prop.className (
-                                            Swate.Components.Page.FileExplorer.Helper.iconClassName
-                                                [ "swt:iconify"; "swt:shrink-0" ]
-                                                item
-                                                getItemIconClass
-                                        )
-                                    ]
-                                    Html.span [
-                                        prop.className [
-                                            "swt:min-w-0"
-                                            "swt:flex-1"
-                                            "swt:truncate"
-                                            selectedNameClass
-                                        ]
-                                        prop.text item.Name
-                                    ]
-                                ]
-                            ]
-
-                            if
-                                hasStatusControl
-                                || canExpandDirectory
-                                || canCreateFromDirectory
-                                || hasItemActions
-                                || canDeleteFromDirectory
-                            then
-                                Html.div [
-                                    prop.className "swt:ml-auto swt:shrink-0 swt:flex swt:items-center swt:gap-2"
-                                    prop.children [
-                                        FileExplorerItem.CreateItemButton(item, onCreateItem, canCreateItem)
-
-                                        yield!
-                                            itemActions
-                                            |> List.map (fun action -> FileExplorerItem.ItemActionButton(item, action))
-
-                                        FileExplorerItem.DeleteItemButton(item, onDeleteItem, canDeleteItem)
-
-                                        if hasStatusControl then
-                                            FileExplorerItem.StatusControl(item, statusAction)
-
-                                        // Shows the state only. A click lands on the row, which toggles the folder.
-                                        if canExpandDirectory then
-                                            Html.i [ prop.className directoryToggleIconClass ]
-                                    ]
-                                ]
-                        ]
-                    ]
-                ]
+                rowHighlightClass
             ]
+            prop.style [ style.display.flex; style.width (length.percent 100) ]
+            prop.onClick onDirectorySelect
 
-            match children with
-            | Some childTree -> childTree
-            | None -> Html.none
-        ]
-
-        Html.li [
-            prop.key item.Id
-            prop.custom ("data-file-item-id", item.Id)
-            prop.className "swt:w-full"
-            prop.children rowChildren
-        ]
-
-    [<ReactComponent>]
-    static member FileRow
-        (
-            item: FileItem,
-            rowHighlightClass: string,
-            selectedNameClass: string,
-            getItemIconClass: FileItem -> string option,
-            onSelect: unit -> unit,
-            ?itemActions: ContextMenuItem list,
-            ?onDeleteItem: FileItem -> unit,
-            ?canDeleteItem: FileItem -> bool,
-            ?statusAction: ContextMenuItem
-        ) =
-        let itemActions = defaultArg itemActions []
-        let canDeleteItem = defaultArg canDeleteItem (fun (_: FileItem) -> false)
-        let hasItemActions = itemActions |> List.isEmpty |> not
-        let canDeleteFromFile = canDeleteItem item && onDeleteItem.IsSome
-        let hasStatusControl = Helper.isLfs item || statusAction.IsSome
-
-        Html.li [
-            prop.key item.Id
-            prop.custom ("data-file-item-id", item.Id)
             prop.children [
                 Html.div [
-                    prop.custom ("data-file-item-id", item.Id)
-                    prop.className [
-                        "swt:group swt:px-2 swt:py-1 swt:flex swt:min-w-0 swt:items-center swt:justify-between swt:cursor-default"
-                        rowHighlightClass
-                    ]
+                    prop.className "swt:flex swt:w-full swt:min-w-0 swt:items-center swt:gap-2"
                     prop.children [
                         Html.button [
                             prop.type'.button
-                            prop.custom ("data-file-item-id", item.Id)
-                            prop.className
-                                "swt:flex swt:min-w-0 swt:flex-1 swt:items-center swt:gap-2 swt:bg-transparent swt:border-0 swt:p-0 swt:text-left swt:cursor-default"
-                            prop.onClick (fun _ -> onSelect ())
+                            prop.className [
+                                "swt:flex swt:flex-1 swt:items-center swt:gap-2 swt:bg-transparent swt:border-0 swt:p-0 swt:text-left swt:cursor-default"
+                                if truncateNames then "swt:min-w-24" else "swt:min-w-0"
+                            ]
+                            prop.onClick onDirectorySelect
+
                             prop.children [
                                 Html.i [
                                     prop.className (
@@ -447,10 +364,24 @@ type FileExplorerItem =
                             ]
                         ]
 
-                        if hasStatusControl || hasItemActions || canDeleteFromFile then
+                        if
+                            hasStatusControl
+                            || canExpandDirectory
+                            || canCreateFromDirectory
+                            || hasItemActions
+                            || canDeleteFromDirectory
+                        then
                             Html.div [
-                                prop.className "swt:ml-auto swt:flex swt:shrink-0 swt:items-center swt:gap-2"
+                                prop.className [
+                                    "swt:ml-auto swt:flex swt:items-center swt:gap-2"
+                                    if truncateNames then
+                                        "swt:shrink swt:min-w-0"
+                                    else
+                                        "swt:shrink-0"
+                                ]
                                 prop.children [
+                                    FileExplorerItem.CreateItemButton(item, onCreateItem, canCreateItem)
+
                                     yield!
                                         itemActions
                                         |> List.map (fun action -> FileExplorerItem.ItemActionButton(item, action))
@@ -459,9 +390,207 @@ type FileExplorerItem =
 
                                     if hasStatusControl then
                                         FileExplorerItem.StatusControl(item, statusAction)
+
+                                    // Shows the state only. A click lands on the row, which toggles the folder.
+                                    if canExpandDirectory then
+                                        Html.i [ prop.className directoryToggleIconClass ]
                                 ]
                             ]
                     ]
                 ]
             ]
         ]
+
+    [<ReactComponent>]
+    static member FileRow
+        (
+            item: FileItem,
+            rowHighlightClass: string,
+            selectedNameClass: string,
+            getItemIconClass: FileItem -> string option,
+            onSelect: unit -> unit,
+            ?itemActions: ContextMenuItem list,
+            ?onDeleteItem: FileItem -> unit,
+            ?canDeleteItem: FileItem -> bool,
+            ?statusAction: ContextMenuItem,
+            ?truncateNames: bool
+        ) =
+        let truncateNames = defaultArg truncateNames false
+        let itemActions = defaultArg itemActions []
+        let canDeleteItem = defaultArg canDeleteItem (fun (_: FileItem) -> false)
+        let hasItemActions = itemActions |> List.isEmpty |> not
+        let canDeleteFromFile = canDeleteItem item && onDeleteItem.IsSome
+        let hasStatusControl = Helper.isLfs item || statusAction.IsSome
+
+        Html.div [
+            prop.custom ("data-file-item-id", item.Id)
+            prop.className [
+                "swt:group swt:px-2 swt:py-1 swt:flex swt:min-w-0 swt:items-center swt:justify-between swt:cursor-default"
+                if truncateNames then
+                    "swt:@container"
+                rowHighlightClass
+            ]
+            prop.children [
+                Html.button [
+                    prop.type'.button
+                    prop.custom ("data-file-item-id", item.Id)
+                    prop.className [
+                        "swt:flex swt:flex-1 swt:items-center swt:gap-2 swt:bg-transparent swt:border-0 swt:p-0 swt:text-left swt:cursor-default"
+                        if truncateNames then "swt:min-w-24" else "swt:min-w-0"
+                    ]
+                    prop.onClick (fun _ -> onSelect ())
+                    prop.children [
+                        Html.i [
+                            prop.className (
+                                Swate.Components.Page.FileExplorer.Helper.iconClassName
+                                    [ "swt:iconify"; "swt:shrink-0" ]
+                                    item
+                                    getItemIconClass
+                            )
+                        ]
+                        Html.span [
+                            prop.className [
+                                "swt:min-w-0"
+                                "swt:flex-1"
+                                "swt:truncate"
+                                selectedNameClass
+                            ]
+                            prop.text item.Name
+                        ]
+                    ]
+                ]
+
+                if hasStatusControl || hasItemActions || canDeleteFromFile then
+                    Html.div [
+                        prop.className [
+                            "swt:ml-auto swt:flex swt:items-center swt:gap-2"
+                            if truncateNames then
+                                "swt:shrink swt:min-w-0"
+                            else
+                                "swt:shrink-0"
+                        ]
+                        prop.children [
+                            yield!
+                                itemActions
+                                |> List.map (fun action -> FileExplorerItem.ItemActionButton(item, action))
+
+                            FileExplorerItem.DeleteItemButton(item, onDeleteItem, canDeleteItem)
+
+                            if hasStatusControl then
+                                FileExplorerItem.StatusControl(item, statusAction)
+                        ]
+                    ]
+            ]
+        ]
+
+module TreeRow =
+
+    /// Compares every field of the item except the children. The row only needs to know whether
+    /// the directory can expand, which the comparison checks separately.
+    let private sameItem (a: FileItem) (b: FileItem) =
+        obj.ReferenceEquals(a, b)
+        || ({ a with Children = None } = { b with Children = None })
+
+    let areEqual (a: TreeRowProps) (b: TreeRowProps) =
+        sameItem a.Row.Item b.Row.Item
+        && FileExplorerLogic.canExpandDirectory a.Row.Item = FileExplorerLogic.canExpandDirectory b.Row.Item
+        && a.Row.Depth = b.Row.Depth
+        && a.Row.SetSize = b.Row.SetSize
+        && a.Row.PosInSet = b.Row.PosInSet
+        && a.IsSelected = b.IsSelected
+        && a.IsHighlighted = b.IsHighlighted
+        && a.IsExpanded = b.IsExpanded
+        && a.TruncateNames = b.TruncateNames
+        && obj.ReferenceEquals(a.Handlers, b.Handlers)
+
+    /// Height of one row in pixels. The virtualizer uses the same number as its size estimate.
+    [<Literal>]
+    let RowHeight = 32
+
+    /// Pixels of indentation per tree level.
+    [<Literal>]
+    let IndentPerLevel = 16
+
+    // A row skips its render when only the children of its item changed, and it compares the rest of the item by
+    // value. A [<ReactMemoComponent>] static member compares props by reference, so it cannot express this areEqual.
+    let Render =
+        React.memo (
+            (fun (props: TreeRowProps) ->
+                let item = props.Row.Item
+                let handlers = props.Handlers
+                let canExpand = FileExplorerLogic.canExpandDirectory item
+
+                let rowHighlightClass =
+                    if props.IsHighlighted then
+                        "swt:bg-base-300 swt:active:bg-base-300"
+                    else
+                        "swt:hover:bg-base-300 swt:active:bg-base-300"
+
+                let selectedNameClass =
+                    if props.IsSelected then
+                        "swt:font-semibold swt:text-primary"
+                    else
+                        ""
+
+                let itemActions = handlers.GetItemActions item
+                let statusAction = handlers.GetItemStatusAction item
+
+                let content =
+                    if item.IsDirectory then
+                        FileExplorerItem.DirectoryRow(
+                            item,
+                            rowHighlightClass,
+                            selectedNameClass,
+                            props.IsExpanded,
+                            canExpand,
+                            handlers.GetItemIconClass,
+                            (fun ev ->
+                                ev.preventDefault ()
+                                ev.stopPropagation ()
+                                handlers.OnRowClick item.Id
+                            ),
+                            ?onCreateItem = handlers.OnCreateItem,
+                            canCreateItem = handlers.CanCreateItem,
+                            itemActions = itemActions,
+                            ?onDeleteItem = handlers.OnDeleteItem,
+                            canDeleteItem = handlers.CanDeleteItem,
+                            ?statusAction = statusAction,
+                            truncateNames = props.TruncateNames
+                        )
+                    else
+                        FileExplorerItem.FileRow(
+                            item,
+                            rowHighlightClass,
+                            selectedNameClass,
+                            handlers.GetItemIconClass,
+                            (fun () -> handlers.OnRowClick item.Id),
+                            itemActions = itemActions,
+                            ?onDeleteItem = handlers.OnDeleteItem,
+                            canDeleteItem = handlers.CanDeleteItem,
+                            ?statusAction = statusAction,
+                            truncateNames = props.TruncateNames
+                        )
+
+                Html.div [
+                    prop.role "treeitem"
+                    prop.custom ("data-file-item-id", item.Id)
+                    prop.ariaLevel (props.Row.Depth + 1)
+                    prop.ariaSetSize props.Row.SetSize
+                    prop.ariaPosInSet props.Row.PosInSet
+                    prop.ariaSelected props.IsSelected
+
+                    if canExpand then
+                        prop.ariaExpanded props.IsExpanded
+
+                    prop.className "swt:w-full"
+
+                    prop.style [
+                        style.height RowHeight
+                        style.paddingLeft (props.Row.Depth * IndentPerLevel)
+                    ]
+
+                    prop.children [ content ]
+                ]
+            ),
+            areEqual = areEqual
+        )

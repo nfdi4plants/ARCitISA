@@ -9,58 +9,12 @@ open Renderer.Components.Helper
 open Renderer.Components.LeftSidebar.FileExplorer.Types
 
 module FileTreeCreateWorkflow =
-
-    /// A created or imported item whose folders open once the file watcher shows it.
-    type PendingReveal = {
-        ArcScopeId: string option
-        Path: string
-    }
-
-    type RevealResolution = {
-        /// While the reveal belongs to the current ARC, the tree loads the folders down to this path.
-        RevealPath: string option
-        /// The reveal path once the file tree contains it.
-        VisiblePath: string option
-        /// True once the path is visible or when the reveal belongs to another ARC.
-        ShouldClear: bool
-    }
-
     type CreateConfig = {
         setIsCreating: bool -> unit
         applyError: string -> unit
         revealInTree: string -> unit
         closeCreateModal: unit -> unit
     }
-
-    let tryCreatePendingReveal (arcScopeId: string option) (path: string) : PendingReveal option =
-        let path = PathHelpers.normalizePath path
-
-        if System.String.IsNullOrWhiteSpace path then
-            None
-        else
-            Some { ArcScopeId = arcScopeId; Path = path }
-
-    let resolveReveal (pending: PendingReveal option) (arcScopeId: string option) (entries: FileEntry[]) =
-        let revealPath =
-            pending
-            |> Option.filter (fun reveal -> reveal.ArcScopeId = arcScopeId)
-            |> Option.map _.Path
-
-        // The create call can return before the file watcher has sent the new item, so the folders only open
-        // once the tree contains it.
-        let visiblePath =
-            revealPath
-            |> Option.bind (fun path ->
-                entries
-                |> Array.tryFind (fun entry -> PathHelpers.pathsEqual entry.path path)
-                |> Option.map (fun entry -> PathHelpers.normalizePath entry.path)
-            )
-
-        {
-            RevealPath = revealPath
-            VisiblePath = visiblePath
-            ShouldClear = pending.IsSome && (visiblePath.IsSome || revealPath.IsNone)
-        }
 
     let importRevealPath
         (result: Result<ImportExternalFilesResult option, exn>)

@@ -10,6 +10,10 @@ open Swate.Electron.Shared.FileIOTypes
 [<ReactComponent(true)>]
 let MarkdownEditorTarget (content: string) =
     let fileStateCtx = Renderer.Context.FileStateContext.useFileStateCtx ()
+
+    let expansionCtx =
+        Renderer.Context.FileTreeExpansionContext.useFileTreeExpansionCtx ()
+
     let markdown, setMarkdown = React.useState content
     let lastSavedContent, setLastSavedContent = React.useState content
     let isSaving, setIsSaving = React.useState false
@@ -44,7 +48,9 @@ let MarkdownEditorTarget (content: string) =
                 let! writeResult = writeMarkdown relativePath
 
                 match writeResult with
-                | Ok() -> setLastSavedContent markdown
+                | Ok() ->
+                    setLastSavedContent markdown
+                    expansionCtx.recordOwnWrite ()
                 | Error exn -> setSaveError (Some $"Failed to save markdown file: {exn.Message}")
 
                 setIsSaving false

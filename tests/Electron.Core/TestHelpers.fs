@@ -5,6 +5,7 @@ open Fable.Core.JsInterop
 open Fable.Electron
 open Fable.Electron.Main
 open Main
+open Main.ArcVaultState
 open Main.Bindings.Path
 open Main.VersionControl
 open Swate.Components.Composite.Authentication.Types
@@ -125,6 +126,24 @@ let pathExistsAsync (path: string) : JS.Promise<bool> = promise {
         return false
 }
 
+/// Adds a study, assay, workflow and run that each carry a DataMap.
+let addDataMapToAllEntityTypes (arc: ARC) =
+    let study = ArcStudy("Study With DataMap")
+    study.DataMap <- Some(DataMap.init ())
+    arc.AddStudy(study)
+
+    let assay = ArcAssay("Assay With DataMap")
+    assay.DataMap <- Some(DataMap.init ())
+    arc.AddAssay(assay)
+
+    let workflow = ArcWorkflow("Workflow With DataMap")
+    workflow.DataMap <- Some(DataMap.init ())
+    arc.AddWorkflow(workflow)
+
+    let run = ArcRun("Run With DataMap")
+    run.DataMap <- Some(DataMap.init ())
+    arc.AddRun(run)
+
 let loadArcAsync (arcPath: string) : JS.Promise<ARC> = promise {
     let! loaded = ARC.tryLoadAsync arcPath
     return expectLoadedArc loaded
@@ -179,3 +198,24 @@ let registerVault (windowId: int) (arcPath: string) =
     |> ignore
 
     vault
+
+/// Loads every directory below the root, which gives the deep tree that the lazy scan leaves out.
+let loadWholeTreeAsync (root: string) (caseInsensitive: bool) : JS.Promise<IndexedFileTree> = promise {
+    let! tree = Main.FileTreeCreator.scanStructuralFileTreeAsync root caseInsensitive
+
+    let unloadedDirectories () =
+        tree.Entries
+        |> Seq.filter (fun entry -> entry.isDirectory && not (tree.IsLoaded entry.path))
+        |> Seq.toArray
+
+    let mutable pending = unloadedDirectories ()
+
+    while pending.Length > 0 do
+        for directory in pending do
+            let! _ = Main.FileTreeCreator.reconcileFileTreeDirectoryAsync root tree directory.path
+            ()
+
+        pending <- unloadedDirectories ()
+
+    return tree
+}

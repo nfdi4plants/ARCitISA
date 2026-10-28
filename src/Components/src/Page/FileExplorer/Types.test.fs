@@ -35,8 +35,8 @@ let private changedItems = [
     folder "assays" [ file "assays/notes.md" ]
 ]
 
-let private updateItems revealItemId model =
-    FileExplorerLogic.update (FileExplorerLogic.UpdateItems(items, None, revealItemId)) model
+let private reveal revealItemId model =
+    FileExplorerLogic.update (FileExplorerLogic.RevealItem(revealItemId, items)) model
 
 Vitest.describe (
     "FileExplorer reveal",
@@ -47,7 +47,7 @@ Vitest.describe (
                 let model =
                     FileExplorerLogic.init items
                     |> FileExplorerLogic.update (FileExplorerLogic.SelectItem "assays/notes.md")
-                    |> updateItems (Some "studies/s1/isa.study.xlsx")
+                    |> reveal (Some "studies/s1/isa.study.xlsx")
 
                 Vitest.expect(model.ExpandedIds |> Set.toList).toEqual ([ "studies"; "studies/s1" ])
                 Vitest.expect(model.SelectedId).toEqual (Some "assays/notes.md")
@@ -56,7 +56,7 @@ Vitest.describe (
         Vitest.test (
             "revealing a folder opens the folder too",
             fun () ->
-                let model = FileExplorerLogic.init items |> updateItems (Some "studies/s1")
+                let model = FileExplorerLogic.init items |> reveal (Some "studies/s1")
 
                 Vitest.expect(model.ExpandedIds |> Set.toList).toEqual ([ "studies"; "studies/s1" ])
         )
@@ -64,20 +64,19 @@ Vitest.describe (
         Vitest.test (
             "revealing an item that is not in the tree opens nothing",
             fun () ->
-                let model =
-                    FileExplorerLogic.init items |> updateItems (Some "runs/r1/isa.run.xlsx")
+                let model = FileExplorerLogic.init items |> reveal (Some "runs/r1/isa.run.xlsx")
 
                 Vitest.expect(model.ExpandedIds |> Set.toList).toEqual ([])
         )
 
         Vitest.test (
-            "a folder closed after the reveal stays closed on later updates without a reveal",
+            "a folder closed after the reveal stays closed when the reveal id is cleared",
             fun () ->
                 let model =
                     FileExplorerLogic.init items
-                    |> updateItems (Some "studies/s1/isa.study.xlsx")
+                    |> reveal (Some "studies/s1/isa.study.xlsx")
                     |> FileExplorerLogic.update (FileExplorerLogic.SetExpanded("studies", false))
-                    |> updateItems None
+                    |> reveal None
 
                 Vitest.expect(model.ExpandedIds |> Set.toList).toEqual ([ "studies/s1" ])
         )
@@ -89,9 +88,9 @@ Vitest.describe (
 
                 let model =
                     FileExplorerLogic.init items
-                    |> updateItems target
+                    |> reveal target
                     |> FileExplorerLogic.update (FileExplorerLogic.SetExpanded("studies", false))
-                    |> FileExplorerLogic.update (FileExplorerLogic.UpdateItems(changedItems, None, target))
+                    |> FileExplorerLogic.update (FileExplorerLogic.RevealItem(target, changedItems))
 
                 Vitest.expect(model.ExpandedIds |> Set.toList).toEqual ([ "studies/s1" ])
         )
@@ -103,10 +102,10 @@ Vitest.describe (
 
                 let model =
                     FileExplorerLogic.init items
-                    |> updateItems study
+                    |> reveal study
                     |> FileExplorerLogic.update (FileExplorerLogic.SetExpanded("studies", false))
-                    |> updateItems (Some "assays/notes.md")
-                    |> updateItems study
+                    |> reveal (Some "assays/notes.md")
+                    |> reveal study
 
                 Vitest.expect(model.ExpandedIds |> Set.toList).toEqual ([ "assays"; "studies"; "studies/s1" ])
         )
@@ -125,7 +124,7 @@ Vitest.describe (
 
                 let model =
                     FileExplorerLogic.update
-                        (FileExplorerLogic.UpdateItems(unloaded, None, Some "studies/s2"))
+                        (FileExplorerLogic.RevealItem(Some "studies/s2", unloaded))
                         (FileExplorerLogic.init unloaded)
 
                 Vitest.expect(model.ExpandedIds |> Set.toList).toEqual ([ "studies" ])
@@ -138,10 +137,10 @@ Vitest.describe (
 
                 let model =
                     FileExplorerLogic.init items
-                    |> updateItems target
+                    |> reveal target
                     |> FileExplorerLogic.update (FileExplorerLogic.SetExpanded("studies", false))
-                    |> updateItems None
-                    |> updateItems target
+                    |> reveal None
+                    |> reveal target
 
                 Vitest.expect(model.ExpandedIds |> Set.toList).toEqual ([ "studies"; "studies/s1" ])
         )
@@ -153,12 +152,12 @@ Vitest.describe (
 
                 let before =
                     FileExplorerLogic.update
-                        (FileExplorerLogic.UpdateItems([ folder "assays" [ file "assays/notes.md" ] ], None, target))
+                        (FileExplorerLogic.RevealItem(target, [ folder "assays" [ file "assays/notes.md" ] ]))
                         (FileExplorerLogic.init [])
 
                 Vitest.expect(before.ExpandedIds |> Set.toList).toEqual ([])
 
-                let model = updateItems target before
+                let model = reveal target before
 
                 Vitest.expect(model.ExpandedIds |> Set.toList).toEqual ([ "studies"; "studies/s1" ])
         )

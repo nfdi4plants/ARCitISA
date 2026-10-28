@@ -1,71 +1,13 @@
 module Renderer.Components.LeftSidebar.FileExplorer.FileTreeMaterialization
 
+open System
 open Swate.Components.Shared
 open Swate.Components.Page.FileExplorer.Types
 open Swate.Electron.Shared.FileIOTypes
+open Renderer.Context.FileTreeStore
 
-type MaterializedState = {
-    ArcScopeId: string option
-    Paths: Set<string>
-}
-
-let empty = { ArcScopeId = None; Paths = Set.empty }
-
-let materialize path state = {
-    state with
-        Paths = state.Paths.Add(PathHelpers.normalizePath path)
-}
-
-let rec private collectDirectoryPaths (node: FileTreeNode) (directoryPaths: Set<string>) =
-    if node.isDirectory then
-        node.children.Values
-        |> Seq.fold
-            (fun state child -> collectDirectoryPaths child state)
-            (Set.add (PathHelpers.normalizePath node.path) directoryPaths)
-    else
-        directoryPaths
-
-/// `requiredItemPaths` are the items that must stay reachable, such as the selection. Every folder on the way
-/// to them is materialized.
-let reconcileMaterializedState
-    (arcScopeId: string option)
-    (requiredItemPaths: string list)
-    (root: FileTreeNode option)
-    (current: MaterializedState)
-    =
-    match root with
-    | None -> {
-        ArcScopeId = arcScopeId
-        Paths = Set.empty
-      }
-    | Some root ->
-        let validDirectoryPaths = collectDirectoryPaths root Set.empty
-
-        let requiredPaths =
-            validDirectoryPaths
-            |> Set.filter (fun directoryPath ->
-                requiredItemPaths
-                |> List.exists (fun itemPath -> PathHelpers.isSameOrDescendantPath itemPath directoryPath)
-            )
-            |> fun paths ->
-                if root.isDirectory then
-                    paths.Add(PathHelpers.normalizePath root.path)
-                else
-                    paths
-
-        let persistedPaths =
-            if current.ArcScopeId = arcScopeId then
-                Set.intersect current.Paths validDirectoryPaths
-            else
-                Set.empty
-
-        {
-            ArcScopeId = arcScopeId
-            Paths = Set.union persistedPaths requiredPaths
-        }
-
-let private rootItemSortKey (node: FileTreeNode) =
-    match node.name.ToLowerInvariant() with
+let private rootItemSortKey (entry: FileEntry) =
+    match entry.name.ToLowerInvariant() with
     | "notes" -> 0, 0, ""
     | "readme.md" -> 0, 1, ""
     | "isa.investigation.xlsx" -> 0, 2, ""
@@ -73,41 +15,120 @@ let private rootItemSortKey (node: FileTreeNode) =
     | "assays" -> 0, 4, ""
     | "workflows" -> 0, 5, ""
     | "runs" -> 0, 6, ""
-    | _ -> 1, System.Int32.MaxValue, node.name.ToLowerInvariant()
+    | _ -> 1, Int32.MaxValue, entry.name.ToLowerInvariant()
 
-let rec toMaterializedFileItemTree
-    (createItem: FileTreeNode -> FileItem)
-    (materializedDirectoryPaths: Set<string>)
-    (parent: FileTreeNode)
+/// Follows a chain of single same-named subdirectories (a/a/a) down to its deepest directory. A level only joins
+/// the chain when both it and the child are loaded, because an unloaded directory may hold more than one child.
+let rec private deepestOfSameNameChain (snapshot: FileTreeSnapshot) (entry: FileEntry) : FileEntry =
+    if
+        entry.isDirectory
+        && isLoaded snapshot entry.path
+        && childCount snapshot entry.path = 1
+    then
+        match children snapshot entry.path with
+        | [| only |] when
+            only.isDirectory
+            && isLoaded snapshot only.path
+            && String.Equals(entry.name, only.name, StringComparison.OrdinalIgnoreCase)
+            ->
+            deepestOfSameNameChain snapshot only
+        | _ -> entry
+    else
+        entry
+
+let rec private buildChildren
+    (createItem: FileEntry -> FileItem)
+    (withBusy: string -> FileEntry[] -> FileEntry[])
+    (snapshot: FileTreeSnapshot)
+    (expandedKeys: Set<PathKey>)
     (isRoot: bool)
-    =
-    if parent.isDirectory then
-        let normalizedParentPath = PathHelpers.normalizePath parent.path
+    (directoryPath: string)
+    : FileItem list =
+    let entries = children snapshot directoryPath |> withBusy directoryPath
 
-        let isDirectoryMaterialized =
-            materializedDirectoryPaths.Contains normalizedParentPath
+    let ordered =
+        if isRoot then
+            entries |> Seq.sortBy rootItemSortKey |> Seq.toArray
+        else
+            entries
 
-        let children =
-            if isDirectoryMaterialized then
-                let childNodes =
-                    if isRoot then
-                        parent.children.Values |> Seq.sortBy rootItemSortKey
-                    else
-                        parent.children.Values :> seq<FileTreeNode>
+    ordered
+    |> Array.map (buildItem createItem withBusy snapshot expandedKeys)
+    |> List.ofArray
 
-                childNodes
-                |> Seq.map (fun parent -> toMaterializedFileItemTree createItem materializedDirectoryPaths parent false)
-                |> List.ofSeq
-                |> Some
+and private buildItem
+    (createItem: FileEntry -> FileItem)
+    (withBusy: string -> FileEntry[] -> FileEntry[])
+    (snapshot: FileTreeSnapshot)
+    (expandedKeys: Set<PathKey>)
+    (entry: FileEntry)
+    : FileItem =
+    if not entry.isDirectory then
+        createItem entry
+    else
+        // The collapsed row keeps its own label and acts on the deepest directory.
+        let deepest = deepestOfSameNameChain snapshot entry
+        // The entry itself keeps its identity, so a row cache finds it. Only a collapsed chain needs a renamed copy.
+        let shown =
+            if obj.ReferenceEquals(deepest, entry) then
+                entry
+            else
+                { deepest with name = entry.name }
 
-            elif parent.children.Count = 0 then
+        let item = createItem shown
+        let path = deepest.path
+
+        let itemChildren =
+            if not (isLoaded snapshot path) then
+                None
+            elif expandedKeys.Contains(PathKey.ofPath snapshot.CaseInsensitive path) then
+                Some(buildChildren createItem withBusy snapshot expandedKeys false path)
+            elif childCount snapshot path = 0 then
                 Some []
             else
                 None
 
-        {
-            createItem parent with
-                Children = children
-        }
+        { item with Children = itemChildren }
+
+/// Applies overlay to every folder row of the list, also inside expanded folders. A list without a changed row
+/// comes back as the same instance, so memoized rows and lists stay equal.
+let rec overlayDirectories (overlay: FileItem -> FileItem) (items: FileItem list) : FileItem list =
+    if items |> List.forall (fun item -> not item.IsDirectory) then
+        items
     else
-        createItem parent
+        let overlaid =
+            items
+            |> List.map (fun item ->
+                if not item.IsDirectory then
+                    item
+                else
+                    let changed = overlay item
+
+                    match changed.Children with
+                    | Some children ->
+                        let next = overlayDirectories overlay children
+
+                        if obj.ReferenceEquals(next, children) then
+                            changed
+                        else
+                            { changed with Children = Some next }
+                    | None -> changed
+            )
+
+        if List.forall2 (fun a b -> obj.ReferenceEquals(a, b)) items overlaid then
+            items
+        else
+            overlaid
+
+/// Builds the items of the root's children. Only expanded directories are walked, so the cost follows the visible
+/// rows. An unloaded directory gets no children (it can expand), a loaded empty one gets an empty list.
+/// withBusy adds entries of running large-file actions that the listing misses.
+let buildVisibleItems
+    (createItem: FileEntry -> FileItem)
+    (withBusy: string -> FileEntry[] -> FileEntry[])
+    (snapshot: FileTreeSnapshot)
+    (expandedIds: Set<string>)
+    : FileItem list =
+    // Ids and entries are compared by path key, because a case-only rename leaves the old spelling in the set.
+    let expandedKeys = expandedIds |> Set.map (PathKey.ofPath snapshot.CaseInsensitive)
+    buildChildren createItem withBusy snapshot expandedKeys true ""

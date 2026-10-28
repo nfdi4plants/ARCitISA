@@ -1,6 +1,7 @@
 namespace Swate.Components.Shared
 
 open System
+open Fable.Core
 
 
 [<RequireQualifiedAccess>]
@@ -16,6 +17,10 @@ module PathHelpers =
     let normalizePath (path: string) =
         normalizeSeparators path |> fun normalized -> normalized.Trim().TrimEnd('/')
 
+    /// Normalizes separators and removes trailing slashes without trimming whitespace, because a folder name can
+    /// end in whitespace on Linux and macOS. The file tree uses it for the paths it keys and sends.
+    let normalizePathKeepingWhitespace (path: string) = (normalizeSeparators path).TrimEnd('/')
+
     /// Normalizes separators and trims surrounding whitespace and leading or trailing slashes.
     let normalizeRelativePath (path: string) =
         normalizeSeparators path |> fun normalized -> normalized.Trim('/').Trim()
@@ -29,9 +34,13 @@ module PathHelpers =
         normalizeSeparators path
         |> fun normalized -> normalized.Trim().TrimEnd('/').ToLowerInvariant()
 
+    /// Composes a string to Unicode NFC, so an NFD name from macOS readdir equals git's NFC form.
+    let normalizeToNfc (value: string) =
+        value.Normalize(System.Text.NormalizationForm.FormC)
+
     let normalizeForUnicodeComparison (path: string) =
         normalizeSeparators path
-        |> fun normalized -> normalized.Normalize(System.Text.NormalizationForm.FormC)
+        |> normalizeToNfc
         |> fun normalized -> normalized.ToLowerInvariant()
 
     /// Produces a normalized, case-insensitive path suitable for filesystem comparisons.
@@ -96,6 +105,16 @@ module PathHelpers =
         else
             Some(normalizedPath.Substring(0, separatorIndex))
 
+    /// The parent of a path like tryGetParentPath, without trimming whitespace.
+    let tryGetParentPathKeepingWhitespace (path: string) =
+        let normalizedPath = normalizePathKeepingWhitespace path
+        let separatorIndex = normalizedPath.LastIndexOf('/')
+
+        if separatorIndex < 0 then
+            None
+        else
+            Some(normalizedPath.Substring(0, separatorIndex))
+
     let private tryResolveDatamapPreviewPath (normalizedPath: string) (folderName: string) (targetFileName: string) =
         let pathSegments =
             normalizedPath.Split([| '/' |], StringSplitOptions.RemoveEmptyEntries)
@@ -135,6 +154,16 @@ module PathHelpers =
     let pathExistsInSnapshot (existingPaths: string seq) (targetPath: string) =
         existingPaths
         |> Seq.exists (fun existingPath -> pathsEqual existingPath targetPath)
+
+/// Shared ordering for directory entry names, so listings do not depend on readdir order.
+[<RequireQualifiedAccess>]
+module PathOrder =
+
+    /// Orders names ordinally ignoring case, then ordinally so names differing only in case stay distinct.
+    let compareNames (left: string) (right: string) =
+        match String.Compare(left, right, StringComparison.OrdinalIgnoreCase) with
+        | 0 -> String.CompareOrdinal(left, right)
+        | result -> result
 
 [<RequireQualifiedAccess>]
 module ArcEntityPathRules =
@@ -186,14 +215,21 @@ module ArcEntityPathRules =
     let private splitPathSegments (path: string) =
         path.Split([| '/' |], StringSplitOptions.RemoveEmptyEntries)
 
-    let private zoneFolderName =
+    let allAddZones = [
+        AddZone.Studies
+        AddZone.Assays
+        AddZone.Workflows
+        AddZone.Runs
+    ]
+
+    let zoneFolderName =
         function
         | AddZone.Studies -> ARCtrl.ArcPathHelper.StudiesFolderName
         | AddZone.Assays -> ARCtrl.ArcPathHelper.AssaysFolderName
         | AddZone.Workflows -> ARCtrl.ArcPathHelper.WorkflowsFolderName
         | AddZone.Runs -> ARCtrl.ArcPathHelper.RunsFolderName
 
-    let private zoneEntityFileName =
+    let zoneEntityFileName =
         function
         | AddZone.Studies -> ARCtrl.ArcPathHelper.StudyFileName
         | AddZone.Assays -> ARCtrl.ArcPathHelper.AssayFileName
@@ -226,6 +262,15 @@ module ArcEntityPathRules =
             None
 
     let private isAddZoneSegment segment = (tryParseZone segment).IsSome
+
+    /// Root-level license files that ARCtrl reads into ARC.License.
+    let licenseFileNames =
+        ARCtrl.ArcPathHelper.LICENSEFileName
+        :: ARCtrl.ArcPathHelper.alternativeLICENSEFileNames
+
+    /// Root-level files that ARCtrl reads into the ARC model.
+    let structuralRootFileNames =
+        ARCtrl.ArcPathHelper.InvestigationFileName :: licenseFileNames
 
     let private classifyStructuralArcPath =
         function
@@ -292,6 +337,46 @@ module ArcEntityPathRules =
         |> PathHelpers.normalizePath
         |> splitPathSegments
         |> tryParseCanonicalArcFileTargetFromSegments
+
+    let private platformJunkFileNames = [ ".ds_store"; ".directory"; "thumbs.db"; "desktop.ini" ]
+
+    /// True for the files that operating systems and file managers add to any folder.
+    let isPlatformJunkName (name: string) =
+        name.StartsWith("._", StringComparison.Ordinal)
+        || List.contains (name.ToLowerInvariant()) platformJunkFileNames
+
+    /// True for the paths the permanent watcher observes: the ARC root, root metadata files and `.gitattributes`,
+    /// zone folders, entity folders, and the canonical entity file and datamap of each entity. Nothing deeper is
+    /// structural, so payload folders are never descended into. A missing directory hint keeps the paths whose
+    /// shape allows either kind, because chokidar asks before it has stat data.
+    let isStructuralWatcherPath (relativePath: string) (isDirectory: bool option) =
+        let segments = relativePath |> normalizeRelativePath |> splitPathSegments
+
+        if segments |> Array.exists isPlatformJunkName then
+            false
+        else
+            let mayBeFile = isDirectory <> Some true
+            let mayBeFolder = isDirectory <> Some false
+
+            match segments with
+            | [||] -> true
+            | [| name |] when isAddZoneSegment name -> mayBeFolder
+            | [| name |] ->
+                mayBeFile
+                && (PathHelpers.pathMatchesAny structuralRootFileNames name
+                    || PathHelpers.pathsEqual name ".gitattributes")
+            | [| zoneSegment; name |] ->
+                mayBeFolder
+                && isAddZoneSegment zoneSegment
+                && not (name.StartsWith(".", StringComparison.Ordinal))
+            | [| zoneSegment; _; fileName |] ->
+                match tryParseZone zoneSegment with
+                | Some zone ->
+                    mayBeFile
+                    && (PathHelpers.pathsEqual fileName (zoneEntityFileName zone)
+                        || PathHelpers.pathsEqual fileName ARCtrl.ArcPathHelper.DataMapFileName)
+                | None -> false
+            | _ -> false
 
     let classifyDeleteTarget (relativePath: string) =
         let normalizedRelativePath = normalizeRelativePath relativePath
@@ -581,3 +666,44 @@ module ArcEntityPathRules =
         canonicalEntityFilePath zone identifier
         canonicalDataMapFilePath zone identifier
     ]
+
+/// A comparison key for a path. Display paths stay as scanned, and keys decide which paths name the same entry.
+[<Erase>]
+type PathKey = PathKey of string
+
+module PathKey =
+
+    /// True for a path that needs no separator change, no trailing slash trim and no Unicode composition.
+    let private isPlainAscii (path: string) =
+        let mutable plain = path.Length = 0 || path.[path.Length - 1] <> '/'
+        let mutable index = 0
+
+        while plain && index < path.Length do
+            let code = int path.[index]
+
+            if code = 92 || code > 127 then
+                plain <- false
+
+            index <- index + 1
+
+        plain
+
+    /// Separators and trailing slash, then Unicode NFC, then lower case when the file system ignores case.
+    let ofPath (caseInsensitive: bool) (path: string) : PathKey =
+        // Whitespace is part of a file name, so the key keeps it. normalizePath would trim it.
+        // Most paths are plain ASCII with forward slashes, which the normalization steps would leave as they are.
+        let composed =
+            if isPlainAscii path then
+                path
+            else
+                (PathHelpers.normalizeSeparators path).TrimEnd('/')
+                |> PathHelpers.normalizeToNfc
+
+        PathKey(
+            if caseInsensitive then
+                composed.ToLowerInvariant()
+            else
+                composed
+        )
+
+    let value (PathKey key) : string = key

@@ -47,9 +47,6 @@ let private waitUntilIdle (probe: CreateProbe) =
     // The workflow sets busy to true synchronously, so a false value means it has finished.
     waitUntil ((fun () -> not probe.Busy), 50)
 
-let private entry (path: string) =
-    FileEntry.create (PathHelpers.getNameFromPath path, path, false, None)
-
 let private createDraft () =
     match
         Renderer.Components.LeftSidebar.FileExplorer.Helper.tryBuildArcCreateDraft ArcFilesDiscriminate.Study "S1" [||]
@@ -57,86 +54,9 @@ let private createDraft () =
     | Ok draft -> draft
     | Error message -> failwith message
 
-let private pendingReveal scope path : FileTreeCreateWorkflow.PendingReveal option =
-    Some { ArcScopeId = scope; Path = path }
-
 Vitest.describe (
     "FileTreeCreateWorkflow",
     fun () ->
-        Vitest.test (
-            "tryCreatePendingReveal ignores blank paths and normalizes separators",
-            fun () ->
-                Vitest.expect(FileTreeCreateWorkflow.tryCreatePendingReveal (Some "arc") "  ").toEqual (None)
-
-                let reveal =
-                    FileTreeCreateWorkflow.tryCreatePendingReveal (Some "arc") "studies\\S1"
-
-                Vitest.expect(reveal |> Option.map _.Path).toEqual (Some "studies/S1")
-        )
-
-        Vitest.test (
-            "resolveReveal reports nothing without a pending reveal",
-            fun () ->
-                let resolution =
-                    FileTreeCreateWorkflow.resolveReveal None (Some "arc") [| entry "studies/S1" |]
-
-                Vitest.expect(resolution.RevealPath).toEqual (None)
-                Vitest.expect(resolution.VisiblePath).toEqual (None)
-                Vitest.expect(resolution.ShouldClear).toBe (false)
-        )
-
-        Vitest.test (
-            "resolveReveal keeps the reveal until the file tree contains the path",
-            fun () ->
-                let resolution =
-                    FileTreeCreateWorkflow.resolveReveal (pendingReveal (Some "arc") "studies/S1") (Some "arc") [|
-                        entry "studies/S2"
-                    |]
-
-                Vitest.expect(resolution.RevealPath).toEqual (Some "studies/S1")
-                Vitest.expect(resolution.VisiblePath).toEqual (None)
-                Vitest.expect(resolution.ShouldClear).toBe (false)
-        )
-
-        Vitest.test (
-            "resolveReveal makes the path visible and clears the reveal once the file tree contains it",
-            fun () ->
-                let resolution =
-                    FileTreeCreateWorkflow.resolveReveal (pendingReveal (Some "arc") "studies/S1") (Some "arc") [|
-                        entry "studies/S1"
-                    |]
-
-                Vitest.expect(resolution.RevealPath).toEqual (Some "studies/S1")
-                Vitest.expect(resolution.VisiblePath).toEqual (Some "studies/S1")
-                Vitest.expect(resolution.ShouldClear).toBe (true)
-        )
-
-        Vitest.test (
-            "resolveReveal matches the entry ignoring case and separators and returns the entry spelling",
-            fun () ->
-                let pending =
-                    FileTreeCreateWorkflow.tryCreatePendingReveal (Some "arc") "Studies\\s1"
-
-                let resolution =
-                    FileTreeCreateWorkflow.resolveReveal pending (Some "arc") [| entry "studies/S1" |]
-
-                Vitest.expect(resolution.VisiblePath).toEqual (Some "studies/S1")
-                Vitest.expect(resolution.ShouldClear).toBe (true)
-        )
-
-        Vitest.test (
-            "resolveReveal drops a reveal that belongs to another ARC",
-            fun () ->
-                let resolution =
-                    FileTreeCreateWorkflow.resolveReveal (pendingReveal (Some "other") "studies/S1") (Some "arc") [|
-                        entry "studies/S1"
-                    |]
-
-                Vitest.expect(resolution.RevealPath).toEqual (None)
-                Vitest.expect(resolution.VisiblePath).toEqual (None)
-                Vitest.expect(resolution.ShouldClear).toBe (true)
-        )
-
         Vitest.test (
             "importRevealPath returns the target only for a completed import",
             fun () ->

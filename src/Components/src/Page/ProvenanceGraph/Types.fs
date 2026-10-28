@@ -1,5 +1,6 @@
 module Swate.Components.Page.ProvenanceGraph.Types
 
+open System.Text.RegularExpressions
 open Swate.Components.Shared.ProvenanceGraph.Types
 open Swate.Components.Composite.GraphCanvas.Types
 
@@ -62,6 +63,30 @@ type LegendItem = { Label: string; Swatch: LegendSwatch }
 type IncompleteRows = {
     MissingOutputs: int
     MissingInputs: int
+}
+
+/// One item of an overview row. Selected marks the item that leads to the current view. Target is the view that a
+/// click on the item opens.
+type OverviewItem = {
+    Id: string
+    Label: string
+    Selected: bool
+    Target: ProvenanceView
+}
+
+/// One level above the current view. Items holds every item of the level in the order of the level. A collapsed
+/// row shows the WindowCount items from WindowStart on, and an expanded row shows all of them. Extra is the item
+/// of the current view when the level does not contain it. The row shows it after the other items in either state.
+/// WindowStart is the start of the window that a level gets before the overview has drawn it. A level that the
+/// overview has drawn keeps its window while the selected item stays inside it.
+type OverviewRow = {
+    /// Identifies the level independent of the view, so the page can keep per-level state.
+    Key: string
+    Heading: string
+    Items: OverviewItem[]
+    WindowStart: int
+    WindowCount: int
+    Extra: OverviewItem option
 }
 
 module ProvenanceView =
@@ -170,3 +195,30 @@ module ProvenanceView =
             groupCrumb datasetId processKey groupId
             { Label = nodeId; Target = view }
           |]
+
+    /// The file name of the image of a view. The name says which view the image shows, because it lists the labels of
+    /// the crumbs after the root. It is a valid file name on every desktop system. Every character outside letters,
+    /// digits, dot, underscore and hyphen becomes an underscore, and at most 100 characters of the labels remain. A
+    /// level whose labels leave nothing, such as the datasets level, is named after its kind.
+    let imageFileName (crumbs: Crumb[]) : string =
+        let joined =
+            crumbs
+            |> Array.skip 1
+            |> Array.map (fun crumb -> crumb.Label)
+            |> String.concat "-"
+
+        let trimmed (text: string) = text.Trim([| '_'; '-' |])
+
+        let safe =
+            trimmed (Regex.Replace(Regex.Replace(joined, "[^A-Za-z0-9._-]", "_"), "_+", "_"))
+
+        // The cut can end in a separator, so the ends are trimmed again.
+        let cut = trimmed (if safe.Length > 100 then safe.Substring(0, 100) else safe)
+
+        let part =
+            if cut = "" then
+                kindText (Array.last crumbs).Target
+            else
+                cut
+
+        $"provenance-{part}.png"
