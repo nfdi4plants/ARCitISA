@@ -316,8 +316,75 @@ Vitest.describe (
                 vault.ClaimImportedFileEvents(vault.StartImport(), events)
 
                 Vitest.expect(vault.IsImportedWatcherEvent { events.[0] with EventName = "change" }).toBe false
-                Vitest.expect(vault.IsImportedWatcherEvent { events.[0] with EventName = "unlink" }).toBe false
                 Vitest.expect(vault.IsImportedWatcherEvent events.[0]).toBe true
+                Vitest.expect(vault.IsImportedWatcherEvent { events.[0] with EventName = "unlink" }).toBe false
+        )
+
+        Vitest.test (
+            "a deletion releases the mark of its path, so a recreated file merges",
+            fun () ->
+                let vault = vaultWithRunningWatcher ()
+
+                let events =
+                    importedEvents [| "Run1" |] [| "Run1/isa.assay.xlsx"; "Run1/notes.txt" |]
+
+                let find (name: string) =
+                    events |> Array.find (fun e -> e.RelativePath.EndsWith name)
+
+                let folderEvent = find "Run1"
+                let structureEvent = find "isa.assay.xlsx"
+                let notesEvent = find "notes.txt"
+
+                let unlinkEvent =
+                    WatcherHelpers.buildWatcherEvent "/arc" "unlink" "assays/AssayA/dataset/Run1/isa.assay.xlsx"
+
+                Vitest.vi.useFakeTimers () |> ignore
+
+                try
+                    let token = vault.StartImport()
+                    vault.ClaimImportedFileEvents(token, events)
+                    vault.ReleaseImportedFileEventsAfterImport(token, Ok ImportExternalFilesResult.Completed)
+
+                    Vitest.expect(vault.IsImportedWatcherEvent unlinkEvent).toBe false
+                    Vitest.expect(vault.IsImportedWatcherEvent structureEvent).toBe false
+                    Vitest.expect(vault.IsImportedWatcherEvent notesEvent).toBe true
+                    Vitest.expect(vault.IsImportedWatcherEvent folderEvent).toBe true
+                finally
+                    Vitest.vi.useRealTimers () |> ignore
+        )
+
+        Vitest.test (
+            "a folder deletion releases the marks of the folder and everything below it",
+            fun () ->
+                let vault = vaultWithRunningWatcher ()
+
+                let events =
+                    importedEvents [| "Run1" |] [| "Run1/isa.assay.xlsx"; "Run1/notes.txt" |]
+
+                // "Run10" shares the "Run1" prefix but lies outside the deleted folder.
+                let otherEvent = (importedEvents [||] [| "Run10/isa.assay.xlsx" |]).[0]
+
+                let unlinkDirEvent =
+                    WatcherHelpers.buildWatcherEvent "/arc" "unlinkDir" "assays/AssayA/dataset/Run1"
+
+                Vitest.vi.useFakeTimers () |> ignore
+
+                try
+                    let token = vault.StartImport()
+                    vault.ClaimImportedFileEvents(token, events)
+                    vault.ReleaseImportedFileEventsAfterImport(token, Ok ImportExternalFilesResult.Completed)
+
+                    let otherToken = vault.StartImport()
+                    vault.ClaimImportedFileEvents(otherToken, [| otherEvent |])
+
+                    Vitest.expect(vault.IsImportedWatcherEvent unlinkDirEvent).toBe false
+
+                    for event in events do
+                        Vitest.expect(vault.IsImportedWatcherEvent event).toBe false
+
+                    Vitest.expect(vault.IsImportedWatcherEvent otherEvent).toBe true
+                finally
+                    Vitest.vi.useRealTimers () |> ignore
         )
 
         Vitest.test (

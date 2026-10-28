@@ -285,16 +285,42 @@ type ArcVault with
             | _ -> ()
         | _ -> this.ReleaseImport token
 
+    /// Removes the mark of a path, and with includeDescendants the marks below it, from the owners and from
+    /// the paths of their leases. The lease and its timer stay, so the timer still ends an emptied lease.
+    member private this.ReleaseImportedPath(key: string, includeDescendants: bool) =
+        let prefix = key + "/"
+
+        let keys =
+            this.importedPathOwners.Keys
+            |> Seq.filter (fun candidate -> candidate = key || (includeDescendants && candidate.StartsWith prefix))
+            |> Seq.toArray
+
+        for removedKey in keys do
+            match this.importedPathOwners.TryGetValue removedKey with
+            | true, token ->
+                match this.importedPathLeases.TryGetValue token with
+                | true, lease -> lease.Paths <- lease.Paths |> Array.filter (fun path -> path <> removedKey)
+                | _ -> ()
+            | _ -> ()
+
+            this.importedPathOwners.Remove removedKey |> ignore
+
     /// True for a creation event of a path that an import wrote. Only creation events count, so an external
-    /// edit or deletion of an imported path still merges. The mark stays after an event because an old event
-    /// must not use up the mark of a newer import of the same path. A matching call also restarts the quiet
-    /// time of its import, so call it once per watcher event.
+    /// edit or deletion of an imported path still merges. A creation event leaves the mark in place, because
+    /// an old event must not use up the mark of a newer import of the same path. A deletion event releases
+    /// the mark of its path, and for a folder the marks below it, so a recreated path merges again. A
+    /// matching call also restarts the quiet time of its import, so call it once per watcher event.
     member this.IsImportedWatcherEvent(event: ArcVaultFileSystemEvent) : bool =
         let isCreation =
             WatcherHelpers.eventNameEquals Chokidar.Events.Add event.EventName
             || WatcherHelpers.eventNameEquals Chokidar.Events.AddDir event.EventName
 
         if not isCreation then
+            if WatcherHelpers.eventNameEquals Chokidar.Events.Unlink event.EventName then
+                this.ReleaseImportedPath(event.AbsolutePath.ToLowerInvariant(), false)
+            elif WatcherHelpers.eventNameEquals Chokidar.Events.UnlinkDir event.EventName then
+                this.ReleaseImportedPath(event.AbsolutePath.ToLowerInvariant(), true)
+
             false
         else
             match this.importedPathOwners.TryGetValue(event.AbsolutePath.ToLowerInvariant()) with

@@ -2147,7 +2147,7 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "structural metadata keeps collection folders on the entity delete route regardless of their name",
+            "structural metadata keeps collection folders on the entity delete route, also when they are named like README.md",
             fun () ->
                 withAssayArc (fun arcPath -> promise {
                     for zone, folder, metadataName in
@@ -2156,8 +2156,6 @@ Vitest.describe (
                             "studies", "README.md", "ISA.STUDY.XLSX"
                             "workflows", "README.md", "ISA.WORKFLOW.XLSX"
                             "runs", "README.md", "ISA.RUN.XLSX"
-                            "assays", ".gitkeep", "isa.assay.xlsx"
-                            "assays", ".gitattributes", "isa.assay.xlsx"
                             "assays", "MapOnly", "ISA.DATAMAP.XLSX"
                             "assays", "LegacyOnly", "ISA_DATAMAP"
                         ] do
@@ -2185,6 +2183,19 @@ Vitest.describe (
                     let path = "assays/Backup"
                     do! createRelativeDirectoryAsync arcPath $"{path}/isa.assay.xlsx"
                     do! writeRelativeFileAsync arcPath $"{path}/isa.assay.xlsx/notes.txt" "payload"
+                    do! expectDeleteRoute arcPath path (ArcFileSystemHelper.DeletePathRoute.GenericItem path)
+                    do! deleteItemOrFail arcPath path
+                    do! expectRelativePathExists arcPath path false
+                })
+        )
+
+        Vitest.test (
+            "a dot folder in a zone that holds an entity workbook is deleted as a generic folder",
+            fun () ->
+                withAssayArc (fun arcPath -> promise {
+                    let path = "assays/.swate-import-" + String.replicate 32 "a"
+                    do! createRelativeDirectoryAsync arcPath path
+                    do! writeRelativeFileAsync arcPath $"{path}/isa.assay.xlsx" "workbook"
                     do! expectDeleteRoute arcPath path (ArcFileSystemHelper.DeletePathRoute.GenericItem path)
                     do! deleteItemOrFail arcPath path
                     do! expectRelativePathExists arcPath path false
