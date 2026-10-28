@@ -72,7 +72,7 @@ New File, New Folder and Rename keep the location rules that existed before PR #
 
 This PR only changed their messages (`describeBlockedGenericCreateTarget`), so the dialogs say why they refuse a name. The import menu entries appear where New File and New Folder do. Apart from the ".git" rule above, the imported items no longer go through these rules.
 
-Delete has its own permission rules. Files and folders named ".gitkeep", ".gitattributes" and "README.md" can be deleted, including generated empty-folder markers. Directly inside studies, assays, workflows and runs, ordinary files and folders use filesystem deletion. A folder containing entity or datamap metadata uses ARC deletion, with the same metadata names and file-kind checks as ARC loading. ARC-managed folders and the investigation file remain protected.
+Delete has its own permission rules. Files and folders named ".gitkeep", ".gitattributes" and "README.md" can be deleted, including generated empty-folder markers. Directly inside studies, assays, workflows and runs, ordinary files and folders use filesystem deletion. A folder containing entity or datamap metadata uses ARC deletion, with the same metadata names and file-kind checks as ARC loading. A folder whose name starts with a dot always uses filesystem deletion, because ARCtrl cannot read such a name as an entity identifier. This covers a leftover ".swate-import-" folder of an interrupted import. ARC-managed folders and the investigation file remain protected.
 
 ## Dropped rules
 

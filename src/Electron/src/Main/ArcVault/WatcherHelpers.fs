@@ -168,7 +168,8 @@ let queueFileWatcherEvent
         let watcherEvent = buildWatcherEvent rootPath eventName changedPath
         pendingEvents.Add watcherEvent
 
-        // The eligibility check runs first. It also consumes the imported-path marker of the event.
+        // The eligibility check runs once per event and before the expansion check, because it updates the
+        // import marks of the event's path.
         if
             isArcMergeEligible watcherEvent
             && not (toArcMergeEvents [ watcherEvent ]).IsEmpty
