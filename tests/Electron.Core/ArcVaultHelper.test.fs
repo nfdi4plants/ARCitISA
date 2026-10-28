@@ -219,7 +219,7 @@ Vitest.describe (
                 try
                     let token = vault.StartImport()
                     vault.ClaimImportedFileEvents(token, events)
-                    vault.ReleaseImportedFileEventsAfterImport(token, Ok ImportExternalFilesResult.Completed)
+                    vault.ReleaseImportedFileEventsAfterImport(token, Ok(ImportExternalFilesResult.Completed [||]))
 
                     for _ in 1..3 do
                         advanceSeconds 20
@@ -244,7 +244,10 @@ Vitest.describe (
                     let quietToken = quietVault.StartImport()
                     quietVault.ClaimImportedFileEvents(quietToken, events)
 
-                    quietVault.ReleaseImportedFileEventsAfterImport(quietToken, Ok ImportExternalFilesResult.Completed)
+                    quietVault.ReleaseImportedFileEventsAfterImport(
+                        quietToken,
+                        Ok(ImportExternalFilesResult.Completed [||])
+                    )
 
                     advanceSeconds 30
                     Vitest.expect(quietVault.IsImportedWatcherEvent events.[0]).toBe false
@@ -253,7 +256,10 @@ Vitest.describe (
                     let busyToken = busyVault.StartImport()
                     busyVault.ClaimImportedFileEvents(busyToken, events)
 
-                    busyVault.ReleaseImportedFileEventsAfterImport(busyToken, Ok ImportExternalFilesResult.Completed)
+                    busyVault.ReleaseImportedFileEventsAfterImport(
+                        busyToken,
+                        Ok(ImportExternalFilesResult.Completed [||])
+                    )
 
                     for _ in 1..14 do
                         advanceSeconds 20
@@ -276,7 +282,7 @@ Vitest.describe (
                 try
                     let first = vault.StartImport()
                     vault.ClaimImportedFileEvents(first, events)
-                    vault.ReleaseImportedFileEventsAfterImport(first, Ok ImportExternalFilesResult.Completed)
+                    vault.ReleaseImportedFileEventsAfterImport(first, Ok(ImportExternalFilesResult.Completed [||]))
 
                     let second = vault.StartImport()
                     vault.ClaimImportedFileEvents(second, events)
@@ -343,7 +349,7 @@ Vitest.describe (
                 try
                     let token = vault.StartImport()
                     vault.ClaimImportedFileEvents(token, events)
-                    vault.ReleaseImportedFileEventsAfterImport(token, Ok ImportExternalFilesResult.Completed)
+                    vault.ReleaseImportedFileEventsAfterImport(token, Ok(ImportExternalFilesResult.Completed [||]))
 
                     Vitest.expect(vault.IsImportedWatcherEvent unlinkEvent).toBe false
                     Vitest.expect(vault.IsImportedWatcherEvent structureEvent).toBe false
@@ -372,7 +378,7 @@ Vitest.describe (
                 try
                     let token = vault.StartImport()
                     vault.ClaimImportedFileEvents(token, events)
-                    vault.ReleaseImportedFileEventsAfterImport(token, Ok ImportExternalFilesResult.Completed)
+                    vault.ReleaseImportedFileEventsAfterImport(token, Ok(ImportExternalFilesResult.Completed [||]))
 
                     let otherToken = vault.StartImport()
                     vault.ClaimImportedFileEvents(otherToken, [| otherEvent |])
@@ -398,7 +404,7 @@ Vitest.describe (
                 try
                     let token = vault.StartImport()
                     vault.ClaimImportedFileEvents(token, events)
-                    vault.ReleaseImportedFileEventsAfterImport(token, Ok ImportExternalFilesResult.Completed)
+                    vault.ReleaseImportedFileEventsAfterImport(token, Ok(ImportExternalFilesResult.Completed [||]))
 
                     advanceSeconds 31
                     Vitest.expect(vault.importedPathOwners.Count).toBe 0
@@ -418,7 +424,7 @@ Vitest.describe (
                 try
                     let token = vault.StartImport()
                     vault.ClaimImportedFileEvents(token, events)
-                    vault.ReleaseImportedFileEventsAfterImport(token, Ok ImportExternalFilesResult.Completed)
+                    vault.ReleaseImportedFileEventsAfterImport(token, Ok(ImportExternalFilesResult.Completed [||]))
 
                     vault.ClearPendingFileWatcherState()
                     Vitest.expect(vault.importedPathOwners.Count).toBe 0
@@ -451,7 +457,7 @@ Vitest.describe (
                              if abortSignal.aborted then
                                  return Ok ImportExternalFilesResult.Cancelled
                              else
-                                 return Ok ImportExternalFilesResult.Completed
+                                 return Ok(ImportExternalFilesResult.Completed [||])
                          })
 
                 let cancellation = promise {
@@ -487,7 +493,7 @@ Vitest.describe (
                         ("coordinated-import",
                          fun _ -> promise {
                              do! importCompletion
-                             return Ok ImportExternalFilesResult.Completed
+                             return Ok(ImportExternalFilesResult.Completed [||])
                          })
 
                 Vitest.expect(vault.isBusyWriting).toBe (true)
@@ -523,7 +529,7 @@ Vitest.describe (
 
                 finishImport ()
                 let! result = import
-                Vitest.expect(result).toEqual (Ok ImportExternalFilesResult.Completed)
+                Vitest.expect(result).toEqual (Ok(ImportExternalFilesResult.Completed [||]))
                 Vitest.expect(vault.isBusyWriting).toBe (false)
                 Vitest.expect(vault.activeFileImport |> Option.map _.State).toEqual (None)
             }
@@ -563,7 +569,7 @@ Vitest.describe (
                                 ("blocked-import",
                                  fun _ ->
                                      operationStarted <- true
-                                     JS.Constructors.Promise.resolve (Ok ImportExternalFilesResult.Completed))
+                                     JS.Constructors.Promise.resolve (Ok(ImportExternalFilesResult.Completed [||])))
                         with
                         | Ok _ -> return failwith "Expected the import to be rejected while the vault is busy."
                         | Error error ->
@@ -5428,7 +5434,7 @@ Vitest.describe (
                             do! busyScope
 
                             match! api.tryImportExternalFiles request with
-                            | Ok ImportExternalFilesResult.Completed -> ()
+                            | Ok(ImportExternalFilesResult.Completed _) -> ()
                             | other -> failwithf "Expected Completed, received %A." other
 
                             let! notes =
@@ -5461,7 +5467,7 @@ Vitest.describe (
 
                         try
                             match! pickAndImport api "import-taskbar" with
-                            | Ok ImportExternalFilesResult.Completed -> ()
+                            | Ok(ImportExternalFilesResult.Completed _) -> ()
                             | other -> failwithf "Expected Completed, received %A." other
 
                             // Scanning, the start and finish of both steps, then the reset. Intermediate
@@ -5501,7 +5507,7 @@ Vitest.describe (
                         let sentBeforeImport = windowState.SentMessages.Count
 
                         match! pickAndImport api "import-1" with
-                        | Ok ImportExternalFilesResult.Completed -> ()
+                        | Ok(ImportExternalFilesResult.Completed _) -> ()
                         | other -> failwithf "Expected Completed, received %A." other
 
                         let targetPath = join [| arcPath; importTarget; "Run1" |]
@@ -5591,7 +5597,7 @@ Vitest.describe (
                         | Error error -> failwith error.Message
 
                         match! pickAndImport api "import-delete" with
-                        | Ok ImportExternalFilesResult.Completed -> ()
+                        | Ok(ImportExternalFilesResult.Completed _) -> ()
                         | other -> failwithf "Expected Completed, received %A." other
 
                         let importedRoot = $"{importTarget}/Run1"

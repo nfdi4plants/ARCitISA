@@ -250,14 +250,18 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "importRevealPath returns the target only for a completed import",
+            "importRevealPaths returns the target and the imported folders only for a completed import",
             fun () ->
-                let reveal result = importRevealPath result "assays/A"
+                let reveal result = importRevealPaths result "assays/A"
 
-                Vitest.expect(reveal (Ok(Some ImportExternalFilesResult.Completed))).toEqual (Some "assays/A")
-                Vitest.expect(reveal (Ok(Some ImportExternalFilesResult.Cancelled))).toEqual (None)
-                Vitest.expect(reveal (Ok None)).toEqual (None)
-                Vitest.expect(reveal (Error(exn "failed"))).toEqual (None)
+                Vitest
+                    .expect(reveal (Ok(Some(ImportExternalFilesResult.Completed [| "assays/A/raw" |]))))
+                    .toEqual ([ "assays/A"; "assays/A/raw" ])
+
+                Vitest.expect(reveal (Ok(Some(ImportExternalFilesResult.Completed [||])))).toEqual ([ "assays/A" ])
+                Vitest.expect(reveal (Ok(Some ImportExternalFilesResult.Cancelled))).toEqual ([])
+                Vitest.expect(reveal (Ok None)).toEqual ([])
+                Vitest.expect(reveal (Error(exn "failed"))).toEqual ([])
         )
 
         Vitest.test (

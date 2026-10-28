@@ -79,9 +79,9 @@ type FileTreeExpansionController = {
     /// Records the stat of the selected file after the app wrote it. The stamp is a new baseline, so the preview
     /// does not reload for it.
     recordOwnWrite: unit -> unit
-    /// Opens the folders down to a created or imported path once the tree contains it, without selecting it.
-    /// A folder target opens too.
-    revealPath: string -> unit
+    /// Opens the folders down to created or imported paths once the tree contains all of them, without selecting
+    /// them. Folder targets open too.
+    revealPaths: string list -> unit
 }
 
 let FileTreeExpansionCtx =
@@ -95,7 +95,7 @@ let FileTreeExpansionCtx =
             contentStamp = None
             refreshContentStamp = ignore
             recordOwnWrite = ignore
-            revealPath = ignore
+            revealPaths = ignore
         }
     )
 
@@ -141,11 +141,12 @@ let focusRevalidationDirectories (snapshot: FileTreeSnapshot) (recentlyLoaded: s
 
     ("" :: structural @ others) |> List.distinct |> List.toArray
 
-/// A path to open in the tree. Selection targets and explicit targets (a created or imported item) share the
-/// type. The id tells two requests for the same path apart.
+/// Paths to open in the tree. Selection targets and explicit targets (a created or imported item) share the
+/// type. A selection has one path. An import reveals the target folder together with the imported folders. The id
+/// tells two requests for the same paths apart.
 type private RevealTarget = {
     Id: int
-    Path: string
+    Paths: string list
     IsExplicit: bool
 }
 
@@ -183,7 +184,7 @@ let FileTreeExpansionCtxProvider (api: FileTreeExpansionApi, children: ReactElem
     // store change tries them again.
     let pending = React.useRef (Set.empty: Set<PathKey>)
     let isRevalidating = React.useRef false
-    // The selected, created or imported path whose folders are not all loaded and expanded yet.
+    // The selected path, or the created or imported paths, whose folders are not all loaded and expanded yet.
     // A store change tries it again.
     let revealTarget = React.useRef (None: RevealTarget option)
     let nextRevealId = React.useRef 0
@@ -205,12 +206,12 @@ let FileTreeExpansionCtxProvider (api: FileTreeExpansionApi, children: ReactElem
     let keyOf (path: string) =
         PathKey.ofPath store.Snapshot.CaseInsensitive path
 
-    let newTarget (path: string) (isExplicit: bool) =
+    let newTarget (paths: string list) (isExplicit: bool) =
         nextRevealId.current <- nextRevealId.current + 1
 
         {
             Id = nextRevealId.current
-            Path = path
+            Paths = paths
             IsExplicit = isExplicit
         }
 
@@ -298,8 +299,8 @@ let FileTreeExpansionCtxProvider (api: FileTreeExpansionApi, children: ReactElem
     /// Loads the folders above the reveal target one after another and expands them once the target is ready. A
     /// folder whose answer is held back (a pull is running) leaves the target in place, and the next store change
     /// runs this again. A selection is ready when the folders above it are loaded and is dropped when one of them is
-    /// missing. A created or imported path is ready once the tree contains it, and a created folder opens too. A
-    /// folder above the target that fails to load drops either kind.
+    /// missing. Created or imported paths are ready once the tree contains all of them, and the folders among them
+    /// open too. A folder above a target that fails to load drops either kind.
     let rec reveal () =
         match revealTarget.current with
         | Some r when not isRevealing.current ->
@@ -308,8 +309,12 @@ let FileTreeExpansionCtxProvider (api: FileTreeExpansionApi, children: ReactElem
 
             promise {
                 try
-                    let path = r.Path
-                    let ancestors = ancestorPaths path
+
+                    let ancestors =
+                        r.Paths
+                        |> List.collect ancestorPaths
+                        |> List.distinct
+                        |> List.sortBy (fun p -> p.Split('/').Length)
 
                     for ancestor in ancestors do
                         match knows store.Snapshot ancestor with
@@ -341,14 +346,17 @@ let FileTreeExpansionCtxProvider (api: FileTreeExpansionApi, children: ReactElem
                             | _ -> false
                         )
 
-                    let target = knows store.Snapshot path
+                    let targets = r.Paths |> List.map (knows store.Snapshot)
 
-                    // The create call can return before the tree push that contains the item.
+                    // A create or import can return before the tree push that contains all of its paths.
                     let ready =
                         if r.IsExplicit then
-                            (match target with
-                             | Present _ -> true
-                             | _ -> false)
+                            targets
+                            |> List.forall (fun target ->
+                                match target with
+                                | Present _ -> true
+                                | _ -> false
+                            )
                         else
                             complete
 
@@ -360,14 +368,22 @@ let FileTreeExpansionCtxProvider (api: FileTreeExpansionApi, children: ReactElem
 
                     if ready then
                         let toOpen =
-                            match target with
-                            | Present entry when r.IsExplicit && entry.isDirectory -> present.Add entry.path
-                            | _ -> present
+                            if r.IsExplicit then
+                                targets
+                                |> List.fold
+                                    (fun (opened: Set<string>) target ->
+                                        match target with
+                                        | Present entry when entry.isDirectory -> opened.Add entry.path
+                                        | _ -> opened
+                                    )
+                                    present
+                            else
+                                present
 
                         if
                             isMounted.current
                             && revealTarget.current = Some r
-                            && (r.IsExplicit || selectionRef.current = Some path)
+                            && (r.IsExplicit || selectionRef.current |> Option.exists (fun s -> r.Paths = [ s ]))
                             && not toOpen.IsEmpty
                         then
                             setExpandedIds (fun current ->
@@ -380,8 +396,8 @@ let FileTreeExpansionCtxProvider (api: FileTreeExpansionApi, children: ReactElem
                         if revealTarget.current = Some r then
                             revealTarget.current <- None
                     elif ancestorFailed || (ancestorAbsent && not r.IsExplicit) then
-                        // A failed folder ends both kinds. A missing folder ends a selection, while a created path
-                        // waits for the tree push.
+                        // A failed folder ends both kinds. A missing folder ends a selection, while created or
+                        // imported paths wait for the tree push.
                         if revealTarget.current = Some r then
                             revealTarget.current <- None
                 finally
@@ -537,17 +553,19 @@ let FileTreeExpansionCtxProvider (api: FileTreeExpansionApi, children: ReactElem
     // expands them.
     React.useEffect (
         (fun () ->
-            revealTarget.current <- selectionPath |> Option.map (fun p -> newTarget p false)
+            revealTarget.current <- selectionPath |> Option.map (fun p -> newTarget [ p ] false)
             revealRef.current ()
         ),
         [| box selectionPath |]
     )
 
-    let revealPath =
+    let revealPaths =
         React.useCallback (
-            (fun (path: string) ->
-                if isMounted.current && scopeRef.current = scope then
-                    revealTarget.current <- Some(newTarget (PathHelpers.normalizePath path) true)
+            (fun (paths: string list) ->
+                if isMounted.current && scopeRef.current = scope && not paths.IsEmpty then
+                    revealTarget.current <-
+                        Some(newTarget (paths |> List.map PathHelpers.normalizePath |> List.distinct) true)
+
                     revealRef.current ()
             ),
             [| box scope |]
@@ -610,7 +628,7 @@ let FileTreeExpansionCtxProvider (api: FileTreeExpansionApi, children: ReactElem
                 contentStamp = contentStamp
                 refreshContentStamp = refreshContentStamp
                 recordOwnWrite = recordOwnWrite
-                revealPath = revealPath
+                revealPaths = revealPaths
             }),
             [|
                 box expandedIds
@@ -618,7 +636,7 @@ let FileTreeExpansionCtxProvider (api: FileTreeExpansionApi, children: ReactElem
                 box contentStamp
                 box refreshContentStamp
                 box recordOwnWrite
-                box revealPath
+                box revealPaths
             |]
         )
 
