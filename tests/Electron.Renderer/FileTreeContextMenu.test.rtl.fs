@@ -1,5 +1,6 @@
 module ElectronRenderer.FileTreeContextMenuRtlTests
 
+open Renderer.Context.LfsActivityContext
 open Renderer.Components.LeftSidebar.FileExplorer.FileTreeContextMenu
 open Renderer.Components.LeftSidebar.FileExplorer.Types
 open Swate.Components.Page.FileExplorer
@@ -36,7 +37,7 @@ let private config (refreshed: ResizeArray<string>) : ContextMenuConfig = {
     runDownloadLfsFolder = ignore
     requestFreeLfsFolder = ignore
     refreshDirectory = fun item -> refreshed.Add(defaultArg item.Path "")
-    lfsActivePaths = []
+    lfsActivePaths = LfsActivePathIndex.empty
 }
 
 Vitest.test (

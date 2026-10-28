@@ -80,8 +80,24 @@ type FileTree =
         let largeObjectStore = Renderer.Context.LargeObjectStore.useLargeObjectStore ()
         let lfsActivityByPath = lfsActivityCtx.activities
 
+        // The row checks (Rename and Delete locks) and the busy children of a folder read these once per change of
+        // the activities, so a tree rebuild stays linear when thousands of files are busy.
         let lfsActivePaths =
-            React.useMemo ((fun () -> lfsActivityByPath |> Map.toList |> List.map fst), [| box lfsActivityByPath |])
+            React.useMemo (
+                (fun () ->
+                    lfsActivityByPath
+                    |> Map.toSeq
+                    |> Seq.map fst
+                    |> Renderer.Context.LfsActivityContext.LfsActivePathIndex.create
+                ),
+                [| box lfsActivityByPath |]
+            )
+
+        let busyByParent =
+            React.useMemo (
+                (fun () -> Renderer.Context.LfsActivityContext.LfsActivityState.busyEntriesByParent lfsActivityByPath),
+                [| box lfsActivityByPath |]
+            )
 
         // The delete confirmation reads the paths through this ref, so it sees the actions that
         // started after the modal opened.
@@ -196,7 +212,7 @@ type FileTree =
         )
 
         let withBusy =
-            Renderer.Context.LfsActivityContext.LfsActivityState.withBusyChildren lfsActivityByPath
+            Renderer.Context.LfsActivityContext.LfsActivityState.withBusyChildren busyByParent
 
         // Entries are immutable and keep their instance while unchanged, so the base row of an entry is built once.
         // A new large object snapshot gets a new cache, because the rows carry that state.

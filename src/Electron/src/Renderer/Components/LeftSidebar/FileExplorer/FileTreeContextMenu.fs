@@ -8,6 +8,7 @@ open Swate.Components.Page.FileExplorer.Types
 open Swate.Components.Primitive.ErrorModal.Types
 open Swate.Components.Shared
 open Swate.Electron.Shared.FileIOTypes
+open Renderer.Context.LfsActivityContext
 open Renderer.Components.LeftSidebar.FileExplorer.FileTreeRenameHelper
 open Renderer.Components.LeftSidebar.FileExplorer.Helper
 open Renderer.Components.LeftSidebar.FileExplorer.Types
@@ -223,26 +224,19 @@ let rootContextMenuItems (config: ContextMenuConfig) (rootItem: FileItem) =
 /// Moving or removing such a path makes the running action fail after its transfer. The delete
 /// scope of a canonical entity workbook is its entity folder, because deleting the workbook
 /// removes that folder.
-let isLockedByLfsActivity (lfsActivePaths: string seq) (item: FileItem) =
+let isLockedByLfsActivity (lfsActivePaths: LfsActivePathIndex) (item: FileItem) =
     item.LfsActivity.IsSome
     || item.Path
        |> Option.map (PathHelpers.normalizeCanonicalRelativePath >> ArcEntityPathRules.deleteScopePath)
-       |> Option.exists (fun scopePath ->
-           lfsActivePaths
-           |> Seq.exists (fun activePath ->
-               PathHelpers.isSameOrDescendantPathForFsComparison
-                   (PathHelpers.normalizeCanonicalRelativePath activePath)
-                   scopePath
-           )
-       )
+       |> Option.exists (LfsActivePathIndex.locksScope lfsActivePaths)
 
-let private disableWhileLfsActive (lfsActivePaths: string seq) (item: FileItem) (menuItem: ContextMenuItem) =
+let private disableWhileLfsActive (lfsActivePaths: LfsActivePathIndex) (item: FileItem) (menuItem: ContextMenuItem) =
     if isLockedByLfsActivity lfsActivePaths item then
         { menuItem with Disabled = Some true }
     else
         menuItem
 
-let renameContextMenuItems (lfsActivePaths: string seq) (requestRenameItem: FileItem -> unit) (item: FileItem) =
+let renameContextMenuItems (lfsActivePaths: LfsActivePathIndex) (requestRenameItem: FileItem -> unit) (item: FileItem) =
     if canRenameFileItem item then
         [
             ContextMenuItem.create "Rename" "swt:fluent--edit-24-regular" (fun () -> requestRenameItem item)
@@ -251,7 +245,7 @@ let renameContextMenuItems (lfsActivePaths: string seq) (requestRenameItem: File
     else
         []
 
-let deleteContextMenuItems (lfsActivePaths: string seq) (requestDeleteItem: FileItem -> unit) (item: FileItem) =
+let deleteContextMenuItems (lfsActivePaths: LfsActivePathIndex) (requestDeleteItem: FileItem -> unit) (item: FileItem) =
     if canDeleteFileItem item then
         [
             ContextMenuItem.styled

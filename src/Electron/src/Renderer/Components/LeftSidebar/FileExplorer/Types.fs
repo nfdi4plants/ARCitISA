@@ -35,7 +35,7 @@ type ContextMenuConfig = {
     refreshDirectory: FileItem -> unit
     /// ARC-relative paths with a running Download or Free. Rename and Delete stay disabled on every
     /// folder that contains one of them.
-    lfsActivePaths: string list
+    lfsActivePaths: Renderer.Context.LfsActivityContext.LfsActivePathIndex
 }
 
 type ArcCreateDraft = { ArcFile: ArcFiles; Path: string }

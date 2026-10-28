@@ -59,8 +59,9 @@ type BatchFailure = {
     Details: string[]
 }
 
-/// A batch result is a success only when every path succeeded. A partial result stays an Error because the
-/// failed paths would otherwise go unreported.
+/// A batch result is a success only when every path succeeded. A partial result that names failed paths stays an
+/// Error because those paths would otherwise go unreported. A partial result without paths is the host reporting a
+/// successful call on a freshly opened session, which GitWorkflow.toUnitResult also treats as a success.
 let toBatchResult (result: Result<OperationResultDto<unit>, string>) : Result<unit, BatchFailure> =
     let describe (failure: OperationFailureDto) =
         Error {
@@ -77,12 +78,36 @@ let toBatchResult (result: Result<OperationResultDto<unit>, string>) : Result<un
             Details = [||]
         }
     | Ok(OperationResultDto.Succeeded _) -> Ok()
+    | Ok(OperationResultDto.PartiallySucceeded(_, failure)) when failure.AffectedPaths.Length = 0 -> Ok()
     | Ok(OperationResultDto.PartiallySucceeded(_, failure)) -> describe failure
     | Ok(OperationResultDto.Failed failure) -> describe failure
 
-/// The message and the technical details of the modal for a failed folder action. A failure that names paths gets
-/// a count line and the first line of each entry, capped, and the technical details hold every entry in full.
-/// A failure without entries (the service is unavailable, a path is invalid) keeps its own message.
+/// One entry of the failure text. A multi-line entry (the raw git-lfs output of a path) starts with a progress line,
+/// so it shows the path in front of the last non-empty line, which names the cause. A one-line entry stays as it is.
+let private entrySummary (entry: string) =
+    let lines =
+        entry.Split('\n')
+        |> Array.map (fun line -> line.TrimEnd('\r'))
+        |> Array.filter (System.String.IsNullOrWhiteSpace >> not)
+
+    if lines.Length = 0 then
+        entry
+    elif lines.Length = 1 then
+        lines.[0]
+    else
+        let separator = lines.[0].IndexOf ": "
+        let last = lines.[lines.Length - 1]
+
+        if separator < 0 then
+            last
+        else
+            $"{lines.[0].Substring(0, separator)}: {last}"
+
+/// The message and the technical details of the modal for a failed folder action. A failure that names failed paths
+/// (FailedCount above 0) gets a count line and one summary line per entry, capped, and the technical details hold
+/// every entry in full. A failure without failed paths (the service is unavailable, a path is invalid, the index is
+/// locked) shows the header and the failure's own message, which holds the cause and the recovery text, and any
+/// entries go into the technical details.
 let folderFailureText
     (folderName: string)
     (outcome: string)
@@ -91,13 +116,16 @@ let folderFailureText
     : string * string option =
     let header = $"Not every file in '{folderName}' was processed."
 
-    if failure.Details.Length = 0 then
-        $"{header}\n{failure.Message}", None
-    else
-        let firstLine (entry: string) = entry.Split('\n').[0].TrimEnd('\r')
+    // An entry can span several lines, so a blank line separates the entries.
+    let technical =
+        if failure.Details.Length = 0 then
+            None
+        else
+            Some(System.String.Join("\n\n", failure.Details))
 
+    if failure.FailedCount > 0 then
         let listed =
-            failure.Details |> Array.truncate maxListedDetails |> Array.map firstLine
+            failure.Details |> Array.truncate maxListedDetails |> Array.map entrySummary
 
         let more =
             if failure.Details.Length > maxListedDetails then
@@ -109,9 +137,9 @@ let folderFailureText
 
         let count = $"{failure.FailedCount} of {totalCount} files could not be {outcome}."
 
-        System.String.Join("\n", Array.concat [ [| header; count |]; listed; more ]),
-        // An entry can span several lines, so a blank line separates the entries.
-        Some(System.String.Join("\n\n", failure.Details))
+        System.String.Join("\n", Array.concat [ [| header; count |]; listed; more ]), technical
+    else
+        $"{header}\n{failure.Message}", technical
 
 /// Downloads all given files with one call. Paths that are already on disk count as done.
 let runDownloadLfsFiles (relativePaths: string[]) : JS.Promise<Result<unit, BatchFailure>> = promise {

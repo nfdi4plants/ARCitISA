@@ -1,17 +1,10 @@
 module ElectronRenderer.GitLfsHelperTests
 
+open Fable.Core
 open Fable.Core.JsInterop
 open Renderer.Components.Helper.GitLfsHelper
 open Swate.Electron.Shared.VersionControlTypes
 open Vitest
-
-// The helper module pulls in the version control client, which reads its IPC bridge when it loads.
-// The bridge only exists inside Electron, so the test replaces it with an empty object that no test calls.
-Vitest.vi.mock (
-    "./src/Electron/src/Renderer/Api.js",
-    box (fun () -> createObj [ "ipcVersionControlApi" ==> createObj [] ])
-)
-|> ignore
 
 let private outcome: OperationOutcomeDto<unit> = {
     Value = ()
@@ -22,6 +15,37 @@ let private outcome: OperationOutcomeDto<unit> = {
     ResultingWorkspaceVersion = None
     Publication = PublicationStateDto.NotApplicable
 }
+
+/// The requests the mocked main process received, one list per batch call.
+let private materializeCalls = ResizeArray<ObjectPathsRequestDto>()
+let private dematerializeCalls = ResizeArray<ObjectPathsRequestDto>()
+
+let private succeeded
+    (calls: ResizeArray<ObjectPathsRequestDto>)
+    (request: ObjectPathsRequestDto)
+    : JS.Promise<Result<OperationResultDto<unit>, exn>> =
+    promise {
+        calls.Add request
+        return Ok(OperationResultDto.Succeeded outcome)
+    }
+
+// The helper module pulls in the version control client, which reads its IPC bridge when it loads.
+// The bridge only exists inside Electron, so the test replaces the two batch calls with recorders.
+Vitest.vi.mock (
+    "./src/Electron/src/Renderer/Api.js",
+    box (fun () ->
+        createObj [
+            "ipcVersionControlApi"
+            ==> createObj [
+                "materializeObjects"
+                ==> fun (request: ObjectPathsRequestDto) -> succeeded materializeCalls request
+                "dematerializeObjects"
+                ==> fun (request: ObjectPathsRequestDto) -> succeeded dematerializeCalls request
+            ]
+        ]
+    )
+)
+|> ignore
 
 let private failureWith (details: string[]) : OperationFailureDto = {
     Category = FailureCategoryDto.ProviderError
@@ -83,6 +107,15 @@ Vitest.describe (
         )
 
         Vitest.test (
+            "treats a partial result without failed paths as Ok, the way a fresh session open reports it",
+            fun () ->
+                let result =
+                    toBatchResult (Ok(OperationResultDto.PartiallySucceeded(outcome, failureWith [||])))
+
+                Vitest.expect(result).toEqual (Ok())
+        )
+
+        Vitest.test (
             "turns a transport error into a failure without detail lines",
             fun () ->
                 match toBatchResult (Error "service unavailable") with
@@ -131,19 +164,53 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "shows the first line of each entry and keeps the whole entries in the technical details",
+            "shows the path and the last non-empty line of a multi-line entry and keeps the whole entries in the technical details",
             fun () ->
                 let details = [|
-                    "a.bin: smudge failed\nerror: external filter failed\nfatal: a.bin: smudge filter lfs failed"
-                    "b.bin: smudge failed\nerror: external filter failed"
+                    "a.bin: Fetching reference refs/heads/main\nbatch response: EOF\nerror: failed to fetch some objects from 'x'\n"
+                    "b.bin: no space"
                 |]
 
                 let message, technical = failureTextOf details 2
+                let lines = linesOf message
 
-                Vitest.expect((linesOf message).Length).toBe 4
-                Vitest.expect(message.Contains "a.bin: smudge failed").toBe true
-                Vitest.expect(message.Contains "external filter failed").toBe false
+                Vitest.expect(lines.Length).toBe 4
+                Vitest.expect(lines.[2]).toBe "a.bin: error: failed to fetch some objects from 'x'"
+                Vitest.expect(lines.[3]).toBe "b.bin: no space"
+                Vitest.expect(message.Contains "Fetching reference").toBe false
                 Vitest.expect(technical).toEqual (Some(String.concat "\n\n" details))
+        )
+
+        Vitest.test (
+            "keeps the failure message with its recovery text and the details when no path failed",
+            fun () ->
+                let details = [|
+                    "Lock file: C:/arc/.git/index.lock"
+                    "Lock file age: 3 s"
+                |]
+
+                let locked = {
+                    failureWith details with
+                        Code = VersionControlCodes.IndexLocked
+                        RecoveryAction =
+                            Some {
+                                Code = VersionControlCodes.Recovery.ReconcileIndex
+                                Instructions = Some "Close other Git programs."
+                            }
+                }
+
+                match toBatchResult (Ok(OperationResultDto.Failed locked)) with
+                | Ok() -> failwith "expected an Error"
+                | Error failure ->
+                    let message, technical = folderFailureText "data" "downloaded" 5 failure
+                    let full = Renderer.Context.GitWorkflow.failureMessage locked
+
+                    // The recovery text is part of the full message and the library message alone lacks it.
+                    Vitest.expect(full.Length > locked.Message.Length).toBe true
+                    Vitest.expect(failure.FailedCount).toBe 0
+                    Vitest.expect((linesOf message).Length).toBe 2
+                    Vitest.expect(message.Contains full).toBe true
+                    Vitest.expect(technical).toEqual (Some(String.concat "\n\n" details))
         )
 
         Vitest.test (
@@ -179,5 +246,35 @@ Vitest.describe (
         Vitest.test (
             "free takes the files that have a local copy",
             fun () -> Vitest.expect(FolderLfsAction.free.SelectPaths objects).toEqual objects.HasLocalCopy
+        )
+
+        Vitest.test (
+            "download sends the paths with normalized separators to materializeObjects only",
+            fun () -> promise {
+                materializeCalls.Clear()
+                dematerializeCalls.Clear()
+
+                let! result = FolderLfsAction.download.RunBatch [| "data\\a.bin"; "data/b.bin" |]
+
+                Vitest.expect(result).toEqual (Ok())
+                Vitest.expect(materializeCalls.Count).toBe 1
+                Vitest.expect(materializeCalls.[0].Paths).toEqual [| "data/a.bin"; "data/b.bin" |]
+                Vitest.expect(dematerializeCalls.Count).toBe 0
+            }
+        )
+
+        Vitest.test (
+            "free sends the paths with normalized separators to dematerializeObjects only",
+            fun () -> promise {
+                materializeCalls.Clear()
+                dematerializeCalls.Clear()
+
+                let! result = FolderLfsAction.free.RunBatch [| "data\\a.bin"; "data/b.bin" |]
+
+                Vitest.expect(result).toEqual (Ok())
+                Vitest.expect(dematerializeCalls.Count).toBe 1
+                Vitest.expect(dematerializeCalls.[0].Paths).toEqual [| "data/a.bin"; "data/b.bin" |]
+                Vitest.expect(materializeCalls.Count).toBe 0
+            }
         )
 )

@@ -4,6 +4,7 @@
 module Renderer.Context.LfsActivityContext
 
 open System
+open System.Collections.Generic
 open Fable.Core
 open Feliz
 open Swate.Components.Shared
@@ -46,39 +47,75 @@ module LfsActivityState =
             )
             |> Map.ofSeq
 
+    /// The last known entries of the busy files, grouped by the normalized path of their parent folder. A tree
+    /// rebuild asks for one folder at a time, so the grouping is computed once per change of the activities.
+    let busyEntriesByParent (activities: Map<string, LfsActivity>) : Map<string, FileEntry[]> =
+        activities
+        |> Map.toArray
+        |> Array.choose (fun (_, activity) -> activity.Entry)
+        |> Array.groupBy (fun entry -> PathHelpers.tryGetParentPath entry.path |> Option.defaultValue "")
+        |> Map.ofArray
+
     /// A Free briefly replaces the file on disk, so the listing of a folder can miss a busy file. The last known
     /// entry of each busy file in this folder is added back, which keeps its row until the action ends. The same
-    /// array comes back when nothing is missing.
+    /// array comes back when nothing is missing. The cost follows the children plus the busy files of this folder.
     let withBusyChildren
-        (activities: Map<string, LfsActivity>)
+        (busyByParent: Map<string, FileEntry[]>)
         (directoryPath: string)
         (children: FileEntry[])
         : FileEntry[] =
-        if activities.IsEmpty then
-            children
-        else
-            let parent = PathHelpers.normalizePath directoryPath
+        match Map.tryFind (PathHelpers.normalizePath directoryPath) busyByParent with
+        | None -> children
+        | Some busy ->
+            let listed =
+                HashSet<string>(
+                    children
+                    |> Array.map (fun child -> PathHelpers.normalizePathForFsComparison child.path)
+                )
 
             let missing =
-                activities
-                |> Map.toArray
-                |> Array.choose (fun (_, activity) -> activity.Entry)
+                busy
                 |> Array.filter (fun entry ->
-                    PathHelpers.tryGetParentPath entry.path |> Option.defaultValue "" = parent
-                    && not (
-                        children
-                        |> Array.exists (fun child ->
-                            PathHelpers.pathsEqual
-                                (PathHelpers.normalizePath child.path)
-                                (PathHelpers.normalizePath entry.path)
-                        )
-                    )
+                    not (listed.Contains(PathHelpers.normalizePathForFsComparison entry.path))
                 )
 
             if missing.Length = 0 then
                 children
             else
                 Array.append children missing
+
+/// Every running activity path together with all its ancestors, normalized for filesystem comparison. A lookup
+/// answers "does an activity run on or below this folder" without walking the activities, which matters when
+/// thousands of files are busy and the tree asks once per visible row.
+type LfsActivePathIndex = private { Keys: HashSet<string> }
+
+module LfsActivePathIndex =
+
+    let empty = { Keys = HashSet<string>() }
+
+    /// Paths are normalized the way PathHelpers.isSameOrDescendantPathForFsComparison normalizes them.
+    let create (paths: string seq) : LfsActivePathIndex =
+        let keys = HashSet<string>()
+
+        for path in paths do
+            let key =
+                path
+                |> PathHelpers.normalizeCanonicalRelativePath
+                |> PathHelpers.normalizePathForFsComparison
+
+            if not (String.IsNullOrWhiteSpace key) then
+                keys.Add key |> ignore
+
+                for index in 1 .. key.Length - 1 do
+                    if key.[index] = '/' then
+                        keys.Add(key.Substring(0, index)) |> ignore
+
+        { Keys = keys }
+
+    /// True when an activity runs on the scope path or below it. A blank scope path locks nothing.
+    let locksScope (index: LfsActivePathIndex) (scopePath: string) =
+        let key = PathHelpers.normalizePathForFsComparison scopePath
+        not (String.IsNullOrWhiteSpace key) && index.Keys.Contains key
 
 type LfsActivityController = {
     /// Activities of the open ARC, keyed by the ARC-relative path.

@@ -71,7 +71,8 @@ Vitest.describe (
                 let listed = [| fileEntry "runs/other.bin" |]
                 let activities = Map.ofList [ "runs/big.bin", activity "Freeing" "runs/big.bin" ]
 
-                let merged = LfsActivityState.withBusyChildren activities "runs" listed
+                let merged =
+                    LfsActivityState.withBusyChildren (LfsActivityState.busyEntriesByParent activities) "runs" listed
 
                 Vitest.expect(merged |> Array.map _.path).toEqual ([| "runs/other.bin"; "runs/big.bin" |])
         )
@@ -84,7 +85,8 @@ Vitest.describe (
                 let activities =
                     Map.ofList [ "runs/big.bin", activity "Downloading" "runs/big.bin" ]
 
-                let merged = LfsActivityState.withBusyChildren activities "runs" listed
+                let merged =
+                    LfsActivityState.withBusyChildren (LfsActivityState.busyEntriesByParent activities) "runs" listed
 
                 Vitest.expect(obj.ReferenceEquals(merged, listed)).toBe (true)
         )
@@ -94,7 +96,9 @@ Vitest.describe (
             fun () ->
                 let activities = Map.ofList [ "runs/big.bin", activity "Freeing" "runs/big.bin" ]
 
-                Vitest.expect(LfsActivityState.withBusyChildren activities "assays" [||]).toEqual ([||])
+                let busyByParent = LfsActivityState.busyEntriesByParent activities
+
+                Vitest.expect(LfsActivityState.withBusyChildren busyByParent "assays" [||]).toEqual ([||])
         )
 
         Vitest.test (
