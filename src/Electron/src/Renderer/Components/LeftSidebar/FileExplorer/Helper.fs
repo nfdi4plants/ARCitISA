@@ -171,6 +171,14 @@ let tryGetArcEntityWorkbookName (folderPath: string) =
         |> Option.map PathHelpers.getFileName
     )
 
+let importRevealPath
+    (result: Result<ImportExternalFilesResult option, exn>)
+    (targetRelativePath: string)
+    : string option =
+    match result with
+    | Ok(Some ImportExternalFilesResult.Completed) -> Some targetRelativePath
+    | _ -> None
+
 /// Builds the row of an entry in one record. Entry paths are already normalized, so nothing normalizes them again.
 let createItem
     (tryFindLfs: string -> Swate.Electron.Shared.VersionControlTypes.ObjectStateDto option)

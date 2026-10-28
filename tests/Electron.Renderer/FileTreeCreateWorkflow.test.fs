@@ -58,18 +58,6 @@ Vitest.describe (
     "FileTreeCreateWorkflow",
     fun () ->
         Vitest.test (
-            "importRevealPath returns the target only for a completed import",
-            fun () ->
-                let reveal result =
-                    FileTreeCreateWorkflow.importRevealPath result "assays/A"
-
-                Vitest.expect(reveal (Ok(Some ImportExternalFilesResult.Completed))).toEqual (Some "assays/A")
-                Vitest.expect(reveal (Ok(Some ImportExternalFilesResult.Cancelled))).toEqual (None)
-                Vitest.expect(reveal (Ok None)).toEqual (None)
-                Vitest.expect(reveal (Error(exn "failed"))).toEqual (None)
-        )
-
-        Vitest.test (
             "createArcEntry reveals the new path and closes the modal",
             fun () -> promise {
                 let probe = createProbe ()

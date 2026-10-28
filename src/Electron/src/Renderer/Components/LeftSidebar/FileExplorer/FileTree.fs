@@ -29,7 +29,6 @@ module private FileTreeHelper =
         | FreeLfsDialog of string
 
 open FileTreeHelper
-open FileTreeCreateWorkflow
 
 [<Erase; Mangle(false)>]
 type FileTree =
@@ -524,7 +523,7 @@ type FileTree =
         let importExternalFiles (targetRelativePath: string) = promise {
             let! result = fileStateCtx.importExternalFiles targetRelativePath
 
-            importRevealPath result targetRelativePath
+            Helper.importRevealPath result targetRelativePath
             |> Option.iter expansionCtx.revealPath
 
             return result |> Result.map ignore

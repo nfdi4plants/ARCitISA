@@ -15,14 +15,6 @@ module FileTreeCreateWorkflow =
         closeCreateModal: unit -> unit
     }
 
-    let importRevealPath
-        (result: Result<ImportExternalFilesResult option, exn>)
-        (targetRelativePath: string)
-        : string option =
-        match result with
-        | Ok(Some ImportExternalFilesResult.Completed) -> Some targetRelativePath
-        | _ -> None
-
     /// Creates the item and asks the tree to reveal it. Success closes the dialog and an error keeps it open.
     /// Nothing selects or opens the item, so the open view keeps its unsaved work.
     let createAndReveal (config: CreateConfig) (create: unit -> JS.Promise<Result<string, exn>>) =
