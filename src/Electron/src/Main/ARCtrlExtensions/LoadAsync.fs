@@ -267,9 +267,7 @@ module ArcLoadExtensions =
 
     type ARC with
 
-        /// Hotfix for #619, not fixed in the consumed ARCtrl 3.0.0-beta.12.
-        /// Mirrors ARC.tryLoadAsync. It lists the root, the zone folders and the entity folders to find the
-        /// metadata files, and never reads payload folders.
+        /// Loads ARC metadata without traversing payload folders and migrates legacy `isa_datamap` paths.
         static member LoadAsyncSwate(arcPath: string) = promise {
             let! discoveredPaths = discoverStructuralArcFilePathsWithAsync readdirWithTypesAsync arcPath
             let! paths = migrateLegacyDataMapPathsAsync arcPath discoveredPaths
@@ -283,8 +281,9 @@ module ArcLoadExtensions =
             | Error errors -> return Error errors
         }
 
-        /// Hotfix for #620, not fixed in the consumed ARCtrl 3.0.0-beta.12.
         /// Repairs only zero-byte canonical workbooks left by interrupted creates, then retries LoadAsyncSwate.
+        /// ARCtrl #620 was fixed in 3.2.3; this wrapper retains recovery because LoadAsyncSwate bypasses
+        /// ARC.tryLoadAsync and its upstream recovery path.
         static member LoadAsyncSwateZeroByteRepair(arcPath: string) = promise {
             match! ARC.LoadAsyncSwate arcPath with
             | Ok arc ->
