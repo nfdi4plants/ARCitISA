@@ -38,7 +38,7 @@ type FileStateController = {
     updateSelection: (ArcSelection -> ArcSelection) -> unit
     activeFileImport: ActiveFileImportState option
     isCancellingFileImport: bool
-    importExternalFiles: string -> JS.Promise<Result<unit, exn>>
+    importExternalPaths: FileSystemItemKind -> string -> JS.Promise<Result<unit, exn>>
     cancelFileImport: unit -> JS.Promise<Result<unit, exn>>
 }
 
@@ -59,7 +59,7 @@ let FileStateCtx =
             updateSelection = ignore
             activeFileImport = None
             isCancellingFileImport = false
-            importExternalFiles = fun _ -> JS.Constructors.Promise.resolve (Ok())
+            importExternalPaths = fun _ _ -> JS.Constructors.Promise.resolve (Ok())
             cancelFileImport = fun () -> JS.Constructors.Promise.resolve (Ok())
         }
     )
@@ -80,7 +80,7 @@ type FileTreeSource = {
 
 type FileImportApi = {
     loadActiveImport: ActiveFileImportLoader
-    pickAbsolutePaths: unit -> JS.Promise<Result<string option, exn>>
+    pickAbsolutePaths: FileSystemItemKind -> JS.Promise<Result<string option, exn>>
     runImport: ImportExternalFilesRequest -> JS.Promise<Result<ImportExternalFilesResult, exn>>
     cancelImport: string -> JS.Promise<Result<unit, exn>>
 }
@@ -227,14 +227,14 @@ let FileStateCtxProviderWithSnapshots
             dependencies = [||]
         }
 
-    let importExternalFiles targetRelativePath = promise {
+    let importExternalPaths kind targetRelativePath = promise {
         if activeFileImport.state.IsSome || isFilePickerOpenRef.current then
             return Ok()
         else
             isFilePickerOpenRef.current <- true
 
             try
-                match! fileImportApi.pickAbsolutePaths () with
+                match! fileImportApi.pickAbsolutePaths kind with
                 | Error ex -> return Error ex
                 | Ok None -> return Ok()
                 | Ok(Some authorizationId) ->
@@ -282,7 +282,7 @@ let FileStateCtxProviderWithSnapshots
                         setSelectionState (fun currentSelection -> update currentSelection |> ArcSelection.normalize)
                 activeFileImport = activeFileImport.state
                 isCancellingFileImport = isCancellingFileImport
-                importExternalFiles = importExternalFiles
+                importExternalPaths = importExternalPaths
                 cancelFileImport = cancelFileImport
             }),
             [|

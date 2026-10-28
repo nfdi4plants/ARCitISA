@@ -139,6 +139,7 @@
     <Compile Include="Primitive\BaseModal\Context.fs" />
     <Compile Include="Primitive\BaseModal\BaseModal.fs" />
     <Compile Include="Primitive\Dialog\Dialog.fs" />
+    <Compile Include="Primitive\Dialog\Dialog.test.rtl.fs" />
     <Compile Include="Primitive\LayoutComponents\LayoutComponents.fs" />
     <Compile Include="Primitive\CardGrid\CardGrid.fs" />
     <Compile Include="Primitive\ContextMenu\Types.fs" />

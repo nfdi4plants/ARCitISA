@@ -21,7 +21,7 @@ let issue windowId absolutePaths =
 
     selection.AuthorizationId
 
-/// Picker authorizations are window-bound and single-use, including failed import attempts.
+/// Picker authorizations are window-bound and single-use for attempts that pass the busy check.
 let consume windowId authorizationId =
     match selectionsByWindow.TryGetValue windowId with
     | true, selection when

@@ -151,7 +151,7 @@ let private Host
                 updateSelection = ignore
                 activeFileImport = None
                 isCancellingFileImport = false
-                importExternalFiles = fun _ -> JS.Constructors.Promise.resolve (Ok())
+                importExternalPaths = fun _ _ -> JS.Constructors.Promise.resolve (Ok())
                 cancelFileImport = fun () -> JS.Constructors.Promise.resolve (Ok())
             }),
             [| box selection; box store; box isRename |]

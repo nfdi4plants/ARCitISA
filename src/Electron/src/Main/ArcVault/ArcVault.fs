@@ -24,8 +24,7 @@ open Swate.Electron.Shared.FileIOHelper
 open ARCtrl
 open Main.ArcVaultState
 
-/// Tests shorten this delay to cover timeout behavior without waiting 30 seconds.
-let mutable closeWaitTimeoutMilliseconds = 30000
+let private closeWaitTimeoutMilliseconds = 30000
 
 [<AutoOpen>]
 module ArcVaultExtensions =

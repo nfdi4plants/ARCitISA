@@ -93,7 +93,7 @@ let private source (arcRootPath: string option) (changeVersion: int) : FileTreeS
 
 let private fileImportApi loadActiveImport = {
     loadActiveImport = loadActiveImport
-    pickAbsolutePaths = fun () -> JS.Constructors.Promise.resolve (Ok None)
+    pickAbsolutePaths = fun _ -> JS.Constructors.Promise.resolve (Ok None)
     runImport = fun _ -> JS.Constructors.Promise.resolve (Ok ImportExternalFilesResult.Completed)
     cancelImport = fun _ -> JS.Constructors.Promise.resolve (Ok())
 }
@@ -235,6 +235,11 @@ Vitest.describe (
                         Some {
                             requestId = "survives-remount"
                             phase = FileImportPhase.Copying
+                            progress = {
+                                step = FileImportStep.Scanning
+                                completedItems = 0
+                                totalItems = 0
+                            }
                         }
 
                     publishImportState activeImport
@@ -825,5 +830,143 @@ Vitest.describe (
                 finally
                     mounted.Dispose()
             }
+        )
+)
+
+Vitest.describe (
+    "Import status text",
+    fun () ->
+        let state phase step completed total = {
+            requestId = "status-text"
+            phase = phase
+            progress = {
+                step = step
+                completedItems = completed
+                totalItems = total
+            }
+        }
+
+        let text = Renderer.Components.LeftSidebar.FileImportStatus.fileImportStatusText
+        let stepText = Renderer.Components.LeftSidebar.FileImportStatus.fileImportStepText
+
+        let showsBar =
+            Renderer.Components.LeftSidebar.FileImportStatus.showsFileImportProgressBar
+
+        Vitest.test (
+            "maps both import steps onto one continuous overall fraction",
+            fun () ->
+                for step, completed, expected in
+                    [
+                        FileImportStep.Copying, 0, 0.0
+                        FileImportStep.Copying, 1, 0.125
+                        FileImportStep.Copying, 4, 0.5
+                        FileImportStep.Publishing, 0, 0.5
+                        FileImportStep.Publishing, 1, 0.625
+                        FileImportStep.Publishing, 4, 1.0
+                    ] do
+                    let progress = (state FileImportPhase.Copying step completed 4).progress
+                    Vitest.expect(FileImportProgress.overallFraction progress).toBe expected
+        )
+
+        Vitest.test (
+            "keeps scanning and unknown item totals at the start of their step",
+            fun () ->
+                for step, expected in
+                    [
+                        FileImportStep.Scanning, 0.0
+                        FileImportStep.Copying, 0.0
+                        FileImportStep.Publishing, 0.5
+                    ] do
+                    let progress = (state FileImportPhase.Copying step 0 0).progress
+                    Vitest.expect(FileImportProgress.overallFraction progress).toBe expected
+        )
+
+        Vitest.test (
+            "shows the cancelling text first",
+            fun () ->
+                Vitest
+                    .expect(text (state FileImportPhase.Finalizing FileImportStep.Copying 1 2) true)
+                    .toBe ("Cancelling import...")
+        )
+
+        Vitest.test (
+            "shows the finalizing text once the phase is finalizing",
+            fun () ->
+                Vitest
+                    .expect(text (state FileImportPhase.Finalizing FileImportStep.Publishing 2 2) false)
+                    .toBe ("Finalizing import...")
+        )
+
+        Vitest.test (
+            "describes the scanning step",
+            fun () ->
+                Vitest
+                    .expect(text (state FileImportPhase.Copying FileImportStep.Scanning 0 0) false)
+                    .toBe ("Checking the selected items...")
+        )
+
+        Vitest.test (
+            "counts copied items",
+            fun () ->
+                Vitest
+                    .expect(text (state FileImportPhase.Copying FileImportStep.Copying 3 7) false)
+                    .toBe ("Copying 3 of 7 items...")
+        )
+
+        Vitest.test (
+            "counts items added to the ARC",
+            fun () ->
+                Vitest
+                    .expect(text (state FileImportPhase.Copying FileImportStep.Publishing 4 7) false)
+                    .toBe ("Adding 4 of 7 items to the ARC...")
+        )
+
+        Vitest.test (
+            "falls back to a generic text without a total",
+            fun () ->
+                Vitest
+                    .expect(text (state FileImportPhase.Copying FileImportStep.Copying 0 0) false)
+                    .toBe ("Importing...")
+        )
+
+        Vitest.test (
+            "the screen reader text has no numbers in any branch",
+            fun () ->
+                let texts = [|
+                    stepText (state FileImportPhase.Copying FileImportStep.Copying 3 7) true
+                    stepText (state FileImportPhase.Finalizing FileImportStep.Publishing 7 7) false
+                    stepText (state FileImportPhase.Copying FileImportStep.Scanning 0 0) false
+                    stepText (state FileImportPhase.Copying FileImportStep.Copying 3 7) false
+                    stepText (state FileImportPhase.Copying FileImportStep.Publishing 4 7) false
+                    stepText (state FileImportPhase.Copying FileImportStep.Copying 0 0) false
+                |]
+
+                Vitest
+                    .expect(texts)
+                    .toEqual (
+                        [|
+                            "Cancelling import..."
+                            "Finalizing import..."
+                            "Checking the selected items..."
+                            "Copying items..."
+                            "Adding items to the ARC..."
+                            "Importing..."
+                        |]
+                    )
+        )
+
+        Vitest.test (
+            "shows the progress bar only while copying or publishing with a known total",
+            fun () ->
+                Vitest.expect(showsBar (state FileImportPhase.Copying FileImportStep.Scanning 0 0) false).toBe (false)
+
+                Vitest
+                    .expect(showsBar (state FileImportPhase.Finalizing FileImportStep.Publishing 7 7) false)
+                    .toBe (false)
+
+                Vitest.expect(showsBar (state FileImportPhase.Copying FileImportStep.Copying 3 7) true).toBe (false)
+                Vitest.expect(showsBar (state FileImportPhase.Copying FileImportStep.Copying 0 0) false).toBe (false)
+                Vitest.expect(showsBar (state FileImportPhase.Copying FileImportStep.Copying 3 7) false).toBe (true)
+                Vitest.expect(showsBar (state FileImportPhase.Copying FileImportStep.Publishing 4 7) false).toBe (true)
         )
 )

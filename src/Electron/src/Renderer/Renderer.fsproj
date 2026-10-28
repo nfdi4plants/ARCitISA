@@ -55,6 +55,7 @@
     <Compile Include="Components\LeftSidebar\Git\Types.fs" />
     <Compile Include="Components\LeftSidebar\Git\GitSidebarEmptyState.fs" />
     <Compile Include="Components\LeftSidebar\Git\GitSidebarPanel.fs" />
+    <Compile Include="Components\LeftSidebar\FileImportStatus.fs" />
     <Compile Include="Components\LeftSidebar\Main.fs" />
     <Compile Include="Components\MainContent\Types.fs" />
     <Compile Include="Components\MainContent\SettingsPageTarget.fs" />

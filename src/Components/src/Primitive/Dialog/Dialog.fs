@@ -42,7 +42,7 @@ type Dialog =
             submit: string -> unit,
             validate: string -> Result<string, string>,
             submitLabel: string,
-            validationMessage: string,
+            ?validationMessage: string,
             ?isBusy: bool,
             ?busyLabel: string,
             ?debug: string
@@ -60,6 +60,12 @@ type Dialog =
 
         let validationResult = validate value
         let isValid = validationResult |> Result.isOk
+
+        // The validator's own error text wins, so the user sees why this input is rejected.
+        let shownValidationMessage =
+            match validationResult with
+            | Error errorText when not (System.String.IsNullOrWhiteSpace errorText) -> errorText
+            | _ -> defaultArg validationMessage ""
 
         let submitIfValid () =
             match validationResult with
@@ -108,7 +114,7 @@ type Dialog =
                     Html.p [
                         prop.hidden isValid
                         prop.className "swt:text-error swt:text-sm"
-                        prop.text validationMessage
+                        prop.text shownValidationMessage
                     ]
                 ]
             ]

@@ -6,3 +6,8 @@ type ArcVaultFileSystemEvent = {
     RelativePath: string
     AbsolutePath: string
 }
+
+type PlannedImportPaths = {
+    FolderPaths: string[]
+    FilePaths: string[]
+}

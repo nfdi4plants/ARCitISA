@@ -187,6 +187,250 @@ Vitest.describe (
             }
         )
 
+        // The claims do not depend on which paths the watcher reports, so the events are built directly.
+        let importedEvents (folderPaths: string[]) (filePaths: string[]) =
+            let eventsOf eventName (relativePaths: string[]) =
+                relativePaths
+                |> Array.map (fun relativePath ->
+                    WatcherHelpers.buildWatcherEvent "/arc" eventName $"assays/AssayA/dataset/{relativePath}"
+                )
+
+            Array.append (eventsOf "addDir" folderPaths) (eventsOf "add" filePaths)
+
+        // A completed import keeps its marks only while a watcher runs that can still report its paths.
+        let vaultWithRunningWatcher () =
+            let vault = ArcVault(TestHelpers.testWindow ())
+            vault.fileWatcherState <- FileWatcherState.Running
+            vault
+
+        let advanceSeconds (seconds: int) =
+            Vitest.vi.advanceTimersByTime (seconds * 1000) |> ignore
+
+        Vitest.test (
+            "a completed import keeps its marks while the watcher still reports its paths",
+            fun () ->
+                let vault = vaultWithRunningWatcher ()
+                let events = importedEvents [| "Run1" |] [| "Run1/notes.txt" |]
+                let fileEvent = events |> Array.find (fun e -> e.RelativePath.EndsWith "notes.txt")
+                let unrelatedEvent = (importedEvents [||] [| "Other/x.txt" |]).[0]
+
+                Vitest.vi.useFakeTimers () |> ignore
+
+                try
+                    let token = vault.StartImport()
+                    vault.ClaimImportedFileEvents(token, events)
+                    vault.ReleaseImportedFileEventsAfterImport(token, Ok ImportExternalFilesResult.Completed)
+
+                    for _ in 1..3 do
+                        advanceSeconds 20
+                        Vitest.expect(vault.IsImportedWatcherEvent fileEvent).toBe true
+                        Vitest.expect(vault.IsImportedWatcherEvent unrelatedEvent).toBe false
+
+                    advanceSeconds 30
+                    Vitest.expect(vault.IsImportedWatcherEvent fileEvent).toBe false
+                finally
+                    Vitest.vi.useRealTimers () |> ignore
+        )
+
+        Vitest.test (
+            "a completed import releases its marks after the quiet time, and at the latest after the maximum time",
+            fun () ->
+                let events = importedEvents [||] [| "Run1/notes.txt" |]
+
+                Vitest.vi.useFakeTimers () |> ignore
+
+                try
+                    let quietVault = vaultWithRunningWatcher ()
+                    let quietToken = quietVault.StartImport()
+                    quietVault.ClaimImportedFileEvents(quietToken, events)
+
+                    quietVault.ReleaseImportedFileEventsAfterImport(quietToken, Ok ImportExternalFilesResult.Completed)
+
+                    advanceSeconds 30
+                    Vitest.expect(quietVault.IsImportedWatcherEvent events.[0]).toBe false
+
+                    let busyVault = vaultWithRunningWatcher ()
+                    let busyToken = busyVault.StartImport()
+                    busyVault.ClaimImportedFileEvents(busyToken, events)
+
+                    busyVault.ReleaseImportedFileEventsAfterImport(busyToken, Ok ImportExternalFilesResult.Completed)
+
+                    for _ in 1..14 do
+                        advanceSeconds 20
+                        Vitest.expect(busyVault.IsImportedWatcherEvent events.[0]).toBe true
+
+                    advanceSeconds 20
+                    Vitest.expect(busyVault.IsImportedWatcherEvent events.[0]).toBe false
+                finally
+                    Vitest.vi.useRealTimers () |> ignore
+        )
+
+        Vitest.test (
+            "an import never releases the marks of a later import of the same path",
+            fun () ->
+                let vault = vaultWithRunningWatcher ()
+                let events = importedEvents [||] [| "Run1/notes.txt" |]
+
+                Vitest.vi.useFakeTimers () |> ignore
+
+                try
+                    let first = vault.StartImport()
+                    vault.ClaimImportedFileEvents(first, events)
+                    vault.ReleaseImportedFileEventsAfterImport(first, Ok ImportExternalFilesResult.Completed)
+
+                    let second = vault.StartImport()
+                    vault.ClaimImportedFileEvents(second, events)
+
+                    advanceSeconds 31
+                    Vitest.vi.runAllTimers () |> ignore
+                    Vitest.expect(vault.IsImportedWatcherEvent events.[0]).toBe true
+
+                    vault.ReleaseImportedFileEventsAfterImport(second, Error(exn "Import failed"))
+                    Vitest.expect(vault.IsImportedWatcherEvent events.[0]).toBe false
+                finally
+                    Vitest.vi.useRealTimers () |> ignore
+        )
+
+        Vitest.test (
+            "a cancelled or failed import releases its marks at once",
+            fun () ->
+                let events = importedEvents [||] [| "Run1/notes.txt" |]
+
+                for result in
+                    [
+                        Ok ImportExternalFilesResult.Cancelled
+                        Error(exn "Import failed")
+                    ] do
+                    let vault = vaultWithRunningWatcher ()
+                    let token = vault.StartImport()
+                    vault.ClaimImportedFileEvents(token, events)
+                    vault.ReleaseImportedFileEventsAfterImport(token, result)
+                    Vitest.expect(vault.IsImportedWatcherEvent events.[0]).toBe false
+        )
+
+        Vitest.test (
+            "only creation events of a marked path count as imported",
+            fun () ->
+                let events = importedEvents [||] [| "Run1/notes.txt" |]
+                let vault = vaultWithRunningWatcher ()
+                vault.ClaimImportedFileEvents(vault.StartImport(), events)
+
+                Vitest.expect(vault.IsImportedWatcherEvent { events.[0] with EventName = "change" }).toBe false
+                Vitest.expect(vault.IsImportedWatcherEvent events.[0]).toBe true
+                Vitest.expect(vault.IsImportedWatcherEvent { events.[0] with EventName = "unlink" }).toBe false
+        )
+
+        Vitest.test (
+            "a deletion releases the mark of its path, so a recreated file merges",
+            fun () ->
+                let vault = vaultWithRunningWatcher ()
+
+                let events =
+                    importedEvents [| "Run1" |] [| "Run1/isa.assay.xlsx"; "Run1/notes.txt" |]
+
+                let find (name: string) =
+                    events |> Array.find (fun e -> e.RelativePath.EndsWith name)
+
+                let folderEvent = find "Run1"
+                let structureEvent = find "isa.assay.xlsx"
+                let notesEvent = find "notes.txt"
+
+                let unlinkEvent =
+                    WatcherHelpers.buildWatcherEvent "/arc" "unlink" "assays/AssayA/dataset/Run1/isa.assay.xlsx"
+
+                Vitest.vi.useFakeTimers () |> ignore
+
+                try
+                    let token = vault.StartImport()
+                    vault.ClaimImportedFileEvents(token, events)
+                    vault.ReleaseImportedFileEventsAfterImport(token, Ok ImportExternalFilesResult.Completed)
+
+                    Vitest.expect(vault.IsImportedWatcherEvent unlinkEvent).toBe false
+                    Vitest.expect(vault.IsImportedWatcherEvent structureEvent).toBe false
+                    Vitest.expect(vault.IsImportedWatcherEvent notesEvent).toBe true
+                    Vitest.expect(vault.IsImportedWatcherEvent folderEvent).toBe true
+                finally
+                    Vitest.vi.useRealTimers () |> ignore
+        )
+
+        Vitest.test (
+            "a folder deletion releases the marks of the folder and everything below it",
+            fun () ->
+                let vault = vaultWithRunningWatcher ()
+
+                let events =
+                    importedEvents [| "Run1" |] [| "Run1/isa.assay.xlsx"; "Run1/notes.txt" |]
+
+                // "Run10" shares the "Run1" prefix but lies outside the deleted folder.
+                let otherEvent = (importedEvents [||] [| "Run10/isa.assay.xlsx" |]).[0]
+
+                let unlinkDirEvent =
+                    WatcherHelpers.buildWatcherEvent "/arc" "unlinkDir" "assays/AssayA/dataset/Run1"
+
+                Vitest.vi.useFakeTimers () |> ignore
+
+                try
+                    let token = vault.StartImport()
+                    vault.ClaimImportedFileEvents(token, events)
+                    vault.ReleaseImportedFileEventsAfterImport(token, Ok ImportExternalFilesResult.Completed)
+
+                    let otherToken = vault.StartImport()
+                    vault.ClaimImportedFileEvents(otherToken, [| otherEvent |])
+
+                    Vitest.expect(vault.IsImportedWatcherEvent unlinkDirEvent).toBe false
+
+                    for event in events do
+                        Vitest.expect(vault.IsImportedWatcherEvent event).toBe false
+
+                    Vitest.expect(vault.IsImportedWatcherEvent otherEvent).toBe true
+                finally
+                    Vitest.vi.useRealTimers () |> ignore
+        )
+
+        Vitest.test (
+            "a completed import's timer removes its marks without any watcher event",
+            fun () ->
+                let vault = vaultWithRunningWatcher ()
+                let events = importedEvents [||] [| "Run1/notes.txt" |]
+
+                Vitest.vi.useFakeTimers () |> ignore
+
+                try
+                    let token = vault.StartImport()
+                    vault.ClaimImportedFileEvents(token, events)
+                    vault.ReleaseImportedFileEventsAfterImport(token, Ok ImportExternalFilesResult.Completed)
+
+                    advanceSeconds 31
+                    Vitest.expect(vault.importedPathOwners.Count).toBe 0
+                    Vitest.expect(vault.importedPathLeases.Count).toBe 0
+                finally
+                    Vitest.vi.useRealTimers () |> ignore
+        )
+
+        Vitest.test (
+            "clearing the watcher state drops the marks of a completed import",
+            fun () ->
+                let vault = vaultWithRunningWatcher ()
+                let events = importedEvents [||] [| "Run1/notes.txt" |]
+
+                Vitest.vi.useFakeTimers () |> ignore
+
+                try
+                    let token = vault.StartImport()
+                    vault.ClaimImportedFileEvents(token, events)
+                    vault.ReleaseImportedFileEventsAfterImport(token, Ok ImportExternalFilesResult.Completed)
+
+                    vault.ClearPendingFileWatcherState()
+                    Vitest.expect(vault.importedPathOwners.Count).toBe 0
+                    Vitest.expect(vault.importedPathLeases.Count).toBe 0
+
+                    advanceSeconds 301
+                    Vitest.expect(vault.importedPathOwners.Count).toBe 0
+                    Vitest.expect(vault.importedPathLeases.Count).toBe 0
+                finally
+                    Vitest.vi.useRealTimers () |> ignore
+        )
+
         Vitest.test (
             "active import cancellation waits for import cleanup to finish",
             fun () -> promise {
@@ -254,6 +498,11 @@ Vitest.describe (
                         Some {
                             requestId = "coordinated-import"
                             phase = FileImportPhase.Copying
+                            progress = {
+                                step = FileImportStep.Scanning
+                                completedItems = 0
+                                totalItems = 0
+                            }
                         }
                     )
 
@@ -1347,6 +1596,45 @@ Vitest.describe (
         )
 
         Vitest.test (
+            "a watcher event for an ARC structure file an import created does not queue an ARC merge",
+            fun () ->
+                withTempArc
+                    ignore
+                    (fun arcPath -> promise {
+                        let! loadedArc = TestHelpers.loadArcAsync arcPath
+                        let vault = ArcVault(TestHelpers.testWindow ())
+                        vault.path <- Some arcPath
+                        vault.SetArc loadedArc
+
+                        vault.ClaimImportedFileEvents(
+                            vault.StartImport(),
+                            WatcherHelpers.createImportedWatcherEvents arcPath "assays" {
+                                FolderPaths = [| "AssayB" |]
+                                FilePaths = [| "AssayB/isa.assay.xlsx" |]
+                            }
+                        )
+
+                        let loadingChanges = ResizeArray<bool>()
+
+                        let handleFileEvent =
+                            vault._FileEventController (recordingWatcherApi loadingChanges)
+
+                        try
+                            handleFileEvent "addDir" (join [| arcPath; "assays/AssayB" |])
+                            handleFileEvent "add" (join [| arcPath; "assays/AssayB/isa.assay.xlsx" |])
+
+                            Vitest.expect(vault.fileWatcherPendingArcMergeEvents.Count).toBe (0)
+                            Vitest.expect(vault.fileWatcherPendingEvents.Count).toBe (2)
+
+                            handleFileEvent "add" (join [| arcPath; "assays/AssayC/isa.assay.xlsx" |])
+
+                            Vitest.expect(vault.fileWatcherPendingArcMergeEvents.Count).toBe (1)
+                        finally
+                            vault.ClearPendingFileWatcherState()
+                    })
+        )
+
+        Vitest.test (
             "a tree unlink for a path that exists again keeps the entry",
             fun () ->
                 withTempArc
@@ -1522,7 +1810,6 @@ Vitest.describe (
                         Vitest.expect((vault.FileTreeWriter.Tree.TryFind(filePath)).IsSome).toBe (false)
                     })
         )
-
 )
 
 let private lifecycleTestWindow id isDestroyed onSend =
@@ -3987,6 +4274,11 @@ Vitest.describe (
                         State = {
                             requestId = "failed-rollback"
                             phase = FileImportPhase.Copying
+                            progress = {
+                                step = FileImportStep.Scanning
+                                completedItems = 0
+                                totalItems = 0
+                            }
                         }
                         AbortController = abortController
                         Completion = JS.Constructors.Promise.resolve (Error(exn "EPERM during rollback"))
@@ -4882,5 +5174,490 @@ Vitest.describe (
             fun () ->
                 Vitest.expect(renameRetryDelaysMs "win32").toEqual [| 0; 100; 300; 1000; 2000; 4000 |]
                 Vitest.expect(renameRetryDelaysMs "linux").toEqual [| 0; 75; 200; 500 |]
+        )
+)
+
+Vitest.describe (
+    "File import progress publisher",
+    fun () ->
+        let importAt step completed total : FileImportProgress = {
+            step = step
+            completedItems = completed
+            totalItems = total
+        }
+
+        let withFakeTimers (body: ResizeArray<int> -> FileImportCoordinator.ThrottledProgressPublisher -> unit) =
+            Vitest.vi.useFakeTimers () |> ignore
+
+            try
+                let published = ResizeArray<int>()
+
+                let publisher =
+                    FileImportCoordinator.createThrottledProgressPublisher
+                        100
+                        (fun progress -> published.Add progress.completedItems)
+
+                body published publisher
+            finally
+                Vitest.vi.useRealTimers () |> ignore
+
+        Vitest.test (
+            "publishes the first report of a burst at once and the latest one after the interval",
+            fun () ->
+                withFakeTimers (fun published publisher ->
+                    publisher.Report(importAt FileImportStep.Copying 1 100)
+                    publisher.Report(importAt FileImportStep.Copying 2 100)
+                    publisher.Report(importAt FileImportStep.Copying 3 100)
+                    Vitest.expect(published.ToArray() |> Array.map string).toEqual ([| 1 |] |> Array.map string)
+                    Vitest.vi.advanceTimersByTime 100 |> ignore
+                    Vitest.expect(published.ToArray() |> Array.map string).toEqual ([| 1; 3 |] |> Array.map string)
+                    Vitest.vi.advanceTimersByTime 500 |> ignore
+                    Vitest.expect(published.ToArray() |> Array.map string).toEqual ([| 1; 3 |] |> Array.map string)
+                )
+        )
+
+        Vitest.test (
+            "publishes a step change at once",
+            fun () ->
+                withFakeTimers (fun published publisher ->
+                    publisher.Report(importAt FileImportStep.Copying 1 100)
+                    publisher.Report(importAt FileImportStep.Publishing 2 100)
+                    Vitest.expect(published.ToArray() |> Array.map string).toEqual ([| 1; 2 |] |> Array.map string)
+                )
+        )
+
+        Vitest.test (
+            "publishes a finished step at once and replaces the pending report",
+            fun () ->
+                withFakeTimers (fun published publisher ->
+                    publisher.Report(importAt FileImportStep.Copying 1 100)
+                    publisher.Report(importAt FileImportStep.Copying 2 100)
+                    publisher.Report(importAt FileImportStep.Copying 100 100)
+                    Vitest.expect(published.ToArray() |> Array.map string).toEqual ([| 1; 100 |] |> Array.map string)
+                    Vitest.vi.advanceTimersByTime 500 |> ignore
+                    Vitest.expect(published.ToArray() |> Array.map string).toEqual ([| 1; 100 |] |> Array.map string)
+                )
+        )
+
+        Vitest.test (
+            "drops a pending publish after Stop",
+            fun () ->
+                withFakeTimers (fun published publisher ->
+                    publisher.Report(importAt FileImportStep.Copying 1 100)
+                    publisher.Report(importAt FileImportStep.Copying 2 100)
+                    publisher.Stop()
+                    Vitest.vi.advanceTimersByTime 500 |> ignore
+                    Vitest.expect(published.ToArray() |> Array.map string).toEqual ([| 1 |] |> Array.map string)
+                )
+        )
+)
+
+let private importWindowId = ref 9000
+let private importTarget = "assays/AssayA/dataset"
+
+/// Registers a loaded vault whose window records its messages, with the source folder Run1 next to the ARC.
+/// The optional extra file is written into Run1.
+let private withImportVault
+    (extraFile: (string * string) option)
+    (testBody: ArcVault -> IArcVaultsApi -> TestWindowState -> string -> string -> JS.Promise<unit>)
+    =
+    withTempArc
+        ignore
+        (fun arcPath -> promise {
+            importWindowId.Value <- importWindowId.Value + 1
+            let windowId = importWindowId.Value
+            let windowState = createTestWindow (testWindowOptions windowId)
+            windowState.Window?setProgressBar <- emitJsExpr () "((..._args) => {})"
+
+            let sourcePath = join [| dirname arcPath; "external"; "Run1" |]
+            do! mkdirWatcherDirectoryAsync (join [| sourcePath; "raw" |])
+            do! mkdirWatcherDirectoryAsync (join [| arcPath; importTarget |])
+            do! writeWatcherTextFileAsync (join [| sourcePath; "notes.txt" |]) "run notes"
+            do! writeWatcherTextFileAsync (join [| sourcePath; "raw"; "results.csv" |]) "a,b"
+
+            match extraFile with
+            | Some(relativePath, content) ->
+                do! writeWatcherTextFileAsync (join [| sourcePath; relativePath |]) content
+            | None -> ()
+
+            let! loadedArc = TestHelpers.loadArcAsync arcPath
+            let vault = ArcVault(windowState.Window)
+            vault.path <- Some arcPath
+            vault.SetArc loadedArc
+            ARC_VAULTS.Vaults.Add(windowId, vault)
+            setBrowserWindowFromWebContents (fun _ -> windowState.Window :> obj)
+            setShowOpenDialog (fun _ _ -> createObj [ "canceled" ==> false; "filePaths" ==> [| sourcePath |] ])
+
+            let cleanup () = promise {
+                ARC_VAULTS.Vaults.Remove(windowId) |> ignore
+                vault.ClearPendingFileWatcherState()
+                resetElectronMock ()
+            }
+
+            let api = Main.IPC.ArcVaultsApi.api (ipcEventWithSenderId windowId)
+
+            return! withAsyncCleanup cleanup (fun () -> testBody vault api windowState arcPath sourcePath)
+        })
+
+let private pickAndImport (api: IArcVaultsApi) requestId = promise {
+    match! api.pickAbsolutePaths FileSystemItemKind.Folder with
+    | Ok(Some authorizationId) ->
+        return!
+            api.tryImportExternalFiles {
+                requestId = requestId
+                targetRelativePath = importTarget
+                authorizationId = authorizationId
+            }
+    | other -> return failwithf "Expected an authorization, received %A." other
+}
+
+let private importStatesOf (windowState: TestWindowState) =
+    windowState.SentMessages
+    |> Seq.filter (fun args -> args.Length > 0 && (string args.[0]).Contains("fileImportStateUpdate"))
+    |> Seq.map (fun args ->
+        if args.Length < 2 || isNull args.[1] then
+            None
+        else
+            Some(unbox<ActiveFileImportState> args.[1])
+    )
+    |> Seq.toArray
+
+Vitest.describe (
+    "File import IPC",
+    fun () ->
+        Vitest.afterEach (fun () -> resetElectronMock ())
+
+        Vitest.test (
+            "the import dialog picks folders for Import folders and files for Import files",
+            fun () -> promise {
+                let windowId = 9100
+                let window = (createTestWindow (testWindowOptions windowId)).Window
+                let optionsByCall = ResizeArray<string[]>()
+
+                setBrowserWindowFromWebContents (fun _ -> window :> obj)
+
+                setShowOpenDialog (fun _ options ->
+                    optionsByCall.Add(unbox<string[]> options?properties)
+                    createObj [ "canceled" ==> false; "filePaths" ==> [| "C:/picked" |] ]
+                )
+
+                let api = Main.IPC.ArcVaultsApi.api (ipcEventWithSenderId windowId)
+
+                for kind, expectedProperty in
+                    [
+                        FileSystemItemKind.Folder, "openDirectory"
+                        FileSystemItemKind.File, "openFile"
+                    ] do
+                    match! api.pickAbsolutePaths kind with
+                    | Ok(Some authorizationId) -> Vitest.expect(authorizationId.Length).toBeGreaterThan 0
+                    | other -> failwithf "Expected an authorization, received %A." other
+
+                    let properties = optionsByCall.[optionsByCall.Count - 1]
+                    Vitest.expect(properties).toContain expectedProperty
+                    Vitest.expect(properties).toContain "multiSelections"
+
+                Vitest.expect(optionsByCall.Count).toBe 2
+            }
+        )
+
+        Vitest.test (
+            "does not open the import dialog while the vault is busy",
+            fun () ->
+                withImportVault
+                    None
+                    (fun vault api _ _ _ -> promise {
+                        let dialogCalls = ref 0
+
+                        setShowOpenDialog (fun _ _ ->
+                            dialogCalls.Value <- dialogCalls.Value + 1
+                            createObj [ "canceled" ==> true; "filePaths" ==> [||] ]
+                        )
+
+                        let releaseBusy = ref ignore
+
+                        let busyGate =
+                            JS.Constructors.Promise.Create(fun resolve _ -> releaseBusy.Value <- fun () -> resolve ())
+
+                        let busyScope = vault.WithBusyWritingScope(fun () -> busyGate)
+
+                        match! api.pickAbsolutePaths FileSystemItemKind.Folder with
+                        | Error error ->
+                            Vitest
+                                .expect(error.Message)
+                                .toBe (
+                                    "ARCitISA is still saving another change or importing. Try again when it is done."
+                                )
+                        | other -> failwithf "Expected the busy error, received %A." other
+
+                        Vitest.expect(dialogCalls.Value).toBe 0
+
+                        releaseBusy.Value()
+                        do! busyScope
+                    })
+        )
+
+        Vitest.test (
+            // A backend contract. The renderer does not retry an import with the same pick today.
+            "keeps the pick when the import is refused while busy",
+            fun () ->
+                withImportVault
+                    None
+                    (fun vault api _ arcPath _ -> promise {
+                        match! api.pickAbsolutePaths FileSystemItemKind.Folder with
+                        | Ok(Some authorizationId) ->
+                            let request = {
+                                requestId = "import-busy"
+                                targetRelativePath = importTarget
+                                authorizationId = authorizationId
+                            }
+
+                            let releaseBusy = ref ignore
+
+                            let busyGate =
+                                JS.Constructors.Promise.Create(fun resolve _ ->
+                                    releaseBusy.Value <- fun () -> resolve ()
+                                )
+
+                            let busyScope = vault.WithBusyWritingScope(fun () -> busyGate)
+
+                            match! api.tryImportExternalFiles request with
+                            | Error error -> Vitest.expect(error.Message).toContain ("still saving another change")
+                            | other -> failwithf "Expected the busy error, received %A." other
+
+                            releaseBusy.Value()
+                            do! busyScope
+
+                            match! api.tryImportExternalFiles request with
+                            | Ok ImportExternalFilesResult.Completed -> ()
+                            | other -> failwithf "Expected Completed, received %A." other
+
+                            let! notes =
+                                ARCtrl.FileSystemHelper.readFileTextAsync (
+                                    join [| arcPath; importTarget; "Run1"; "notes.txt" |]
+                                )
+
+                            Vitest.expect(notes).toBe "run notes"
+                        | other -> failwithf "Expected an authorization, received %A." other
+                    })
+        )
+
+        Vitest.test (
+            "throttles taskbar progress with renderer progress and clears it when the import completes",
+            fun () ->
+                withImportVault
+                    None
+                    (fun _ api windowState _ _ -> promise {
+                        let taskbarProgress = ResizeArray<float>()
+
+                        windowState.Window?setProgressBar <-
+                            (fun (value: float) (_options: obj) -> taskbarProgress.Add value)
+
+                        Vitest.vi.useFakeTimers (
+                            {|
+                                toFake = [| "setTimeout"; "clearTimeout"; "performance" |]
+                            |}
+                        )
+                        |> ignore
+
+                        try
+                            match! pickAndImport api "import-taskbar" with
+                            | Ok ImportExternalFilesResult.Completed -> ()
+                            | other -> failwithf "Expected Completed, received %A." other
+
+                            // Scanning, the start and finish of both steps, then the reset. Intermediate
+                            // per-item reports share the renderer's throttle and never reach the taskbar.
+                            Vitest
+                                .expect(taskbarProgress.ToArray() |> Array.map string)
+                                .toEqual ([| 0.0; 0.0; 0.5; 0.5; 1.0; -1.0 |] |> Array.map string)
+
+                            let progressStates =
+                                importStatesOf windowState
+                                |> Array.choose id
+                                |> Array.filter (fun state -> state.phase = FileImportPhase.Copying)
+                                |> Array.distinctBy _.progress
+
+                            Vitest.expect(progressStates.Length).toBe 5
+                            Vitest.expect(progressStates.[0].progress.step).toEqual FileImportStep.Scanning
+
+                            Vitest.vi.advanceTimersByTime 1000 |> ignore
+                            Vitest.expect(taskbarProgress.Count).toBe 6
+                        finally
+                            Vitest.vi.useRealTimers () |> ignore
+                    })
+        )
+
+        Vitest.test (
+            "imports a picked folder through the IPC handler and reconciles its target folder",
+            fun () ->
+                withImportVault
+                    None
+                    (fun vault api windowState arcPath _ -> promise {
+                        do! vault.EnqueueFileTreeScan()
+
+                        match! vault.LoadDirectory importTarget with
+                        | Ok _ -> ()
+                        | Error error -> failwith error.Message
+
+                        let sentBeforeImport = windowState.SentMessages.Count
+
+                        match! pickAndImport api "import-1" with
+                        | Ok ImportExternalFilesResult.Completed -> ()
+                        | other -> failwithf "Expected Completed, received %A." other
+
+                        let targetPath = join [| arcPath; importTarget; "Run1" |]
+                        let! notes = ARCtrl.FileSystemHelper.readFileTextAsync (join [| targetPath; "notes.txt" |])
+
+                        let! results =
+                            ARCtrl.FileSystemHelper.readFileTextAsync (join [| targetPath; "raw"; "results.csv" |])
+
+                        Vitest.expect(notes).toBe "run notes"
+                        Vitest.expect(results).toBe "a,b"
+                        Vitest.expect(vault.activeFileImport.IsNone).toBe true
+
+                        let importedFolder = join [| arcPath; importTarget; "Run1" |]
+                        Vitest.expect(vault.FileTreeWriter.Tree.TryFind(importedFolder).IsSome).toBe true
+
+                        let stagingLeftovers =
+                            readdirSync (join [| arcPath; importTarget |])
+                            |> Array.filter _.StartsWith(".swate-import-")
+
+                        Vitest.expect(stagingLeftovers).toEqual [||]
+
+                        let sentMessages =
+                            windowState.SentMessages |> Seq.skip sentBeforeImport |> Seq.toArray
+
+                        let treeMessageIndex =
+                            sentMessages
+                            |> Array.tryFindIndex (fun args ->
+                                args.Length > 0 && (string args.[0]).Contains("fileTreeDirectoryUpdate")
+                            )
+
+                        let finalStateIndex =
+                            sentMessages
+                            |> Array.findIndexBack (fun args ->
+                                args.Length > 0 && (string args.[0]).Contains("fileImportStateUpdate")
+                            )
+
+                        Vitest.expect(treeMessageIndex.IsSome).toBe true
+                        Vitest.expect(treeMessageIndex.Value < finalStateIndex).toBe true
+
+                        // Without a running watcher no delayed event will come, so a completed import keeps no marks.
+                        Vitest.expect(vault.importedPathOwners.Count).toBe 0
+                        Vitest.expect(vault.importedPathLeases.Count).toBe 0
+
+                        let states = importStatesOf windowState
+                        Vitest.expect(states.[states.Length - 1].IsNone).toBe true
+
+                        let copyingSteps =
+                            states
+                            |> Array.choose id
+                            |> Array.filter (fun s -> s.phase = FileImportPhase.Copying)
+                            |> Array.map (fun s -> s.progress.step)
+                            |> Array.distinct
+
+                        Vitest
+                            .expect(copyingSteps |> Array.map string)
+                            .toEqual (
+                                [|
+                                    FileImportStep.Scanning
+                                    FileImportStep.Copying
+                                    FileImportStep.Publishing
+                                |]
+                                |> Array.map string
+                            )
+
+                        let finalizingIndex =
+                            states
+                            |> Array.findIndex (fun s ->
+                                s |> Option.exists (fun state -> state.phase = FileImportPhase.Finalizing)
+                            )
+
+                        Vitest.expect(finalizingIndex).toBe (states.Length - 2)
+                    })
+        )
+
+        Vitest.test (
+            "deletes imported README, attributes and generated markers through IPC and updates the tree",
+            fun () ->
+                withImportVault
+                    (Some("README.md", "imported documentation"))
+                    (fun vault api _ arcPath sourcePath -> promise {
+                        do! mkdirWatcherDirectoryAsync (join [| sourcePath; "empty" |])
+                        do! writeWatcherTextFileAsync (join [| sourcePath; ".gitattributes" |]) "*.bin filter=lfs"
+                        do! vault.EnqueueFileTreeScan()
+
+                        match! vault.LoadDirectory importTarget with
+                        | Ok _ -> ()
+                        | Error error -> failwith error.Message
+
+                        match! pickAndImport api "import-delete" with
+                        | Ok ImportExternalFilesResult.Completed -> ()
+                        | other -> failwithf "Expected Completed, received %A." other
+
+                        let importedRoot = $"{importTarget}/Run1"
+
+                        for directory in [ importedRoot; $"{importedRoot}/empty" ] do
+                            match! vault.LoadDirectory directory with
+                            | Ok _ -> ()
+                            | Error error -> failwith error.Message
+
+                        for relativePath in
+                            [
+                                $"{importedRoot}/README.md"
+                                $"{importedRoot}/.gitattributes"
+                                $"{importedRoot}/empty/.gitkeep"
+                            ] do
+                            let absolutePath = join [| arcPath; relativePath |]
+                            Vitest.expect(vault.FileTreeWriter.Tree.TryFind(absolutePath).IsSome).toBe true
+
+                            match! api.deletePath relativePath with
+                            | Ok() -> ()
+                            | Error error -> failwith error.Message
+
+                            let! exists = TestHelpers.pathExistsAsync absolutePath
+                            Vitest.expect(exists).toBe false
+                            Vitest.expect(vault.FileTreeWriter.Tree.TryFind(absolutePath).IsNone).toBe true
+
+                        let! notes =
+                            ARCtrl.FileSystemHelper.readFileTextAsync (join [| arcPath; importedRoot; "notes.txt" |])
+
+                        Vitest.expect(notes).toBe "run notes"
+                    })
+        )
+
+        Vitest.test (
+            "releases the import's marks at once when the import fails",
+            fun () ->
+                withImportVault
+                    None
+                    (fun vault api windowState arcPath sourcePath -> promise {
+                        let leaseCountDuringImport = ref -1
+
+                        // The first Normal-mode progress call is the Copying step, after the paths are planned and
+                        // claimed. Removing a source file there makes the staging copy fail.
+                        windowState.Window?setProgressBar <-
+                            (fun (_: float) (options: obj) ->
+                                if leaseCountDuringImport.Value < 0 && string options?mode = "normal" then
+                                    leaseCountDuringImport.Value <- vault.importedPathLeases.Count
+                                    unlinkSync (join [| sourcePath; "raw"; "results.csv" |])
+                            )
+
+                        match! pickAndImport api "import-2" with
+                        | Error _ -> ()
+                        | other -> failwithf "Expected an error, received %A." other
+
+                        Vitest.expect(leaseCountDuringImport.Value).toBe 1
+
+                        let! written = TestHelpers.pathExistsAsync (join [| arcPath; importTarget; "Run1" |])
+                        Vitest.expect(written).toBe false
+
+                        Vitest
+                            .expect(vault.FileTreeWriter.Tree.TryFind(join [| arcPath; importTarget; "Run1" |]).IsSome)
+                            .toBe
+                            false
+
+                        Vitest.expect(vault.importedPathOwners.Count).toBe 0
+                        Vitest.expect(vault.importedPathLeases.Count).toBe 0
+                    })
         )
 )
