@@ -527,7 +527,10 @@ type FileTree =
 
         let importExternalFiles (targetRelativePath: string) = promise {
             let! result = fileStateCtx.importExternalFiles targetRelativePath
-            importRevealPath result targetRelativePath |> Option.iter expansionCtx.revealPath
+
+            importRevealPath result targetRelativePath
+            |> Option.iter expansionCtx.revealPath
+
             return result |> Result.map ignore
         }
 
