@@ -229,7 +229,7 @@ let private LeftActionButtons (leftSidebarTarget: LeftSidebarPage) setLeftSideba
             Divider
 
             Layout.LayoutBtn(
-                iconClassName = "swt:fluent--home-24-regular",
+                iconClassName = "swt:fluent--text-bullet-list-tree-24-regular",
                 tooltip = "File explorer",
                 isActive = (leftSidebarTarget = LeftSidebarPage.FileExplorer),
                 onClick = fun () -> toggleTarget LeftSidebarPage.FileExplorer
