@@ -794,6 +794,43 @@ let private withCreateArcSetup
             WorkspaceSessionHost.resetForTests ()
     }
 
+/// Runs the body against the version control api of a window whose session offers the given batch service.
+let private withBatchApi
+    (windowId: int)
+    (service: ObjectBatchMaterializationService option)
+    (body: IVersionControlApi -> JS.Promise<unit>)
+    =
+    promise {
+        let! root = createTempDirectoryAsync "swate-vc-batch-api-"
+        let workspace = join [| root; "workspace" |]
+        Main.Bindings.Filesystem.mkdirSync workspace (Main.Bindings.Filesystem.MkdirOptions(recursive = true))
+
+        let runtime =
+            fakeProviderRuntimeWithStoragePolicy workspace (join [| root; "unused" |]) None None service
+
+        let host = WorkspaceSessionHost.WorkspaceSessionHost(runtime)
+        WorkspaceSessionHost.initialize host
+        registerVault windowId workspace |> ignore
+
+        let cleanup () = promise {
+            electronMock?reset () |> ignore
+            ARC_VAULTS.Vaults.Clear()
+            do! host.CloseAll() |> Async.StartAsPromise
+            do! removeDirectoryAsync root
+        }
+
+        try
+            try
+                do! body (Main.IPC.IVersionControlApi.api (ipcEvent windowId))
+            with error ->
+                do! cleanup ()
+                return raise error
+
+            do! cleanup ()
+        finally
+            WorkspaceSessionHost.resetForTests ()
+    }
+
 Vitest.describe (
     "Version control IPC over a git vault",
     fun () ->
@@ -1001,6 +1038,112 @@ Vitest.describe (
                 finally
                     WorkspaceSessionHost.resetForTests ()
             }
+        )
+
+        Vitest.test (
+            "batch dematerialization hands every path to the session and returns its result",
+            fun () ->
+                let received = ResizeArray<string>()
+
+                let batchFailure =
+                    OperationFailure.create ProviderError "fake_dematerialize_failed" "The fake free failed."
+                    |> OperationFailure.withDetails [| "a.bin: busy" |]
+
+                let service: ObjectBatchMaterializationService = {
+                    Materialize = fun _ _ -> async { return OperationResult.succeeded () }
+                    Dematerialize =
+                        fun paths _ -> async {
+                            received.AddRange(paths |> Array.map RepositoryPath.value)
+                            return Failed batchFailure
+                        }
+                }
+
+                withBatchApi
+                    94
+                    (Some service)
+                    (fun api -> promise {
+                        let! result =
+                            api.dematerializeObjects {
+                                OperationId = "dematerialize-objects"
+                                Paths = [| "a.bin"; "data/b.bin" |]
+                            }
+
+                        let failure = expectDtoFailure "batch dematerialization" result
+                        Vitest.expect(received.ToArray()).toEqual [| "a.bin"; "data/b.bin" |]
+                        Vitest.expect(failure.Code).toBe "fake_dematerialize_failed"
+                        Vitest.expect(failure.Details).toEqual [| "a.bin: busy" |]
+                    })
+        )
+
+        Vitest.test (
+            "a batch with an invalid path is refused before the provider is called",
+            fun () ->
+                let mutable calls = 0
+
+                let service: ObjectBatchMaterializationService = {
+                    Materialize =
+                        fun _ _ -> async {
+                            calls <- calls + 1
+                            return OperationResult.succeeded ()
+                        }
+                    Dematerialize =
+                        fun _ _ -> async {
+                            calls <- calls + 1
+                            return OperationResult.succeeded ()
+                        }
+                }
+
+                withBatchApi
+                    95
+                    (Some service)
+                    (fun api -> promise {
+                        let paths = [| "ok.bin"; "../first.bin"; "../second.bin" |]
+
+                        let! materialize =
+                            api.materializeObjects {
+                                OperationId = "materialize-invalid-path"
+                                Paths = paths
+                            }
+
+                        let! dematerialize =
+                            api.dematerializeObjects {
+                                OperationId = "dematerialize-invalid-path"
+                                Paths = paths
+                            }
+
+                        for result in [ materialize; dematerialize ] do
+                            let failure = expectDtoFailure "batch with an invalid path" result
+                            Vitest.expect(failure.Code).toBe VersionControlCodes.InvalidPath
+                            Vitest.expect(failure.AffectedPaths).toEqual [| "../first.bin" |]
+
+                        Vitest.expect(calls).toBe 0
+                    })
+        )
+
+        Vitest.test (
+            "a session without the batch service answers service_unavailable",
+            fun () ->
+                withBatchApi
+                    96
+                    None
+                    (fun api -> promise {
+                        let! materialize =
+                            api.materializeObjects {
+                                OperationId = "materialize-without-service"
+                                Paths = [| "a.bin" |]
+                            }
+
+                        let! dematerialize =
+                            api.dematerializeObjects {
+                                OperationId = "dematerialize-without-service"
+                                Paths = [| "a.bin" |]
+                            }
+
+                        for result in [ materialize; dematerialize ] do
+                            let failure = expectDtoFailure "batch without the service" result
+                            Vitest.expect(failure.Category).toEqual FailureCategoryDto.Unsupported
+                            Vitest.expect(failure.Code).toBe VersionControlCodes.ServiceUnavailable
+                    })
         )
 
         Vitest.test (

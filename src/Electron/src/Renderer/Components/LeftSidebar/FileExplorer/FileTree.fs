@@ -114,20 +114,17 @@ type FileTree =
         // The folder stays busy for the whole action. Its files are marked busy too, which disables their own
         // actions and keeps the rows of files that a Free briefly moves away.
         let runLfsFolderAction
-            (activity: string)
-            (failureTitle: string)
-            (runBatch: string[] -> JS.Promise<Result<unit, string>>)
-            (selectPaths: Renderer.Context.LargeObjectStore.FolderLargeObjects -> string[])
+            (action: Renderer.Components.Helper.GitLfsHelper.FolderLfsAction)
             (folderPath: string)
             : unit =
             let folderEntry =
                 Renderer.Context.FileTreeStore.tryFind fileStateCtx.fileTreeStore.Snapshot folderPath
 
             lfsActivityCtx.run
-                activity
+                action.Activity
                 folderEntry
                 (fun _ -> promise {
-                    let paths = selectPaths (getFolderLargeObjects folderPath)
+                    let paths = action.SelectPaths(getFolderLargeObjects folderPath)
 
                     if paths.Length > 0 then
                         let targets =
@@ -136,18 +133,39 @@ type FileTree =
                                 path, Renderer.Context.FileTreeStore.tryFind fileStateCtx.fileTreeStore.Snapshot path
                             )
 
-                        let! result = lfsActivityCtx.runAll activity targets (fun () -> runBatch paths)
+                        // The controller passes plain string errors, so the structured failure stays in this cell.
+                        let batchFailure = ref None
 
-                        match result with
-                        | Ok() -> ()
-                        | Error message ->
+                        let! _ =
+                            lfsActivityCtx.runAll
+                                action.Activity
+                                targets
+                                (fun () -> promise {
+                                    match! action.RunBatch paths with
+                                    | Ok() -> return Ok()
+                                    | Error failure ->
+                                        batchFailure.Value <- Some failure
+                                        return Error failure.Message
+                                })
+
+                        match batchFailure.Value with
+                        | Some failure ->
+                            let message, details =
+                                Renderer.Components.Helper.GitLfsHelper.folderFailureText
+                                    (PathHelpers.getFileName folderPath)
+                                    action.Outcome
+                                    paths.Length
+                                    failure
+
                             errorModal.enqueue (
                                 ErrorModalRequest.create (
-                                    $"Not every file in '{PathHelpers.getFileName folderPath}' was processed.\n{message}",
-                                    title = failureTitle,
+                                    message,
+                                    title = action.FailureTitle,
+                                    ?details = details,
                                     ?scopeId = arcScopeId
                                 )
                             )
+                        | None -> ()
 
                     return Ok()
                 })
@@ -155,18 +173,10 @@ type FileTree =
             |> Promise.start
 
         let downloadLfsFolder =
-            runLfsFolderAction
-                "Downloading"
-                "Git LFS download failed"
-                Renderer.Components.Helper.GitLfsHelper.runDownloadLfsFiles
-                _.NeedsDownload
+            runLfsFolderAction Renderer.Components.Helper.GitLfsHelper.FolderLfsAction.download
 
         let freeLfsFolder =
-            runLfsFolderAction
-                "Freeing"
-                "Git LFS cleanup failed"
-                Renderer.Components.Helper.GitLfsHelper.runFreeLocalLfsCopies
-                _.HasLocalCopy
+            runLfsFolderAction Renderer.Components.Helper.GitLfsHelper.FolderLfsAction.free
 
         React.useEffect (
             (fun () ->

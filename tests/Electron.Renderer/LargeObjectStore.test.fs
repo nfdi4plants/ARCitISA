@@ -211,6 +211,30 @@ Vitest.describe (
         )
 
         Vitest.test (
+            "keeps a folder whose name ends in a space apart from the folder without the space",
+            fun () ->
+                let entries = [|
+                    entryWith "data/a.bin" true true
+                    entryWith "data /b.bin" true true
+                |]
+
+                Vitest.expect((folderObjectsOf "data" entries).HasLocalCopy).toEqual ([| "data/a.bin" |])
+                Vitest.expect((folderObjectsOf "data " entries).HasLocalCopy).toEqual ([| "data /b.bin" |])
+        )
+
+        Vitest.test (
+            "finds the objects of an NFD folder name in NFC listing paths",
+            fun () ->
+                let found =
+                    folderObjectsOf "Müller" [|
+                        entryWith "Müller/a.bin" true true
+                        entryWith "Mueller/b.bin" true true
+                    |]
+
+                Vitest.expect(found.HasLocalCopy).toEqual ([| "Müller/a.bin" |])
+        )
+
+        Vitest.test (
             "returns nothing for the empty folder path",
             fun () ->
                 let found =

@@ -264,13 +264,14 @@ let deleteContextMenuItems (lfsActivePaths: string seq) (requestDeleteItem: File
     else
         []
 
-let private folderLfsContextMenuItems (config: ContextMenuConfig) (item: FileItem) =
+let folderLfsContextMenuItems (config: ContextMenuConfig) (item: FileItem) =
     match item.Path with
     | Some path when item.IsDirectory ->
         let objects = config.getFolderLargeObjects path
 
         Swate.Components.Page.FileExplorer.FileExplorerGitLfsHelper.folderContextMenuItems
             item
+            (isLockedByLfsActivity config.lfsActivePaths item)
             objects.NeedsDownload.Length
             objects.HasLocalCopy.Length
             (fun _ -> config.runDownloadLfsFolder path)

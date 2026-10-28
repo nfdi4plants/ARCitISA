@@ -105,6 +105,24 @@ Vitest.describe (
         )
 
         Vitest.test (
+            "shows the busy indicator on a folder row while an LFS action runs below it",
+            fun () ->
+                let busy = {
+                    folder "Busy Folder" (Some []) with
+                        LfsActivity = Some "Downloading"
+                }
+
+                RTL.render (FileExplorer.FileExplorer(initialItems = [ busy; folder "Idle Folder" (Some []) ]))
+                |> ignore
+
+                let indicators = RTL.screen.getAllByTestId "lfs-busy-indicator"
+                Vitest.expect(indicators.Count).toBe 1
+
+                let busyRow = (RTL.screen.getByText "Busy Folder").closest "[data-file-item-id]"
+                Vitest.expect(busyRow.IsSome && busyRow.Value.contains indicators.[0]).toBe true
+        )
+
+        Vitest.test (
             "offers Refresh folder for directories and calls the callback",
             fun () ->
                 let refreshed = ResizeArray<string>()

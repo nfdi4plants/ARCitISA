@@ -262,17 +262,20 @@ let tryRepositoryPath (path: string) : Result<RepositoryPath, OperationFailure> 
 
 /// Converts every path or fails on the first invalid one without touching the provider.
 let tryRepositoryPaths (paths: string[]) : Result<RepositoryPath[], OperationFailure> =
-    paths
-    |> Array.fold
-        (fun state path ->
-            match state with
-            | Error error -> Error error
-            | Ok converted ->
-                match tryRepositoryPath path with
-                | Ok repositoryPath -> Ok(Array.append converted [| repositoryPath |])
-                | Error error -> Error error
-        )
-        (Ok [||])
+    let converted = ResizeArray<RepositoryPath>()
+    let mutable failure = None
+    let mutable index = 0
+
+    while failure.IsNone && index < paths.Length do
+        match tryRepositoryPath paths.[index] with
+        | Ok repositoryPath -> converted.Add repositoryPath
+        | Error error -> failure <- Some error
+
+        index <- index + 1
+
+    match failure with
+    | Some error -> Error error
+    | None -> Ok(converted.ToArray())
 
 let tryProviderRef (value: string) : Result<ProviderRef, OperationFailure> =
     ProviderRef.tryCreate value

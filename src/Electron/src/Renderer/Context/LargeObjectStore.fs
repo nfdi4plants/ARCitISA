@@ -65,20 +65,21 @@ module LargeObjectSnapshot =
             | false, _ -> Map.tryFind (PathKey.ofPath snapshot.CaseInsensitive relativePath) snapshot.ByPathKey
 
     /// Every large object at any depth below the folder, sorted by path. The ARC root (an empty path) matches
-    /// nothing, so a folder action never reaches the whole repository. A case-insensitive volume matches the folder
-    /// regardless of case. A case-sensitive volume matches the exact spelling only.
+    /// nothing, so a folder action never reaches the whole repository. Folder and entries are compared through the
+    /// same path key as tryFind. The key composes Unicode and follows the case rule of the volume. Whitespace stays
+    /// part of a name.
     let folderObjects (folderPath: string) (snapshot: LargeObjectSnapshot) : FolderLargeObjects =
-        let folder = PathHelpers.normalizeCanonicalRelativePath folderPath
+        let keyOf (path: string) =
+            PathKey.value (PathKey.ofPath snapshot.CaseInsensitive path)
+
+        let folderKey = keyOf folderPath
+        let folderPrefix = folderKey + "/"
 
         let isBelowFolder (path: string) =
-            let normalized = PathHelpers.normalizeCanonicalRelativePath path
+            let key = keyOf path
 
-            if snapshot.CaseInsensitive then
-                PathHelpers.isSameOrDescendantPathForFsComparison normalized folder
-            else
-                not (System.String.IsNullOrWhiteSpace folder)
-                && (normalized = folder
-                    || normalized.StartsWith(folder + "/", System.StringComparison.Ordinal))
+            not (System.String.IsNullOrEmpty folderKey)
+            && (key = folderKey || key.StartsWith(folderPrefix, System.StringComparison.Ordinal))
 
         let below =
             snapshot.ByExactPath.Values

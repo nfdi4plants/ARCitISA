@@ -93,9 +93,11 @@ let private lfsAction label icon item enabled action =
     )
 
 /// The folder entries that download or free every Git LFS file below a folder. The counts come from the caller.
-/// A folder without an LFS file below it gets no entries, and a running action on the folder disables both.
+/// A folder without an LFS file below it gets no entries. Both entries are disabled while an action runs on the
+/// folder, and while the caller reports the folder as busy (for example an action that runs on a path below it).
 let folderContextMenuItems
     (item: FileItem)
+    (isBusy: bool)
     (pendingDownloads: int)
     (localCopies: int)
     (onDownloadFolder: FileItem -> unit)
@@ -104,7 +106,7 @@ let folderContextMenuItems
     if not item.IsDirectory || pendingDownloads + localCopies = 0 then
         []
     else
-        let isIdle = item.LfsActivity.IsNone
+        let isIdle = item.LfsActivity.IsNone && not isBusy
 
         [
             yield!

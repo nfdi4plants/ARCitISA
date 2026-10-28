@@ -189,6 +189,7 @@ type FileExplorerItem =
                 prop.children [
                     if item.LfsActivity.IsSome then
                         Html.span [
+                            prop.testId "lfs-busy-indicator"
                             prop.className "swt:loading swt:loading-spinner swt:loading-xs"
                             prop.ariaHidden true
                         ]
@@ -278,7 +279,7 @@ type FileExplorerItem =
 
     [<ReactComponent>]
     static member private StatusControl(item: FileItem, statusAction: ContextMenuItem option) =
-        if Helper.isLfs item then
+        if Helper.isLfs item || item.LfsActivity.IsSome then
             FileExplorerItem.LFSStatusPill(item, ?statusAction = statusAction)
         else
             statusAction
@@ -310,7 +311,9 @@ type FileExplorerItem =
         let canCreateFromDirectory = canCreateItem item && onCreateItem.IsSome
         let hasItemActions = itemActions |> List.isEmpty |> not
         let canDeleteFromDirectory = canDeleteItem item && onDeleteItem.IsSome
-        let hasStatusControl = Helper.isLfs item || statusAction.IsSome
+        // A bulk LFS action below a folder shows the same busy pill as a file row.
+        let hasStatusControl =
+            Helper.isLfs item || item.LfsActivity.IsSome || statusAction.IsSome
 
         let directoryToggleIconClass =
             if isExpanded then

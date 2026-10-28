@@ -41,26 +41,26 @@ Vitest.describe (
         Vitest.test (
             "offers nothing for a file",
             fun () ->
-                let items = folderContextMenuItems (lfsFile true) 1 1 ignore ignore
+                let items = folderContextMenuItems (lfsFile true) false 1 1 ignore ignore
                 Vitest.expect(items.Length).toBe 0
         )
 
         Vitest.test (
             "offers nothing for a folder without an LFS file below it",
             fun () ->
-                let items = folderContextMenuItems folder 0 0 ignore ignore
+                let items = folderContextMenuItems folder false 0 0 ignore ignore
                 Vitest.expect(items.Length).toBe 0
         )
 
         Vitest.test (
             "enables each entry only when its count is above zero",
             fun () ->
-                let onlyDownloads = folderContextMenuItems folder 2 0 ignore ignore
+                let onlyDownloads = folderContextMenuItems folder false 2 0 ignore ignore
                 Vitest.expect(onlyDownloads.Length).toBe 2
                 Vitest.expect(isDisabled onlyDownloads.[0]).toBe false
                 Vitest.expect(isDisabled onlyDownloads.[1]).toBe true
 
-                let onlyCopies = folderContextMenuItems folder 0 3 ignore ignore
+                let onlyCopies = folderContextMenuItems folder false 0 3 ignore ignore
                 Vitest.expect(onlyCopies.Length).toBe 2
                 Vitest.expect(isDisabled onlyCopies.[0]).toBe true
                 Vitest.expect(isDisabled onlyCopies.[1]).toBe false
@@ -75,6 +75,7 @@ Vitest.describe (
                 let items =
                     folderContextMenuItems
                         folder
+                        false
                         1
                         1
                         (fun item -> downloaded.Add item.Name)
@@ -98,7 +99,15 @@ Vitest.describe (
                         LfsActivity = Some "Downloading"
                 }
 
-                let items = folderContextMenuItems busyFolder 2 3 ignore ignore
+                let items = folderContextMenuItems busyFolder false 2 3 ignore ignore
+                Vitest.expect(items.Length).toBe 2
+                Vitest.expect(items |> List.forall isDisabled).toBe true
+        )
+
+        Vitest.test (
+            "disables both entries when the caller reports the folder as busy",
+            fun () ->
+                let items = folderContextMenuItems folder true 2 3 ignore ignore
                 Vitest.expect(items.Length).toBe 2
                 Vitest.expect(items |> List.forall isDisabled).toBe true
         )

@@ -944,6 +944,60 @@ Vitest.describe (
         )
 
         Vitest.test (
+            "the download folder entry downloads the folder and the free folder entry frees it",
+            fun () ->
+                let downloaded = ResizeArray<string>()
+                let freed = ResizeArray<string>()
+
+                let config = {
+                    createContextMenuConfig () with
+                        getFolderLargeObjects =
+                            fun _ -> {
+                                NeedsDownload = [| "data/missing.bin" |]
+                                HasLocalCopy = [| "data/local.bin" |]
+                            }
+                        runDownloadLfsFolder = downloaded.Add
+                        requestFreeLfsFolder = freed.Add
+                }
+
+                // The first entry downloads and the second frees, the order the folder menu offers them in.
+                let items = folderLfsContextMenuItems config (createFolderItem "data" (Some "data"))
+                Vitest.expect(items.Length).toBe 2
+
+                items.[0].OnClick()
+                Vitest.expect(downloaded.ToArray()).toEqual [| "data" |]
+                Vitest.expect(freed.Count).toBe 0
+
+                items.[1].OnClick()
+                Vitest.expect(freed.ToArray()).toEqual [| "data" |]
+                Vitest.expect(downloaded.Count).toBe 1
+        )
+
+        Vitest.test (
+            "both folder entries are disabled while an LFS action runs below the folder",
+            fun () ->
+                let config = {
+                    createContextMenuConfig () with
+                        getFolderLargeObjects =
+                            fun _ -> {
+                                NeedsDownload = [| "data/raw/busy.bin" |]
+                                HasLocalCopy = [| "data/raw/local.bin" |]
+                            }
+                        lfsActivePaths = [ "data/raw/busy.bin" ]
+                }
+
+                let isDisabled (item: ContextMenuItem) = item.Disabled = Some true
+                let above = folderLfsContextMenuItems config (createFolderItem "data" (Some "data"))
+
+                let sibling =
+                    folderLfsContextMenuItems config (createFolderItem "other" (Some "other"))
+
+                Vitest.expect(above.Length).toBe 2
+                Vitest.expect(above |> List.forall isDisabled).toBe true
+                Vitest.expect(sibling |> List.exists isDisabled).toBe false
+        )
+
+        Vitest.test (
             "delete is disabled on a canonical entity workbook while an LFS action runs inside its entity folder",
             fun () ->
                 let cases = [

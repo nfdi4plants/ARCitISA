@@ -32,7 +32,7 @@ createRevision, restorePaths
 openTextDiff, readTextDiffPage, replayTextDiffPage, expandTextDiff, readTextDiffLine, getTextDiffSourceInfo, closeTextDiff
 refreshSynchronization, synchronize
 resolveConflict, finalizeConflict, cancelConflict
-listObjects, materializeObject, dematerializeObject
+listObjects, materializeObject, dematerializeObject, materializeObjects, dematerializeObjects
 getStoragePolicySettings, setStoragePolicySettings, setPathStoragePolicy, pruneStorage, deduplicateStorage
 getRepositoryWebUrl, clearStaleLock
 ```
@@ -136,7 +136,7 @@ Manual marking follows the DataHub ruleset in `src/Shared/GitLfsRules.fs`:
 
 The file tree context menu disables blocked toggles, `GitLfsHelper` checks the rules again before calling `setPathStoragePolicy`, and the main process reads the file size itself and rejects a blocked request with `storage_policy_blocked`.
 
-File actions of the explorer: "Download LFS file" calls `materializeObject`, "Free local LFS copy" calls `dematerializeObject`. Both need a clean file. "Clean LFS Cache" (`pruneStorage`) and "Reduce LFS Storage" (`deduplicateStorage`) need a clean working tree. Deduplication can fail on file systems without copy on write support, which is expected and shown to the user.
+File actions of the explorer: "Download LFS file" calls `materializeObject`, "Free local LFS copy" calls `dematerializeObject`. Both need a clean file. "Clean LFS Cache" (`pruneStorage`) and "Reduce LFS Storage" (`deduplicateStorage`) need a clean working tree. Deduplication can fail on file systems without copy on write support, which is expected and shown to the user. The folder menu offers "Download all LFS files" and "Free all local LFS copies". They call `materializeObjects` with the files below the folder that are not on disk and `dematerializeObjects` with the files that have a local copy, and the session answers `service_unavailable` when its provider offers no batch service. The folder and every file below it show the busy state until the call returns, and both entries stay disabled on the folder and on every folder above a running action. Free asks for a confirmation first. When some files fail, the error dialog gives the count of failed files and the first line of each failure, and the technical details hold the full text.
 
 Clone and synchronize hydrate large objects when `MaterializeAllObjects` (clone) or the materialize setting (synchronize) is on. A cancel during hydration keeps the update and reports a partial result with `retry_materialization`. The sidebar keeps the pulled state and offers the download again.
 
@@ -164,7 +164,7 @@ The conflict page loads the combined preview of the conflicted item and carries 
 
 ## 11. Busy, progress and cancellation
 
-Mutations run under the vault busy flag so the file watcher does not merge ARCitISA's own writes: `bindWorkspace`, `createRef`, `switchRef`, `createRevision`, `restorePaths`, `synchronize`, `resolveConflict`, `finalizeConflict`, `cancelConflict`, `materializeObject`, `dematerializeObject`, `setStoragePolicySettings`, `setPathStoragePolicy`, `pruneStorage`, `deduplicateStorage` and `clearStaleLock`. Nested busy scopes are counted per window, and the flag drops when the outermost scope ends. Read calls, `refreshSynchronization`, the provisioning calls and the dependency calls do not take the flag.
+Mutations run under the vault busy flag so the file watcher does not merge ARCitISA's own writes: `bindWorkspace`, `createRef`, `switchRef`, `createRevision`, `restorePaths`, `synchronize`, `resolveConflict`, `finalizeConflict`, `cancelConflict`, `materializeObject`, `dematerializeObject`, `materializeObjects`, `dematerializeObjects`, `setStoragePolicySettings`, `setPathStoragePolicy`, `pruneStorage`, `deduplicateStorage` and `clearStaleLock`. Nested busy scopes are counted per window, and the flag drops when the outermost scope ends. Read calls, `refreshSynchronization`, the provisioning calls and the dependency calls do not take the flag.
 
 Progress arrives through `versionControlProgress` with float `Completed` and `Total` counters. Clone reports progress to the window that requested it.
 
