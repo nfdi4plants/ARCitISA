@@ -265,6 +265,35 @@ Vitest.describe (
         )
 
         Vitest.test (
+            "an ARC folder's view counts as open only while its metadata is on screen",
+            fun () ->
+                let assayPage =
+                    Some(
+                        Renderer.Types.PageState.ArcFilePage(
+                            ARCtrlHelper.ArcFileDefaults.createDefaultArcFile ArcFilesDiscriminate.Assay "AssayA",
+                            None
+                        )
+                    )
+
+                let isOpen pageState selectedPath =
+                    isArcEntityFolderViewOpen pageState selectedPath "assays/AssayA"
+
+                Vitest.expect(isOpen assayPage (Some "assays/AssayA")).toBe (true)
+                // After a click on the workbook file, the workbook is the selection.
+                Vitest.expect(isOpen assayPage (Some "assays/AssayA/isa.assay.xlsx")).toBe (true)
+                // Another page replaced the metadata, for example the DataHub browser or an error.
+                Vitest.expect(isOpen (Some Renderer.Types.PageState.DataHubBrowser) (Some "assays/AssayA")).toBe (false)
+
+                Vitest
+                    .expect(isOpen (Some(Renderer.Types.PageState.ErrorPage "failed")) (Some "assays/AssayA"))
+                    .toBe (false)
+
+                Vitest.expect(isOpen None (Some "assays/AssayA")).toBe (false)
+                Vitest.expect(isOpen assayPage (Some "assays/AssayB")).toBe (false)
+                Vitest.expect(isOpen assayPage None).toBe (false)
+        )
+
+        Vitest.test (
             "open is only offered for files and folders with ARC metadata",
             fun () ->
                 let hasOpen item =
