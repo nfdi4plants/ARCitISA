@@ -188,7 +188,9 @@ let FileTreeExpansionCtxProvider (api: FileTreeExpansionApi, children: ReactElem
     let revealTarget = React.useRef (None: RevealTarget option)
     let nextRevealId = React.useRef 0
     let isRevealing = React.useRef false
-    // A reveal was requested while a pass was running, so the pass runs again when it ends.
+    // Set by a reveal request or a store change (including the answers of this pass's own loads) that arrives while
+    // a pass runs. The pass then runs again when it ends, because a snapshot that arrived meanwhile can replace
+    // folders the pass already checked.
     let rerunRequested = React.useRef false
     // Paths with an own-write stat under way. A stat that lands meanwhile may show the file before the write.
     let ownWriteInFlight = React.useRef (Set.empty: Set<string>)
