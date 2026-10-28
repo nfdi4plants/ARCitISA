@@ -228,4 +228,63 @@ Vitest.describe (
                     container.remove ()
             }
         )
+
+        Vitest.test (
+            "runAll marks every path busy, runs the action once, and clears them, but leaves a busy path to its owner",
+            fun () -> promise {
+                let container = document.createElement ("div") :?> Browser.Types.HTMLDivElement
+                document.body.appendChild container |> ignore
+                let root = ReactDOM.createRoot container
+                let mutable latest: LfsActivityController option = None
+                let onController controller = latest <- Some controller
+                let owner = deferred ()
+                let batch = deferred ()
+                let mutable batchCalls = 0
+
+                let runBatch () =
+                    batchCalls <- batchCalls + 1
+                    batch.pending
+
+                let busyLabel path =
+                    latest
+                    |> Option.bind (fun c -> Map.tryFind path c.activities)
+                    |> Option.map _.Label
+
+                try
+                    root.render (ProviderHarness(Some "C:/arc", true, onController))
+                    do! waitFor (fun () -> latest.IsSome)
+
+                    let ownerRun = latest.Value.run "Downloading" None (fun _ -> owner.pending) "b.bin"
+                    do! waitFor (fun () -> busyLabel "b.bin" = Some "Downloading")
+
+                    let running =
+                        latest.Value.runAll
+                            "Freeing"
+                            [|
+                                "a.bin", Some(fileEntry "a.bin")
+                                "b.bin", None
+                                "c.bin", None
+                            |]
+                            runBatch
+
+                    do! waitFor (fun () -> busyLabel "a.bin" = Some "Freeing" && busyLabel "c.bin" = Some "Freeing")
+
+                    Vitest.expect(busyLabel "b.bin").toEqual (Some "Downloading")
+                    Vitest.expect(batchCalls).toBe (1)
+
+                    batch.resolve (Error "disk full")
+                    let! result = running
+                    Vitest.expect(result).toEqual (Error "disk full")
+                    do! waitFor (fun () -> busyLabel "a.bin" = None && busyLabel "c.bin" = None)
+
+                    Vitest.expect(busyLabel "b.bin").toEqual (Some "Downloading")
+
+                    owner.resolve (Ok())
+                    let! _ = ownerRun
+                    do! waitFor (fun () -> latest.Value.activities.IsEmpty)
+                finally
+                    root.unmount ()
+                    container.remove ()
+            }
+        )
 )

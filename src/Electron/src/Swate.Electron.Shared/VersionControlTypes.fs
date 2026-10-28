@@ -658,6 +658,7 @@ type ServiceAvailabilityDto = {
     TextDiff: bool
     ConflictResolution: bool
     ObjectMaterialization: bool
+    ObjectBatchMaterialization: bool
     StoragePolicy: bool
     Maintenance: bool
     RepositoryBrowser: bool
@@ -733,6 +734,9 @@ type ObjectPathRequestDto = {
     /// reads ignore the field.
     RefreshTree: bool option
 }
+
+/// Many objects in one materialization or dematerialization. The file tree refreshes once when anything changed.
+type ObjectPathsRequestDto = { OperationId: string; Paths: string[] }
 
 /// One synchronization: refresh, update when the target is ahead, publish unless
 /// PublishLocalRevisions is false. ExpectedTargetRevision pins an accepted update to the

@@ -8,13 +8,26 @@ open Swate.Components.Primitive.BaseModal
 type FileTreeFreeLfsModal =
 
     [<ReactComponent>]
-    static member Main(isOpen: bool, itemName: string option, close: unit -> unit, submit: unit -> unit) =
+    static member Main
+        (isOpen: bool, itemName: string option, close: unit -> unit, submit: unit -> unit, ?fileCount: int)
+        =
 
         let setIsOpen isOpen =
             if not isOpen then
                 close ()
 
         let displayName = itemName |> Option.defaultValue "this file"
+
+        let header, description, submitText =
+            match fileCount with
+            | None ->
+                "Free local copy",
+                $"Remove the local copy of '{displayName}'? The file stays in Git LFS and can be downloaded again.",
+                "Free local copy"
+            | Some count ->
+                "Free local copies",
+                $"Remove the local copies of {count} LFS files in '{displayName}'? The files stay in Git LFS and can be downloaded again.",
+                "Free local copies"
 
         let footer =
             Html.div [
@@ -28,7 +41,7 @@ type FileTreeFreeLfsModal =
                     Html.button [
                         prop.className "swt:btn swt:btn-warning"
                         prop.onClick (fun _ -> submit ())
-                        prop.text "Free local copy"
+                        prop.text submitText
                     ]
                 ]
             ]
@@ -36,10 +49,8 @@ type FileTreeFreeLfsModal =
         BaseModal.Modal(
             isOpen = isOpen,
             setIsOpen = setIsOpen,
-            header = Html.text "Free local copy",
-            description =
-                Html.text
-                    $"Remove the local copy of '{displayName}'? The file stays in Git LFS and can be downloaded again.",
+            header = Html.text header,
+            description = Html.text description,
             children = Html.none,
             footer = footer,
             debug = "arc-free-lfs"

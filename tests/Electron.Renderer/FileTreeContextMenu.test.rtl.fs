@@ -28,6 +28,13 @@ let private config (refreshed: ResizeArray<string>) : ContextMenuConfig = {
     runToggleLfsMark = fun _ _ -> promise { return Ok() }
     runDownloadLfsFile = fun _ -> promise { return Ok() }
     runFreeLocalLfsCopy = fun _ -> promise { return Ok() }
+    getFolderLargeObjects =
+        fun _ -> {
+            NeedsDownload = [||]
+            HasLocalCopy = [||]
+        }
+    runDownloadLfsFolder = ignore
+    requestFreeLfsFolder = ignore
     refreshDirectory = fun item -> refreshed.Add(defaultArg item.Path "")
     lfsActivePaths = []
 }

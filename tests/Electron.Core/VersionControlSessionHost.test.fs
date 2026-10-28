@@ -555,6 +555,7 @@ let private fakeProviderRuntimeWithStoragePolicy
     (failingRoot: string)
     (storagePolicy: StoragePolicyService option)
     (objectMaterialization: ObjectMaterializationService option)
+    (objectBatchMaterialization: ObjectBatchMaterializationService option)
     : VersionControlRuntime.VersionControlRuntime =
     let providerId id =
         ProviderId.tryCreate id |> Result.defaultWith failwith
@@ -686,6 +687,7 @@ let private fakeProviderRuntimeWithStoragePolicy
                 let session = {
                     session with
                         ObjectMaterialization = objectMaterialization
+                        ObjectBatchMaterialization = objectBatchMaterialization
                         StoragePolicy = storagePolicy
                 }
 
@@ -716,7 +718,7 @@ let private fakeProviderRuntimeWithStoragePolicy
     }
 
 let private fakeProviderRuntime coreOnlyRoot failingRoot =
-    fakeProviderRuntimeWithStoragePolicy coreOnlyRoot failingRoot None None
+    fakeProviderRuntimeWithStoragePolicy coreOnlyRoot failingRoot None None None
 
 let private fakeProviderRuntimeThatThrowsOnInitialize coreOnlyRoot failingRoot =
     let runtime = fakeProviderRuntime coreOnlyRoot failingRoot
@@ -887,6 +889,7 @@ Vitest.describe (
                         (join [| root; "unused" |])
                         None
                         (Some objectMaterialization)
+                        None
 
                 let host = WorkspaceSessionHost.WorkspaceSessionHost(runtime)
                 WorkspaceSessionHost.initialize host
@@ -925,6 +928,71 @@ Vitest.describe (
 
                         expectDtoFailure "failed materialization" failed |> ignore
                         Vitest.expect(vault.FileTreeWriter.Tree.Count).toBeGreaterThan 0
+                    with error ->
+                        do! cleanup ()
+                        return raise error
+
+                    do! cleanup ()
+                finally
+                    WorkspaceSessionHost.resetForTests ()
+            }
+        )
+
+        Vitest.test (
+            "batch materialization hands every path to the session and returns its result",
+            fun () -> promise {
+                let! root = createTempDirectoryAsync "swate-vc-materialize-batch-"
+                let workspace = join [| root; "workspace" |]
+                Main.Bindings.Filesystem.mkdirSync workspace (Main.Bindings.Filesystem.MkdirOptions(recursive = true))
+
+                let received = ResizeArray<string>()
+
+                let batchFailure =
+                    OperationFailure.create ProviderError "fake_batch_failed" "The fake batch failed."
+                    |> OperationFailure.withDetails [| "b.bin: no space" |]
+
+                let objectBatchMaterialization: ObjectBatchMaterializationService = {
+                    Materialize =
+                        fun paths _ -> async {
+                            received.AddRange(paths |> Array.map RepositoryPath.value)
+                            return Failed batchFailure
+                        }
+                    Dematerialize = fun _ _ -> async { return OperationResult.succeeded () }
+                }
+
+                let runtime =
+                    fakeProviderRuntimeWithStoragePolicy
+                        workspace
+                        (join [| root; "unused" |])
+                        None
+                        None
+                        (Some objectBatchMaterialization)
+
+                let host = WorkspaceSessionHost.WorkspaceSessionHost(runtime)
+                WorkspaceSessionHost.initialize host
+                registerVault 66 workspace |> ignore
+
+                let cleanup () = promise {
+                    electronMock?reset () |> ignore
+                    ARC_VAULTS.Vaults.Clear()
+                    do! host.CloseAll() |> Async.StartAsPromise
+                    do! removeDirectoryAsync root
+                }
+
+                try
+                    try
+                        let api = Main.IPC.IVersionControlApi.api (ipcEvent 66)
+
+                        let! result =
+                            api.materializeObjects {
+                                OperationId = "materialize-objects"
+                                Paths = [| "a.bin"; "data/b.bin" |]
+                            }
+
+                        let failure = expectDtoFailure "batch materialization" result
+                        Vitest.expect(received.ToArray()).toEqual [| "a.bin"; "data/b.bin" |]
+                        Vitest.expect(failure.Code).toBe "fake_batch_failed"
+                        Vitest.expect(failure.Details).toEqual [| "b.bin: no space" |]
                     with error ->
                         do! cleanup ()
                         return raise error
@@ -976,7 +1044,7 @@ Vitest.describe (
                     }
 
                     let fakeRuntime =
-                        fakeProviderRuntimeWithStoragePolicy coreOnlyRoot failingRoot (Some storagePolicy) None
+                        fakeProviderRuntimeWithStoragePolicy coreOnlyRoot failingRoot (Some storagePolicy) None None
 
                     let fakeHost = WorkspaceSessionHost.WorkspaceSessionHost(fakeRuntime)
                     WorkspaceSessionHost.initialize fakeHost
@@ -1115,7 +1183,7 @@ Vitest.describe (
                     }
 
                     let fakeRuntime =
-                        fakeProviderRuntimeWithStoragePolicy coreOnlyRoot failingRoot (Some storagePolicy) None
+                        fakeProviderRuntimeWithStoragePolicy coreOnlyRoot failingRoot (Some storagePolicy) None None
 
                     let fakeHost = WorkspaceSessionHost.WorkspaceSessionHost(fakeRuntime)
                     WorkspaceSessionHost.initialize fakeHost
@@ -1198,7 +1266,7 @@ Vitest.describe (
                     }
 
                     let fakeRuntime =
-                        fakeProviderRuntimeWithStoragePolicy coreOnlyRoot failingRoot (Some storagePolicy) None
+                        fakeProviderRuntimeWithStoragePolicy coreOnlyRoot failingRoot (Some storagePolicy) None None
 
                     let fakeHost = WorkspaceSessionHost.WorkspaceSessionHost(fakeRuntime)
                     WorkspaceSessionHost.initialize fakeHost
@@ -1273,7 +1341,7 @@ Vitest.describe (
                     }
 
                     let fakeRuntime =
-                        fakeProviderRuntimeWithStoragePolicy coreOnlyRoot failingRoot (Some storagePolicy) None
+                        fakeProviderRuntimeWithStoragePolicy coreOnlyRoot failingRoot (Some storagePolicy) None None
 
                     let fakeHost = WorkspaceSessionHost.WorkspaceSessionHost(fakeRuntime)
                     WorkspaceSessionHost.initialize fakeHost

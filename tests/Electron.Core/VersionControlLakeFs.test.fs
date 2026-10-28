@@ -553,6 +553,32 @@ Vitest.describe (
         )
 
         Vitest.test (
+            "batch materialization on a lakeFS vault answers service_unavailable",
+            TestOptions(timeout = 120000, skip = not (integrationEnabled ())),
+            fun () -> promise {
+                return!
+                    withFixture (fun fixture -> promise {
+                        let! api = bindWorkspaceViaClone fixture 68 "lakefs-batch-materialize-clone"
+
+                        let! materialize =
+                            api.materializeObjects {
+                                OperationId = "lakefs-materialize-objects"
+                                Paths = [| "data.txt" |]
+                            }
+
+                        let! dematerialize =
+                            api.dematerializeObjects {
+                                OperationId = "lakefs-dematerialize-objects"
+                                Paths = [| "data.txt" |]
+                            }
+
+                        expectServiceUnavailable "materializeObjects" materialize
+                        expectServiceUnavailable "dematerializeObjects" dematerialize
+                    })
+            }
+        )
+
+        Vitest.test (
             "commits selected paths and synchronizes them to the repository",
             TestOptions(timeout = 120000, skip = not (integrationEnabled ())),
             fun () -> promise {

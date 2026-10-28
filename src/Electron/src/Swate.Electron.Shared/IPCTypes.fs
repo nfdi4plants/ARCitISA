@@ -241,6 +241,8 @@ type IVersionControlApi = {
     listObjects: OperationRequestDto -> JS.Promise<Result<OperationResultDto<ObjectStateDto[]>, exn>>
     materializeObject: ObjectPathRequestDto -> JS.Promise<Result<OperationResultDto<unit>, exn>>
     dematerializeObject: ObjectPathRequestDto -> JS.Promise<Result<OperationResultDto<unit>, exn>>
+    materializeObjects: ObjectPathsRequestDto -> JS.Promise<Result<OperationResultDto<unit>, exn>>
+    dematerializeObjects: ObjectPathsRequestDto -> JS.Promise<Result<OperationResultDto<unit>, exn>>
     getStoragePolicySettings:
         OperationRequestDto -> JS.Promise<Result<OperationResultDto<StoragePolicySettingsDto>, exn>>
     setStoragePolicySettings: StoragePolicySettingsRequestDto -> JS.Promise<Result<OperationResultDto<unit>, exn>>

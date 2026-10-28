@@ -997,6 +997,30 @@ let api (event: IpcMainInvokeEvent) : IVersionControlApi = {
                     "large object materialization"
                     (fun service context -> withPath request.Path (fun path -> service.Dematerialize path context)))
                 id
+    materializeObjects =
+        fun request ->
+            withMutatingSessionUsingRefreshPredicate
+                "materializeObjects"
+                event
+                request.OperationId
+                resultChangedState
+                (withService
+                    _.ObjectBatchMaterialization
+                    "large object batch materialization"
+                    (fun service context -> withPaths request.Paths (fun paths -> service.Materialize paths context)))
+                id
+    dematerializeObjects =
+        fun request ->
+            withMutatingSessionUsingRefreshPredicate
+                "dematerializeObjects"
+                event
+                request.OperationId
+                resultChangedState
+                (withService
+                    _.ObjectBatchMaterialization
+                    "large object batch materialization"
+                    (fun service context -> withPaths request.Paths (fun paths -> service.Dematerialize paths context)))
+                id
     getStoragePolicySettings =
         fun request ->
             withSession

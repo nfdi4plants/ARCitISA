@@ -142,6 +142,7 @@ let private sessionInfo: WorkspaceSessionInfoDto = {
         TextDiff = true
         ConflictResolution = true
         ObjectMaterialization = true
+        ObjectBatchMaterialization = true
         StoragePolicy = true
         Maintenance = true
         RepositoryBrowser = true

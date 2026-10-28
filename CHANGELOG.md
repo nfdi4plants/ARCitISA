@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - An overview above the provenance graph shows where you are in the ARC and lets you jump to a neighboring dataset, process, group or node. (by @caroott)
 - A minimap in the corner of the provenance graph shows the whole graph and the visible part, and a click or drag on it moves the view. (by @caroott)
 - The whole provenance graph can be saved as a PNG image or copied to paste into Slack or Teams. (by @caroott)
+- Right-clicking a folder in the file tree offers "Download all LFS files" and "Free all local LFS copies", which act on every Git LFS file in the folder and its subfolders. (by @caroott)
 
 ### 🔄 Changed
 
@@ -37,6 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Creating and renaming items says why a name can't be used, for example for a "dataset" folder inside an assay or an ARC metadata file name. #1429 (by @Etschbeijer)
 - Files above the preview size limit or with binary content open as a page that shows the file name and size, with a button to open the file in its default application. (by @caroott)
 - The Git LFS badge of a downloaded file no longer frees its local copy. Freeing is in the right-click menu and asks for confirmation first. (by @caroott)
+- Downloading or freeing a single Git LFS file is faster in large ARCs. (by @caroott)
 - Large ARCs open faster. The file tree shows the ARC structure first and reads other folders when you expand them. #1340 (by @caroott, @Etschbeijer)
 - Changes that other programs make inside data folders appear when the ARCitISA window gets focus, or after "Refresh folder". #1340 (by @caroott)
 - Git LFS badges come from one background listing per ARC. They update after Git operations in ARCitISA, and after changes made outside it when the window gets focus. #1340 (by @caroott, @Etschbeijer)

@@ -27,6 +27,7 @@ module private FileTreeHelper =
         | RenameDialog of ArcRenameDraft
         | DeleteDialog of FileItem
         | FreeLfsDialog of string
+        | FreeLfsFolderDialog of string
 
 open FileTreeHelper
 
@@ -76,6 +77,7 @@ type FileTree =
 
         let lfsActivityCtx = Renderer.Context.LfsActivityContext.useLfsActivityCtx ()
         let tryFindLfs = Renderer.Context.LargeObjectStore.useLargeObjectLookup ()
+        let largeObjectStore = Renderer.Context.LargeObjectStore.useLargeObjectStore ()
         let lfsActivityByPath = lfsActivityCtx.activities
 
         let lfsActivePaths =
@@ -104,6 +106,67 @@ type FileTree =
 
         let runFreeLocalLfsCopy relativePath =
             runLfsActionWithActivity "Freeing" Renderer.Components.Helper.GitLfsHelper.runFreeLocalLfsCopy relativePath
+
+        // The snapshot is read on each call, so a lookup sees the latest large object state.
+        let getFolderLargeObjects (folderPath: string) =
+            Renderer.Context.LargeObjectStore.LargeObjectSnapshot.folderObjects folderPath largeObjectStore.Snapshot
+
+        // The folder stays busy for the whole action. Its files are marked busy too, which disables their own
+        // actions and keeps the rows of files that a Free briefly moves away.
+        let runLfsFolderAction
+            (activity: string)
+            (failureTitle: string)
+            (runBatch: string[] -> JS.Promise<Result<unit, string>>)
+            (selectPaths: Renderer.Context.LargeObjectStore.FolderLargeObjects -> string[])
+            (folderPath: string)
+            : unit =
+            let folderEntry =
+                Renderer.Context.FileTreeStore.tryFind fileStateCtx.fileTreeStore.Snapshot folderPath
+
+            lfsActivityCtx.run
+                activity
+                folderEntry
+                (fun _ -> promise {
+                    let paths = selectPaths (getFolderLargeObjects folderPath)
+
+                    if paths.Length > 0 then
+                        let targets =
+                            paths
+                            |> Array.map (fun path ->
+                                path, Renderer.Context.FileTreeStore.tryFind fileStateCtx.fileTreeStore.Snapshot path
+                            )
+
+                        let! result = lfsActivityCtx.runAll activity targets (fun () -> runBatch paths)
+
+                        match result with
+                        | Ok() -> ()
+                        | Error message ->
+                            errorModal.enqueue (
+                                ErrorModalRequest.create (
+                                    $"Not every file in '{PathHelpers.getFileName folderPath}' was processed.\n{message}",
+                                    title = failureTitle,
+                                    ?scopeId = arcScopeId
+                                )
+                            )
+
+                    return Ok()
+                })
+                folderPath
+            |> Promise.start
+
+        let downloadLfsFolder =
+            runLfsFolderAction
+                "Downloading"
+                "Git LFS download failed"
+                Renderer.Components.Helper.GitLfsHelper.runDownloadLfsFiles
+                _.NeedsDownload
+
+        let freeLfsFolder =
+            runLfsFolderAction
+                "Freeing"
+                "Git LFS cleanup failed"
+                Renderer.Components.Helper.GitLfsHelper.runFreeLocalLfsCopies
+                _.HasLocalCopy
 
         React.useEffect (
             (fun () ->
@@ -321,6 +384,9 @@ type FileTree =
             openDialog (FreeLfsDialog relativePath)
             promise { return Ok() }
 
+        let requestFreeLfsFolder (folderPath: string) =
+            openDialog (FreeLfsFolderDialog folderPath)
+
         // The row getters below keep their identity until their inputs change. A new identity re-renders every row.
         // The dialog state setters never change, so the workflows that only open dialogs can be created once.
         let requestDeleteItem =
@@ -395,12 +461,25 @@ type FileTree =
             | Some(RenameDialog renameDraft) -> None, None, Some renameDraft, None
             | Some(DeleteDialog item) -> None, None, None, Some item
             | Some(FreeLfsDialog _)
+            | Some(FreeLfsFolderDialog _)
             | None -> None, None, None, None
 
         let activeFreeLfsPath =
             match activeDialog with
             | Some(FreeLfsDialog path) -> Some path
             | _ -> None
+
+        let activeFreeLfsFolderPath =
+            match activeDialog with
+            | Some(FreeLfsFolderDialog path) -> Some path
+            | _ -> None
+
+        let confirmFreeLfsFolder () =
+            activeFreeLfsFolderPath
+            |> Option.iter (fun path ->
+                closeDialog ()
+                freeLfsFolder path
+            )
 
         let confirmFreeLocalLfsCopy () =
             activeFreeLfsPath
@@ -593,6 +672,9 @@ type FileTree =
             runToggleLfsMark = runToggleLfsMark
             runDownloadLfsFile = runDownloadLfsFile
             runFreeLocalLfsCopy = requestFreeLocalLfsCopy
+            getFolderLargeObjects = getFolderLargeObjects
+            runDownloadLfsFolder = downloadLfsFolder
+            requestFreeLfsFolder = requestFreeLfsFolder
             refreshDirectory = (fun (item: FileItem) -> item.Path |> Option.iter expansionCtx.refreshDirectory)
             lfsActivePaths = lfsActivePaths
         }
@@ -691,6 +773,17 @@ type FileTree =
                 submit = confirmFreeLocalLfsCopy
             )
 
+        let freeLfsFolderModal =
+            FileTreeFreeLfsModal.Main(
+                isOpen = activeFreeLfsFolderPath.IsSome,
+                itemName = (activeFreeLfsFolderPath |> Option.map PathHelpers.getFileName),
+                ?fileCount =
+                    (activeFreeLfsFolderPath
+                     |> Option.map (fun path -> (getFolderLargeObjects path).HasLocalCopy.Length)),
+                close = closeDialog,
+                submit = confirmFreeLfsFolder
+            )
+
         let renameModal =
             FileTreeRenameModal.Main(
                 isOpen = activeRenameDraft.IsSome,
@@ -736,6 +829,7 @@ type FileTree =
                 renameModal
                 deleteConfirmModal
                 freeLfsModal
+                freeLfsFolderModal
             ]
         | None ->
             React.Fragment [
@@ -745,4 +839,5 @@ type FileTree =
                 renameModal
                 deleteConfirmModal
                 freeLfsModal
+                freeLfsFolderModal
             ]

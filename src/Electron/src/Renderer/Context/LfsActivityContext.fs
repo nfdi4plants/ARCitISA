@@ -91,6 +91,13 @@ type LfsActivityController = {
             -> (string -> JS.Promise<Result<unit, string>>)
             -> string
             -> JS.Promise<Result<unit, string>>
+    /// `runAll label targets action` marks every target path busy that is not busy yet, runs the action once,
+    /// and clears exactly the paths it marked. A path that is already busy stays with its owner.
+    runAll:
+        string
+            -> (string * FileEntry option)[]
+            -> (unit -> JS.Promise<Result<unit, string>>)
+            -> JS.Promise<Result<unit, string>>
 }
 
 let LfsActivityCtx =
@@ -98,6 +105,7 @@ let LfsActivityCtx =
         {
             activities = Map.empty
             run = fun _ _ action path -> action path
+            runAll = fun _ _ action -> action ()
         }
     )
 
@@ -144,11 +152,45 @@ let LfsActivityCtxProvider (children: ReactElement) =
                     update (LfsActivityState.finish scopeId path stateRef.current)
         }
 
+    let runAll
+        (label: string)
+        (targets: (string * FileEntry option)[])
+        (action: unit -> JS.Promise<Result<unit, string>>)
+        =
+        promise {
+            match scopeIdRef.current with
+            | None -> return! action ()
+            | Some scopeId ->
+                let marked =
+                    targets
+                    |> Array.filter (fun (path, _) -> not (LfsActivityState.isBusy scopeId path stateRef.current))
+
+                update (
+                    marked
+                    |> Array.fold
+                        (fun state (path, entry) ->
+                            LfsActivityState.start scopeId path { Label = label; Entry = entry } state
+                        )
+                        stateRef.current
+                )
+
+                try
+                    return! action ()
+                finally
+                    update (
+                        marked
+                        |> Array.fold
+                            (fun state (path, _) -> LfsActivityState.finish scopeId path state)
+                            stateRef.current
+                    )
+        }
+
     let controller =
         React.useMemo (
             (fun () -> {
                 activities = LfsActivityState.forScope scopeId state
                 run = run
+                runAll = runAll
             }),
             [| box state; box scopeId |]
         )

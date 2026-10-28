@@ -28,6 +28,9 @@ type ContextMenuConfig = {
     runToggleLfsMark: string -> bool -> JS.Promise<Result<unit, string>>
     runDownloadLfsFile: string -> JS.Promise<Result<unit, string>>
     runFreeLocalLfsCopy: string -> JS.Promise<Result<unit, string>>
+    getFolderLargeObjects: string -> Renderer.Context.LargeObjectStore.FolderLargeObjects
+    runDownloadLfsFolder: string -> unit
+    requestFreeLfsFolder: string -> unit
     /// Loads a folder again from disk, also when it is loaded already.
     refreshDirectory: FileItem -> unit
     /// ARC-relative paths with a running Download or Free. Rename and Delete stay disabled on every

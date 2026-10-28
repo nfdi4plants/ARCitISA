@@ -264,6 +264,19 @@ let deleteContextMenuItems (lfsActivePaths: string seq) (requestDeleteItem: File
     else
         []
 
+let private folderLfsContextMenuItems (config: ContextMenuConfig) (item: FileItem) =
+    match item.Path with
+    | Some path when item.IsDirectory ->
+        let objects = config.getFolderLargeObjects path
+
+        Swate.Components.Page.FileExplorer.FileExplorerGitLfsHelper.folderContextMenuItems
+            item
+            objects.NeedsDownload.Length
+            objects.HasLocalCopy.Length
+            (fun _ -> config.runDownloadLfsFolder path)
+            (fun _ -> config.requestFreeLfsFolder path)
+    | _ -> []
+
 let createContextMenuItems (config: ContextMenuConfig) arcScopeId =
     let toggleLfsMark =
         Renderer.Components.FileExplorerLfs.createToggleLfsMark config.enqueueError arcScopeId config.runToggleLfsMark
@@ -287,11 +300,16 @@ let createContextMenuItems (config: ContextMenuConfig) arcScopeId =
             copyPathContextMenuItems config.arcRootPath item
             fileSystemCreateContextMenuItems config.openFileSystemCreateModal item
             dataMapContextMenuItems config.createDataMap config.requestDeleteItem config.tryFindDataMapItemByPath item
-            Swate.Components.Page.FileExplorer.FileExplorerGitLfsHelper.contextMenuItems
-                item
-                toggleLfsMark
-                (Some downloadLfsFile)
-                (Some freeLocalLfsCopy)
+            [
+                yield!
+                    Swate.Components.Page.FileExplorer.FileExplorerGitLfsHelper.contextMenuItems
+                        item
+                        toggleLfsMark
+                        (Some downloadLfsFile)
+                        (Some freeLocalLfsCopy)
+
+                yield! folderLfsContextMenuItems config item
+            ]
             arcCreateContextMenuItems config.openCreateModal config.openNoteDraft item
             [
                 yield! renameContextMenuItems config.lfsActivePaths config.requestRenameItem item

@@ -31,6 +31,13 @@ let private createContextMenuConfig () : ContextMenuConfig = {
     runToggleLfsMark = fun _ _ -> promise { return Ok() }
     runDownloadLfsFile = fun _ -> promise { return Ok() }
     runFreeLocalLfsCopy = fun _ -> promise { return Ok() }
+    getFolderLargeObjects =
+        fun _ -> {
+            NeedsDownload = [||]
+            HasLocalCopy = [||]
+        }
+    runDownloadLfsFolder = ignore
+    requestFreeLfsFolder = ignore
     refreshDirectory = ignore
     lfsActivePaths = []
 }
