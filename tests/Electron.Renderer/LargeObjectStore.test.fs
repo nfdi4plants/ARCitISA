@@ -83,7 +83,7 @@ Vitest.describe (
             "finds an NFD name through the path key of the NFC name",
             fun () ->
                 let nfc = "Messung_ä.csv"
-                let nfd = "Messung_ä.csv"
+                let nfd = "Messung_a\u0308.csv"
                 let store = LargeObjectStore()
                 store.Apply(snapshot 1 LargeObjectIndexStatus.Ready false [| entry nfc |])
 
@@ -226,7 +226,7 @@ Vitest.describe (
             "finds the objects of an NFD folder name in NFC listing paths",
             fun () ->
                 let found =
-                    folderObjectsOf "Müller" [|
+                    folderObjectsOf "Mu\u0308ller" [|
                         entryWith "Müller/a.bin" true true
                         entryWith "Mueller/b.bin" true true
                     |]

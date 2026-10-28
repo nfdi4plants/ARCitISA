@@ -119,6 +119,36 @@ Vitest.describe (
                 Vitest.expect(LfsActivityState.isBusy "C:/arc-a" "a.bin" finished).toBe (false)
                 Vitest.expect(LfsActivityState.isBusy "C:/arc-b" "b.bin" finished).toBe (true)
         )
+
+        Vitest.test (
+            "a listing path in another Unicode form than its tree entry is keyed by the entry path",
+            fun () ->
+                let composedPath = "M\u00FCller/big.bin"
+                let decomposedFolder = "Mu\u0308ller"
+                let decomposedPath = "Mu\u0308ller/big.bin"
+                let store = Renderer.Context.FileTreeStore.FileTreeStore()
+                store.BeginLoad()
+
+                store.ApplySnapshot {|
+                    treeVersion = 1
+                    caseInsensitive = false
+                    entries = [|
+                        FileEntry.create (decomposedFolder, decomposedFolder, true)
+                        fileEntry decomposedPath
+                    |]
+                    loadedDirectories = [| ""; decomposedFolder |]
+                    fileWatcher = {|
+                        state = Swate.Electron.Shared.IPCTypes.FileWatcherStatus.Running
+                        reason = ""
+                    |}
+                |}
+
+                let key, entry = LfsActivityState.batchTarget store.Snapshot composedPath
+
+                Vitest.expect(key).toBe decomposedPath
+                Vitest.expect(entry |> Option.map _.path).toEqual (Some decomposedPath)
+                Vitest.expect(LfsActivityState.batchTarget store.Snapshot "other.bin").toEqual ("other.bin", None)
+        )
 )
 
 Vitest.describe (

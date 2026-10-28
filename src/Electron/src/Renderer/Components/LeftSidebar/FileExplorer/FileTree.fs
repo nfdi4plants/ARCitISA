@@ -145,8 +145,9 @@ type FileTree =
                     if paths.Length > 0 then
                         let targets =
                             paths
-                            |> Array.map (fun path ->
-                                path, Renderer.Context.FileTreeStore.tryFind fileStateCtx.fileTreeStore.Snapshot path
+                            |> Array.map (
+                                Renderer.Context.LfsActivityContext.LfsActivityState.batchTarget
+                                    fileStateCtx.fileTreeStore.Snapshot
                             )
 
                         // The controller passes plain string errors, so the structured failure stays in this cell.

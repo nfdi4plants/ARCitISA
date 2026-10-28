@@ -53,8 +53,8 @@ let private maxListedDetails = 10
 type BatchFailure = {
     /// The failure message with its recovery text. It carries the whole story when the failure names no paths.
     Message: string
-    /// The number of paths the library named as failed.
-    FailedCount: int
+    /// The paths the library named as failed. When Details has as many entries, entry i belongs to path i.
+    AffectedPaths: string[]
     /// One entry per failed path, complete. An entry can span several lines, for example the raw git-lfs output.
     Details: string[]
 }
@@ -66,7 +66,7 @@ let toBatchResult (result: Result<OperationResultDto<unit>, string>) : Result<un
     let describe (failure: OperationFailureDto) =
         Error {
             Message = Renderer.Context.GitWorkflow.failureMessage failure
-            FailedCount = failure.AffectedPaths.Length
+            AffectedPaths = failure.AffectedPaths
             Details = failure.Details
         }
 
@@ -74,7 +74,7 @@ let toBatchResult (result: Result<OperationResultDto<unit>, string>) : Result<un
     | Error message ->
         Error {
             Message = message
-            FailedCount = 0
+            AffectedPaths = [||]
             Details = [||]
         }
     | Ok(OperationResultDto.Succeeded _) -> Ok()
@@ -82,32 +82,66 @@ let toBatchResult (result: Result<OperationResultDto<unit>, string>) : Result<un
     | Ok(OperationResultDto.PartiallySucceeded(_, failure)) -> describe failure
     | Ok(OperationResultDto.Failed failure) -> describe failure
 
-/// One entry of the failure text. A multi-line entry (the raw git-lfs output of a path) starts with a progress line,
-/// so it shows the path in front of the last non-empty line, which names the cause. A one-line entry stays as it is.
-let private entrySummary (entry: string) =
+/// The path and the message of entry i. The library writes one "<path>: <message>" entry per failed path in the
+/// order of the paths, so equal lengths give the path exactly, even when it contains ": ". With different lengths
+/// the path is the text before the first ": " of the first line, if the entry has one.
+let private splitEntry (affectedPaths: string[]) (details: string[]) (index: int) : string option * string =
+    let entry = details.[index]
+
+    if affectedPaths.Length = details.Length then
+        let path = affectedPaths.[index]
+        let prefix = path + ": "
+
+        let message =
+            if entry.StartsWith(prefix, System.StringComparison.Ordinal) then
+                entry.Substring prefix.Length
+            else
+                entry
+
+        Some path, message
+    else
+        let separator = entry.IndexOf ": "
+        let lineEnd = entry.IndexOf '\n'
+
+        if separator >= 0 && (lineEnd < 0 || separator < lineEnd) then
+            Some(entry.Substring(0, separator)), entry.Substring(separator + 2)
+        else
+            None, entry
+
+/// The progress line of git-lfs and its generic trailer. Neither names the cause of the failure.
+let private isGitLfsNoise (line: string) =
+    line.StartsWith("Fetching reference", System.StringComparison.Ordinal)
+    || line.StartsWith("error: failed to fetch some objects", System.StringComparison.Ordinal)
+
+/// One entry of the failure text, the path followed by one line of its message. A one-line message stays as it is.
+/// A multi-line message (the raw git-lfs output of a path) shows its first line that is not git-lfs noise, and its
+/// last non-empty line when only noise remains.
+let private entrySummary (affectedPaths: string[]) (details: string[]) (index: int) =
+    let path, message = splitEntry affectedPaths details index
+
     let lines =
-        entry.Split('\n')
+        message.Split('\n')
         |> Array.map (fun line -> line.TrimEnd('\r'))
         |> Array.filter (System.String.IsNullOrWhiteSpace >> not)
 
-    if lines.Length = 0 then
-        entry
-    elif lines.Length = 1 then
-        lines.[0]
-    else
-        let separator = lines.[0].IndexOf ": "
-        let last = lines.[lines.Length - 1]
-
-        if separator < 0 then
-            last
+    let shown =
+        if lines.Length = 0 then
+            message
+        elif lines.Length = 1 then
+            lines.[0]
         else
-            $"{lines.[0].Substring(0, separator)}: {last}"
+            match lines |> Array.tryFind (isGitLfsNoise >> not) with
+            | Some cause -> cause
+            | None -> lines.[lines.Length - 1]
 
-/// The message and the technical details of the modal for a failed folder action. A failure that names failed paths
-/// (FailedCount above 0) gets a count line and one summary line per entry, capped, and the technical details hold
-/// every entry in full. A failure without failed paths (the service is unavailable, a path is invalid, the index is
-/// locked) shows the header and the failure's own message, which holds the cause and the recovery text, and any
-/// entries go into the technical details.
+    match path with
+    | Some path -> $"{path}: {shown}"
+    | None -> shown
+
+/// The message and the technical details of the modal for a failed folder action. A failure with failed paths and
+/// details gets a count line and one summary line per entry, capped, and the technical details hold every entry in
+/// full. A failure without either shows the header and the failure's own message, which holds the cause and the
+/// recovery text. Any entries it carries go into the technical details.
 let folderFailureText
     (folderName: string)
     (outcome: string)
@@ -123,9 +157,11 @@ let folderFailureText
         else
             Some(System.String.Join("\n\n", failure.Details))
 
-    if failure.FailedCount > 0 then
-        let listed =
-            failure.Details |> Array.truncate maxListedDetails |> Array.map entrySummary
+    if failure.AffectedPaths.Length > 0 && failure.Details.Length > 0 then
+        let listed = [|
+            for index in 0 .. (min failure.Details.Length maxListedDetails) - 1 ->
+                entrySummary failure.AffectedPaths failure.Details index
+        |]
 
         let more =
             if failure.Details.Length > maxListedDetails then
@@ -135,7 +171,8 @@ let folderFailureText
             else
                 [||]
 
-        let count = $"{failure.FailedCount} of {totalCount} files could not be {outcome}."
+        let count =
+            $"{failure.AffectedPaths.Length} of {totalCount} files could not be {outcome}."
 
         System.String.Join("\n", Array.concat [ [| header; count |]; listed; more ]), technical
     else

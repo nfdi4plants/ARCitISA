@@ -86,7 +86,7 @@ Vitest.describe (
                 match result with
                 | Error failure ->
                     Vitest.expect(failure.Details).toEqual details
-                    Vitest.expect(failure.FailedCount).toBe 2
+                    Vitest.expect(failure.AffectedPaths.Length).toBe 2
                     Vitest.expect(failure.Message.Contains "Some files failed.").toBe true
                 | Ok() -> failwith "expected an Error"
         )
@@ -102,7 +102,7 @@ Vitest.describe (
                 match result with
                 | Error failure ->
                     Vitest.expect(failure.Details).toEqual [| "b.bin: no space" |]
-                    Vitest.expect(failure.FailedCount).toBe 1
+                    Vitest.expect(failure.AffectedPaths.Length).toBe 1
                 | Ok() -> failwith "expected an Error"
         )
 
@@ -126,10 +126,13 @@ Vitest.describe (
         )
 )
 
-let private failureTextOf (details: string[]) (totalCount: int) =
-    match toBatchResult (Ok(OperationResultDto.Failed(failureOf details))) with
-    | Error failure -> folderFailureText "data" "downloaded" totalCount failure
+let private failureTextFor (failure: OperationFailureDto) (totalCount: int) =
+    match toBatchResult (Ok(OperationResultDto.Failed failure)) with
+    | Error batchFailure -> folderFailureText "data" "downloaded" totalCount batchFailure
     | Ok() -> failwith "expected an Error"
+
+let private failureTextOf (details: string[]) (totalCount: int) =
+    failureTextFor (failureOf details) totalCount
 
 Vitest.describe (
     "folderFailureText",
@@ -164,21 +167,56 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "shows the path and the last non-empty line of a multi-line entry and keeps the whole entries in the technical details",
+            "shows the path and the cause line of a git-lfs entry and keeps the whole entries in the technical details",
             fun () ->
-                let details = [|
-                    "a.bin: Fetching reference refs/heads/main\nbatch response: EOF\nerror: failed to fetch some objects from 'x'\n"
-                    "b.bin: no space"
-                |]
+                // One entry as the library sent it when the LFS server was unreachable, captured from an E2E run.
+                let captured =
+                    "assays/assayA/dataset/a[1].bin: Fetching reference refs/heads/main\nbatch response: Post \"https://[REDACTED]@localhost:3443/e2eadmin/arc-folderlfs.git/info/lfs/objects/batch\": EOF\nerror: failed to fetch some objects from 'https://[REDACTED]@localhost:3443/e2eadmin/arc-folderlfs.git/info/lfs'"
+
+                let details = [| captured; "b.bin: no space" |]
 
                 let message, technical = failureTextOf details 2
                 let lines = linesOf message
 
                 Vitest.expect(lines.Length).toBe 4
-                Vitest.expect(lines.[2]).toBe "a.bin: error: failed to fetch some objects from 'x'"
+                Vitest.expect(lines.[2].Contains "batch response:").toBe true
+                Vitest.expect(lines.[2].Contains "assays/assayA/dataset/a[1].bin").toBe true
                 Vitest.expect(lines.[3]).toBe "b.bin: no space"
                 Vitest.expect(message.Contains "Fetching reference").toBe false
+                Vitest.expect(message.Contains "failed to fetch some objects").toBe false
                 Vitest.expect(technical).toEqual (Some(String.concat "\n\n" details))
+        )
+
+        Vitest.test (
+            "keeps a path that contains a colon whole when the entries are parallel to the paths",
+            fun () ->
+                let failure = {
+                    failureWith [|
+                        "notes: a.bin: Fetching reference refs/heads/main\nbatch response: EOF"
+                    |] with
+                        AffectedPaths = [| "notes: a.bin" |]
+                }
+
+                let message, _ = failureTextFor failure 1
+
+                Vitest.expect((linesOf message).[2]).toBe "notes: a.bin: batch response: EOF"
+        )
+
+        Vitest.test (
+            "splits the path off at the first colon when the entries do not match the paths one to one",
+            fun () ->
+                let failure = {
+                    failureWith [|
+                        "a.bin: Fetching reference refs/heads/main\nbatch response: EOF"
+                        "the index is locked"
+                    |] with
+                        AffectedPaths = [| "a.bin" |]
+                }
+
+                let lines = linesOf (fst (failureTextFor failure 3))
+
+                Vitest.expect(lines.[2]).toBe "a.bin: batch response: EOF"
+                Vitest.expect(lines.[3]).toBe "the index is locked"
         )
 
         Vitest.test (
@@ -207,7 +245,7 @@ Vitest.describe (
 
                     // The recovery text is part of the full message and the library message alone lacks it.
                     Vitest.expect(full.Length > locked.Message.Length).toBe true
-                    Vitest.expect(failure.FailedCount).toBe 0
+                    Vitest.expect(failure.AffectedPaths.Length).toBe 0
                     Vitest.expect((linesOf message).Length).toBe 2
                     Vitest.expect(message.Contains full).toBe true
                     Vitest.expect(technical).toEqual (Some(String.concat "\n\n" details))
@@ -218,7 +256,7 @@ Vitest.describe (
             fun () ->
                 let failure = {
                     Message = "The service is unavailable. Try again."
-                    FailedCount = 0
+                    AffectedPaths = [||]
                     Details = [||]
                 }
 
@@ -226,6 +264,24 @@ Vitest.describe (
 
                 Vitest.expect((linesOf message).Length).toBe 2
                 Vitest.expect(message.Contains failure.Message).toBe true
+                Vitest.expect(technical).toEqual None
+        )
+
+        Vitest.test (
+            "shows the failure message for an invalid path, which names the path and has no entries",
+            fun () ->
+                let invalid = {
+                    failureWith [||] with
+                        Category = FailureCategoryDto.Validation
+                        Code = VersionControlCodes.InvalidPath
+                        Message = "The path is not valid."
+                        AffectedPaths = [| "data/a.bin" |]
+                }
+
+                let message, technical = failureTextFor invalid 4
+
+                Vitest.expect((linesOf message).Length).toBe 2
+                Vitest.expect(message.Contains(Renderer.Context.GitWorkflow.failureMessage invalid)).toBe true
                 Vitest.expect(technical).toEqual None
         )
 )
