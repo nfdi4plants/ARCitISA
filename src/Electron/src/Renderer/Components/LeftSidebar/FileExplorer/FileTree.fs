@@ -369,6 +369,13 @@ type FileTree =
         let applyFileSystemCreateError errorMessage =
             errorModal.enqueue (ErrorModalRequest.create (errorMessage, title = "Could not create file or folder"))
 
+        let createConfig applyError : FileTreeCreateWorkflow.CreateConfig = {
+            setIsCreating = setIsDialogBusy
+            applyError = applyError
+            revealInTree = expansionCtx.revealPath
+            closeCreateModal = closeDialog
+        }
+
         let reloadPreviewByPath (path: string) : JS.Promise<Result<unit, string>> = promise {
             let! openResult = openView path
 
@@ -443,12 +450,7 @@ type FileTree =
                 | Error errorMessage -> applyCreateError errorMessage
                 | Ok draft ->
                     FileTreeCreateWorkflow.createArcEntry
-                        {
-                            setIsCreating = setIsDialogBusy
-                            applyError = applyCreateError
-                            revealInTree = expansionCtx.revealPath
-                            closeCreateModal = closeDialog
-                        }
+                        (createConfig applyCreateError)
                         Api.ipcArcVaultApi.addArcFile
                         draft
 
@@ -461,12 +463,7 @@ type FileTree =
                     | None -> applyFileSystemCreateError "Could not resolve the selected folder path."
                     | Some parentPath ->
                         FileTreeCreateWorkflow.createFileSystemItem
-                            {
-                                setIsCreating = setIsDialogBusy
-                                applyError = applyFileSystemCreateError
-                                revealInTree = expansionCtx.revealPath
-                                closeCreateModal = closeDialog
-                            }
+                            (createConfig applyFileSystemCreateError)
                             Api.ipcArcVaultApi.createFileSystemItem
                             {
                                 parentPath = parentPath
@@ -477,10 +474,9 @@ type FileTree =
         let createDataMap (parentInfo: DatamapParentInfo) =
             FileTreeCreateWorkflow.createDataMap
                 {
-                    setIsCreating = ignore
-                    applyError = applyCreateError
-                    revealInTree = expansionCtx.revealPath
-                    closeCreateModal = ignore
+                    createConfig applyCreateError with
+                        setIsCreating = ignore
+                        closeCreateModal = ignore
                 }
                 Api.ipcArcVaultApi.addArcFile
                 parentInfo
