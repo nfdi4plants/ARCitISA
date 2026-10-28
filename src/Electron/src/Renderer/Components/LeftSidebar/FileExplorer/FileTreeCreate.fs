@@ -4,7 +4,6 @@ open Fable.Core
 open ARCtrl
 open Swate.Components.Shared
 open Swate.Electron.Shared.FileIOTypes
-open Swate.Electron.Shared.FileIOHelper
 open Renderer.Components.Helper
 open Renderer.Components.LeftSidebar.FileExplorer.Types
 
