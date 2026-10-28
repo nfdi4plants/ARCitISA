@@ -188,6 +188,35 @@ Vitest.describe (
         )
 
         Vitest.test (
+            "keeps the text before the noise of the first line and adds the cause line of a failed free",
+            fun () ->
+                // One entry as the library sent it for a failed free, captured from an E2E run.
+                let captured =
+                    "data/a.bin: Could not confirm that the remote has 'data/a.bin': Fetching reference refs/heads/master\nbatch response: Post \"http://127.0.0.1:1/info/lfs/objects/batch\": dial tcp 127.0.0.1:1: connectex: No connection could be made because the target machine actively refused it.\nerror: failed to fetch some objects from 'http://127.0.0.1:1/info/lfs'"
+
+                let message, _ = failureTextOf [| captured |] 1
+                let lines = linesOf message
+
+                Vitest.expect(lines.Length).toBe 3
+                Vitest.expect(lines.[2].Contains "Could not confirm that the remote has").toBe true
+                Vitest.expect(lines.[2].Contains "batch response:").toBe true
+                Vitest.expect(message.Contains "Fetching reference").toBe false
+                Vitest.expect(message.Contains "failed to fetch some objects").toBe false
+        )
+
+        Vitest.test (
+            "treats a first line with the fetch: prefix of older git-lfs as noise",
+            fun () ->
+                let details = [|
+                    "a.bin: fetch: Fetching reference refs/heads/main\nbatch response: EOF"
+                |]
+
+                let lines = linesOf (fst (failureTextOf details 1))
+
+                Vitest.expect(lines.[2]).toBe "a.bin: batch response: EOF"
+        )
+
+        Vitest.test (
             "keeps a path that contains a colon whole when the entries are parallel to the paths",
             fun () ->
                 let failure = {

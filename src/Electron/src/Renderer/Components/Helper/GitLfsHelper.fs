@@ -108,14 +108,40 @@ let private splitEntry (affectedPaths: string[]) (details: string[]) (index: int
         else
             None, entry
 
-/// The progress line of git-lfs and its generic trailer. Neither names the cause of the failure.
-let private isGitLfsNoise (line: string) =
-    line.StartsWith("Fetching reference", System.StringComparison.Ordinal)
-    || line.StartsWith("error: failed to fetch some objects", System.StringComparison.Ordinal)
+/// The progress text of git-lfs and its generic trailer. Neither names the cause of the failure. Older git-lfs
+/// versions put "fetch: " in front of the progress text.
+let private isGitLfsNoise (text: string) =
+    let text =
+        if text.StartsWith("fetch: ", System.StringComparison.Ordinal) then
+            text.Substring 7
+        else
+            text
+
+    text.StartsWith("Fetching reference", System.StringComparison.Ordinal)
+    || text.StartsWith("error: failed to fetch some objects", System.StringComparison.Ordinal)
+
+/// The text before the noise when a line ends in ": " and a noise segment, as in
+/// "Could not confirm that the remote has 'a.bin': Fetching reference refs/heads/main".
+let private textBeforeNoiseTail (line: string) : string option =
+    let rec search (offset: int) =
+        let separator = line.Substring(offset).IndexOf ": "
+
+        if separator < 0 then
+            None
+        else
+            let position = offset + separator
+
+            if isGitLfsNoise (line.Substring(position + 2)) then
+                Some(line.Substring(0, position))
+            else
+                search (position + 2)
+
+    search 0
 
 /// One entry of the failure text, the path followed by one line of its message. A one-line message stays as it is.
 /// A multi-line message (the raw git-lfs output of a path) shows its first line that is not git-lfs noise, and its
-/// last non-empty line when only noise remains.
+/// last non-empty line when only noise remains. When the first line ends in noise, the text before the noise stays
+/// in front of the cause line.
 let private entrySummary (affectedPaths: string[]) (details: string[]) (index: int) =
     let path, message = splitEntry affectedPaths details index
 
@@ -130,9 +156,23 @@ let private entrySummary (affectedPaths: string[]) (details: string[]) (index: i
         elif lines.Length = 1 then
             lines.[0]
         else
-            match lines |> Array.tryFind (isGitLfsNoise >> not) with
-            | Some cause -> cause
-            | None -> lines.[lines.Length - 1]
+            let prefix =
+                if isGitLfsNoise lines.[0] then
+                    None
+                else
+                    textBeforeNoiseTail lines.[0]
+
+            let withPrefix (text: string) =
+                match prefix with
+                | Some prefix -> $"{prefix}: {text}"
+                | None -> text
+
+            // The prefix already holds what the first line says before its noise tail, so the cause comes from the later lines.
+            let candidates = if prefix.IsSome then Array.skip 1 lines else lines
+
+            match candidates |> Array.tryFind (isGitLfsNoise >> not) with
+            | Some cause -> withPrefix cause
+            | None -> withPrefix lines.[lines.Length - 1]
 
     match path with
     | Some path -> $"{path}: {shown}"

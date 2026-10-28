@@ -48,15 +48,16 @@ module LfsActivityState =
             |> Map.ofSeq
 
     /// The busy target of a path from the library's listing. The rows look up their busy state by the path of their
-    /// tree entry, and that path can differ from the listing path in Unicode form or case. The target is keyed by
-    /// the entry's path when the tree has the entry, and by the listing path when it has not.
+    /// tree entry, and that path can differ from the listing path in Unicode form or case. batchTarget keys the
+    /// target by the entry's path when the tree has the entry, and by the listing path when it has not.
     let batchTarget (snapshot: FileTreeStore.FileTreeSnapshot) (listingPath: string) : string * FileEntry option =
         match FileTreeStore.tryFind snapshot listingPath with
         | Some entry -> entry.path, Some entry
         | None -> listingPath, None
 
     /// The last known entries of the busy files, grouped by the normalized path of their parent folder. A tree
-    /// rebuild asks for one folder at a time, so the grouping is computed once per change of the activities.
+    /// rebuild asks for one folder at a time, so the file tree computes the grouping once per change of the
+    /// activities.
     let busyEntriesByParent (activities: Map<string, LfsActivity>) : Map<string, FileEntry[]> =
         activities
         |> Map.toArray
@@ -101,7 +102,7 @@ module LfsActivePathIndex =
 
     let empty = { Keys = HashSet<string>() }
 
-    /// Paths are normalized the way PathHelpers.isSameOrDescendantPathForFsComparison normalizes them.
+    /// create normalizes paths the way PathHelpers.isSameOrDescendantPathForFsComparison normalizes them.
     let create (paths: string seq) : LfsActivePathIndex =
         let keys = HashSet<string>()
 

@@ -65,9 +65,9 @@ module LargeObjectSnapshot =
             | false, _ -> Map.tryFind (PathKey.ofPath snapshot.CaseInsensitive relativePath) snapshot.ByPathKey
 
     /// Every large object at any depth below the folder, sorted by path. The ARC root (an empty path) matches
-    /// nothing, so a folder action never reaches the whole repository. Folder and entries are compared through the
-    /// same path key as tryFind. The key composes Unicode and follows the case rule of the volume. Whitespace stays
-    /// part of a name.
+    /// nothing, so a folder action never reaches the whole repository. folderObjects compares the folder and the
+    /// entries through the same path key as tryFind. The key composes Unicode and follows the case rule of the
+    /// volume. Whitespace stays part of a name.
     let folderObjects (folderPath: string) (snapshot: LargeObjectSnapshot) : FolderLargeObjects =
         let keyOf (path: string) =
             PathKey.value (PathKey.ofPath snapshot.CaseInsensitive path)

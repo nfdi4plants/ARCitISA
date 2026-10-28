@@ -123,11 +123,11 @@ type FileTree =
         let runFreeLocalLfsCopy relativePath =
             runLfsActionWithActivity "Freeing" Renderer.Components.Helper.GitLfsHelper.runFreeLocalLfsCopy relativePath
 
-        // The snapshot is read on each call, so a lookup sees the latest large object state.
+        // getFolderLargeObjects reads the snapshot on each call, so a lookup sees the latest large object state.
         let getFolderLargeObjects (folderPath: string) =
             Renderer.Context.LargeObjectStore.LargeObjectSnapshot.folderObjects folderPath largeObjectStore.Snapshot
 
-        // The folder stays busy for the whole action. Its files are marked busy too, which disables their own
+        // The folder stays busy for the whole action. The action marks its files busy too, which disables their own
         // actions and keeps the rows of files that a Free briefly moves away.
         let runLfsFolderAction
             (action: Renderer.Components.Helper.GitLfsHelper.FolderLfsAction)
