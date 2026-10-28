@@ -700,6 +700,7 @@ Vitest.describe (
                 do! waitFor (fun () -> calls.Loads.Count = 1)
                 do! Promise.sleep 20
                 Vitest.expect(isLoaded store.Snapshot "notes").toBe false
+                Vitest.expect(ctx.Value.Value.expandedIds.IsEmpty).toBe true
 
                 version.Value <- 40
 
@@ -723,6 +724,34 @@ Vitest.describe (
                 match knows store.Snapshot selected with
                 | Present _ -> ()
                 | other -> failwith $"Expected the selected file to be present, got {other}."
+            }
+        )
+
+        Vitest.test (
+            "a selection under a folder that fails to load expands nothing",
+            fun () -> promise {
+                let calls = newCalls ()
+                let ctx = ref None
+                let store = newStore ()
+
+                let load (_: string) =
+                    JS.Constructors.Promise.resolve (Error(exn "disk error"))
+
+                let env =
+                    mount store (apiWith calls load) (Probe(fun value -> ctx.Value <- Some value))
+
+                do! RTL.act (fun () -> promise { env.SetSelection(ArcSelection.forTreePath (Some "data/f.txt")) })
+                do! waitFor (fun () -> calls.Loads.Count = 1)
+                do! Promise.sleep 30
+
+                Vitest.expect(ctx.Value.Value.expandedIds.Contains "data").toBe false
+
+                // An unrelated store change must not run the dropped reveal again.
+                do! RTL.act (fun () -> promise { store.ApplyDirectoryUpdate(update 2 "notes" []) })
+                do! Promise.sleep 30
+
+                Vitest.expect(calls.Loads.Count).toBe 1
+                Vitest.expect(ctx.Value.Value.expandedIds.Contains "data").toBe false
             }
         )
 
@@ -1139,6 +1168,35 @@ Vitest.describe (
 
                 do! Promise.sleep 30
                 Vitest.expect(ctx.Value.Value.expandedIds.Contains "data").toBe false
+            }
+        )
+
+        Vitest.test (
+            "a revealPath retries a folder that failed before",
+            fun () -> promise {
+                let calls = newCalls ()
+                let ctx = ref None
+                let store = newStore ()
+
+                let load (_: string) =
+                    if calls.Loads.Count = 1 then
+                        JS.Constructors.Promise.resolve (Error(exn "disk error"))
+                    else
+                        JS.Constructors.Promise.resolve (Ok(update 2 "data" [ file "data/f.txt" ]))
+
+                mount store (apiWith calls load) (Probe(fun value -> ctx.Value <- Some value))
+                |> ignore
+
+                do! RTL.act (fun () -> promise { ctx.Value.Value.revealPath "data/f.txt" })
+                do! waitFor (fun () -> calls.Loads.Count = 1)
+                do! Promise.sleep 30
+
+                Vitest.expect(isLoaded store.Snapshot "data").toBe false
+
+                do! RTL.act (fun () -> promise { ctx.Value.Value.revealPath "data/f.txt" })
+                do! waitFor (fun () -> ctx.Value.Value.expandedIds.Contains "data")
+
+                Vitest.expect(isLoaded store.Snapshot "data").toBe true
             }
         )
 )
