@@ -418,6 +418,8 @@ module ArcEntityPathRules =
                 | None -> DeletePathClassification.GenericTarget normalizedRelativePath
             | [| zoneSegment; identifier |] ->
                 match tryParseZone zoneSegment with
+                | Some zone when identifier.StartsWith(".", StringComparison.Ordinal) ->
+                    DeletePathClassification.AddZoneDescendantTarget(zone, normalizedRelativePath)
                 | Some zone -> DeletePathClassification.EntityFolderTarget(zone, identifier, normalizedRelativePath)
                 | None -> DeletePathClassification.GenericTarget normalizedRelativePath
             | [| zoneSegment; identifier; fileName |] ->

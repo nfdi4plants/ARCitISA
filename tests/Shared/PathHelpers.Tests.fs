@@ -141,9 +141,10 @@ let tests =
                 ArcEntityPathRules.classifyDeleteItemTarget true "assays/.DS_Store"
 
             match deleteClassification with
-            | ArcEntityPathRules.DeletePathClassification.GenericTarget normalizedPath ->
+            | ArcEntityPathRules.DeletePathClassification.AddZoneDescendantTarget(ArcEntityPathRules.AddZone.Assays,
+                                                                                  normalizedPath) ->
                 Expect.equal normalizedPath "assays/.DS_Store" "The hidden file path should remain unchanged."
-            | _ -> failwith "Expected a generic delete target."
+            | _ -> failwith "Expected a generic assay-zone descendant classification."
 
             Expect.isTrue
                 (ArcEntityPathRules.classifyDeleteTarget "assays/.DS_Store"
@@ -161,6 +162,21 @@ let tests =
             Expect.isTrue
                 (ArcEntityPathRules.isRenamePathAllowed "assays/.DS_Store")
                 "Safe hidden files in add-zone roots should be renameable."
+
+        testCase "delete classifier treats dot folders in a zone as generic targets"
+        <| fun _ ->
+            let path = "assays/.swate-import-" + String.replicate 32 "a"
+            let classification = ArcEntityPathRules.classifyDeleteTarget path
+
+            match classification with
+            | ArcEntityPathRules.DeletePathClassification.AddZoneDescendantTarget(ArcEntityPathRules.AddZone.Assays,
+                                                                                  normalizedPath) ->
+                Expect.equal normalizedPath path "The dot folder path should remain unchanged."
+            | _ -> failwith "Expected a generic assay-zone descendant classification."
+
+            Expect.isTrue
+                (ArcEntityPathRules.isItemDeletePathAllowed false path)
+                "Dot folders in add-zone roots should be deletable."
 
         testCase "delete permissions keep broad add-zone descendants"
         <| fun _ ->
