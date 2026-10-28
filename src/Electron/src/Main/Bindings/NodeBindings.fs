@@ -34,3 +34,6 @@ let utf8ByteLength (text: string) : int = jsNative
 /// TextEncoder.encodeInto never writes half a character, so a surrogate pair stays whole.
 [<Emit("new TextEncoder().encodeInto($0, new Uint8Array($1)).read")>]
 let utf8PrefixUnits (text: string) (maxBytes: int) : int = jsNative
+
+[<Emit("performance.now()")>]
+let performanceNow () : float = jsNative

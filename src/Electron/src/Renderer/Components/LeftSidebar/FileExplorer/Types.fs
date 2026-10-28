@@ -9,7 +9,7 @@ open Swate.Electron.Shared.FileIOTypes
 type PathActionConfig = {
     openPathInFileExplorer: string -> JS.Promise<Result<unit, exn>>
     openPathWithDefaultApplication: string -> JS.Promise<Result<unit, exn>>
-    importExternalFiles: string -> JS.Promise<Result<unit, exn>>
+    importExternalPaths: FileSystemItemKind -> string -> JS.Promise<Result<unit, exn>>
     enqueueError: ErrorModalRequest -> unit
 }
 

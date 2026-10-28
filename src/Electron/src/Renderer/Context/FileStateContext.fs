@@ -39,7 +39,7 @@ type FileStateController = {
     activeFileImport: ActiveFileImportState option
     isCancellingFileImport: bool
     /// Returns `None` when no import ran, for example when the picker was closed.
-    importExternalFiles: string -> JS.Promise<Result<ImportExternalFilesResult option, exn>>
+    importExternalPaths: FileSystemItemKind -> string -> JS.Promise<Result<ImportExternalFilesResult option, exn>>
     cancelFileImport: unit -> JS.Promise<Result<unit, exn>>
 }
 
@@ -60,7 +60,7 @@ let FileStateCtx =
             updateSelection = ignore
             activeFileImport = None
             isCancellingFileImport = false
-            importExternalFiles = fun _ -> JS.Constructors.Promise.resolve (Ok None)
+            importExternalPaths = fun _ _ -> JS.Constructors.Promise.resolve (Ok None)
             cancelFileImport = fun () -> JS.Constructors.Promise.resolve (Ok())
         }
     )
@@ -81,7 +81,7 @@ type FileTreeSource = {
 
 type FileImportApi = {
     loadActiveImport: ActiveFileImportLoader
-    pickAbsolutePaths: unit -> JS.Promise<Result<string option, exn>>
+    pickAbsolutePaths: FileSystemItemKind -> JS.Promise<Result<string option, exn>>
     runImport: ImportExternalFilesRequest -> JS.Promise<Result<ImportExternalFilesResult, exn>>
     cancelImport: string -> JS.Promise<Result<unit, exn>>
 }
@@ -228,14 +228,14 @@ let FileStateCtxProviderWithSnapshots
             dependencies = [||]
         }
 
-    let importExternalFiles targetRelativePath = promise {
+    let importExternalPaths kind targetRelativePath = promise {
         if activeFileImport.state.IsSome || isFilePickerOpenRef.current then
             return Ok None
         else
             isFilePickerOpenRef.current <- true
 
             try
-                match! fileImportApi.pickAbsolutePaths () with
+                match! fileImportApi.pickAbsolutePaths kind with
                 | Error ex -> return Error ex
                 | Ok None -> return Ok None
                 | Ok(Some authorizationId) ->
@@ -282,7 +282,7 @@ let FileStateCtxProviderWithSnapshots
                         setSelectionState (fun currentSelection -> update currentSelection |> ArcSelection.normalize)
                 activeFileImport = activeFileImport.state
                 isCancellingFileImport = isCancellingFileImport
-                importExternalFiles = importExternalFiles
+                importExternalPaths = importExternalPaths
                 cancelFileImport = cancelFileImport
             }),
             [|

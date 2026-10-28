@@ -21,7 +21,7 @@ let private config (refreshed: ResizeArray<string>) : ContextMenuConfig = {
     pathActionConfig = {
         openPathInFileExplorer = fun _ -> promise { return Ok() }
         openPathWithDefaultApplication = fun _ -> promise { return Ok() }
-        importExternalFiles = fun _ -> promise { return Ok() }
+        importExternalPaths = fun _ _ -> promise { return Ok() }
         enqueueError = ignore
     }
     enqueueError = ignore

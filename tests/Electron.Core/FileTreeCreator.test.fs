@@ -100,12 +100,12 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "a .git file, a .git directory and LFS backup directories are ignored",
+            "a .git file and a .git directory are ignored, LFS backup names only for files",
             fun () ->
                 let hex = String.replicate 32 "b"
                 Vitest.expect(ignored ".git" ".git" false).toBe (true)
                 Vitest.expect(ignored ".git" "sub/.git" true).toBe (true)
-                Vitest.expect(ignored $"x.vcs-lfs-backup-{hex}" $"x.vcs-lfs-backup-{hex}" true).toBe (true)
+                Vitest.expect(ignored $"x.vcs-lfs-backup-{hex}" $"x.vcs-lfs-backup-{hex}" true).toBe (false)
                 Vitest.expect(ignored $"x.vcs-lfs-backup-{hex}" $"a/x.vcs-lfs-backup-{hex}" false).toBe (true)
                 Vitest.expect(ignored ".~$x.xlsx" "a/.~$x.xlsx" false).toBe (true)
                 Vitest.expect(ignored "~$x.xlsx" "a/~$x.xlsx" false).toBe (true)
@@ -114,7 +114,7 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "the tree scan skips ignored entries and keeps import staging folders",
+            "the tree scan skips ignored entries and keeps import staging folders and LFS-backup-named folders",
             fileTreeCreatorTestOptions,
             fun () -> promise {
                 let! rootPath = createTempDirectoryAsync ()
@@ -135,6 +135,7 @@ Vitest.describe (
                     do! writeUtf8FileAsync (join [| rootPath; ".git"; "config" |]) "x"
                     do! writeUtf8FileAsync (join [| rootPath; ".~$lock.xlsx" |]) "x"
                     do! writeUtf8FileAsync (join [| rootPath; "keep.txt" |]) "x"
+                    do! writeUtf8FileAsync (join [| rootPath; $"data.bin.vcs-lfs-backup-{hex}" |]) "x"
 
                     let! entries = scanEntries rootPath
 
@@ -146,6 +147,7 @@ Vitest.describe (
                             Array.sort [|
                                 basename (normalizeSlashes rootPath)
                                 stagingName
+                                $"old.vcs-lfs-backup-{hex}"
                                 "keep.txt"
                             |]
                         )
@@ -209,6 +211,75 @@ Vitest.describe (
                 Vitest.expect(missing).toBe (false)
                 Vitest.expect(unreadableKeepsInsensitive).toBe (true)
                 Vitest.expect(unreadableKeepsSensitive).toBe (false)
+            }
+        )
+
+        Vitest.test (
+            "lock files of open Office and LibreOffice documents are hidden",
+            fileTreeCreatorTestOptions,
+            fun () -> promise {
+                let! rootPath = createTempDirectoryAsync ()
+
+                try
+                    for name in
+                        [
+                            "Book1.xlsx"
+                            "~$Book1.xlsx"
+                            ".~$Book2.xlsx"
+                            ".~lock.Book1.xlsx#"
+                        ] do
+                        do! writeUtf8FileAsync (join [| rootPath; name |]) "content"
+
+                    let! entries = scanEntries rootPath
+                    let names = entries |> Array.map _.name
+
+                    Vitest.expect(names).toContain ("Book1.xlsx")
+                    Vitest.expect(names).not.toContain ("~$Book1.xlsx")
+                    Vitest.expect(names).not.toContain (".~$Book2.xlsx")
+                    Vitest.expect(names).not.toContain (".~lock.Book1.xlsx#")
+                    do! removeDirectoryAsync rootPath
+                with error ->
+                    do! removeDirectoryAsync rootPath
+                    return raise error
+            }
+        )
+
+        Vitest.test (
+            "hides .git folders in any case and shows folders named like lock files",
+            fileTreeCreatorTestOptions,
+            fun () -> promise {
+                let! rootPath = createTempDirectoryAsync ()
+
+                try
+                    for folder, file in
+                        [
+                            "data/.GIT", "config"
+                            "data", "a.txt"
+                            "~$archive.old", "b.txt"
+                        ] do
+                        let folderPath = join [| rootPath; folder |]
+
+                        do!
+                            Main.Bindings.Filesystem.mkdirAsync
+                                folderPath
+                                (Main.Bindings.Filesystem.MkdirOptions(recursive = true))
+                            |> Promise.map ignore
+
+                        do! writeUtf8FileAsync (join [| folderPath; file |]) "content"
+
+                    let! entries = scanEntries rootPath
+                    let names = entries |> Array.map _.name
+
+                    for name in [ "data"; "a.txt"; "~$archive.old"; "b.txt" ] do
+                        Vitest.expect(names).toContain (name)
+
+                    for name in [ ".GIT"; "config" ] do
+                        Vitest.expect(names).not.toContain (name)
+
+                    do! removeDirectoryAsync rootPath
+                with error ->
+                    do! removeDirectoryAsync rootPath
+                    return raise error
             }
         )
 )

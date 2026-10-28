@@ -6,9 +6,6 @@ open ARCtrl
 open Swate.Components.Shared
 open Swate.Electron.Shared.FileIOTypes
 
-let LegacyDataMapFileName = "isa_datamap"
-
-
 let getNonEmptyPathParts (path: string) =
     PathHelpers.normalizePath path
     |> fun p -> p.Split('/', StringSplitOptions.RemoveEmptyEntries)
@@ -23,25 +20,29 @@ let isLegacyDataMapPath (path: string) =
     getNonEmptyPathParts path
     |> Array.tryLast
     |> Option.exists (fun fileName ->
-        String.Equals(fileName, LegacyDataMapFileName, StringComparison.OrdinalIgnoreCase)
+        String.Equals(fileName, ArcEntityPathRules.legacyDataMapFileName, StringComparison.OrdinalIgnoreCase)
     )
 
-// Excel writes "~$name.xlsx" lock files, some tools prefix them with a dot.
-let private officeLockFilePattern = """(^|/)\.?~\$[^/]*\.xlsx$"""
+// Office writes "~$name.xlsx" lock files, some tools prefix them with a dot, and LibreOffice writes ".~lock.name#".
+let private officeLockFilePattern = """(^|/)(\.?~\$[^/]*\.[^/]+|\.~lock\.[^/]+#)$"""
 let private lfsBackupPattern = """\.vcs-lfs-backup-[0-9a-fA-F]{32}$"""
 
-/// True for entries that are not part of the ARC inventory: git metadata (a `.git` directory or a `.git`
-/// gitlink file, anywhere on the path), Office lock files, LFS backup leftovers and the legacy `isa_datamap`
-/// file. The tree scan and the file watcher share this rule. `relativePath` is relative to the ARC root.
+/// True for entries that are not part of the ARC inventory. Git metadata (a `.git` directory or a `.git`
+/// gitlink file, anywhere on the path) counts for files and folders. Lock files of Office and LibreOffice count
+/// as files only, and so do LFS backups and the legacy `isa_datamap` file, so a folder with such a name stays in
+/// the inventory. The tree scan and the note search pass the real entry kind. The file watcher cannot tell files
+/// from folders and always passes false (`ArcVaultHelper.isFileWatcherPathIgnored`). `relativePath` is relative
+/// to the ARC root.
 let isIgnoredInventoryEntry (name: string) (relativePath: string) (isDirectory: bool) =
     let normalizedPath = PathHelpers.normalizeSeparators relativePath
 
     String.Equals(name, ".git", StringComparison.OrdinalIgnoreCase)
     || getNonEmptyPathParts normalizedPath
        |> Array.exists (fun segment -> String.Equals(segment, ".git", StringComparison.OrdinalIgnoreCase))
-    || System.Text.RegularExpressions.Regex.IsMatch(normalizedPath, officeLockFilePattern)
-    || System.Text.RegularExpressions.Regex.IsMatch(normalizedPath, lfsBackupPattern)
-    || (not isDirectory && isLegacyDataMapPath normalizedPath)
+    || (not isDirectory
+        && (System.Text.RegularExpressions.Regex.IsMatch(normalizedPath, lfsBackupPattern)
+            || System.Text.RegularExpressions.Regex.IsMatch(normalizedPath, officeLockFilePattern)
+            || isLegacyDataMapPath normalizedPath))
 
 let isRootFolderPath (rootFolderName: string) (candidateRelativePath: string) =
     match getNonEmptyPathParts candidateRelativePath with

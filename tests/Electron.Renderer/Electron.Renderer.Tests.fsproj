@@ -11,6 +11,7 @@
     <Compile Include="JsonImportWidget.test.fs" />
     <Compile Include="FileTreeStore.test.fs" />
     <Compile Include="FileStateContextReload.test.fs" />
+    <Compile Include="FileImportProgressBar.test.rtl.fs" />
     <Compile Include="FileSystemHelper.test.fs" />
     <Compile Include="FileTreeFileTargetWorkflow.test.fs" />
     <Compile Include="FileTreeMaterialization.test.fs" />

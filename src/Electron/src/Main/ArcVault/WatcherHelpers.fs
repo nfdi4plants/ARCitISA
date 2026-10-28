@@ -51,43 +51,42 @@ let buildWatcherEvent (arcPath: string) (eventName: string) (path: string) =
         AbsolutePath = absolutePath
     }
 
-let createImportedFileWatcherEvents arcPath targetRelativePath sourceAbsolutePaths =
+/// Builds the absolute folder and file paths of an import's planned paths below the target folder.
+/// It does not filter paths the watcher ignores.
+let importedAbsolutePaths arcPath targetRelativePath (plannedPaths: PlannedImportPaths) : string[] * string[] =
     let targetRelativePath =
         PathHelpers.normalizeCanonicalRelativePath targetRelativePath
 
-    sourceAbsolutePaths
-    |> Array.map (fun sourcePath ->
-        let fileName = basename sourcePath
+    let toAbsolutePaths (importedRelativePaths: string[]) =
+        importedRelativePaths
+        |> Array.map (fun importedRelativePath ->
+            let relativePath =
+                if String.IsNullOrWhiteSpace targetRelativePath then
+                    importedRelativePath
+                else
+                    $"{targetRelativePath}/{importedRelativePath}"
+                |> PathHelpers.normalizePath
 
-        let relativePath =
-            if String.IsNullOrWhiteSpace targetRelativePath then
-                fileName
-            else
-                $"{targetRelativePath}/{fileName}"
-            |> PathHelpers.normalizePath
+            (buildWatcherEvent arcPath "" relativePath).AbsolutePath
+        )
 
-        buildWatcherEvent arcPath (Chokidar.Events.Add.ToString()) relativePath
-    )
+    toAbsolutePaths plannedPaths.FolderPaths, toAbsolutePaths plannedPaths.FilePaths
 
-/// The key under which an imported event is remembered, so the delayed watcher event can be matched and ignored.
-let importedFileWatcherPathKey (event: ArcVaultFileSystemEvent) =
-    PathHelpers.normalizePath (event.AbsolutePath.ToLowerInvariant())
+/// Builds the watcher events of an import's planned folders and files. It builds events only for the paths
+/// that the structural watcher reports, so the import merges its ARC structure files and claims nothing that
+/// no delayed watcher event would consume.
+let createImportedWatcherEvents arcPath targetRelativePath (plannedPaths: PlannedImportPaths) =
+    let folderPaths, filePaths =
+        importedAbsolutePaths arcPath targetRelativePath plannedPaths
 
-/// Forgets the imported paths that no delayed watcher event will consume. That is every path when the watcher is not
-/// running (ignoreInitial skips files that already exist) and the paths the structural watcher never reports. Imports
-/// are always files, so the shape check gets a file.
-let releaseUnwatchedImportedPaths
-    (arcPath: string)
-    (isWatcherRunning: bool)
-    (importedPaths: HashSet<string>)
-    (events: ArcVaultFileSystemEvent[])
-    =
-    for event in events do
-        if
-            not isWatcherRunning
-            || not (ArcVaultHelper.isStructuralWatcherPathOfKind arcPath event.AbsolutePath (Some false))
-        then
-            importedPaths.Remove(importedFileWatcherPathKey event) |> ignore
+    let buildEvents (eventName: Chokidar.Events) (isDirectory: bool) (absolutePaths: string[]) =
+        absolutePaths
+        |> Array.map (fun absolutePath -> buildWatcherEvent arcPath (eventName.ToString()) absolutePath)
+        |> Array.filter (fun event ->
+            ArcVaultHelper.isStructuralWatcherPathOfKind arcPath event.AbsolutePath (Some isDirectory)
+        )
+
+    Array.append (buildEvents Chokidar.Events.AddDir true folderPaths) (buildEvents Chokidar.Events.Add false filePaths)
 
 /// An admitted unlink for a recreated file becomes a change. An add or change for a file that is
 /// missing at merge time is dropped, because the file is either mid-replacement (an add follows)
@@ -169,7 +168,8 @@ let queueFileWatcherEvent
         let watcherEvent = buildWatcherEvent rootPath eventName changedPath
         pendingEvents.Add watcherEvent
 
-        // The eligibility check runs first. It also consumes the imported-path marker of the event.
+        // The eligibility check runs once per event and before the expansion check, because it updates the
+        // import marks of the event's path.
         if
             isArcMergeEligible watcherEvent
             && not (toArcMergeEvents [ watcherEvent ]).IsEmpty

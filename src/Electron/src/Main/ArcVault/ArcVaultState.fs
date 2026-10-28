@@ -79,6 +79,14 @@ type FileWatcherStartOutcome =
     /// The watcher was stopped, replaced or retired while the start was running, so the caller owns nothing.
     | Stopped
 
+/// The paths an import claimed and the times that decide when its claims end.
+type internal ImportedPathLease = {
+    mutable Paths: string[]
+    mutable CompletedAt: float option
+    mutable LastActivity: float
+    mutable Timer: int option
+}
+
 let private startFileWatcherOwnWriteArcMergeSuppression suppressionMs currentTimeout onElapsed =
     currentTimeout |> Option.iter Fable.Core.JS.clearTimeout
     Fable.Core.JS.setTimeout onElapsed suppressionMs
@@ -232,8 +240,11 @@ type ArcVault(window: BrowserWindow) =
     member val fileWatcherPendingArcMergeEvents: ResizeArray<ArcVaultFileSystemEvent> = ResizeArray() with get
     /// The barrier stays None outside tests. The watcher path awaits it between snapshot loading and the final eligibility check.
     member val internal WatcherMergeBarrier: (unit -> Fable.Core.JS.Promise<unit>) option = None with get, set
-    /// Imported paths awaiting their delayed Chokidar events. These events update the tree but must not re-merge the import.
-    member val importedFileWatcherPaths: HashSet<string> = HashSet() with get
+    /// Imported paths (lowercased absolute) mapped to the import that claimed them, and the latest claim wins.
+    /// Chokidar creation events for these paths update the tree but must not re-merge the import.
+    member val internal importedPathOwners: Dictionary<string, int> = Dictionary() with get
+    member val internal importedPathLeases: Dictionary<int, ImportedPathLease> = Dictionary() with get
+    member val internal nextImportToken: int = 0 with get, set
     member val private isBusyWritingValue: bool = false with get, set
     member val private fileWatcherOwnWriteArcMergeSuppressionTimeout: int option = None with get, set
     member val activeFileImport: ActiveFileImport option = None with get, set

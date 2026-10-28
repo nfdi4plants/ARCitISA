@@ -260,7 +260,7 @@ Vitest.describe (
                             |]
 
                         let canonicalPath = join [| assayFolder; ArcPathHelper.DataMapFileName |]
-                        let legacyPath = join [| assayFolder; LegacyDataMapFileName |]
+                        let legacyPath = join [| assayFolder; ArcEntityPathRules.legacyDataMapFileName |]
                         do! renameAsync canonicalPath legacyPath
 
                         let! loadResult = ARC.LoadAsyncSwate arcPath

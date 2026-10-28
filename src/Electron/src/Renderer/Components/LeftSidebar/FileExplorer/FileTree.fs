@@ -520,8 +520,8 @@ type FileTree =
             | Error errorMessage -> return Error errorMessage
         }
 
-        let importExternalFiles (targetRelativePath: string) = promise {
-            let! result = fileStateCtx.importExternalFiles targetRelativePath
+        let importExternalPaths (kind: FileSystemItemKind) (targetRelativePath: string) = promise {
+            let! result = fileStateCtx.importExternalPaths kind targetRelativePath
 
             Helper.importRevealPath result targetRelativePath
             |> Option.iter expansionCtx.revealPath
@@ -542,7 +542,7 @@ type FileTree =
             pathActionConfig = {
                 openPathInFileExplorer = Api.ipcArcVaultApi.showPathInFileExplorer
                 openPathWithDefaultApplication = Api.ipcArcVaultApi.openPathWithDefaultApplication
-                importExternalFiles = importExternalFiles
+                importExternalPaths = importExternalPaths
                 enqueueError = errorModal.enqueue
             }
             enqueueError = errorModal.enqueue
