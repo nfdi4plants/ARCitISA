@@ -324,10 +324,15 @@ type FileExplorer =
                 (fun (itemId: string) ->
                     match findRowItem itemId with
                     | Some item ->
-                        if FileExplorerLogic.canExpandDirectory item then
-                            setExpandedById itemId (not (latest.current.ExpandedIds.Contains itemId))
+                        let willExpand =
+                            FileExplorerLogic.canExpandDirectory item
+                            && not (latest.current.ExpandedIds.Contains itemId)
 
-                        selectItemById itemId
+                        if FileExplorerLogic.canExpandDirectory item then
+                            setExpandedById itemId willExpand
+
+                        if not item.IsDirectory || willExpand then
+                            selectItemById itemId
                     | None -> ()
                 ),
                 [||]

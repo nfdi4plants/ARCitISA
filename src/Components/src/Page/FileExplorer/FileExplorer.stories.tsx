@@ -803,13 +803,13 @@ export const ControlledSelectionFollowsTheParent: StoryObj<typeof ControlledSele
     await waitFor(() => expect(canvas.getByText("second.txt")).toHaveClass(/swt:text-primary/));
     await expect(canvas.getByText("first.txt")).not.toHaveClass(/swt:text-primary/);
 
-    // A click that collapses a folder and selects it keeps the folder collapsed.
+    // Collapsing a parent leaves the selected descendant and its path unchanged.
     await userEvent.click(canvas.getByText("Entity Folder"));
     await waitFor(() => expect(canvas.getByText("entity-child.txt")).toBeInTheDocument());
-    await userEvent.click(canvas.getByText("second.txt"));
+    await userEvent.click(canvas.getByText("entity-child.txt"));
     await userEvent.click(canvas.getByText("Entity Folder"));
     await waitFor(() => expect(canvas.queryByText("entity-child.txt")).toBeNull());
-    await expect(canvas.getByText("Entity Folder")).toHaveClass(/swt:text-primary/);
+    await expect(canvas.getByText("Entity Folder").closest("[data-file-item-id]")).toHaveClass(/swt:bg-base-300/);
   },
 };
 

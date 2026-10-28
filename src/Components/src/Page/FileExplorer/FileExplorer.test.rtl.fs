@@ -86,6 +86,34 @@ Vitest.describe (
         )
 
         Vitest.test (
+            "keeps the selected path highlighted when its parent is collapsed",
+            fun () ->
+                let clicked = ResizeArray<string>()
+
+                RTL.render (
+                    FileExplorer.FileExplorer(
+                        initialItems = tree,
+                        selectedItemId = Some "deep.txt",
+                        onItemClick = (fun item -> clicked.Add item.Id)
+                    )
+                )
+                |> ignore
+
+                let isHighlighted (id: string) =
+                    (RTL.screen.getByText id).closest ("[data-file-item-id]")
+                    |> Option.exists (fun row -> row.classList.contains "swt:bg-base-300")
+
+                Vitest.expect(isHighlighted "src").toBe true
+                Vitest.expect(isHighlighted "sub").toBe true
+
+                RTL.fireEvent.click (RTL.screen.getByText "src")
+
+                Vitest.expect((RTL.screen.queryByText "deep.txt").IsNone).toBe true
+                Vitest.expect(isHighlighted "src").toBe true
+                Vitest.expect(clicked.ToArray()).toEqual [||]
+        )
+
+        Vitest.test (
             "reports the new expanded ids when a directory row is clicked",
             fun () ->
                 let changes = ResizeArray<Set<string>>()
