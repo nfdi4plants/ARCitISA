@@ -35,6 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The provenance graph lays out large graphs in the background, so the app stays responsive in the meantime. (by @caroott)
 - Creating a file, folder, study, assay, workflow, run or DataMap in the File Explorer now opens the folders that lead to it, so you can see it right away. (by @Etschbeijer)
 - After importing files, the File Explorer opens the folder you imported into. (by @Etschbeijer)
+- Clicking a study, assay, workflow or run folder in the File Explorer now only expands or collapses it, and the page you are working on stays open. (by @Etschbeijer)
 
 ### 🐛 Fixed
 

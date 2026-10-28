@@ -235,7 +235,7 @@ type FileTree =
                 Renderer.Types.PageState.ArcFilePage(arcFile, Some activeView)
             | pageState -> pageState
 
-        let openPreview (alwaysOpen: bool) (item: FileItem) =
+        let openPreview (item: FileItem) =
             promise {
                 match item.Path with
                 | None ->
@@ -245,17 +245,7 @@ type FileTree =
                 | Some path when item.IsDirectory ->
                     let selectedPath = PathHelpers.normalizePath path
 
-                    let isAlreadyOpen =
-                        Helper.isArcEntityFolderViewOpen
-                            pageStateCtx.state
-                            fileStateCtx.state.Selection.TreePath
-                            selectedPath
-
-                    // Only folders with ARC metadata open a view, and only if it is not on screen yet. Otherwise the
-                    // click just expands or collapses the folder and keeps the selection, because the open view, such
-                    // as the Markdown editor, saves to the selected path.
                     match Helper.tryGetArcEntityWorkbookName selectedPath with
-                    | Some _ when isAlreadyOpen && not alwaysOpen -> ()
                     | Some workbookName ->
                         fileStateCtx.setSelection (ArcSelection.forTreePath (Some selectedPath))
                         let! result = openView $"{selectedPath}/{workbookName}"
@@ -544,7 +534,7 @@ type FileTree =
         }
 
         let contextMenuConfig: ContextMenuConfig = {
-            openItem = openPreview true
+            openItem = openPreview
             arcRootPath = appStateCtx
             openCreateModal = (fun kind -> openDialog (CreateDialog kind))
             openNoteDraft = (fun () -> pageStateCtx.setState (Some Renderer.Types.PageState.NotesDraftPage))
@@ -681,7 +671,11 @@ type FileTree =
                     prop.children [
                         Swate.Components.Page.FileExplorer.FileExplorer.FileExplorer(
                             initialItems = visibleItems,
-                            onItemClick = openPreview false,
+                            onItemClick =
+                                (fun item ->
+                                    if not item.IsDirectory then
+                                        openPreview item
+                                ),
                             onDirectoryExpansionChange = handleExpansionChange,
                             expandedIds = expansionCtx.expandedIds,
                             onExpandedIdsChange = expansionCtx.setExpandedIds,
