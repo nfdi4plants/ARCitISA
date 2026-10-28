@@ -117,3 +117,100 @@ Vitest.test (
         Vitest.expect(restored.Title).toEqual investigation.Title
         Vitest.expect(ArcInvestigation.toJsonString 0 investigation).toBe before
 )
+
+let private labelledInvestigation () =
+    let datamap parent =
+        Datamap(
+            ResizeArray [
+                DataContext(
+                    name = $"data/{parent}-first.csv",
+                    label = $"{parent} first label",
+                    description = $"{parent} description"
+                )
+                DataContext(name = $"data/{parent}-unlabelled.csv")
+                DataContext(name = $"data/{parent}-last.csv", label = $"{parent} last label")
+            ]
+        )
+
+    let cwl () =
+        CWL.Workflow(CWL.CWLWorkflowDescription(ResizeArray(), ResizeArray(), ResizeArray()))
+
+    ArcInvestigation(
+        "labelled-investigation",
+        title = "Labelled investigation",
+        assays =
+            ResizeArray [
+                ArcAssay("labelled-assay", datamap = datamap "assay")
+                ArcAssay.init "no-map-assay"
+            ],
+        studies =
+            ResizeArray [
+                ArcStudy("labelled-study", datamap = datamap "study")
+                ArcStudy.init "no-map-study"
+            ],
+        runs =
+            ResizeArray [
+                ArcRun("labelled-run", datamap = datamap "run", cwlDescription = cwl ())
+                ArcRun("no-map-run", cwlDescription = cwl ())
+            ],
+        workflows =
+            ResizeArray [
+                ArcWorkflow("labelled-workflow", datamap = datamap "workflow", cwlDescription = cwl ())
+                ArcWorkflow("no-map-workflow", cwlDescription = cwl ())
+            ]
+    )
+
+let private nestedDatamaps (investigation: ArcInvestigation) = [
+    for assay in investigation.Assays do
+        yield assay.Datamap
+    for study in investigation.Studies do
+        yield study.Datamap
+    for run in investigation.Runs do
+        yield run.Datamap
+    for workflow in investigation.Workflows do
+        yield workflow.Datamap
+]
+
+Vitest.test (
+    "copies investigation datamap labels for assays, studies, runs and workflows independently of the source",
+    fun () ->
+        let source = labelledInvestigation ()
+        let before = ArcInvestigation.toJsonString 0 source
+        let copied = DataMapCopyWorkaround.copyInvestigation source
+
+        Seq.iter2
+            (fun source target ->
+                match source, target with
+                | Some(source: Datamap), Some(target: Datamap) ->
+                    let values (datamap: Datamap) =
+                        datamap.DataContexts
+                        |> Seq.map (fun context -> context.Name, context.Label, context.Description)
+                        |> Seq.toArray
+
+                    Vitest.expect(values target).toEqual (values source)
+                    target.DataContexts.[0].Label <- Some "changed copy label"
+                | None, None -> ()
+                | _ -> failwith "Copy changed datamap presence"
+            )
+            (nestedDatamaps source)
+            (nestedDatamaps copied)
+
+        Vitest.expect(ArcInvestigation.toJsonString 0 source).toBe before
+)
+
+Vitest.test (
+    "preserves nested assay, study and run datamap labels in Investigation RO-Crate exports without mutating the source",
+    fun () ->
+        let source = labelledInvestigation ()
+        let before = ArcInvestigation.toJsonString 0 source
+
+        let _, json =
+            Export.parseToJsonString (ArcFiles.Investigation source, JsonExportFormat.ROCrate)
+
+        for parent in [ "assay"; "study"; "run" ] do
+            Vitest.expect(json.Contains $"{parent} first label").toBe true
+            Vitest.expect(json.Contains $"{parent} last label").toBe true
+            Vitest.expect(json.Contains $"{parent} description").toBe true
+
+        Vitest.expect(ArcInvestigation.toJsonString 0 source).toBe before
+)

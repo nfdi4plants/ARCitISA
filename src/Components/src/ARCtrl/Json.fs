@@ -237,7 +237,15 @@ module Export =
             | ArcFiles.Investigation ai, JsonExportFormat.ISA ->
                 nameFromId ai.Identifier, ArcInvestigation.toISAJsonString 0 ai
             | ArcFiles.Investigation ai, JsonExportFormat.ROCrate ->
-                nameFromId ai.Identifier, ai.Copy() |> ARC.fromArcInvestigation |> ARC.toROCrateJsonString (0)
+                nameFromId ai.Identifier,
+                // ARCtrl's toROCrateJsonString calls MakeDataFilesAbsolute() to normalize data paths
+                // against the ARC root. This mutates assay/study table and datamap paths in place.
+                // fromArcInvestigation shares those child objects, so copy first to protect the source.
+                // The workaround also restores datamap labels omitted by DataContext.Copy().
+                ai
+                |> DataMapCopyWorkaround.copyInvestigation
+                |> ARC.fromArcInvestigation
+                |> ARC.toROCrateJsonString 0
 
             | ArcFiles.Study(as', _), JsonExportFormat.ARCtrl ->
                 nameFromId as'.Identifier, ArcStudy.toJsonString 0 (as')
