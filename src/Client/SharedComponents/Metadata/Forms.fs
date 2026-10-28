@@ -1027,38 +1027,6 @@ type FormComponents =
         )
 
     [<ReactComponent>]
-    static member ParameterInput
-        (input: Process.ProtocolParameter, setter: Process.ProtocolParameter -> unit, ?rmv: MouseEvent -> unit)
-        =
-        FormComponents.OntologyAnnotationInput(
-            input.ParameterName,
-            (fun oas ->
-                if oas.IsSome then
-                    let temp = input.SetCategory(oas.Value)
-                    temp |> setter
-                else
-                    let temp = input.SetCategory(OntologyAnnotation.empty ())
-                    temp |> setter
-            ),
-            ?rmv = rmv
-        )
-
-    [<ReactComponent>]
-    static member ParametersInput
-        (
-            parameters: ResizeArray<Process.ProtocolParameter>,
-            setter: ResizeArray<Process.ProtocolParameter> -> unit,
-            ?label: string
-        ) =
-        FormComponents.InputSequence(
-            parameters,
-            Process.ProtocolParameter.create,
-            setter,
-            (fun (v, setV, rmv) -> FormComponents.ParameterInput(v, setV, rmv)),
-            ?label = label
-        )
-
-    [<ReactComponent>]
     static member PersonInput(input: Person, setter: Person -> unit, ?rmv: MouseEvent -> unit) =
         let nameStr =
             let fn = Option.defaultValue "" input.FirstName
