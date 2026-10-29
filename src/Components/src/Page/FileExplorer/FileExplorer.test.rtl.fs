@@ -24,6 +24,27 @@ let private tree = [
     folder "Lazy Folder" None
 ]
 
+let private realisticTree = [
+    folder
+        "studies"
+        (Some [
+            folder
+                "selected-study"
+                (Some [
+                    file "isa.study.xlsx"
+                    folder "resources" (Some [ file "selected-report.txt"; file "sibling-report.txt" ])
+                ])
+            folder "neighbor-study" (Some [ file "neighbor-study.xlsx" ])
+        ])
+    folder
+        "assays"
+        (Some [
+            folder "selected-assay" (Some [ file "isa.assay.xlsx" ])
+            folder "neighbor-assay" (Some [ file "neighbor-assay.xlsx" ])
+        ])
+    file "README.md"
+]
+
 let private treeItem (id: string) =
     RTL.screen.getByRole ("treeitem", ByRoleOptions(name = Text id))
 
@@ -34,6 +55,48 @@ let private ItemsHarness (initial: FileItem list, expose: (FileItem list -> unit
     let items, setItems = React.useState initial
     expose setItems
     FileExplorer.FileExplorer(initialItems = items)
+
+[<ReactComponent>]
+let private ControlledTreeHarness () =
+    let items = realisticTree
+
+    let expandedIds, setExpandedIds =
+        React.useState (set [ "studies"; "selected-study"; "resources"; "assays" ])
+
+    let selectedId, setSelectedId = React.useState (Some "selected-report.txt")
+
+    let materializedItems =
+        React.useMemo (
+            (fun () ->
+                let rec materialize treeItems =
+                    treeItems
+                    |> List.map (fun item ->
+                        match item.Children with
+                        | Some children when expandedIds.Contains item.Id -> {
+                            item with
+                                Children = Some(materialize children)
+                          }
+                        | Some [] -> item
+                        | Some _ -> { item with Children = None }
+                        | None -> item
+                    )
+
+                materialize items
+            ),
+            [| box items; box expandedIds |]
+        )
+
+    FileExplorer.FileExplorer(
+        initialItems = materializedItems,
+        selectedItemId = selectedId,
+        expandedIds = expandedIds,
+        onExpandedIdsChange = setExpandedIds,
+        onItemClick =
+            (fun item ->
+                if not item.IsDirectory || item.Id = "selected-assay" then
+                    setSelectedId (Some item.Id)
+            )
+    )
 
 Vitest.describe (
     "FileExplorer",
@@ -86,31 +149,45 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "keeps the selected path highlighted when its parent is collapsed",
+            "keeps only the selected branch highlighted through collapse, expansion, and reselection",
             fun () ->
-                let clicked = ResizeArray<string>()
-
-                RTL.render (
-                    FileExplorer.FileExplorer(
-                        initialItems = tree,
-                        selectedItemId = Some "deep.txt",
-                        onItemClick = (fun item -> clicked.Add item.Id)
-                    )
-                )
-                |> ignore
+                RTL.render (ControlledTreeHarness()) |> ignore
 
                 let isHighlighted (id: string) =
-                    (RTL.screen.getByText id).closest ("[data-file-item-id]")
-                    |> Option.exists (fun row -> row.classList.contains "swt:bg-base-300")
+                    let row = treeItem id
 
-                Vitest.expect(isHighlighted "src").toBe true
-                Vitest.expect(isHighlighted "sub").toBe true
+                    match row.querySelector ("[data-file-item-id]") with
+                    | null -> false
+                    | element -> element.classList.contains "swt:bg-base-300"
 
-                RTL.fireEvent.click (RTL.screen.getByText "src")
+                Vitest.expect(isHighlighted "studies").toBe true
+                Vitest.expect(isHighlighted "selected-study").toBe true
+                Vitest.expect(isHighlighted "resources").toBe true
+                Vitest.expect(isHighlighted "selected-report.txt").toBe true
+                Vitest.expect(isHighlighted "neighbor-study").toBe false
+                Vitest.expect(isHighlighted "assays").toBe false
 
-                Vitest.expect((RTL.screen.queryByText "deep.txt").IsNone).toBe true
-                Vitest.expect(isHighlighted "src").toBe true
-                Vitest.expect(clicked.ToArray()).toEqual [||]
+                RTL.fireEvent.click (RTL.screen.getByText "studies")
+
+                Vitest.expect((RTL.screen.queryByText "selected-report.txt").IsNone).toBe true
+                Vitest.expect(isHighlighted "studies").toBe true
+                Vitest.expect(isHighlighted "assays").toBe false
+
+                RTL.fireEvent.click (RTL.screen.getByText "studies")
+
+                Vitest.expect((treeItem "selected-report.txt").getAttribute "aria-selected").toBe "true"
+                Vitest.expect(isHighlighted "selected-study").toBe true
+                Vitest.expect(isHighlighted "resources").toBe true
+                Vitest.expect(isHighlighted "neighbor-study").toBe false
+
+                RTL.fireEvent.click (RTL.screen.getByText "selected-assay")
+
+                Vitest.expect(isHighlighted "assays").toBe true
+                Vitest.expect(isHighlighted "selected-assay").toBe true
+                Vitest.expect((treeItem "selected-assay").getAttribute "aria-selected").toBe "true"
+                Vitest.expect(isHighlighted "isa.assay.xlsx").toBe false
+                Vitest.expect(isHighlighted "studies").toBe false
+                Vitest.expect(isHighlighted "neighbor-assay").toBe false
         )
 
         Vitest.test (

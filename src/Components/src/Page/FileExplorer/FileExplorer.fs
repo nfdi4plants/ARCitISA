@@ -224,15 +224,37 @@ type FileExplorer =
                 [| box initialItems; box expandedIds |]
             )
 
-        let selectedPath =
+        let selectedPathRef = React.useRef ([]: FileItem list)
+        let selectedIdRef = React.useRef selectedId
+
+        if selectedIdRef.current <> selectedId then
+            selectedIdRef.current <- selectedId
+            selectedPathRef.current <- []
+
+        let resolvedSelectedPath =
             React.useMemo (
                 (fun () ->
-                    selectedId
-                    |> Option.bind (fun id -> FileTree.getPath id items [])
-                    |> Option.defaultValue []
+                    match selectedId with
+                    | Some id -> FileTree.getPath id items []
+                    | None -> None
                 ),
                 [| box initialItems; box selectedId |]
             )
+
+        let selectedPath =
+            match selectedId, resolvedSelectedPath with
+            | _, Some path -> path
+            | Some id, None when
+                selectedPathRef.current
+                |> List.tryLast
+                |> Option.exists (fun item -> item.Id = id)
+                ->
+                selectedPathRef.current
+            | _ -> []
+
+        match resolvedSelectedPath with
+        | Some path -> selectedPathRef.current <- path
+        | None -> ()
 
         let highlightedIds =
             React.useMemo ((fun () -> selectedPath |> List.map _.Id |> Set.ofList), [| box selectedPath |])
