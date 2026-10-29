@@ -74,7 +74,7 @@ let private controllerFor (store: FileTreeStore) : FileStateController = {
     updateSelection = ignore
     activeFileImport = None
     isCancellingFileImport = false
-    importExternalPaths = fun _ _ -> JS.Constructors.Promise.resolve (Ok())
+    importExternalPaths = fun _ _ -> JS.Constructors.Promise.resolve (Ok None)
     cancelFileImport = fun () -> JS.Constructors.Promise.resolve (Ok())
 }
 

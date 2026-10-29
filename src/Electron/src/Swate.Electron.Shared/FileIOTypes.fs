@@ -91,7 +91,7 @@ type ImportExternalFilesRequest = {
 
 [<RequireQualifiedAccess>]
 type ImportExternalFilesResult =
-    | Completed
+    | Completed of importedFolderPaths: string[]
     | Cancelled
 
 [<RequireQualifiedAccess>]

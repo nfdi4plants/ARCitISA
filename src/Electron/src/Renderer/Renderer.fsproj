@@ -49,6 +49,7 @@
     <Compile Include="Components\LeftSidebar\FileExplorer\Modals\FileTreeFreeLfsModal.fs" />
     <Compile Include="Components\LeftSidebar\FileExplorer\FileTreeRename.fs" />
     <Compile Include="Components\LeftSidebar\FileExplorer\FileTreeDelete.fs" />
+    <Compile Include="Components\LeftSidebar\FileExplorer\FileTreeCreate.fs" />
     <Compile Include="Components\LeftSidebar\FileExplorer\FileTree.fs" />
     <Compile Include="Components\LeftSidebar\FileExplorer\FileWatcherNotice.fs" />
     <Compile Include="Components\LeftSidebar\FileExplorer\Main.fs" />

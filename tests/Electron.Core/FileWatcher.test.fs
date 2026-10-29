@@ -538,7 +538,7 @@ Vitest.describe (
 
                 let token = vault.StartImport()
                 vault.ClaimImportedFileEvents(token, events)
-                vault.ReleaseImportedFileEventsAfterImport(token, Ok ImportExternalFilesResult.Completed)
+                vault.ReleaseImportedFileEventsAfterImport(token, Ok(ImportExternalFilesResult.Completed [||]))
 
                 Vitest.expect(vault.IsImportedWatcherEvent events.[0]).toBe false
                 Vitest.expect(vault.importedPathOwners.Count).toBe 0

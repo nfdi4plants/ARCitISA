@@ -16,15 +16,6 @@ let withArcFileRequest
         | Some request -> return! execute request
     }
 
-let addArcFileAndOpen (arcFile: ArcFiles) : JS.Promise<Result<FileContentDTO, exn>> =
-    withArcFileRequest
-        arcFile
-        (fun request -> promise {
-            match! Api.ipcArcVaultApi.addArcFile request with
-            | Error exn -> return Error exn
-            | Ok() -> return! Api.ipcArcVaultApi.openFile request.path
-        })
-
 let saveArcFile (arcFile: ArcFiles) : JS.Promise<Result<unit, exn>> =
     withArcFileRequest
         arcFile

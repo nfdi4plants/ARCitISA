@@ -725,7 +725,19 @@ module ArcFileSystemHelper =
                             | Error validationError -> raise validationError
                             | Ok() -> ()
 
-                            return Ok ImportExternalFilesResult.Completed
+                            let normalizedTarget = PathHelpers.normalizeCanonicalRelativePath targetRelativePath
+
+                            let importedFolderPaths =
+                                plan.Entries
+                                |> Array.filter (fun entry -> isTopLevelImportEntry entry && entry.IsDirectory)
+                                |> Array.map (fun entry ->
+                                    if String.IsNullOrWhiteSpace normalizedTarget then
+                                        entry.RelativePath
+                                    else
+                                        $"{normalizedTarget}/{entry.RelativePath}"
+                                )
+
+                            return Ok(ImportExternalFilesResult.Completed importedFolderPaths)
                         with importError ->
                             return!
                                 externalFileImportFailureResult plan.TemporaryDirectory createdTargetPaths importError
