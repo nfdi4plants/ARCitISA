@@ -10,7 +10,8 @@ open Swate.Components.Primitive.BaseModal.Context
 type BaseModal =
 
     [<ReactComponentAttribute>]
-    static member ModalHeader(children: ReactElement, close: unit -> unit) =
+    static member ModalHeader(children: ReactElement, close: unit -> unit, ?showClose: bool) =
+        let showClose = defaultArg showClose true
         let ctx = useBaseModalCtx ()
 
         Html.div [
@@ -19,10 +20,14 @@ type BaseModal =
                 prop.id ctx.Value.headerId
             prop.children [
                 children
-                Buttons.Buttons.DeleteButton(
-                    className = "swt:ml-auto swt:btn-sm",
-                    props = [ prop.onClick (fun _ -> close ()) ]
-                )
+                if showClose then
+                    Buttons.Buttons.DeleteButton(
+                        className = "swt:ml-auto swt:btn-sm",
+                        props = [
+                            prop.testId "modal-close"
+                            prop.onClick (fun _ -> close ())
+                        ]
+                    )
             ]
         ]
 
@@ -74,9 +79,11 @@ type BaseModal =
             ?initialFocusRef: IRefValue<option<Browser.Types.HTMLElement>>,
             ?returnFocusRef: IRefValue<option<Browser.Types.HTMLElement>>,
             ?debug: string,
-            ?className: string
+            ?className: string,
+            ?dismissible: bool
         ) =
 
+        let dismissible = defaultArg dismissible true
         let flui = FloatingUI.useFloating (isOpen, onOpenChange = setIsOpen)
 
         let click = FloatingUI.useClick (flui.context)
@@ -84,7 +91,7 @@ type BaseModal =
         let dismiss =
             FloatingUI.useDismiss (
                 flui.context,
-                FloatingUI.UseDismissProps(outsidePressEvent = FloatingUI.PressEvent.Mousedown)
+                FloatingUI.UseDismissProps(enabled = dismissible, outsidePressEvent = FloatingUI.PressEvent.Mousedown)
             )
 
         let role = FloatingUI.useRole (flui.context)
@@ -133,7 +140,7 @@ type BaseModal =
                                     ),
                                 ?returnFocus = unbox returnFocusRef,
                                 ?initialFocus = unbox initialFocusRef,
-                                visuallyHiddenDismiss = true
+                                visuallyHiddenDismiss = dismissible
                             )
                     )
                 )
@@ -153,14 +160,17 @@ type BaseModal =
             ?returnFocusRef: IRefValue<option<Browser.Types.HTMLElement>>,
             ?debug: string,
             ?className: string,
-            ?modalActionsClassName: string
+            ?modalActionsClassName: string,
+            ?dismissible: bool
         ) : ReactElement =
+        let dismissible = defaultArg dismissible true
+
         BaseModal.BaseModal(
             isOpen = isOpen,
             setIsOpen = setIsOpen,
             children =
                 React.Fragment [
-                    BaseModal.ModalHeader(header, fun () -> setIsOpen false)
+                    BaseModal.ModalHeader(header, (fun () -> setIsOpen false), showClose = dismissible)
                     if description.IsSome then
                         BaseModal.ModalDescription(description.Value)
                     if modalActions.IsSome then
@@ -172,7 +182,8 @@ type BaseModal =
             ?initialFocusRef = initialFocusRef,
             ?returnFocusRef = returnFocusRef,
             ?debug = debug,
-            ?className = className
+            ?className = className,
+            dismissible = dismissible
         )
 
 
