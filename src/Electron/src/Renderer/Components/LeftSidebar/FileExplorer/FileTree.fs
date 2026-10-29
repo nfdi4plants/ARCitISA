@@ -382,6 +382,7 @@ type FileTree =
             setIsCreating = setIsDialogBusy
             applyError = applyError
             revealInTree = expansionCtx.revealPaths
+            openCreated = openPreview false
             closeCreateModal = closeDialog
         }
 
