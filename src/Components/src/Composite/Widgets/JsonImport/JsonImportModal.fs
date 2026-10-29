@@ -126,10 +126,10 @@ type JsonImportModal =
                         |> Option.map (fun n -> n.Name.Trim())
                         |> Option.defaultValue source.Name
 
-                    Some $"{source.Name}: new table \"{name}\""
+                    Some(source.Index, $"{source.Name}: new table \"{name}\"")
                 | TableImportAction.AppendToActiveTable ->
                     appendTarget
-                    |> Option.map (fun (_, table) -> $"{source.Name}: append to \"{table.Name}\"")
+                    |> Option.map (fun (_, table) -> source.Index, $"{source.Name}: append to \"{table.Name}\"")
             )
 
         Html.div [
@@ -150,8 +150,8 @@ type JsonImportModal =
                     prop.testId "json-import-summary"
                     prop.className "swt:text-sm swt:flex swt:flex-col"
                     prop.children [
-                        for text in summaryLines do
-                            Html.div [ prop.key text; prop.text text ]
+                        for (index, text) in summaryLines do
+                            Html.div [ prop.key index; prop.text text ]
                         Html.div [ prop.text $"Content: {modeLabel decisions.ImportType}" ]
                     ]
                 ]
@@ -175,7 +175,7 @@ type JsonImportModal =
                     prop.role.alert
                     prop.className (alertClass "warning")
                     prop.text
-                        $"The current content of this {JsonHelper.fileTypeLabel currentArcFile} is replaced by the content of the file."
+                        $"The current content of this {JsonHelper.fileTypeDisplayName currentArcFile} is replaced by the content of the file."
                 ]
             ]
         ]
@@ -189,7 +189,7 @@ type JsonImportModal =
                 Html.div [ prop.text $"Imported {fileName parsed}." ]
                 if summary.ReplacedFile then
                     Html.div [
-                        prop.text $"The {JsonHelper.fileTypeLabel currentArcFile} was replaced."
+                        prop.text $"The {JsonHelper.fileTypeDisplayName currentArcFile} was replaced."
                     ]
                 else
                     Html.div [
@@ -228,7 +228,7 @@ type JsonImportModal =
 
         let decisions, setDecisions =
             React.useStateWithUpdater {
-                JsonHelper.defaultDecisions with
+                TableHelper.defaultJsonDecisions with
                     ActiveTableIndex = activeTableIndex
             }
 

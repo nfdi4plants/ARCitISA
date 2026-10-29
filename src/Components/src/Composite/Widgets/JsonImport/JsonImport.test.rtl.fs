@@ -474,37 +474,151 @@ for label, file, format in replacementCases do
         }
     )
 
+for activeTableIndex in [ None; Some 0 ] do
+    Vitest.test (
+        $"the default import produces the tables of Json.Import.applyToCurrentArcFile (active table {activeTableIndex})",
+        fun () -> promise {
+            let harness = newHarness ()
+            let current = currentAssay ()
+            let content = jsonOf (assayWith [ "A"; "B" ]) JsonExportFormat.ROCrate
+
+            let expected =
+                match
+                    Json.Import.tryParseFromJsonString (
+                        content,
+                        Some JsonExportFormat.ROCrate,
+                        Some ArcFilesDiscriminate.Assay,
+                        None
+                    )
+                with
+                | Error exn -> failwith exn.Message
+                | Ok imported ->
+                    match Json.Import.applyToCurrentArcFile (current, imported) with
+                    | Ok next -> next
+                    | Error exn -> failwith exn.Message
+
+            renderWidget harness current activeTableIndex (pickerOf content) None
+            do! openReview ()
+            RTL.fireEvent.click (button "json-import-confirm")
+            let! _ = RTL.screen.findByTestId "json-import-success"
+            Vitest.expect(exists "json-import-created-tables").toBe true
+            Vitest.expect(exists "json-import-modified-tables").toBe false
+
+            Vitest.expect(harness.SetArcFileCalls.Count).toBe 1
+            Vitest.expect(namesOf harness.SetArcFileCalls.[0]).toEqual (namesOf expected)
+            Vitest.expect(headersOf harness.SetArcFileCalls.[0]).toEqual (headersOf expected)
+        }
+    )
+
+let private notesCollisionAssayJson () =
+    let template = ArcTable.init "Comments"
+
+    for name in [ "A"; "B"; "C" ] do
+        template.AddColumn(
+            CompositeHeader.Comment name,
+            ResizeArray [
+                CompositeCell.FreeText $"{name}0"
+                CompositeCell.FreeText $"{name}1"
+            ]
+        )
+
+    // AddColumn refuses a second Comment "Notes", but a table decoded from JSON can contain one.
+    let table =
+        ArcTable.fromArcTableValues (
+            "Comments",
+            ResizeArray [
+                CompositeHeader.Comment "Notes"
+                CompositeHeader.Comment "Notes"
+                CompositeHeader.Comment "Other"
+            ],
+            template.Copy().Values
+        )
+
+    let assay = ArcAssay.init "Source"
+    assay.AddTable table
+    jsonOf (ArcFiles.Assay assay) JsonExportFormat.ARCtrl
+
 Vitest.test (
-    "the default import produces the tables of Json.Import.applyToCurrentArcFile",
+    "a failing apply step shows the error, keeps the configuration and allows a retry",
     fun () -> promise {
         let harness = newHarness ()
-        let current = currentAssay ()
-        let content = jsonOf (assayWith [ "A"; "B" ]) JsonExportFormat.ROCrate
+        let onImportJsonCalls = ref 0
 
-        let expected =
-            match
-                Json.Import.tryParseFromJsonString (
-                    content,
-                    Some JsonExportFormat.ROCrate,
-                    Some ArcFilesDiscriminate.Assay,
-                    None
-                )
-            with
-            | Error exn -> failwith exn.Message
-            | Ok imported ->
-                match Json.Import.applyToCurrentArcFile (current, imported) with
-                | Ok next -> next
-                | Error exn -> failwith exn.Message
+        renderWidget
+            harness
+            (currentAssay ())
+            None
+            (pickerOf (notesCollisionAssayJson ()))
+            (Some(fun _ ->
+                onImportJsonCalls.Value <- onImportJsonCalls.Value + 1
+                promise { return Ok() }
+            ))
 
-        renderWidget harness current None (pickerOf content) None
+        RTL.fireEvent.change (RTL.screen.getByTestId "json-import-format-select", {| target = {| value = "ARCtrl" |} |})
+
         do! openReview ()
+        // Deselecting "Other" leaves the plain copy path, so the duplicate header is rejected.
+        RTL.fireEvent.click ((checkboxes ()).[2])
         RTL.fireEvent.click (button "json-import-confirm")
-        let! _ = RTL.screen.findByTestId "json-import-success"
-        Vitest.expect(exists "json-import-created-tables").toBe true
-        Vitest.expect(exists "json-import-modified-tables").toBe false
+        let! _ = RTL.screen.findByTestId "json-import-error"
 
-        Vitest.expect(harness.SetArcFileCalls.Count).toBe 1
-        Vitest.expect(namesOf harness.SetArcFileCalls.[0]).toEqual (namesOf expected)
-        Vitest.expect(headersOf harness.SetArcFileCalls.[0]).toEqual (headersOf expected)
+        Vitest.expect(exists "table-import-action-0-ImportAsNewTable").toBe true
+        Vitest.expect((button "json-import-confirm").disabled).toBe false
+        Vitest.expect(harness.Errors.Count).toBe 0
+        Vitest.expect(onImportJsonCalls.Value).toBe 0
+    }
+)
+
+let private fileOf (name: string) (content: string) : File =
+    JsInterop.emitJsExpr (content, name) "new File([$0], $1)"
+
+let private renderWithFileInput (harness: Harness) =
+    RTL.render (
+        JsonImport.JsonImport(
+            currentAssay (),
+            harness.SetArcFileCalls.Add,
+            onError = harness.Errors.Add,
+            onImportCompleted = (fun () -> harness.Completed <- harness.Completed + 1)
+        )
+    )
+    |> ignore
+
+let private chooseFile (file: File) =
+    // The handler reads files.item 0, so a plain array is not enough.
+    let files: obj =
+        JsInterop.emitJsExpr file "Object.assign([$0], { item: i => [$0][i] })"
+
+    RTL.fireEvent.change (RTL.screen.getByTestId "json-import-file-input", {| target = {| files = files |} |})
+
+Vitest.test (
+    "a file chosen with the file input opens the review",
+    fun () -> promise {
+        let harness = newHarness ()
+        renderWithFileInput harness
+
+        let format =
+            Json.Generic.tryGetDefaultImportFormat ArcFilesDiscriminate.Assay
+            |> Option.defaultValue JsonExportFormat.ARCtrl
+
+        chooseFile (fileOf "x.json" (jsonOf (assayWith [ "A" ]) format))
+        let! _ = RTL.screen.findByTestId "modal_json-import"
+
+        Vitest.expect(harness.Errors.Count).toBe 0
+    }
+)
+
+Vitest.test (
+    "a file with invalid JSON from the file input reaches onError and opens no modal",
+    fun () -> promise {
+        let harness = newHarness ()
+        renderWithFileInput harness
+        chooseFile (fileOf "x.json" "not json")
+        do! eventually (fun () -> Vitest.expect(harness.Errors.Count).toBe 1)
+
+        let error = harness.Errors.[0]
+        Vitest.expect(error.Title).toBe "Could not import JSON"
+        Vitest.expect(error.Message).toBe "Could not read \"x.json\"."
+        Vitest.expect(error.Details.IsSome).toBe true
+        Vitest.expect(modalIsOpen ()).toBe false
     }
 )

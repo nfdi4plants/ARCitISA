@@ -138,6 +138,9 @@ Vitest.describe (
                 let importedWorkflow = ArcWorkflow.init "other-workflow"
                 importedWorkflow.Title <- Some "Imported title"
                 importedWorkflow.Description <- Some "Imported description"
+                let importedDataMap = DataMap.init ()
+                importedDataMap.DataContexts.Add(DataContext(name = "input.csv", label = "kept label"))
+                importedWorkflow.DataMap <- Some importedDataMap
 
                 let current = ArcFiles.Workflow currentWorkflow
 
@@ -148,6 +151,9 @@ Vitest.describe (
                     Vitest.expect(replaced.Title).toEqual (Some "Imported title")
                     Vitest.expect(replaced.Description).toEqual (Some "Imported description")
                     Vitest.expect(importedWorkflow.Identifier).toBe ("other-workflow")
+
+                    Vitest.expect(replaced.DataMap.Value.DataContexts.[0].Label).toEqual (Some "kept label")
+
                     Vitest.expect(editorKey next None).toEqual (editorKey current None)
                 | Ok _ -> failwith "Expected prepared import to remain a Workflow."
         )

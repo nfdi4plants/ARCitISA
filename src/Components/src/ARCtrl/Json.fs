@@ -123,6 +123,8 @@ module Generic =
 
 module Import =
 
+    module TableImportHelper = Swate.Components.Composite.TableImport.Helper
+
     let arcFileTypeLabel (fileType: ArcFilesDiscriminate) = fileType |> unbox<string>
 
     let applyToCurrentArcFile (currentArcFile: ArcFiles, importedArcFile: ArcFiles) =
@@ -152,38 +154,14 @@ module Import =
                             Table = table
                         })
 
-                    let defaults: TableImportDecisions = {
-                        ImportType = TableJoinOptions.WithValues
-                        DefaultAction = TableImportAction.ImportAsNewTable
-                        Actions = Map.empty
-                        DeselectedColumns = Set.empty
-                        EnteredNames = Map.empty
-                        ActiveTableIndex = None
-                    }
-
-                    Swate.Components.Composite.TableImport.Helper.applyImport currentArcFile sources defaults
+                    TableImportHelper.applyImport currentArcFile sources TableImportHelper.defaultJsonDecisions
                     |> Result.map (fun result -> result.ArcFile)
             // The file keeps its identifier so its path stays the same.
             | ArcFiles.Workflow currentWorkflow, ArcFiles.Workflow importedWorkflow ->
-                let source = importedWorkflow.Copy()
-                // ArcWorkflow has no public Identifier setter, so the copy is rebuilt.
-                Ok(
-                    ArcFiles.Workflow(
-                        ArcWorkflow.make
-                            currentWorkflow.Identifier
-                            source.Title
-                            source.Description
-                            source.WorkflowType
-                            source.URI
-                            source.Version
-                            source.SubWorkflowIdentifiers
-                            source.Parameters
-                            source.Components
-                            source.DataMap
-                            source.Contacts
-                            source.Comments
-                    )
-                )
+                match ArcFiles.refreshRef (ArcFiles.Workflow importedWorkflow) with
+                | ArcFiles.Workflow copy ->
+                    Ok(ArcFiles.Workflow(IdentifierSetters.setWorkflowIdentifier currentWorkflow.Identifier copy))
+                | other -> Ok other
             | _ -> Ok importedArcFile
 
     let tryParseFromJsonString

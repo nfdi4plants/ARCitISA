@@ -239,12 +239,18 @@ let newTableNames
 let tryGetAppendTarget (arcFile: ArcFiles) (activeTableIndex: int option) : (int * ArcTable) option =
     arcFile.TryGetActiveTable(activeTableIndex)
 
-/// Applies the decisions to a copy of the current file. The current file is not changed.
-let applyImport
-    (current: ArcFiles)
-    (sources: ImportSource[])
-    (decisions: TableImportDecisions)
-    : Result<TableImportResult, exn> =
+/// The decisions the JSON import starts from. The caller sets ActiveTableIndex.
+let defaultJsonDecisions: TableImportDecisions = {
+    ImportType = TableJoinOptions.WithValues
+    DefaultAction = TableImportAction.ImportAsNewTable
+    Actions = Map.empty
+    DeselectedColumns = Set.empty
+    EnteredNames = Map.empty
+    ActiveTableIndex = None
+}
+
+/// The first reason the decisions cannot be applied, or None when they can.
+let validate (current: ArcFiles) (sources: ImportSource[]) (decisions: TableImportDecisions) : string option =
     let actionOf = actionOf decisions
 
     let selected =
@@ -269,21 +275,45 @@ let applyImport
         selected
         |> Array.tryPick (fun source -> names.TryFind source.Index |> Option.bind (fun name -> name.Error))
 
-    let appendTarget = tryGetAppendTarget current decisions.ActiveTableIndex
-
     let appends =
         selected
         |> Array.exists (fun source -> actionOf source.Index = TableImportAction.AppendToActiveTable)
 
     if selected.Length = 0 then
-        Error(exn "Select at least one table to import.")
+        Some "Select at least one table to import."
     elif tableWithoutSelection.IsSome then
-        Error(exn $"Select at least one column of \"{tableWithoutSelection.Value.Name}\".")
+        Some $"Select at least one column of \"{tableWithoutSelection.Value.Name}\"."
     elif nameError.IsSome then
-        Error(exn nameError.Value)
-    elif appends && appendTarget.IsNone then
-        Error(exn "Select a table in the editor to append columns to.")
+        nameError
+    elif appends && (tryGetAppendTarget current decisions.ActiveTableIndex).IsNone then
+        Some "Select a table in the editor to append columns to."
     else
+        None
+
+/// Applies the decisions to a copy of the current file and leaves the current file as it is.
+let applyImport
+    (current: ArcFiles)
+    (sources: ImportSource[])
+    (decisions: TableImportDecisions)
+    : Result<TableImportResult, exn> =
+    match validate current sources decisions with
+    | Some message -> Error(exn message)
+    | None ->
+        let actionOf = actionOf decisions
+
+        let selected =
+            sources
+            |> Array.filter (fun source -> actionOf source.Index <> TableImportAction.NoImport)
+
+        let names =
+            newTableNames (current.ArcTables().TableNames) sources actionOf decisions.EnteredNames
+
+        let appendTarget = tryGetAppendTarget current decisions.ActiveTableIndex
+
+        let appends =
+            selected
+            |> Array.exists (fun source -> actionOf source.Index = TableImportAction.AppendToActiveTable)
+
         let positionBySourceIndex =
             selected
             |> Array.mapi (fun position source -> source.Index, position)
@@ -322,7 +352,7 @@ let applyImport
             updateTables
                 (selected |> Array.map (fun source -> source.Table) |> ResizeArray)
                 config
-                (appendTarget |> Option.map fst)
+                (if appends then appendTarget |> Option.map fst else None)
                 (Some next)
             |> ignore
 

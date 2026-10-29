@@ -14,16 +14,6 @@ let formatDescription (format: JsonExportFormat) =
     | JsonExportFormat.ISA -> "ISA-JSON, the exchange format of the ISA tools."
     | JsonExportFormat.ROCrate -> "RO-Crate JSON-LD metadata, as found in ARC RO-Crate exports."
 
-/// The caller sets ActiveTableIndex.
-let defaultDecisions: TableImportDecisions = {
-    ImportType = TableJoinOptions.WithValues
-    DefaultAction = TableImportAction.ImportAsNewTable
-    Actions = Map.empty
-    DeselectedColumns = Set.empty
-    EnteredNames = Map.empty
-    ActiveTableIndex = None
-}
-
 let sourcesOf (file: ArcFiles) : ImportSource[] =
     file.Tables()
     |> Seq.mapi (fun index table -> {
@@ -33,12 +23,8 @@ let sourcesOf (file: ArcFiles) : ImportSource[] =
     })
     |> Array.ofSeq
 
-/// Assay, Study and Run files take the tables of the JSON file. All other files are replaced.
+/// A file that can hold tables gets the tables of the JSON file. The import replaces any other file.
 let isTableImport (current: ArcFiles) = current.CanCreateTables()
-
-/// Lower-case file type name, as used in the import error messages of Json.fs.
-let fileTypeLabel (file: ArcFiles) =
-    Json.Import.arcFileTypeLabel file.RelatedArcFilesDiscriminate
 
 let private fileMessage (verb: string) (fileName: string option) =
     match fileName with
@@ -56,6 +42,17 @@ let readError (fileName: string option) (exn: exn) : JsonImportError = {
     Message = fileMessage "open" fileName
     Details = Some exn.Message
 }
+
+/// Name of the file type in the texts the user reads.
+let fileTypeDisplayName (file: ArcFiles) =
+    match file with
+    | ArcFiles.Investigation _ -> "investigation"
+    | ArcFiles.Study _ -> "study"
+    | ArcFiles.Assay _ -> "assay"
+    | ArcFiles.Run _ -> "run"
+    | ArcFiles.Workflow _ -> "workflow"
+    | ArcFiles.Template _ -> "template"
+    | ArcFiles.DataMap _ -> "DataMap"
 
 /// Applies the import to a copy. The current file is never changed.
 let applyImport
@@ -103,27 +100,4 @@ let canImport
     elif not (isTableImport current) then
         true
     else
-        let sources = sourcesOf parsed.File
-        let actionOf = TableHelper.actionOf decisions
-
-        let selected =
-            sources
-            |> Array.filter (fun source -> actionOf source.Index <> TableImportAction.NoImport)
-
-        let names =
-            TableHelper.newTableNames (current.ArcTables().TableNames) sources actionOf decisions.EnteredNames
-
-        let hasSelectedColumn (source: ImportSource) =
-            source.Table.ColumnCount = 0
-            || Seq.init source.Table.ColumnCount id
-               |> Seq.exists (TableHelper.isColumnSelected decisions source.Index)
-
-        let appends =
-            selected
-            |> Array.exists (fun source -> actionOf source.Index = TableImportAction.AppendToActiveTable)
-
-        selected.Length > 0
-        && selected |> Array.forall hasSelectedColumn
-        && names |> Map.forall (fun _ name -> name.Error.IsNone)
-        && (not appends
-            || (TableHelper.tryGetAppendTarget current decisions.ActiveTableIndex).IsSome)
+        (TableHelper.validate current (sourcesOf parsed.File) decisions).IsNone
