@@ -1075,6 +1075,41 @@ Vitest.describe (
         )
 
         Vitest.test (
+            "a selection change keeps a create or import reveal that waits for the tree push",
+            fun () -> promise {
+                let ctx = ref None
+                let store = newStore ()
+                store.ApplyDirectoryUpdate(update 2 "data" [ dir "data/other" ])
+                store.ApplyDirectoryUpdate(update 3 "data/other" [ file "data/other/n.md" ])
+
+                let load (path: string) =
+                    let children = if path = "data/A" then [ dir "data/A/raw" ] else []
+                    JS.Constructors.Promise.resolve (Ok(update 6 path children))
+
+                let env =
+                    mount store (apiWith (newCalls ()) load) (Probe(fun value -> ctx.Value <- Some value))
+
+                do! RTL.act (fun () -> promise { ctx.Value.Value.revealPaths [ "data/A/raw" ] })
+                do! Promise.sleep 30
+                Vitest.expect(ctx.Value.Value.expandedIds.Contains "data/A").toBe false
+
+                do! RTL.act (fun () -> promise { env.SetSelection(ArcSelection.forTreePath (Some "data/other/n.md")) })
+                do! waitFor (fun () -> ctx.Value.Value.expandedIds.Contains "data/other")
+
+                do!
+                    RTL.act (fun () -> promise {
+                        store.ApplyDirectoryUpdate(update 4 "data" [ dir "data/other"; dir "data/A" ])
+                    })
+
+                do!
+                    waitFor (fun () ->
+                        [ "data"; "data/other"; "data/A"; "data/A/raw" ]
+                        |> List.forall ctx.Value.Value.expandedIds.Contains
+                    )
+            }
+        )
+
+        Vitest.test (
             "opens a folder target itself as well as the folders above it",
             fun () -> promise {
                 let ctx = ref None
