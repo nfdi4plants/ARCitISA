@@ -42,6 +42,7 @@
     <Compile Include="UserDefaults.test.fs" />
     <Compile Include="VersionControlComposition.test.fs" />
     <Compile Include="VersionControlMappings.test.fs" />
+    <Compile Include="VersionControlProgressThrottle.test.fs" />
     <Compile Include="VersionControlSessionHost.test.fs" />
     <Compile Include="VersionControlLakeFs.test.fs" />
     <Compile Include="VersionControlTextDiff.test.fs" />

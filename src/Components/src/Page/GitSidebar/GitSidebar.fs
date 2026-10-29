@@ -308,7 +308,9 @@ type GitSidebar =
             ?busyTestId: string,
             ?errorTestId: string,
             ?warningTestId: string,
-            ?onCancelOperation: unit -> unit
+            ?onCancelOperation: unit -> unit,
+            ?backgroundActivities: GitSidebarBackgroundActivity[],
+            ?busyHeadlineOverride: string
         ) =
         let runStatus = defaultArg runStatus GitSidebarRunStatus.Idle
 
@@ -423,8 +425,9 @@ type GitSidebar =
                                     prop.className "swt:loading swt:loading-spinner swt:loading-xs swt:shrink-0"
                                 ]
                                 Html.span [
+                                    prop.testId "GitSidebarBusyHeadline"
                                     prop.className "swt:min-w-0 swt:wrap-anywhere"
-                                    prop.text notice
+                                    prop.text (defaultArg busyHeadlineOverride notice)
                                 ]
                                 match cancelButton with
                                 | Some button -> button
@@ -435,6 +438,72 @@ type GitSidebar =
                 ]
             | GitSidebarRunStatus.Idle
             | GitSidebarRunStatus.BusyWithoutNotice -> Html.none
+
+            match backgroundActivities with
+            | Some activities when activities.Length > 0 ->
+                Html.div [
+                    prop.className "swt:px-3 swt:pt-3 swt:@max-xs:px-2"
+                    prop.children [
+                        Html.div [
+                            prop.testId "GitSidebarBackgroundActivity"
+                            prop.className
+                                "swt:alert swt:alert-info swt:min-w-0 swt:px-3 swt:py-2 swt:text-sm swt:@max-xs:px-2"
+                            prop.children [
+                                Html.span [
+                                    prop.className "swt:loading swt:loading-spinner swt:loading-xs swt:shrink-0"
+                                ]
+                                Html.div [
+                                    prop.className "swt:flex swt:min-w-0 swt:flex-1 swt:flex-col swt:gap-2"
+                                    prop.children [
+                                        for index, activity in Array.indexed activities ->
+                                            Html.div [
+                                                prop.key index
+                                                prop.testId $"GitSidebarBackgroundActivityItem-{index}"
+                                                prop.className "swt:flex swt:min-w-0 swt:flex-col swt:gap-1"
+                                                prop.children [
+                                                    Html.span [
+                                                        prop.className "swt:min-w-0 swt:wrap-anywhere"
+                                                        prop.text (
+                                                            match activity.Detail with
+                                                            | Some detail -> $"{activity.Label} | {detail}"
+                                                            | None -> activity.Label
+                                                        )
+                                                    ]
+
+                                                    match activity.ProgressPercent with
+                                                    | Some percent ->
+                                                        Html.div [
+                                                            prop.testId $"GitSidebarBackgroundActivityBar-{index}"
+                                                            prop.className
+                                                                "swt:h-1.5 swt:w-full swt:rounded-full swt:bg-base-300"
+                                                            prop.children [
+                                                                Html.div [
+                                                                    prop.className
+                                                                        "swt:h-full swt:rounded-full swt:transition-all swt:duration-300"
+                                                                    prop.style [
+                                                                        style.width (
+                                                                            length.percent (
+                                                                                Math.Max(0.0, Math.Min(100.0, percent))
+                                                                            )
+                                                                        )
+                                                                        style.custom (
+                                                                            "backgroundColor",
+                                                                            "var(--color-base-content)"
+                                                                        )
+                                                                    ]
+                                                                ]
+                                                            ]
+                                                        ]
+                                                    | None -> Html.none
+                                                ]
+                                            ]
+                                    ]
+                                ]
+                            ]
+                        ]
+                    ]
+                ]
+            | _ -> Html.none
 
             match errorNotice with
             | Some message ->
@@ -1865,7 +1934,9 @@ type GitSidebar =
             ?onSubmitPublishRename: GitSidebarPublishSubmit -> unit,
             ?onCancelPublishRename: unit -> unit,
             ?uploadRightAway: bool,
-            ?onUploadRightAwayChange: bool -> unit
+            ?onUploadRightAwayChange: bool -> unit,
+            ?backgroundActivities: GitSidebarBackgroundActivity[],
+            ?busyHeadlineOverride: string
         ) =
 
         let runStatus = defaultArg runStatus GitSidebarRunStatus.Idle
@@ -2307,7 +2378,9 @@ type GitSidebar =
                         (if canCancelOperation && isBusy then
                              Some onCancelOperation
                          else
-                             None)
+                             None),
+                    ?backgroundActivities = backgroundActivities,
+                    ?busyHeadlineOverride = busyHeadlineOverride
                 )
 
                 GitSidebar.BranchStatusDetails(branchHeaderProps)

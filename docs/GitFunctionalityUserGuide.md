@@ -168,6 +168,11 @@ Mutations run under the vault busy flag so the file watcher does not merge ARCit
 
 Progress arrives through `versionControlProgress` with float `Completed` and `Total` counters. Clone reports progress to the window that requested it.
 
+The library reports more than counters. Live meters cover fetch, clone, the large-file download of a synchronize and the batch Git LFS download, under the phase codes `fetch`, `clone`, `lfs-pull`, `lfs-pull-checkout`, `clone-lfs-pull`, `clone-lfs-pull-checkout`, `lfs-materialize-transfer` and `lfs-materialize-checkout`. The start of each step arrives as an event with a `DisplayMessage`, such as "Fetching online changes", "Merging online changes", "Downloading large files" or "Checking out large files". Batch calls add the count events `lfs-materialize-files` and `lfs-dematerialize-files`.
+
+The bridge coalesces progress per operation (`ProgressThrottle` in `Main/IPC/IVersionControlApi.fs`). An event goes out at once when its phase code differs from the last forwarded one or when at least 100 ms have passed since the last forward. Any other event waits as the pending event, a newer one replaces it, and it goes out when the window ends. When the operation ends, `runTracked` sends the pending event before it returns the result, so the last state reaches the renderer first.
+
+
 Every operation can be canceled with `cancelOperation` and the operation id from `versionControlOperationStarted`. The running-operation registry stores each operation id with its workspace root. Cancellation kills the underlying process. The library then restores a clean state where it can and reports what is left through the recovery code.
 
 A stale `.git/index.lock` left by a killed process is removed by `clearStaleLock`, which refuses with `lock_removal_refused` while another operation runs in that workspace. After clearing, an open merge is abandoned through the normal path.

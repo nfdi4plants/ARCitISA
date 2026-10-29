@@ -860,7 +860,7 @@ let providerRefOf (model: GitState) (refName: string) =
     |> Array.tryFind (fun reference -> String.Equals(reference.Name, refName, StringComparison.Ordinal))
     |> Option.map _.ProviderRef
 
-let private progressPercent (progress: VersionControlProgressDto) =
+let progressPercent (progress: VersionControlProgressDto) =
     match progress.Completed, progress.Total with
     | Some completed, Some total when total > 0.0 -> Some(Math.Min(100.0, completed / total * 100.0))
     | _ -> None
@@ -4790,6 +4790,14 @@ let private operationRootId (operationId: string) =
     else
         operationId.Substring(0, separatorIndex)
 
+/// Whether a progress event belongs to an operation other than the one this workflow runs, such as
+/// a file tree action that started in the same window. The sub-operations of a write share the root
+/// id of the write. A workflow that does not know its operation id (a refresh) takes every event.
+let private isForeignOperation (model: GitState) (progress: VersionControlProgressDto) =
+    match model.CurrentOperation with
+    | Some current -> operationRootId current.OperationId <> operationRootId progress.OperationId
+    | None -> false
+
 let private writeCmd
     (deps: GitDependencies)
     (model: GitState)
@@ -4836,6 +4844,7 @@ let private updateCore
         && model.BusyNotice.IsNone
         ->
         model, Cmd.none
+    | SetCurrentProgress(Some progress) when isForeignOperation model progress -> model, Cmd.none
     | SetCurrentProgress(Some progress) when model.BusyOperation.IsSome ->
         {
             model with

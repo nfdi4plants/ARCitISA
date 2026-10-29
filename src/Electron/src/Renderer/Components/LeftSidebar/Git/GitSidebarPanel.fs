@@ -58,6 +58,50 @@ let private isCancellableBusyOperation (busyOperation: Renderer.Context.GitWorkf
     | Renderer.Context.GitWorkflow.GitBusyOperation.CloningRepository _ -> true
     | _ -> false
 
+let private activityVerb (kind: Renderer.Context.LfsActivityContext.LfsActionKind) =
+    match kind with
+    | Renderer.Context.LfsActivityContext.LfsActionKind.Download -> "Downloading"
+    | Renderer.Context.LfsActivityContext.LfsActionKind.Free -> "Freeing"
+
+/// One background item per running file tree action. The label names the kind and the folder or file, and the
+/// percent comes from the latest progress that the action reported.
+let backgroundActivityItems
+    (actions: Renderer.Context.LfsActivityContext.LfsRunningAction[])
+    : Swate.Components.Page.GitSidebarTypes.GitSidebarBackgroundActivity[] =
+    actions
+    |> Array.map (fun action ->
+        let item: Swate.Components.Page.GitSidebarTypes.GitSidebarBackgroundActivity = {
+            Label = $"{activityVerb action.Kind} {Swate.Components.Shared.PathHelpers.getFileName action.Target}"
+            Detail = None
+            ProgressPercent = action.Progress |> Option.bind Renderer.Context.GitWorkflow.progressPercent
+        }
+
+        item
+    )
+
+/// The Save action and the remote transfers of Download Changes and Upload Changes. A file tree action holds the
+/// session lock of the library, so these wait for it before they start.
+let private waitsForFileTreeActions (busyOperation: Renderer.Context.GitWorkflow.GitBusyOperation) =
+    match busyOperation with
+    | Renderer.Context.GitWorkflow.GitBusyOperation.CommittingSelectedChanges
+    | Renderer.Context.GitWorkflow.GitBusyOperation.CommittingAllChanges
+    | Renderer.Context.GitWorkflow.GitBusyOperation.PullingFromRemote
+    | Renderer.Context.GitWorkflow.GitBusyOperation.PushingToRemote -> true
+    | _ -> false
+
+/// The headline of a busy sidebar operation that waits for a file tree action. It names the first activity. The
+/// headline stays unset once the operation reports progress, because the operation has the lock then.
+let waitingHeadline
+    (busyOperation: Renderer.Context.GitWorkflow.GitBusyOperation option)
+    (hasProgress: bool)
+    (activities: Swate.Components.Page.GitSidebarTypes.GitSidebarBackgroundActivity[])
+    : string option =
+    match busyOperation with
+    | Some operation when waitsForFileTreeActions operation && not hasProgress && activities.Length > 0 ->
+        let label = activities.[0].Label
+        Some $"Waits for {label.Substring(0, 1).ToLowerInvariant()}{label.Substring 1} to finish"
+    | _ -> None
+
 [<ReactComponent>]
 let Main () =
 
@@ -71,6 +115,12 @@ let Main () =
     let runStatus = Renderer.Context.GitWorkflow.currentRunStatus gitStateCtx.state
     let errorCtx = useErrorModalCtx ()
     let appStateCtx = Renderer.Context.AppStateContext.useAppStateCtx ()
+
+    let runningLfsActions =
+        Renderer.Context.LfsActivityContext.useLfsRunningActionsCtx ()
+
+    let backgroundActivities =
+        React.useMemo ((fun () -> backgroundActivityItems runningLfsActions), [| box runningLfsActions |])
 
     // The dialog resets its name and owner state when the prompt object changes. The model keeps
     // the same prompt object between unrelated updates, so a re-render of the panel keeps them.
@@ -202,6 +252,12 @@ let Main () =
             changedFiles = gitStateCtx.state.ChangedFiles,
             branchOptions = gitStateCtx.state.BranchOptions,
             ?runStatus = runStatus,
+            backgroundActivities = backgroundActivities,
+            ?busyHeadlineOverride =
+                waitingHeadline
+                    gitStateCtx.state.BusyOperation
+                    gitStateCtx.state.CurrentProgress.IsSome
+                    backgroundActivities,
             ?hasRemote = Some(Renderer.Context.GitWorkflow.hasRemote gitStateCtx.state),
             ?selectedFile = gitStateCtx.state.SelectedChangePath,
             ?errorNotice = gitStateCtx.state.ErrorNotice,

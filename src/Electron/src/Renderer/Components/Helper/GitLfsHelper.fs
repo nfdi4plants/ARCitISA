@@ -24,10 +24,11 @@ let runToggleLfsMark (relativePath: string) (markAsLfs: bool) : JS.Promise<Resul
     return toUnitResult result
 }
 
-let runFreeLocalLfsCopy (relativePath: string) : JS.Promise<Result<unit, string>> = promise {
+/// The caller picks the operation id, so it can follow the progress of the action.
+let runFreeLocalLfsCopy (operationId: string) (relativePath: string) : JS.Promise<Result<unit, string>> = promise {
     let! result =
         Renderer.VersionControlApiClient.dematerializeObject {
-            OperationId = operationId ()
+            OperationId = operationId
             Path = PathHelpers.normalizeSeparators relativePath
             RefreshTree = None
         }
@@ -35,10 +36,10 @@ let runFreeLocalLfsCopy (relativePath: string) : JS.Promise<Result<unit, string>
     return toUnitResult result
 }
 
-let runDownloadLfsFile (relativePath: string) : JS.Promise<Result<unit, string>> = promise {
+let runDownloadLfsFile (operationId: string) (relativePath: string) : JS.Promise<Result<unit, string>> = promise {
     let! result =
         Renderer.VersionControlApiClient.materializeObject {
-            OperationId = operationId ()
+            OperationId = operationId
             Path = PathHelpers.normalizeSeparators relativePath
             RefreshTree = None
         }
@@ -219,10 +220,10 @@ let folderFailureText
         $"{header}\n{failure.Message}", technical
 
 /// Downloads all given files with one call. Paths that are already on disk count as done.
-let runDownloadLfsFiles (relativePaths: string[]) : JS.Promise<Result<unit, BatchFailure>> = promise {
+let runDownloadLfsFiles (operationId: string) (relativePaths: string[]) : JS.Promise<Result<unit, BatchFailure>> = promise {
     let! result =
         Renderer.VersionControlApiClient.materializeObjects {
-            OperationId = operationId ()
+            OperationId = operationId
             Paths = relativePaths |> Array.map PathHelpers.normalizeSeparators
         }
 
@@ -230,10 +231,10 @@ let runDownloadLfsFiles (relativePaths: string[]) : JS.Promise<Result<unit, Batc
 }
 
 /// Frees the local copies of all given files with one call.
-let runFreeLocalLfsCopies (relativePaths: string[]) : JS.Promise<Result<unit, BatchFailure>> = promise {
+let runFreeLocalLfsCopies (operationId: string) (relativePaths: string[]) : JS.Promise<Result<unit, BatchFailure>> = promise {
     let! result =
         Renderer.VersionControlApiClient.dematerializeObjects {
-            OperationId = operationId ()
+            OperationId = operationId
             Paths = relativePaths |> Array.map PathHelpers.normalizeSeparators
         }
 
@@ -244,13 +245,15 @@ let runFreeLocalLfsCopies (relativePaths: string[]) : JS.Promise<Result<unit, Ba
 type FolderLfsAction = {
     /// The busy label of the rows while the action runs.
     Activity: string
+    Kind: Renderer.Context.LfsActivityContext.LfsActionKind
     /// The title of the modal that reports a failure.
     FailureTitle: string
     /// The word for the count line of the failure text, as in "3 of 9 files could not be downloaded".
     Outcome: string
     /// The files of the folder that this action takes.
     SelectPaths: Renderer.Context.LargeObjectStore.FolderLargeObjects -> string[]
-    RunBatch: string[] -> JS.Promise<Result<unit, BatchFailure>>
+    /// `RunBatch operationId paths` runs the action under that operation id.
+    RunBatch: string -> string[] -> JS.Promise<Result<unit, BatchFailure>>
 }
 
 module FolderLfsAction =
@@ -258,6 +261,7 @@ module FolderLfsAction =
     /// Downloads the files whose content is not on disk.
     let download: FolderLfsAction = {
         Activity = "Downloading"
+        Kind = Renderer.Context.LfsActivityContext.LfsActionKind.Download
         FailureTitle = "Git LFS download failed"
         Outcome = "downloaded"
         SelectPaths = _.NeedsDownload
@@ -267,6 +271,7 @@ module FolderLfsAction =
     /// Frees the local copies of the files whose content is on disk.
     let free: FolderLfsAction = {
         Activity = "Freeing"
+        Kind = Renderer.Context.LfsActivityContext.LfsActionKind.Free
         FailureTitle = "Git LFS cleanup failed"
         Outcome = "freed"
         SelectPaths = _.HasLocalCopy

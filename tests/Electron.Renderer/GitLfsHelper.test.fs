@@ -339,10 +339,11 @@ Vitest.describe (
                 materializeCalls.Clear()
                 dematerializeCalls.Clear()
 
-                let! result = FolderLfsAction.download.RunBatch [| "data\\a.bin"; "data/b.bin" |]
+                let! result = FolderLfsAction.download.RunBatch "op-download" [| "data\\a.bin"; "data/b.bin" |]
 
                 Vitest.expect(result).toEqual (Ok())
                 Vitest.expect(materializeCalls.Count).toBe 1
+                Vitest.expect(materializeCalls.[0].OperationId).toBe "op-download"
                 Vitest.expect(materializeCalls.[0].Paths).toEqual [| "data/a.bin"; "data/b.bin" |]
                 Vitest.expect(dematerializeCalls.Count).toBe 0
             }
@@ -354,10 +355,11 @@ Vitest.describe (
                 materializeCalls.Clear()
                 dematerializeCalls.Clear()
 
-                let! result = FolderLfsAction.free.RunBatch [| "data\\a.bin"; "data/b.bin" |]
+                let! result = FolderLfsAction.free.RunBatch "op-free" [| "data\\a.bin"; "data/b.bin" |]
 
                 Vitest.expect(result).toEqual (Ok())
                 Vitest.expect(dematerializeCalls.Count).toBe 1
+                Vitest.expect(dematerializeCalls.[0].OperationId).toBe "op-free"
                 Vitest.expect(dematerializeCalls.[0].Paths).toEqual [| "data/a.bin"; "data/b.bin" |]
                 Vitest.expect(materializeCalls.Count).toBe 0
             }

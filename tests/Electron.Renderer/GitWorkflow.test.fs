@@ -3286,6 +3286,66 @@ Vitest.describe (
         )
 
         Vitest.test (
+            "SetCurrentProgress ignores the progress of another operation id while a write runs",
+            fun () -> promise {
+                let shown = expectedSidebarProgress "Pushing objects" 10.
+
+                let writeState = {
+                    runningState with
+                        BusyOperation = Some GitBusyOperation.CommittingAllChanges
+                        BusyNotice = Some "Committing all changes"
+                        CurrentOperation = Some { OperationId = "write-1" }
+                        CurrentProgress = Some shown
+                }
+
+                let lfsProgress = {
+                    sidebarProgress "Git LFS file dematerialized" 100. with
+                        OperationId = "lfs-action-1"
+                }
+
+                let nextState, cmd =
+                    update defaultDependencies ignore (SetCurrentProgress(Some lfsProgress)) writeState
+
+                let! messages = collectMessages cmd
+
+                Vitest.expect(nextState.CurrentProgress).toEqual (Some shown)
+                Vitest.expect(messages).toEqual ([||])
+            }
+        )
+
+        Vitest.test (
+            "SetCurrentProgress applies the progress of the write's own operation id and of its sub-operations",
+            fun () -> promise {
+                let writeState = {
+                    runningState with
+                        BusyOperation = Some GitBusyOperation.CommittingAllChanges
+                        BusyNotice = Some "Committing all changes"
+                        CurrentOperation = Some { OperationId = "write-1" }
+                }
+
+                let ownProgress = {
+                    sidebarProgress "Writing objects" 40. with
+                        OperationId = "write-1"
+                }
+
+                let ownState, _ =
+                    update defaultDependencies ignore (SetCurrentProgress(Some ownProgress)) writeState
+
+                Vitest.expect(ownState.CurrentProgress).toEqual (Some(expectedSidebarProgress "Writing objects" 40.))
+
+                let subOperationProgress = {
+                    sidebarProgress "Writing objects" 80. with
+                        OperationId = "write-1/2"
+                }
+
+                let subState, _ =
+                    update defaultDependencies ignore (SetCurrentProgress(Some subOperationProgress)) ownState
+
+                Vitest.expect(subState.CurrentProgress).toEqual (Some(expectedSidebarProgress "Writing objects" 80.))
+            }
+        )
+
+        Vitest.test (
             "SetCurrentProgress shows no progress during a silent refresh",
             fun () -> promise {
                 let silentState, _ =

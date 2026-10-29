@@ -9,6 +9,8 @@ open Fable.Core
 open Feliz
 open Swate.Components.Shared
 open Swate.Electron.Shared.FileIOTypes
+open Swate.Electron.Shared.IPCTypes.MainToRendererIpc
+open Swate.Electron.Shared.VersionControlTypes
 
 type LfsActivity = {
     /// Shown in the row while the action runs, for example "Freeing".
@@ -126,6 +128,59 @@ module LfsActivePathIndex =
         let key = PathHelpers.normalizePathForFsComparison scopePath
         not (String.IsNullOrWhiteSpace key) && index.Keys.Contains key
 
+[<RequireQualifiedAccess>]
+type LfsActionKind =
+    | Download
+    | Free
+
+/// One running download or free of the file tree. Progress is the latest event that the library
+/// reported for OperationId. It stays None until the first event arrives.
+type LfsRunningAction = {
+    OperationId: string
+    Kind: LfsActionKind
+    /// The ARC-relative path of the folder or the file the action runs on.
+    Target: string
+    IsFolder: bool
+    FileCount: int
+    Progress: VersionControlProgressDto option
+}
+
+/// The running actions in start order, each with the ARC scope it started in.
+type LfsRunningActionsState = (string * LfsRunningAction) list
+
+module LfsRunningActionsState =
+
+    let empty: LfsRunningActionsState = []
+
+    let start (scopeId: string) (action: LfsRunningAction) (state: LfsRunningActionsState) : LfsRunningActionsState =
+        state @ [ scopeId, action ]
+
+    let finish (operationId: string) (state: LfsRunningActionsState) : LfsRunningActionsState =
+        state |> List.filter (fun (_, action) -> action.OperationId <> operationId)
+
+    /// True when a running action has this operation id. Progress of any other operation is not ours.
+    let owns (operationId: string) (state: LfsRunningActionsState) =
+        state |> List.exists (fun (_, action) -> action.OperationId = operationId)
+
+    /// Stores the event as the latest progress of the action that owns its operation id.
+    let applyProgress (progress: VersionControlProgressDto) (state: LfsRunningActionsState) : LfsRunningActionsState =
+        state
+        |> List.map (fun (scopeId, action) ->
+            if action.OperationId = progress.OperationId then
+                scopeId, { action with Progress = Some progress }
+            else
+                scopeId, action
+        )
+
+    /// The running actions of one ARC in start order.
+    let forScope (scopeId: string option) (state: LfsRunningActionsState) : LfsRunningAction[] =
+        match scopeId with
+        | None -> [||]
+        | Some scopeId ->
+            state
+            |> List.choose (fun (actionScopeId, action) -> if actionScopeId = scopeId then Some action else None)
+            |> List.toArray
+
 type LfsActivityController = {
     /// Activities of the open ARC, keyed by the ARC-relative path.
     activities: Map<string, LfsActivity>
@@ -144,6 +199,9 @@ type LfsActivityController = {
             -> (string * FileEntry option)[]
             -> (unit -> JS.Promise<Result<unit, string>>)
             -> JS.Promise<Result<unit, string>>
+    /// `track action work` lists the action as running until work settles. The progress of the action's
+    /// operation id is kept with it, see LfsRunningActionsCtx.
+    track: LfsRunningAction -> (unit -> JS.Promise<Result<unit, string>>) -> JS.Promise<Result<unit, string>>
 }
 
 let LfsActivityCtx =
@@ -152,11 +210,19 @@ let LfsActivityCtx =
             activities = Map.empty
             run = fun _ _ action path -> action path
             runAll = fun _ _ action -> action ()
+            track = fun _ work -> work ()
         }
     )
 
 [<Hook>]
 let useLfsActivityCtx () = React.useContext LfsActivityCtx
+
+/// The running actions of the open ARC with their latest progress. A progress event changes this value but
+/// not the LfsActivityCtx value, so the file tree does not render for every event.
+let LfsRunningActionsCtx = React.createContext<LfsRunningAction[]> [||]
+
+[<Hook>]
+let useLfsRunningActionsCtx () = React.useContext LfsRunningActionsCtx
 
 let private toScopeId (arcRootPath: string option) =
     arcRootPath
@@ -174,6 +240,25 @@ let LfsActivityCtxProvider (children: ReactElement) =
     let update next =
         stateRef.current <- next
         setState next
+
+    let actionsState, setActionsState = React.useState LfsRunningActionsState.empty
+    let actionsRef = React.useRef actionsState
+
+    let updateActions next =
+        actionsRef.current <- next
+        setActionsState next
+
+    // Each action keeps the events of its own operation id and ignores the progress of every other operation.
+    Renderer.IpcReceiver.useProxyReceiver<IVersionControlRendererApi> (
+        (fun () -> {
+            versionControlProgress =
+                fun progress ->
+                    if LfsRunningActionsState.owns progress.OperationId actionsRef.current then
+                        updateActions (LfsRunningActionsState.applyProgress progress actionsRef.current)
+            versionControlOperationStarted = ignore
+        }),
+        [||]
+    )
 
     // An action keeps running in the library when the user switches the ARC, and it clears its own
     // entry when it settles. Other ARCs' entries therefore stay, so switching back shows them busy.
@@ -231,14 +316,33 @@ let LfsActivityCtxProvider (children: ReactElement) =
                     )
         }
 
+    let track (action: LfsRunningAction) (work: unit -> JS.Promise<Result<unit, string>>) = promise {
+        match scopeIdRef.current with
+        | None -> return! work ()
+        | Some scopeId ->
+            updateActions (LfsRunningActionsState.start scopeId action actionsRef.current)
+
+            try
+                return! work ()
+            finally
+                updateActions (LfsRunningActionsState.finish action.OperationId actionsRef.current)
+    }
+
     let controller =
         React.useMemo (
             (fun () -> {
                 activities = LfsActivityState.forScope scopeId state
                 run = run
                 runAll = runAll
+                track = track
             }),
             [| box state; box scopeId |]
         )
 
-    LfsActivityCtx.Provider(controller, children)
+    let runningActions =
+        React.useMemo (
+            (fun () -> LfsRunningActionsState.forScope scopeId actionsState),
+            [| box actionsState; box scopeId |]
+        )
+
+    LfsActivityCtx.Provider(controller, LfsRunningActionsCtx.Provider(runningActions, children))

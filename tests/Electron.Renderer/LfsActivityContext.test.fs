@@ -2,6 +2,7 @@ module ElectronRenderer.LfsActivityContextTests
 
 open Browser.Dom
 open Fable.Core
+open Fable.Core.JsInterop
 open Feliz
 open Renderer.Context.LfsActivityContext
 open Swate.Components.Shared
@@ -61,6 +62,33 @@ let private deferred () =
         pending = pending
         resolve = fun result -> resolveResult result
     }
+
+let private versionControlBridgeName = "FABLE_REMOTING_IVersionControlRendererApi"
+
+type private VersionControlProgress = Swate.Electron.Shared.VersionControlTypes.VersionControlProgressDto
+
+/// The provider listens for version control progress on the IPC bridge, which only exists inside Electron.
+/// `onListener` receives the listener that the provider registers.
+let private installVersionControlBridge (onListener: (VersionControlProgress -> unit) option -> unit) =
+    let startedListeners = ResizeArray<obj>()
+
+    window?(versionControlBridgeName) <-
+        createObj [
+            "versionControlProgress"
+            ==> fun (listener: VersionControlProgress -> unit) ->
+                onListener (Some listener)
+                fun () -> onListener None
+            "versionControlOperationStarted"
+            ==> fun (listener: obj) ->
+                startedListeners.Add listener
+                fun () -> startedListeners.Remove listener |> ignore
+        ]
+
+let private removeVersionControlBridge () : unit =
+    emitJsStatement versionControlBridgeName "delete window[$0]"
+
+Vitest.beforeEach (fun () -> installVersionControlBridge ignore)
+Vitest.afterEach (fun () -> removeVersionControlBridge ())
 
 Vitest.describe (
     "LfsActivityState",
@@ -320,5 +348,144 @@ Vitest.describe (
                     root.unmount ()
                     container.remove ()
             }
+        )
+)
+
+let private progressFor (operationId: string) (completed: float) : VersionControlProgress = {
+    OperationId = operationId
+    PhaseCode = "lfs-download"
+    Item = None
+    Completed = Some completed
+    Total = Some 10.0
+    DisplayMessage = None
+}
+
+let private runningAction (operationId: string) : LfsRunningAction = {
+    OperationId = operationId
+    Kind = LfsActionKind.Download
+    Target = "runs"
+    IsFolder = true
+    FileCount = 3
+    Progress = None
+}
+
+[<ReactComponent>]
+let private RunningActionsProbe (onActions: LfsRunningAction[] -> unit) =
+    let actions = useLfsRunningActionsCtx ()
+    React.useEffect ((fun () -> onActions actions), [| box actions |])
+    Html.none
+
+/// Mounts the provider with a probe for the controller and one for the running actions. The test reaches the
+/// listener that the provider registered on the IPC bridge to send it progress events.
+let private withRunningActions
+    (body:
+        (unit -> LfsActivityController)
+            -> (unit -> LfsRunningAction[])
+            -> (VersionControlProgress -> unit)
+            -> JS.Promise<unit>)
+    =
+    promise {
+        let container = document.createElement ("div") :?> Browser.Types.HTMLDivElement
+        document.body.appendChild container |> ignore
+        let root = ReactDOM.createRoot container
+        let controller: LfsActivityController option ref = ref None
+        let actions: LfsRunningAction[] ref = ref [||]
+
+        let progressListener: (VersionControlProgress -> unit) option ref = ref None
+
+        installVersionControlBridge (fun listener -> progressListener.Value <- listener)
+
+        try
+            root.render (
+                Renderer.Context.AppStateContext.AppStateCtx.Provider(
+                    Some "C:/arc",
+                    LfsActivityCtxProvider(
+                        React.Fragment [
+                            ControllerProbe(fun c -> controller.Value <- Some c)
+                            RunningActionsProbe(fun a -> actions.Value <- a)
+                        ]
+                    )
+                )
+            )
+
+            do! waitFor (fun () -> controller.Value.IsSome && progressListener.Value.IsSome)
+
+            do!
+                body
+                    (fun () -> controller.Value.Value)
+                    (fun () -> actions.Value)
+                    (fun progress -> progressListener.Value.Value progress)
+        finally
+            root.unmount ()
+            container.remove ()
+    }
+
+Vitest.describe (
+    "LfsActivityCtxProvider progress",
+    fun () ->
+        Vitest.test (
+            "the latest progress of a tracked operation id is stored with its running action",
+            fun () ->
+                withRunningActions (fun controller actions sendProgress -> promise {
+                    let work = deferred ()
+                    let running = controller().track (runningAction "op-a") (fun () -> work.pending)
+
+                    do! waitFor (fun () -> actions().Length = 1)
+                    Vitest.expect(actions().[0].Progress).toEqual (None)
+
+                    sendProgress (progressFor "op-a" 2.0)
+                    sendProgress (progressFor "op-a" 6.0)
+
+                    do! waitFor (fun () -> actions().[0].Progress = Some(progressFor "op-a" 6.0))
+                    Vitest.expect(actions().[0].OperationId).toBe ("op-a")
+
+                    work.resolve (Ok())
+                    let! _ = running
+                    ()
+                })
+        )
+
+        Vitest.test (
+            "progress of an unknown operation id is ignored",
+            fun () ->
+                withRunningActions (fun controller actions sendProgress -> promise {
+                    let work = deferred ()
+                    let running = controller().track (runningAction "op-a") (fun () -> work.pending)
+
+                    do! waitFor (fun () -> actions().Length = 1)
+
+                    sendProgress (progressFor "op-other" 5.0)
+                    do! Promise.sleep 20
+                    Vitest.expect(actions().[0].Progress).toEqual (None)
+
+                    // The provider is listening, because its own operation id still gets through.
+                    sendProgress (progressFor "op-a" 1.0)
+                    do! waitFor (fun () -> actions().[0].Progress = Some(progressFor "op-a" 1.0))
+
+                    work.resolve (Ok())
+                    let! _ = running
+                    ()
+                })
+        )
+
+        Vitest.test (
+            "the running action goes away when the work settles and later progress does not bring it back",
+            fun () ->
+                withRunningActions (fun controller actions sendProgress -> promise {
+                    let work = deferred ()
+                    let running = controller().track (runningAction "op-a") (fun () -> work.pending)
+
+                    do! waitFor (fun () -> actions().Length = 1)
+
+                    work.resolve (Error "network down")
+                    let! result = running
+                    Vitest.expect(result).toEqual (Error "network down")
+
+                    do! waitFor (fun () -> actions().Length = 0)
+
+                    sendProgress (progressFor "op-a" 9.0)
+                    do! Promise.sleep 20
+                    Vitest.expect(actions().Length).toBe (0)
+                })
         )
 )

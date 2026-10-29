@@ -731,6 +731,38 @@ export const BusyNoticeState: Story = {
   },
 };
 
+const waitingHeadline = "Waits for downloading raw-data to finish";
+const backgroundActivities = [
+  { Label: "Downloading raw-data", Detail: "12 files", ProgressPercent: 40 },
+  { Label: "Freeing notes.bin", Detail: undefined, ProgressPercent: undefined },
+];
+
+export const WaitingForBackgroundActivity: Story = {
+  args: {
+    status: baseStatus,
+    changedFiles: changedFiles.slice(),
+    branchOptions: branchOptions.slice(),
+    runStatus: buildBusyRunStatus("Committing all changes"),
+    backgroundActivities,
+    busyHeadlineOverride: waitingHeadline,
+    callbacks: buildCallbacks(),
+    downloadLargeFiles: true,
+    lfsAutoTrackThresholdMb: 1,
+    diffIndexingLimitMb: 1024,
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByTestId("GitSidebarBusyHeadline")).toHaveTextContent(
+      waitingHeadline,
+    );
+    const background = canvas.getByTestId("GitSidebarBackgroundActivity");
+    await expect(background).toHaveTextContent("Downloading raw-data | 12 files");
+    await expect(background).toHaveTextContent("Freeing notes.bin");
+    await expect(canvas.getByTestId("GitSidebarBackgroundActivityBar-0")).toBeInTheDocument();
+    await expect(canvas.queryByTestId("GitSidebarBackgroundActivityBar-1")).not.toBeInTheDocument();
+  },
+};
+
 export const CreateBranchModal: Story = {
   args: {
     status: baseStatus,

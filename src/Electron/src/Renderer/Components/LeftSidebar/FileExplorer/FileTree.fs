@@ -106,22 +106,46 @@ type FileTree =
 
         let runLfsActionWithActivity
             (activity: string)
-            (runAction: string -> JS.Promise<Result<unit, string>>)
+            (kind: Renderer.Context.LfsActivityContext.LfsActionKind)
+            (runAction: string -> string -> JS.Promise<Result<unit, string>>)
             (relativePath: string)
             : JS.Promise<Result<unit, string>> =
             let entry =
                 Renderer.Context.FileTreeStore.tryFind fileStateCtx.fileTreeStore.Snapshot relativePath
 
-            lfsActivityCtx.run activity entry runAction relativePath
+            // The action picks its operation id here, so the context can follow the progress of that id.
+            lfsActivityCtx.run
+                activity
+                entry
+                (fun path ->
+                    let operationId = Renderer.VersionControlApiClient.newOperationId ()
+
+                    let runningAction: Renderer.Context.LfsActivityContext.LfsRunningAction = {
+                        OperationId = operationId
+                        Kind = kind
+                        Target = path
+                        IsFolder = false
+                        FileCount = 1
+                        Progress = None
+                    }
+
+                    lfsActivityCtx.track runningAction (fun () -> runAction operationId path)
+                )
+                relativePath
 
         let runDownloadLfsFile relativePath =
             runLfsActionWithActivity
                 "Downloading"
+                Renderer.Context.LfsActivityContext.LfsActionKind.Download
                 Renderer.Components.Helper.GitLfsHelper.runDownloadLfsFile
                 relativePath
 
         let runFreeLocalLfsCopy relativePath =
-            runLfsActionWithActivity "Freeing" Renderer.Components.Helper.GitLfsHelper.runFreeLocalLfsCopy relativePath
+            runLfsActionWithActivity
+                "Freeing"
+                Renderer.Context.LfsActivityContext.LfsActionKind.Free
+                Renderer.Components.Helper.GitLfsHelper.runFreeLocalLfsCopy
+                relativePath
 
         // getFolderLargeObjects reads the snapshot on each call, so a lookup sees the latest large object state.
         let getFolderLargeObjects (folderPath: string) =
@@ -157,13 +181,28 @@ type FileTree =
                             lfsActivityCtx.runAll
                                 action.Activity
                                 targets
-                                (fun () -> promise {
-                                    match! action.RunBatch paths with
-                                    | Ok() -> return Ok()
-                                    | Error failure ->
-                                        batchFailure.Value <- Some failure
-                                        return Error failure.Message
-                                })
+                                (fun () ->
+                                    let operationId = Renderer.VersionControlApiClient.newOperationId ()
+
+                                    let runningAction: Renderer.Context.LfsActivityContext.LfsRunningAction = {
+                                        OperationId = operationId
+                                        Kind = action.Kind
+                                        Target = folderPath
+                                        IsFolder = true
+                                        FileCount = paths.Length
+                                        Progress = None
+                                    }
+
+                                    lfsActivityCtx.track
+                                        runningAction
+                                        (fun () -> promise {
+                                            match! action.RunBatch operationId paths with
+                                            | Ok() -> return Ok()
+                                            | Error failure ->
+                                                batchFailure.Value <- Some failure
+                                                return Error failure.Message
+                                        })
+                                )
 
                         match batchFailure.Value with
                         | Some failure ->

@@ -23,6 +23,67 @@ type private RendererBridge = {
 
 let private silentBridge: RendererBridge = { Progress = ignore; Started = ignore }
 
+/// Coalesces the progress of one operation. The library can report many events per second,
+/// and the renderer only needs the latest state of a phase. An event goes out at once when its
+/// phase differs from the last forwarded one or when `windowMilliseconds` have passed since
+/// the last forward. Any other event waits as the pending one (the latest wins) and goes out
+/// when the window ends. `Flush` sends the pending event, so the last state of the operation
+/// reaches the renderer before the result does.
+type ProgressThrottle
+    (
+        forward: VersionControlProgressDto -> unit,
+        now: unit -> float,
+        schedule: int -> (unit -> unit) -> (unit -> unit),
+        windowMilliseconds: int
+    ) =
+    let mutable lastPhase: string option = None
+    let mutable lastForwardedAt = 0.0
+    let mutable pending: VersionControlProgressDto option = None
+    let mutable cancelTimer: (unit -> unit) option = None
+
+    let send (progress: VersionControlProgressDto) =
+        pending <- None
+        cancelTimer |> Option.iter (fun cancel -> cancel ())
+        cancelTimer <- None
+        lastPhase <- Some progress.PhaseCode
+        lastForwardedAt <- now ()
+        forward progress
+
+    member _.Report(progress: VersionControlProgressDto) =
+        let elapsed = now () - lastForwardedAt
+
+        if lastPhase <> Some progress.PhaseCode || elapsed >= float windowMilliseconds then
+            send progress
+        else
+            pending <- Some progress
+
+            if cancelTimer.IsNone then
+                let remaining = windowMilliseconds - int elapsed
+
+                cancelTimer <-
+                    Some(
+                        schedule
+                            remaining
+                            (fun () ->
+                                cancelTimer <- None
+                                pending |> Option.iter send
+                            )
+                    )
+
+    member _.Flush() = pending |> Option.iter send
+
+/// The throttle of a running operation, on the real clock and timers.
+let private newProgressThrottle (forward: VersionControlProgressDto -> unit) =
+    ProgressThrottle(
+        forward,
+        (fun () -> JS.Constructors.Date.now ()),
+        (fun milliseconds callback ->
+            let timer = JS.setTimeout callback milliseconds
+            fun () -> JS.clearTimeout timer
+        ),
+        100
+    )
+
 // Tests replace this delay to avoid waiting ten seconds.
 let mutable waitForStaleLock: int -> Async<unit> = Async.Sleep
 
@@ -103,13 +164,15 @@ let private runTracked
     (operation: OperationContext -> Async<OperationResult<'T>>)
     : JS.Promise<OperationResult<'T>> =
     promise {
+        let throttle = newProgressThrottle bridge.Progress
+
         match
             host.TryBeginOperation(
                 operationId,
                 workspaceRoot,
                 windowId,
                 mutating,
-                fun progress -> bridge.Progress(Mappings.progress operationId progress)
+                fun progress -> throttle.Report(Mappings.progress operationId progress)
             )
         with
         | Error failure ->
@@ -130,6 +193,8 @@ let private runTracked
                     with error ->
                         return Failed(unexpectedFailure error)
                 finally
+                    // The last pending event goes out before the result does.
+                    throttle.Flush()
                     tracked.Complete()
             }
 

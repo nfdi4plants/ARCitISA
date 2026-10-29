@@ -48,6 +48,14 @@ type GitSidebarRunStatus =
     /// Busy with no banner, for a refresh the user did not start.
     | BusyWithoutNotice
 
+/// A task that runs next to the sidebar's own operation, for example a download that the file tree started.
+type GitSidebarBackgroundActivity = {
+    Label: string
+    /// Extra text after the label, such as a count.
+    Detail: string option
+    ProgressPercent: float option
+}
+
 type GitSidebarCreateBranchRequest = {
     BranchName: string
     StartPoint: string option
