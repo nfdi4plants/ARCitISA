@@ -5,6 +5,7 @@ open Fable.Core
 open ARCtrl
 open Renderer.Components.MainContent.ArcFilePreviewTargetHelper
 open Swate.Components.Composite.Widgets.JsonImport.Types
+open Swate.Components.Primitive.ErrorModal.Types
 open Swate.Components.Page.ArcFileEditor.Types
 open Swate.Components.Shared
 
@@ -186,5 +187,69 @@ Vitest.describe (
                         .toEqual ([| "Existing"; "Duplicate"; "Duplicate 1" |])
                 | _ -> failwith "Expected imported Assay to be published and sent to in-memory update."
             }
+        )
+
+        Vitest.test (
+            "returns the IPC error after publishing the page state once",
+            fun () -> promise {
+                let currentArcFile, _ = createAssayArcFile [| "Existing" |]
+                let importedAssay = ArcAssay.init "ImportedAssay"
+                importedAssay.AddTable(ArcTable.init "Fresh")
+                let importedFile = ArcFiles.Assay importedAssay
+
+                let nextArcFile =
+                    match Json.Import.applyToCurrentArcFile (currentArcFile, importedFile) with
+                    | Ok next -> next
+                    | Error exn -> failwith $"Expected import preparation to succeed: {exn.Message}"
+
+                let publishedArcFiles = ResizeArray<ArcFiles>()
+                let mutable inMemoryCalls = 0
+
+                let! result =
+                    importJsonRequestIntoCurrentTarget
+                        currentArcFile
+                        (jsonImportRequest importedFile nextArcFile)
+                        (fun arcFile -> publishedArcFiles.Add arcFile)
+                        (fun _ -> promise {
+                            inMemoryCalls <- inMemoryCalls + 1
+                            return Error(exn "IPC failed")
+                        })
+
+                match result with
+                | Ok() -> failwith "Expected the IPC failure to be returned."
+                | Error exn -> Vitest.expect(exn.Message).toBe ("IPC failed")
+
+                Vitest.expect(publishedArcFiles.Count).toBe (1)
+                Vitest.expect(inMemoryCalls).toBe (1)
+            }
+        )
+
+        Vitest.test (
+            "maps a JSON import error with details to an error modal request",
+            fun () ->
+                let request =
+                    jsonImportErrorModalRequest {
+                        Title = "Could not import JSON"
+                        Message = "Could not read \"a.json\"."
+                        Details = Some "Unexpected token"
+                    }
+
+                Vitest.expect(request.Title).toBe ("Could not import JSON")
+                Vitest.expect(request.Message).toBe ("Could not read \"a.json\".")
+                Vitest.expect(request.Details).toEqual (Some "Unexpected token")
+        )
+
+        Vitest.test (
+            "maps a JSON import error without details to an error modal request",
+            fun () ->
+                let request =
+                    jsonImportErrorModalRequest {
+                        Title = "Could not import JSON"
+                        Message = "Could not open the selected file."
+                        Details = None
+                    }
+
+                Vitest.expect(request.Message).toBe ("Could not open the selected file.")
+                Vitest.expect(request.Details).toEqual (None)
         )
 )
