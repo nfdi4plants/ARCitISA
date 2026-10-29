@@ -132,6 +132,27 @@ Vitest.describe (
         )
 
         Vitest.test (
+            "replacing a workflow keeps the current identifier and takes the imported content",
+            fun () ->
+                let currentWorkflow = ArcWorkflow.init "current-workflow"
+                let importedWorkflow = ArcWorkflow.init "other-workflow"
+                importedWorkflow.Title <- Some "Imported title"
+                importedWorkflow.Description <- Some "Imported description"
+
+                let current = ArcFiles.Workflow currentWorkflow
+
+                match Json.Import.applyToCurrentArcFile (current, ArcFiles.Workflow importedWorkflow) with
+                | Error exn -> failwith $"Expected workflow import preparation to succeed: {exn.Message}"
+                | Ok(ArcFiles.Workflow replaced as next) ->
+                    Vitest.expect(replaced.Identifier).toBe ("current-workflow")
+                    Vitest.expect(replaced.Title).toEqual (Some "Imported title")
+                    Vitest.expect(replaced.Description).toEqual (Some "Imported description")
+                    Vitest.expect(importedWorkflow.Identifier).toBe ("other-workflow")
+                    Vitest.expect(editorKey next None).toEqual (editorKey current None)
+                | Ok _ -> failwith "Expected prepared import to remain a Workflow."
+        )
+
+        Vitest.test (
             "successful table import appends tables with unique names and invokes in-memory ARC update",
             fun () -> promise {
                 let currentArcFile, currentAssay =

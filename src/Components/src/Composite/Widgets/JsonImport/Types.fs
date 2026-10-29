@@ -30,17 +30,10 @@ type ParsedJsonFile = {
 }
 
 type JsonImportSummary = {
-    SourceFileName: string option
     CreatedTableNames: string list
     ModifiedTableNames: string list
     ReplacedFile: bool
 }
-
-[<RequireQualifiedAccess>]
-type JsonImportWidgetState =
-    | SelectingFile
-    | ReadingFile
-    | Reviewing of ParsedJsonFile
 
 [<RequireQualifiedAccess>]
 type JsonImportModalPhase =

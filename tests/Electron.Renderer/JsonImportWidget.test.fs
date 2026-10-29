@@ -432,4 +432,52 @@ Vitest.describe (
                     cleanup ()
             }
         )
+
+        Vitest.test (
+            "a file without tables reaches onError and opens no modal",
+            fun () -> promise {
+                let emptyAssayJson =
+                    match
+                        Json.Export.tryParseToJsonString (
+                            ArcFiles.Assay(ArcAssay.init "EmptyAssay"),
+                            JsonExportFormat.ROCrate
+                        )
+                    with
+                    | Ok(_, content) -> content
+                    | Error exn -> failwith exn.Message
+
+                let mutable observedError: JsonImportError option = None
+
+                let pickJsonFile () = promise {
+                    return
+                        Ok(
+                            Some {
+                                FileName = Some "empty.json"
+                                Content = emptyAssayJson
+                            }
+                        )
+                }
+
+                let! container, cleanup =
+                    jsonImportWidget
+                        (ArcFiles.Assay(ArcAssay.init "CurrentAssay"))
+                        ignore
+                        (Some pickJsonFile)
+                        None
+                        (fun error -> observedError <- Some error)
+                    |> renderToBody
+
+                try
+                    (container.querySelector ("[data-testid='json-import-picker-button']") :?> HTMLButtonElement)
+                        .click ()
+
+                    do! waitUntil ((fun () -> observedError.IsSome), 100)
+
+                    Vitest.expect(observedError.Value.Message).toBe ("\"empty.json\" contains no tables to import.")
+                    Vitest.expect(observedError.Value.Details).toEqual (None)
+                    Vitest.expect(isNull (document.querySelector "[data-testid='modal_json-import']")).toBe (true)
+                finally
+                    cleanup ()
+            }
+        )
 )

@@ -57,3 +57,12 @@ Vitest.test (
 
         Vitest.expect(calls.Count).toBe 0
 )
+
+Vitest.test (
+    "an outside mousedown closes a dismissible modal",
+    fun () ->
+        let calls = renderModal None
+        RTL.fireEvent.custom ("mouseDown", document.body)
+
+        Vitest.expect(calls.ToArray()).toEqual [| false |]
+)

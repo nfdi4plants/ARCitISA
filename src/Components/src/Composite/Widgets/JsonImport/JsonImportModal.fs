@@ -34,8 +34,9 @@ module private JsonImportModalHelper =
         | JsonImportModalPhase.Importing -> true
         | _ -> false
 
-    let namesList (names: string list) =
+    let namesList (testId: string) (names: string list) =
         Html.ul [
+            prop.testId testId
             prop.className "swt:list-disc swt:ml-6"
             prop.children [
                 for name in names do
@@ -131,37 +132,31 @@ type JsonImportModal =
                     |> Option.map (fun (_, table) -> $"{source.Name}: append to \"{table.Name}\"")
             )
 
-        if sources.Length = 0 then
-            Html.div [
-                prop.className "swt:text-sm swt:opacity-70"
-                prop.text "The file contains no tables to import."
-            ]
-        else
-            Html.div [
-                prop.className "swt:flex swt:flex-col swt:gap-2"
-                prop.children [
-                    ImportModeSelect.ImportModeSelect(
-                        decisions.ImportType,
-                        (fun importType -> setDecisions (fun d -> { d with ImportType = importType })),
-                        disabled = importing
-                    )
-                    TableImportPreview.TableImportPreview(
-                        sources,
-                        callbacks,
-                        canAppend = appendTarget.IsSome,
-                        appendDisabledNote = "Select a table in the editor first to append columns to it."
-                    )
-                    Html.div [
-                        prop.testId "json-import-summary"
-                        prop.className "swt:text-sm swt:flex swt:flex-col"
-                        prop.children [
-                            for text in summaryLines do
-                                Html.div [ prop.key text; prop.text text ]
-                            Html.div [ prop.text $"Content: {modeLabel decisions.ImportType}" ]
-                        ]
+        Html.div [
+            prop.className "swt:flex swt:flex-col swt:gap-2"
+            prop.children [
+                ImportModeSelect.ImportModeSelect(
+                    decisions.ImportType,
+                    (fun importType -> setDecisions (fun d -> { d with ImportType = importType })),
+                    disabled = importing
+                )
+                TableImportPreview.TableImportPreview(
+                    sources,
+                    callbacks,
+                    canAppend = appendTarget.IsSome,
+                    appendDisabledNote = "Select a table in the editor first to append columns to it."
+                )
+                Html.div [
+                    prop.testId "json-import-summary"
+                    prop.className "swt:text-sm swt:flex swt:flex-col"
+                    prop.children [
+                        for text in summaryLines do
+                            Html.div [ prop.key text; prop.text text ]
+                        Html.div [ prop.text $"Content: {modeLabel decisions.ImportType}" ]
                     ]
                 ]
             ]
+        ]
 
     [<ReactComponent>]
     static member private ReplacementConfiguration(parsed: ParsedJsonFile, currentArcFile: ArcFiles) =
@@ -201,11 +196,16 @@ type JsonImportModal =
                         prop.text $"New tables: {summary.CreatedTableNames.Length}"
                     ]
 
+                    if not summary.CreatedTableNames.IsEmpty then
+                        namesList "json-import-created-tables" summary.CreatedTableNames
+
                     Html.div [
                         prop.text $"Modified tables: {summary.ModifiedTableNames.Length}"
                     ]
 
-                    namesList (summary.CreatedTableNames @ summary.ModifiedTableNames)
+                    if not summary.ModifiedTableNames.IsEmpty then
+                        namesList "json-import-modified-tables" summary.ModifiedTableNames
+
                 Html.div [
                     prop.className "swt:opacity-70"
                     prop.text "The changes are in the open ARC. Save the ARC to keep them."
@@ -242,29 +242,34 @@ type JsonImportModal =
                 submitting.current <- true
                 setPhase JsonImportModalPhase.Importing
 
-                match JsonHelper.applyImport currentArcFile parsed decisions with
-                | Error e ->
-                    setPhase (JsonImportModalPhase.Failed(e.Message, true))
-                    submitting.current <- false
-                | Ok(next, summary) ->
-                    promise {
-                        return!
-                            importJson {
-                                ImportedFile = parsed.File
-                                NextArcFile = next
-                                SourceFileName = parsed.FileName
-                                JsonFormat = parsed.Format
+                // The deferral lets React render the importing state before the apply step blocks the thread.
+                promise {
+                    do! Promise.sleep 0
+
+                    match JsonHelper.applyImport currentArcFile parsed decisions with
+                    | Error e ->
+                        setPhase (JsonImportModalPhase.Failed(e.Message, true))
+                        submitting.current <- false
+                    | Ok(next, summary) ->
+                        let! result =
+                            promise {
+                                return!
+                                    importJson {
+                                        ImportedFile = parsed.File
+                                        NextArcFile = next
+                                        SourceFileName = parsed.FileName
+                                        JsonFormat = parsed.Format
+                                    }
                             }
-                    }
-                    |> Promise.catch (fun e -> Error e)
-                    |> Promise.map (fun result ->
+                            |> Promise.catch (fun e -> Error e)
+
                         submitting.current <- false
 
                         match result with
                         | Ok() -> setPhase (JsonImportModalPhase.Succeeded summary)
                         | Error e -> setPhase (JsonImportModalPhase.Failed(e.Message, false))
-                    )
-                    |> Promise.start
+                }
+                |> Promise.start
 
         let setIsOpen (isOpen: bool) =
             if not isOpen then

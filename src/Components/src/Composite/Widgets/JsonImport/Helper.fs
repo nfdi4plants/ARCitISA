@@ -9,7 +9,7 @@ module TableHelper = Swate.Components.Composite.TableImport.Helper
 
 let formatDescription (format: JsonExportFormat) =
     match format with
-    | JsonExportFormat.ARCtrl -> "The ARCtrl JSON format, as written by ARCitISA and ARCtrl."
+    | JsonExportFormat.ARCtrl -> "The ARCtrl JSON format, as written by ARCtrl."
     | JsonExportFormat.ARCtrlCompressed -> "ARCtrl JSON in compressed form. Same content, smaller file."
     | JsonExportFormat.ISA -> "ISA-JSON, the exchange format of the ISA tools."
     | JsonExportFormat.ROCrate -> "RO-Crate JSON-LD metadata, as found in ARC RO-Crate exports."
@@ -38,7 +38,7 @@ let isTableImport (current: ArcFiles) = current.CanCreateTables()
 
 /// Lower-case file type name, as used in the import error messages of Json.fs.
 let fileTypeLabel (file: ArcFiles) =
-    file.RelatedArcFilesDiscriminate |> unbox<string>
+    Json.Import.arcFileTypeLabel file.RelatedArcFilesDiscriminate
 
 let private fileMessage (verb: string) (fileName: string option) =
     match fileName with
@@ -68,7 +68,6 @@ let applyImport
         |> Result.map (fun result ->
             result.ArcFile,
             {
-                SourceFileName = parsed.FileName
                 CreatedTableNames = result.CreatedTableNames
                 ModifiedTableNames = result.ModifiedTableNames
                 ReplacedFile = false
@@ -79,7 +78,6 @@ let applyImport
         |> Result.map (fun next ->
             next,
             {
-                SourceFileName = parsed.FileName
                 CreatedTableNames = []
                 ModifiedTableNames = []
                 ReplacedFile = true

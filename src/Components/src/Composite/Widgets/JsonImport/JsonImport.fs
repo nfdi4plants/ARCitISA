@@ -12,9 +12,17 @@ open ARCtrl
 
 module JsonHelper = Swate.Components.Composite.Widgets.JsonImport.Helper
 
+module private JsonImportTypes =
+
+    [<RequireQualifiedAccess>]
+    type JsonImportWidgetState =
+        | SelectingFile
+        | ReadingFile
+        | Reviewing of ParsedJsonFile
+
+open JsonImportTypes
+
 module private JsonImportWidgetHelper =
-
-
     let actionClass = "swt:btn swt:btn-primary swt:join-item swt:w-48 swt:shrink-0"
 
     let fileInputClass =
@@ -112,6 +120,17 @@ type JsonImport =
                 | Error exn ->
                     setState JsonImportWidgetState.SelectingFile
                     onError (JsonHelper.parseError jsonFile.FileName exn)
+                | Ok file when JsonHelper.isTableImport arcFile && (JsonHelper.sourcesOf file).Length = 0 ->
+                    setState JsonImportWidgetState.SelectingFile
+
+                    onError {
+                        Title = "Could not import JSON"
+                        Message =
+                            match jsonFile.FileName with
+                            | Some name -> $"\"{name}\" contains no tables to import."
+                            | None -> "The selected file contains no tables to import."
+                        Details = None
+                    }
                 | Ok file ->
                     setState (
                         JsonImportWidgetState.Reviewing {
@@ -153,8 +172,7 @@ type JsonImport =
                         Content = content
                     }
 
-            reader.onerror <-
-                fun _ -> failRead readId (Some file.name) (exn $"The file '{file.name}' could not be read.")
+            reader.onerror <- fun _ -> failRead readId (Some file.name) (exn "The file could not be read from disk.")
 
             try
                 reader.readAsText file

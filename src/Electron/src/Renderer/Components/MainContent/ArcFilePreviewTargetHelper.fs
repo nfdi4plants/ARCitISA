@@ -36,7 +36,7 @@ let importJsonRequestIntoCurrentTarget
             return
                 Error(
                     exn
-                        $"Cannot import {unbox<string> nextType} JSON into the current {unbox<string> currentType} editor."
+                        $"Cannot import {Json.Import.arcFileTypeLabel nextType} JSON into the current {Json.Import.arcFileTypeLabel currentType} editor."
                 )
         else
             return! publishAndPersistArcFile request.NextArcFile setArcFilePageState setArcFileInMemory

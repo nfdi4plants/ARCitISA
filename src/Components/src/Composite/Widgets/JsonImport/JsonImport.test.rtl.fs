@@ -368,6 +368,8 @@ Vitest.test (
         RTL.fireEvent.click confirm
         RTL.fireEvent.click confirm
 
+        do! eventually (fun () -> Vitest.expect(harness.Requests.Count).toBe 1)
+        do! Promise.sleep 20
         Vitest.expect(harness.Requests.Count).toBe 1
     }
 )
@@ -498,6 +500,8 @@ Vitest.test (
         do! openReview ()
         RTL.fireEvent.click (button "json-import-confirm")
         let! _ = RTL.screen.findByTestId "json-import-success"
+        Vitest.expect(exists "json-import-created-tables").toBe true
+        Vitest.expect(exists "json-import-modified-tables").toBe false
 
         Vitest.expect(harness.SetArcFileCalls.Count).toBe 1
         Vitest.expect(namesOf harness.SetArcFileCalls.[0]).toEqual (namesOf expected)

@@ -123,7 +123,7 @@ module Generic =
 
 module Import =
 
-    let private arcFileTypeLabel (fileType: ArcFilesDiscriminate) = fileType |> unbox<string>
+    let arcFileTypeLabel (fileType: ArcFilesDiscriminate) = fileType |> unbox<string>
 
     let applyToCurrentArcFile (currentArcFile: ArcFiles, importedArcFile: ArcFiles) =
         let currentFileType = currentArcFile.RelatedArcFilesDiscriminate
@@ -163,6 +163,27 @@ module Import =
 
                     Swate.Components.Composite.TableImport.Helper.applyImport currentArcFile sources defaults
                     |> Result.map (fun result -> result.ArcFile)
+            // The file keeps its identifier so its path stays the same.
+            | ArcFiles.Workflow currentWorkflow, ArcFiles.Workflow importedWorkflow ->
+                let source = importedWorkflow.Copy()
+                // ArcWorkflow has no Identifier setter under .NET, so the copy is rebuilt.
+                Ok(
+                    ArcFiles.Workflow(
+                        ArcWorkflow.make
+                            currentWorkflow.Identifier
+                            source.Title
+                            source.Description
+                            source.WorkflowType
+                            source.URI
+                            source.Version
+                            source.SubWorkflowIdentifiers
+                            source.Parameters
+                            source.Components
+                            source.DataMap
+                            source.Contacts
+                            source.Comments
+                    )
+                )
             | _ -> Ok importedArcFile
 
     let tryParseFromJsonString
