@@ -387,6 +387,7 @@ let private runningAction (operationId: string) : LfsRunningAction = {
     Count = None
     StepPercent = None
     Log = Renderer.Context.OperationLog.empty
+    StartedAt = 0.0
 }
 
 [<ReactComponent>]
@@ -468,6 +469,25 @@ Vitest.describe (
 
                     do! waitFor (fun () -> actions().[0].Count = Some(6, 10))
                     Vitest.expect(actions().[0].OperationId).toBe ("op-a")
+
+                    work.resolve (Ok())
+                    let! _ = running
+                    ()
+                })
+        )
+
+        Vitest.test (
+            "track stamps the start time of the running action",
+            fun () ->
+                withRunningActions (fun controller actions _ _ -> promise {
+                    let before = Fable.Core.JS.Constructors.Date.now ()
+                    let work = deferred ()
+                    let running = controller().track (runningAction "op-a") (fun () -> work.pending)
+
+                    do! waitFor (fun () -> actions().Length = 1)
+
+                    let after = Fable.Core.JS.Constructors.Date.now ()
+                    Vitest.expect(actions().[0].StartedAt >= before && actions().[0].StartedAt <= after).toBe true
 
                     work.resolve (Ok())
                     let! _ = running
@@ -618,7 +638,7 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "the count and the step percent are independent and other phases change nothing",
+            "the count and the step percent are independent",
             fun () ->
                 let counted = applyEvent (runningAction "op-a") (countEventFor "op-a" 4.0)
 
@@ -628,7 +648,25 @@ Vitest.describe (
                 Vitest.expect(metered.Count).toEqual (Some(4, 10))
                 Vitest.expect(metered.StepPercent).toEqual (Some 30.0)
 
+                // A repeated event with the same numbers does not produce a new state.
                 let state = [ ("scope", metered) ]
+
+                let repeated =
+                    LfsRunningActionsState.applyProgress
+                        (eventOf "op-a" LfsProgressPhase.MaterializeTransfer (Some 30.0) (Some 100.0))
+                        state
+
+                Vitest.expect(obj.ReferenceEquals(repeated, state)).toBe true
+        )
+
+        Vitest.test (
+            "an event of a phase that is no meter clears the step percent and keeps the count",
+            fun () ->
+                let metered = {
+                    runningAction "op-a" with
+                        Count = Some(4, 10)
+                        StepPercent = Some 30.0
+                }
 
                 for phase in
                     [
@@ -637,14 +675,24 @@ Vitest.describe (
                         "lfs-download"
                         "git"
                     ] do
-                    let next =
-                        LfsRunningActionsState.applyProgress (eventOf "op-a" phase (Some 9.0) (Some 10.0)) state
+                    let next = applyEvent metered (eventOf "op-a" phase (Some 9.0) (Some 10.0))
 
-                    Vitest.expect(obj.ReferenceEquals(next, state)).toBe true
+                    Vitest.expect(next.StepPercent).toEqual None
+                    Vitest.expect(next.Count).toEqual (Some(4, 10))
 
-                // A repeated event with the same numbers does not produce a new state either.
-                let repeated = LfsRunningActionsState.applyProgress (countEventFor "op-a" 4.0) state
-                Vitest.expect(obj.ReferenceEquals(repeated, state)).toBe true
+                // A count event clears the step percent too and applies its count.
+                let counted = applyEvent metered (countEventFor "op-a" 5.0)
+                Vitest.expect(counted.StepPercent).toEqual None
+                Vitest.expect(counted.Count).toEqual (Some(5, 10))
+
+                // Without a step percent such an event changes nothing.
+                let idle = { metered with StepPercent = None }
+                let state = [ ("scope", idle) ]
+
+                let unchanged =
+                    LfsRunningActionsState.applyProgress (eventOf "op-a" "lfs-materialize" (Some 9.0) (Some 10.0)) state
+
+                Vitest.expect(obj.ReferenceEquals(unchanged, state)).toBe true
         )
 )
 
@@ -687,11 +735,12 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "a single file shows the step percent rounded down and nothing without one",
+            "a single file shows no text and no percent, even with a step percent",
             fun () ->
-                Vitest.expect(LfsRunningAction.progressText single).toEqual None
-
                 let metered = { single with StepPercent = Some 7.5 }
-                Vitest.expect(LfsRunningAction.progressText metered).toEqual (Some "7%")
+
+                Vitest.expect(LfsRunningAction.progressText single).toEqual None
+                Vitest.expect(LfsRunningAction.progressText metered).toEqual None
+                Vitest.expect(LfsRunningAction.progressPercent metered).toEqual None
         )
 )

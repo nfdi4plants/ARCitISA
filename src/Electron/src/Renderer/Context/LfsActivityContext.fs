@@ -134,7 +134,8 @@ type LfsActionKind =
     | Free
 
 /// Phase codes of the library's progress events for large-file batches and transfers. The other phases of an
-/// operation (per-file events and the like) do not matter to the file tree.
+/// operation (per-file events and the like) carry no number that the file tree shows. They only clear the step
+/// percent.
 module LfsProgressPhase =
 
     /// Count event of a download batch with more than one path.
@@ -164,28 +165,21 @@ type LfsRunningAction = {
     FileCount: int
     /// Files done and files requested by the latest count event of a batch. None before the first event.
     Count: (int * int) option
-    /// Percent of the current transfer step while Git LFS reports one. None when no meter with numbers is active.
+    /// Percent of the current transfer step while Git LFS reports one. None when no meter with numbers is active,
+    /// and after any event that is not a meter of the transfer or the checkout step.
     StepPercent: float option
     Log: OperationLog.OperationLog
+    /// Date.now () when `track` listed the action. `track` sets it, so the caller passes any value.
+    StartedAt: float
 }
 
 module LfsRunningAction =
 
-    /// Applies one progress event. The action comes back as the same instance when the event changes nothing, so
-    /// the caller can skip the state update.
+    /// Applies one progress event. A meter of the transfer or checkout step sets StepPercent. Every other event
+    /// clears it, because the step that it measured is over. A count event also sets Count. The action comes
+    /// back as the same instance when the event changes nothing, so the caller can skip the state update.
     let withProgress (progress: VersionControlProgressDto) (action: LfsRunningAction) : LfsRunningAction =
         match progress.PhaseCode with
-        | LfsProgressPhase.MaterializeFiles
-        | LfsProgressPhase.DematerializeFiles ->
-            match progress.Completed, progress.Total with
-            | Some completed, Some total ->
-                let count = Some(int completed, int total)
-
-                if count = action.Count then
-                    action
-                else
-                    { action with Count = count }
-            | _ -> action
         | LfsProgressPhase.MaterializeTransfer
         | LfsProgressPhase.MaterializeCheckout ->
             // A meter of a single object, and the start event of the transfer, carry no numbers.
@@ -199,34 +193,45 @@ module LfsRunningAction =
                 action
             else
                 { action with StepPercent = percent }
-        | _ -> action
+        | phase ->
+            let count =
+                match phase, progress.Completed, progress.Total with
+                | (LfsProgressPhase.MaterializeFiles | LfsProgressPhase.DematerializeFiles), Some completed, Some total ->
+                    Some(int completed, int total)
+                | _ -> action.Count
 
-    /// The live text of the action: "k/N" with the percent of the current step appended for a folder, and the
-    /// percent alone for a single file. A folder reads 0 of FileCount before the first count event.
+            if count = action.Count && action.StepPercent.IsNone then
+                action
+            else
+                {
+                    action with
+                        Count = count
+                        StepPercent = None
+                }
+
+    /// The live text of a folder action: "k/N" with the percent of the current step appended. It reads 0 of
+    /// FileCount before the first count event, and a folder of one path keeps reading 0/1 until it is done,
+    /// because the library sends count events only for batches of more than one path. A single file has no text.
     let progressText (action: LfsRunningAction) : string option =
-        let percentText =
-            action.StepPercent
-            |> Option.map (fun percent -> string (int (Math.Floor percent)) + "%")
-
         if action.IsFolder then
             let completed, total = action.Count |> Option.defaultValue (0, action.FileCount)
 
             let counts = $"{completed}/{total}"
 
-            match percentText with
-            | Some percent -> Some $"{counts} {percent}"
+            match action.StepPercent with
+            | Some percent -> Some $"{counts} {string (int (Math.Floor percent))}%%"
             | None -> Some counts
         else
-            percentText
+            None
 
-    /// The share of finished files for a folder and the step percent for a single file.
+    /// The share of finished files of a folder. A single file has no percent.
     let progressPercent (action: LfsRunningAction) : float option =
         if action.IsFolder then
             match action.Count with
             | Some(completed, total) when total > 0 -> Some(float completed / float total * 100.0)
             | _ -> None
         else
-            action.StepPercent
+            None
 
     /// The progress text by target path, for the rows that show it. Actions without a text are left out.
     let busyDetails (actions: LfsRunningAction[]) : Map<string, string> =
@@ -444,7 +449,12 @@ let LfsActivityCtxProvider (children: ReactElement) =
         match scopeIdRef.current with
         | None -> return! work ()
         | Some scopeId ->
-            updateActions (LfsRunningActionsState.start scopeId action actionsRef.current)
+            let started = {
+                action with
+                    StartedAt = JS.Constructors.Date.now ()
+            }
+
+            updateActions (LfsRunningActionsState.start scopeId started actionsRef.current)
 
             try
                 return! work ()

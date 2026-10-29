@@ -1,5 +1,8 @@
 module internal Swate.Components.Tests.GitSidebarNotices
 
+open Browser.Types
+open Fable.Core
+open Fable.Core.JsInterop
 open Feliz
 open Swate.Components.Page
 open Swate.Components.Page.GitSidebarTypes
@@ -80,26 +83,41 @@ let private render
     )
     |> ignore
 
+let private operationElement
+    (runStatus: GitSidebarRunStatus)
+    (steps: GitSidebarStep[] option)
+    (log: GitSidebarLog option)
+    =
+    GitSidebar.Main(
+        status = status,
+        changedFiles = [||],
+        branchOptions = [||],
+        callbacks = callbacks,
+        downloadLargeFiles = true,
+        lfsAutoTrackThresholdMb = 1,
+        diffIndexingLimitMb = 1024,
+        runStatus = runStatus,
+        ?operationSteps = steps,
+        ?operationLog = log
+    )
+
 let private renderOperation
     (runStatus: GitSidebarRunStatus)
     (steps: GitSidebarStep[] option)
     (log: GitSidebarLog option)
     =
-    RTL.render (
-        GitSidebar.Main(
-            status = status,
-            changedFiles = [||],
-            branchOptions = [||],
-            callbacks = callbacks,
-            downloadLargeFiles = true,
-            lfsAutoTrackThresholdMb = 1,
-            diffIndexingLimitMb = 1024,
-            runStatus = runStatus,
-            ?operationSteps = steps,
-            ?operationLog = log
-        )
-    )
-    |> ignore
+    RTL.render (operationElement runStatus steps log) |> ignore
+
+/// jsdom has no layout, so the height of an element is a getter that the test replaces on the element.
+[<Emit("Object.defineProperty($0, $1, { get: $2, configurable: true })")>]
+let private measure (element: HTMLElement) (name: string) (height: unit -> float) : unit = jsNative
+
+/// The line elements of the first log section of a panel.
+[<Emit("Array.from($0.firstElementChild.children)")>]
+let private logSectionChildren (panel: HTMLElement) : HTMLElement[] = jsNative
+
+let private logLineNode (panel: HTMLElement) (text: string) : HTMLElement =
+    logSectionChildren panel |> Array.find (fun line -> line.textContent = text)
 
 Vitest.afterEach (fun () -> RTL.cleanup ())
 
@@ -275,4 +293,137 @@ Vitest.test (
         RTL.fireEvent.click (RTL.screen.getByTestId "GitSidebarBackgroundShowLogs")
 
         Vitest.expect(RTL.screen.queryByTestId "GitSidebarBackgroundLogPanel" |> Option.isNone).toBe true
+)
+
+Vitest.test (
+    "an open log panel stays open when the busy notice turns into the progress notice",
+    fun () ->
+        let log = Some(logOf 0 [ "stdout", "Receiving objects: 100%" ])
+
+        let result =
+            RTL.render (operationElement (GitSidebarRunStatus.Busy "Pulling") None log)
+
+        RTL.fireEvent.click (RTL.screen.getByTestId "GitSidebarShowLogs")
+        RTL.screen.getByTestId "GitSidebarLogPanel" |> ignore
+
+        let progress: GitSidebarProgress = {
+            Method = None
+            Stage = Some "Receiving objects"
+            ProgressPercent = Some 40.0
+        }
+
+        result.rerender (operationElement (GitSidebarRunStatus.Progress progress) None log)
+
+        RTL.screen.getByTestId "GitSidebarProgressBar" |> ignore
+        Vitest.expect(RTL.screen.queryByTestId "GitSidebarBusyHeadline" |> Option.isNone).toBe true
+        RTL.screen.getByTestId "GitSidebarLogPanel" |> ignore
+)
+
+Vitest.test (
+    "a log line keeps its element when the oldest lines are left out",
+    fun () ->
+        let lines = [ "stdout", "a"; "stdout", "b"; "stdout", "c" ]
+
+        let result =
+            RTL.render (operationElement (GitSidebarRunStatus.Busy "Pulling") None (Some(logOf 0 lines)))
+
+        RTL.fireEvent.click (RTL.screen.getByTestId "GitSidebarShowLogs")
+
+        let before = logLineNode (RTL.screen.getByTestId "GitSidebarLogPanel") "c"
+
+        result.rerender (
+            operationElement
+                (GitSidebarRunStatus.Busy "Pulling")
+                None
+                (Some(logOf 1 [ "stdout", "b"; "stdout", "c"; "stdout", "d" ]))
+        )
+
+        let after = logLineNode (RTL.screen.getByTestId "GitSidebarLogPanel") "c"
+
+        Vitest.expect(obj.ReferenceEquals(before, after)).toBe true
+)
+
+Vitest.test (
+    "the log panel follows new lines until the user scrolls up and follows again at the end",
+    fun () ->
+        let logWith (count: int) =
+            Some(logOf 0 [ for index in 1..count -> "stdout", $"line {index}" ])
+
+        let element count =
+            operationElement (GitSidebarRunStatus.Busy "Pulling") None (logWith count)
+
+        let result = RTL.render (element 2)
+        RTL.fireEvent.click (RTL.screen.getByTestId "GitSidebarShowLogs")
+
+        let panel = RTL.screen.getByTestId "GitSidebarLogPanel"
+        let contentHeight = ref 500.0
+        measure panel "scrollHeight" (fun () -> contentHeight.Value)
+        measure panel "clientHeight" (fun () -> 100.0)
+
+        result.rerender (element 3)
+        Vitest.expect(panel.scrollTop).toBe 500.0
+
+        // The user scrolls up. New lines leave the panel where it is.
+        contentHeight.Value <- 800.0
+        panel.scrollTop <- 0.0
+        RTL.fireEvent.custom ("scroll", panel)
+        result.rerender (element 4)
+        Vitest.expect(panel.scrollTop).toBe 0.0
+
+        // Reaching the end again resumes the following.
+        panel.scrollTop <- 700.0
+        RTL.fireEvent.custom ("scroll", panel)
+        contentHeight.Value <- 900.0
+        result.rerender (element 5)
+        Vitest.expect(panel.scrollTop).toBe 900.0
+)
+
+Vitest.test (
+    "the show logs button controls the log panel and the progress bars report their value",
+    fun () ->
+        let progress: GitSidebarProgress = {
+            Method = None
+            Stage = Some "Receiving objects"
+            ProgressPercent = Some 40.0
+        }
+
+        let withLog = {
+            activity "Downloading raw-data" None (Some 25.0) with
+                Log = Some(logOf 0 [ "stdout", "done" ])
+        }
+
+        RTL.render (
+            GitSidebar.Main(
+                status = status,
+                changedFiles = [||],
+                branchOptions = [||],
+                callbacks = callbacks,
+                downloadLargeFiles = true,
+                lfsAutoTrackThresholdMb = 1,
+                diffIndexingLimitMb = 1024,
+                runStatus = GitSidebarRunStatus.Progress progress,
+                backgroundActivities = [| withLog |],
+                operationLog = logOf 0 [ "stdout", "Receiving objects: 40%" ]
+            )
+        )
+        |> ignore
+
+        RTL.fireEvent.click (RTL.screen.getByTestId "GitSidebarShowLogs")
+
+        let toggle = RTL.screen.getByTestId "GitSidebarShowLogs"
+        let panel = RTL.screen.getByTestId "GitSidebarLogPanel"
+
+        Vitest.expect(toggle.getAttribute "aria-controls").toBe panel.id
+        Vitest.expect(panel.id <> "").toBe true
+        Vitest.expect(panel.getAttribute "aria-label" <> null).toBe true
+
+        let bar = RTL.screen.getByTestId "GitSidebarProgressBar"
+        Vitest.expect(bar.getAttribute "role").toBe "progressbar"
+        Vitest.expect(bar.getAttribute "aria-valuenow").toBe "40"
+        Vitest.expect(bar.getAttribute "aria-valuemin").toBe "0"
+        Vitest.expect(bar.getAttribute "aria-valuemax").toBe "100"
+
+        let backgroundBar = RTL.screen.getByTestId "GitSidebarBackgroundActivityBar-0"
+        Vitest.expect(backgroundBar.getAttribute "role").toBe "progressbar"
+        Vitest.expect(backgroundBar.getAttribute "aria-valuenow").toBe "25"
 )

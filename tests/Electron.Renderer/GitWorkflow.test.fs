@@ -460,6 +460,12 @@ let private runningState = {
         WorkspaceVersion = Some "v1"
 }
 
+let private applyProgressEvents (state: GitState) (events: VersionControlProgressDto list) =
+    events
+    |> List.fold
+        (fun current event -> fst (update defaultDependencies ignore (SetCurrentProgress(Some event)) current))
+        state
+
 /// Every value differs from the built-in one.
 let private changedUserDefaults = {
     builtInUserDefaults with
@@ -3706,7 +3712,7 @@ Vitest.describe (
 
                 Vitest.expect(ended.CurrentLog.Lines.Length).toBe 0
                 Vitest.expect(ended.CurrentSteps.Length).toBe 0
-                Vitest.expect(ended.CurrentStepPhase).toEqual None
+                Vitest.expect(ended.CurrentStepPhases).toEqual [||]
         )
 
         Vitest.test (
@@ -3726,7 +3732,10 @@ Vitest.describe (
                     [
                         SetCurrentProgress(Some(progressDto "commit" (Some "Saving changes") None None))
                         OperationOutputReceived(outputOf "op-1" [ "command", "git commit"; "stdout", "done" ])
-                        SetCurrentProgress(Some(progressDto "push" (Some "Uploading changes") (Some 30.0) (Some 100.0)))
+                        SetCurrentProgress(Some(progressDto "push" (Some "Uploading changes") None None))
+                        SetCurrentProgress(
+                            Some(progressDto "push" (Some "Uploading (30/100)") (Some 30.0) (Some 100.0))
+                        )
                     ]
                     |> List.fold apply busyState
 
@@ -3842,6 +3851,302 @@ Vitest.describe (
                             sidebarStep "Merging online changes" None (Some 40.0) true
                         |]
                     )
+        )
+
+        Vitest.test (
+            "the per-file events of a download for two files keep the step list at two steps",
+            fun () ->
+                let deps = {
+                    defaultDependencies with
+                        newOperationId = fun () -> "op-1"
+                }
+
+                let running, _ =
+                    update deps ignore (WriteRequested RetryMaterialization) runningState
+
+                let start =
+                    progressDto "lfs-materialize" (Some "Preparing Git LFS materialization") None None
+
+                let rest = [
+                    progressDto "lfs-materialize-transfer" (Some "Downloading from Git LFS") None None
+                    progressDto "lfs-materialize-transfer" (Some "Downloading (3/10)") (Some 30.0) (Some 100.0)
+                    progressDto "lfs-materialize-checkout" (Some "Checking out (50/100)") (Some 50.0) (Some 100.0)
+                    progressDto "lfs-materialize" (Some "Git LFS file materialized") (Some 2048.0) (Some 2048.0)
+                ]
+
+                let firstFile = applyProgressEvents running (start :: rest)
+
+                Vitest.expect(firstFile.CurrentSteps.Length).toBe 2
+
+                // The result of the file and the checkout meter only change the detail of the current step.
+                Vitest.expect(firstFile.CurrentSteps.[1].Detail).toEqual (Some "Git LFS file materialized")
+
+                // The second file starts the first step again instead of adding steps.
+                let secondStart = applyProgressEvents firstFile [ start ]
+                Vitest.expect(secondStart.CurrentSteps.Length).toBe 2
+                Vitest.expect(secondStart.CurrentSteps |> Array.map _.IsCurrent).toEqual [| true; false |]
+
+                let secondFile = applyProgressEvents secondStart rest
+
+                Vitest.expect(secondFile.CurrentSteps |> Array.map _.Label).toEqual [|
+                    "Preparing Git LFS materialization"
+                    "Downloading from Git LFS"
+                |]
+
+                Vitest.expect(secondFile.CurrentSteps |> Array.map _.IsCurrent).toEqual [| false; true |]
+        )
+
+        Vitest.test (
+            "a synchronize sequence shows one step per phase with the meter text as detail",
+            fun () ->
+                let pullState = {
+                    runningState with
+                        BusyOperation = Some GitBusyOperation.PullingFromRemote
+                        BusyNotice = Some "Pulling from remote"
+                }
+
+                let finalState =
+                    applyProgressEvents pullState [
+                        progressDto "fetch" (Some "Fetching online changes") None None
+                        progressDto "fetch" (Some "Receiving objects (12/80)") (Some 15.0) (Some 100.0)
+                        progressDto "merge" (Some "Merging online changes") None None
+                        progressDto "lfs-pull" (Some "Downloading large files") None None
+                        progressDto "lfs-pull" (Some "Downloading (3/10)") (Some 30.0) (Some 100.0)
+                        progressDto "lfs-pull-checkout" (Some "Checking out large files") None None
+                        progressDto "lfs-pull-checkout" (Some "Checking out (5/10)") (Some 50.0) (Some 100.0)
+                    ]
+
+                Vitest
+                    .expect(finalState.CurrentSteps)
+                    .toEqual (
+                        [|
+                            sidebarStep "Fetching online changes" (Some "Receiving objects (12/80)") (Some 15.0) false
+                            sidebarStep "Merging online changes" None None false
+                            sidebarStep "Downloading large files" (Some "Downloading (3/10)") (Some 30.0) false
+                            sidebarStep "Checking out large files" (Some "Checking out (5/10)") (Some 50.0) true
+                        |]
+                    )
+        )
+
+        Vitest.test (
+            "SetCurrentProgress returns the same model while nothing is busy",
+            fun () ->
+                let idle, _ =
+                    update
+                        defaultDependencies
+                        ignore
+                        (SetCurrentProgress(Some(sidebarProgress "Receiving objects" 72.)))
+                        runningState
+
+                Vitest.expect(obj.ReferenceEquals(idle, runningState)).toBe true
+
+                // A reset on a model without progress, steps or log changes nothing either.
+                let reset, _ =
+                    update defaultDependencies ignore (SetCurrentProgress None) runningState
+
+                Vitest.expect(obj.ReferenceEquals(reset, runningState)).toBe true
+        )
+
+        Vitest.test (
+            "SetCurrentProgress ignores the progress of a replaced refresh once a newer refresh has started",
+            fun () ->
+                let operationIds = ResizeArray<string>()
+
+                let deps = {
+                    (withRefresh cleanStatus defaultDependencies) with
+                        newOperationId =
+                            fun () ->
+                                let id = $"refresh-{operationIds.Count + 1}"
+                                operationIds.Add id
+                                id
+                }
+
+                let firstRefresh, _ = update deps ignore RefreshRequested runningState
+                let secondRefresh, _ = update deps ignore RefreshRequested firstRefresh
+
+                Vitest.expect(secondRefresh.RefreshOperationId).toEqual (Some "refresh-2")
+
+                let replaced = {
+                    sidebarProgress "Receiving objects" 40. with
+                        OperationId = "refresh-1/2"
+                }
+
+                let ignoredState, _ =
+                    update deps ignore (SetCurrentProgress(Some replaced)) secondRefresh
+
+                Vitest.expect(ignoredState.CurrentProgress).toEqual (None)
+                Vitest.expect(ignoredState.OperationReported).toBe false
+
+                let current = {
+                    sidebarProgress "Receiving objects" 60. with
+                        OperationId = "refresh-2/2"
+                }
+
+                let appliedState, _ =
+                    update deps ignore (SetCurrentProgress(Some current)) secondRefresh
+
+                Vitest
+                    .expect(appliedState.CurrentProgress)
+                    .toEqual (Some(expectedSidebarProgress "Receiving objects" 60.))
+        )
+
+        Vitest.test (
+            "SetCurrentProgress ignores progress and output while the ARC folder is renamed",
+            fun () ->
+                let renaming = {
+                    runningState with
+                        BusyOperation = Some GitBusyOperation.RenamingRepository
+                        BusyNotice = Some "Renaming"
+                }
+
+                let afterProgress, _ =
+                    update
+                        defaultDependencies
+                        ignore
+                        (SetCurrentProgress(Some(sidebarProgress "Receiving objects" 72.)))
+                        renaming
+
+                Vitest.expect(afterProgress.CurrentProgress).toEqual (None)
+                Vitest.expect(afterProgress.CurrentSteps.Length).toBe 0
+                Vitest.expect(afterProgress.OperationReported).toBe false
+
+                let afterOutput, _ =
+                    update
+                        defaultDependencies
+                        ignore
+                        (OperationOutputReceived(outputOf "op-1" [ "stdout", "line" ]))
+                        renaming
+
+                Vitest.expect(afterOutput.CurrentLog.Lines.Length).toBe 0
+                Vitest.expect(afterOutput.OperationReported).toBe false
+        )
+
+        Vitest.test (
+            "a write marks the operation as reported on its first own progress or output and not on other operations",
+            fun () ->
+                let deps = {
+                    defaultDependencies with
+                        newOperationId = fun () -> "op-1"
+                }
+
+                let started, _ =
+                    update deps ignore (WriteRequested(Push GitUpdateAcceptance.RequirePreview)) runningState
+
+                Vitest.expect(started.OperationReported).toBe false
+
+                let foreignProgress = {
+                    sidebarProgress "Git LFS file dematerialized" 100. with
+                        OperationId = "lfs-action-1"
+                }
+
+                let afterForeign, _ =
+                    update deps ignore (SetCurrentProgress(Some foreignProgress)) started
+
+                let afterForeignOutput, _ =
+                    update deps ignore (OperationOutputReceived(outputOf "lfs-action-1" [ "stdout", "x" ])) started
+
+                Vitest.expect(afterForeign.OperationReported).toBe false
+                Vitest.expect(afterForeignOutput.OperationReported).toBe false
+
+                let afterProgress, _ =
+                    update deps ignore (SetCurrentProgress(Some(sidebarProgress "Pushing objects" 10.))) started
+
+                let afterOutput, _ =
+                    update deps ignore (OperationOutputReceived(outputOf "op-1/2" [ "stdout", "x" ])) started
+
+                Vitest.expect(afterProgress.OperationReported).toBe true
+                Vitest.expect(afterOutput.OperationReported).toBe true
+        )
+
+        Vitest.test (
+            "the reported flag survives a write phase change and the flag and the start time reset when the operation ends",
+            fun () ->
+                let deps = {
+                    defaultDependencies with
+                        newOperationId = fun () -> "op-1"
+                }
+
+                let before = JS.Constructors.Date.now ()
+
+                let started, _ =
+                    update deps ignore (WriteRequested(Push GitUpdateAcceptance.RequirePreview)) runningState
+
+                let after = JS.Constructors.Date.now ()
+
+                Vitest
+                    .expect(
+                        started.OperationStartedAt
+                        |> Option.exists (fun startedAt -> startedAt >= before && startedAt <= after)
+                    )
+                    .toBe
+                    true
+
+                let reported, _ =
+                    update deps ignore (SetCurrentProgress(Some(sidebarProgress "Pushing objects" 10.))) started
+
+                let nextPhase, _ =
+                    update
+                        deps
+                        ignore
+                        (WritePhaseChanged(
+                            started.ArcSessionId,
+                            started.WriteRequestId,
+                            GitBusyOperation.PullingFromRemote
+                        ))
+                        reported
+
+                // The bar starts over with the phase, while the flag and the start time stay.
+                Vitest.expect(nextPhase.CurrentProgress).toEqual None
+                Vitest.expect(nextPhase.OperationReported).toBe true
+                Vitest.expect(nextPhase.OperationStartedAt).toEqual started.OperationStartedAt
+
+                let ended, _ =
+                    update
+                        deps
+                        ignore
+                        (WriteCompleted(
+                            started.ArcSessionId,
+                            started.WriteRequestId,
+                            Push GitUpdateAcceptance.RequirePreview,
+                            Error "failed"
+                        ))
+                        nextPhase
+
+                Vitest.expect(ended.BusyOperation).toEqual None
+                Vitest.expect(ended.OperationReported).toBe false
+                Vitest.expect(ended.OperationStartedAt).toEqual None
+        )
+
+        Vitest.test (
+            "Dismissing the lock dialog resumes the publish that the download held back",
+            fun () -> promise {
+                let recovery = GitPendingRecovery.ClearStaleLock None
+
+                let state = {
+                    runningState with
+                        PendingRecovery = Some recovery
+                        PendingRemoteAction = GitPendingRemoteAction.Recover
+                        RetryMaterializationAfterLockClear = Some "Retry materialization."
+                        PendingPostMergePush = true
+                }
+
+                let nextState, cmd =
+                    update defaultDependencies ignore DismissRecoveryRequested state
+
+                let! messages = collectMessages cmd
+
+                Vitest.expect(nextState.PendingRecovery).toEqual None
+                Vitest.expect(nextState.RetryMaterializationAfterLockClear).toEqual None
+                Vitest.expect(nextState.PendingPostMergePush).toBe false
+
+                Vitest
+                    .expect(messages)
+                    .toEqual (
+                        [|
+                            WriteRequested(Push GitUpdateAcceptance.RequirePreview)
+                        |]
+                    )
+            }
         )
 
         Vitest.test (

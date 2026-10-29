@@ -32,6 +32,7 @@ let private runningAction (kind: LfsActionKind) (target: string) (isFolder: bool
     Count = None
     StepPercent = None
     Log = Renderer.Context.OperationLog.empty
+    StartedAt = 500.0
 }
 
 let private folderAction = {
@@ -65,7 +66,7 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "a single file item carries the step percent as its percent and as its detail",
+            "a single file item carries no detail and no percent, even with a step percent",
             fun () ->
                 let metered = {
                     fileAction with
@@ -74,10 +75,8 @@ Vitest.describe (
 
                 let item = (backgroundActivityItems [| metered |]).[0]
 
-                Vitest.expect(item.ProgressPercent).toEqual (Some 45.5)
-                Vitest.expect(item.Detail).toEqual (LfsRunningAction.progressText metered)
-                Vitest.expect(items.[1].Detail).toEqual None
-                Vitest.expect(items.[1].ProgressPercent).toEqual None
+                Vitest.expect(item.ProgressPercent).toEqual None
+                Vitest.expect(item.Detail).toEqual None
         )
 
         Vitest.test (
@@ -111,8 +110,11 @@ Vitest.describe (
                 Vitest.expect(log.Value.Omitted).toBe 0
         )
 
+        // The operation started at 1000. The actions above started at 500, so they hold the lock.
+        let startedAt = Some 1000.0
+
         Vitest.test (
-            "the waiting headline names the first activity while Save, Download Changes or Upload Changes is busy without progress",
+            "the waiting headline names the first earlier action while Save, Download Changes or Upload Changes is busy without events",
             fun () ->
                 for operation in
                     [
@@ -121,7 +123,7 @@ Vitest.describe (
                         GitBusyOperation.PullingFromRemote
                         GitBusyOperation.PushingToRemote
                     ] do
-                    match waitingHeadline (Some operation) false items with
+                    match waitingHeadline (Some operation) false startedAt [| folderAction; fileAction |] with
                     | Some headline ->
                         Vitest.expect(headline.Contains "raw-data").toBe true
                         Vitest.expect(headline.Contains "big.bin").toBe false
@@ -129,11 +131,33 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "the waiting headline stays unset when nothing is busy, no activity runs, progress arrived or another operation runs",
+            "the waiting headline stays unset when nothing is busy, no action runs, the operation reported or another operation runs",
             fun () ->
-                Vitest.expect(waitingHeadline None false items).toEqual None
-                Vitest.expect(waitingHeadline (Some GitBusyOperation.CommittingAllChanges) false [||]).toEqual None
-                Vitest.expect(waitingHeadline (Some GitBusyOperation.CommittingAllChanges) true items).toEqual None
-                Vitest.expect(waitingHeadline (Some GitBusyOperation.SwitchingBranch) false items).toEqual None
+                let actions = [| folderAction; fileAction |]
+                let saving = Some GitBusyOperation.CommittingAllChanges
+
+                Vitest.expect(waitingHeadline None false startedAt actions).toEqual None
+                Vitest.expect(waitingHeadline saving false startedAt [||]).toEqual None
+                Vitest.expect(waitingHeadline saving true startedAt actions).toEqual None
+
+                Vitest.expect(waitingHeadline (Some GitBusyOperation.SwitchingBranch) false startedAt actions).toEqual
+                    None
+
+                Vitest.expect(waitingHeadline saving false None actions).toEqual None
+        )
+
+        Vitest.test (
+            "the waiting headline names only actions that started before the operation",
+            fun () ->
+                let later = { fileAction with StartedAt = 1500.0 }
+                let saving = Some GitBusyOperation.CommittingAllChanges
+
+                Vitest.expect(waitingHeadline saving false startedAt [| later |]).toEqual None
+
+                match waitingHeadline saving false startedAt [| folderAction; later |] with
+                | Some headline ->
+                    Vitest.expect(headline.Contains "raw-data").toBe true
+                    Vitest.expect(headline.Contains "big.bin").toBe false
+                | None -> failwith "Expected a waiting headline for the earlier action."
         )
 )

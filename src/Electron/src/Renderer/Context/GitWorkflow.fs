@@ -227,14 +227,22 @@ type GitState = {
     RefreshOperationId: string option
     CurrentProgress: GitSidebarProgress option
     CurrentProgressPhase: string option
-    /// The steps that the progress events of the running operation went through, oldest first. The last one is
-    /// the current step.
+    /// The steps that the progress events of the running operation went through, in the order they started.
+    /// The step with IsCurrent is the one that runs.
     CurrentSteps: GitSidebarStep[]
-    /// The phase code of the last step. Events with another phase code and a display message start a new step.
-    CurrentStepPhase: string option
+    /// The phase code of each step, in the order of CurrentSteps. A step start event with a known phase code
+    /// makes that step current again instead of adding one.
+    CurrentStepPhases: string[]
     /// The raw output that the running operation sent. Only the output of the operation that the sidebar shows
     /// lands here, see isForeignOperation.
     CurrentLog: OperationLog.OperationLog
+    /// Whether the busy operation has sent any progress or output of its own since it started. The sidebar says
+    /// that the operation waits for a file tree action only while this is false. The flag survives a phase change
+    /// of a write and resets when a busy operation starts or ends.
+    OperationReported: bool
+    /// Date.now () when the busy operation started. A file tree action that started earlier can hold the session
+    /// lock of the library, so only those actions can make the operation wait.
+    OperationStartedAt: float option
     ErrorNotice: string option
     WarningNotice: string option
     PendingRefreshWarningNotice: string option
@@ -302,8 +310,10 @@ type GitState = {
         CurrentProgress = None
         CurrentProgressPhase = None
         CurrentSteps = [||]
-        CurrentStepPhase = None
+        CurrentStepPhases = [||]
         CurrentLog = OperationLog.empty
+        OperationReported = false
+        OperationStartedAt = None
         ErrorNotice = None
         WarningNotice = None
         PendingRefreshWarningNotice = None
@@ -914,51 +924,79 @@ let private mergeProgressUpdate (model: GitState) (progress: VersionControlProgr
             ProgressPercent = incomingPercent
         }
 
-/// Applies one progress event to the step list. A display message with a phase code other than the one of the
-/// last step starts a new step and the earlier steps are done. An event of the current phase updates the detail
-/// (the display message, when it differs from the label) and the percent of the current step. An event without
-/// display message starts no step. The library sends resets such as "refresh-state" this way.
+/// Applies one progress event to the step list. Only a step start event begins a step: it has a display message
+/// and no numbers. A start event with a phase code that already has a step makes that step current again, so
+/// a batch that repeats its phases (one materialization per file) keeps the same few steps. A start event with
+/// a new phase code adds a step. Every other event with a display message (a meter, a per-file result) sets the
+/// detail (the display message, when it differs from the label) and the percent of the current step, whatever
+/// its phase code. An event without display message starts no step and moves only the percent of the current
+/// step, and only when it has the phase of that step. The library sends resets such as "refresh-state" this way.
 let private applyProgressToSteps
     (steps: GitSidebarStep[])
-    (stepPhase: string option)
+    (stepPhases: string[])
     (progress: VersionControlProgressDto)
-    : GitSidebarStep[] * string option =
+    : GitSidebarStep[] * string[] =
     let percent = progressPercent progress
 
+    let withProgress (step: GitSidebarStep) = {
+        step with
+            Detail =
+                match progress.DisplayMessage with
+                | Some message when message <> step.Label -> Some message
+                | Some _ -> None
+                | None -> step.Detail
+            Percent = percent |> Option.orElse step.Percent
+    }
+
+    let updateCurrent () =
+        steps
+        |> Array.map (fun step -> if step.IsCurrent then withProgress step else step)
+
     match progress.DisplayMessage with
-    | Some message when stepPhase <> Some progress.PhaseCode ->
-        let earlier = steps |> Array.map (fun step -> { step with IsCurrent = false })
+    | Some message when progress.Completed.IsNone && progress.Total.IsNone ->
+        match stepPhases |> Array.tryFindIndex (fun phase -> phase = progress.PhaseCode) with
+        | Some startedIndex ->
+            let resumed =
+                steps
+                |> Array.mapi (fun index step ->
+                    if index <> startedIndex then
+                        { step with IsCurrent = false }
+                    else
+                        let labelled =
+                            if String.IsNullOrWhiteSpace step.Label then
+                                { step with Label = message }
+                            else
+                                step
 
-        let current: GitSidebarStep = {
-            Label = message
-            Detail = None
-            Percent = percent
-            IsCurrent = true
-        }
+                        {
+                            withProgress labelled with
+                                IsCurrent = true
+                        }
+                )
 
-        Array.append earlier [| current |], Some progress.PhaseCode
-    | _ when stepPhase = Some progress.PhaseCode ->
-        let lastIndex = steps.Length - 1
+            resumed, stepPhases
+        | None ->
+            let earlier = steps |> Array.map (fun step -> { step with IsCurrent = false })
 
-        let updated =
+            let started: GitSidebarStep = {
+                Label = message
+                Detail = None
+                Percent = percent
+                IsCurrent = true
+            }
+
+            Array.append earlier [| started |], Array.append stepPhases [| progress.PhaseCode |]
+    | Some _ -> updateCurrent (), stepPhases
+    | None ->
+        let currentPhase =
             steps
-            |> Array.mapi (fun index step ->
-                if index <> lastIndex then
-                    step
-                else
-                    {
-                        step with
-                            Detail =
-                                match progress.DisplayMessage with
-                                | Some message when message <> step.Label -> Some message
-                                | Some _ -> None
-                                | None -> step.Detail
-                            Percent = percent |> Option.orElse step.Percent
-                    }
-            )
+            |> Array.tryFindIndex _.IsCurrent
+            |> Option.bind (fun index -> stepPhases |> Array.tryItem index)
 
-        updated, stepPhase
-    | _ -> steps, stepPhase
+        if currentPhase = Some progress.PhaseCode then
+            updateCurrent (), stepPhases
+        else
+            steps, stepPhases
 
 /// The message shown for a structured failure: the library message plus its
 /// recovery instructions when it has any.
@@ -1471,8 +1509,10 @@ let private withBusyOperation busyOperation model = {
         CurrentProgress = None
         CurrentProgressPhase = None
         CurrentSteps = [||]
-        CurrentStepPhase = None
+        CurrentStepPhases = [||]
         CurrentLog = OperationLog.empty
+        OperationReported = false
+        OperationStartedAt = busyOperation |> Option.map (fun _ -> JS.Constructors.Date.now ())
         CurrentOperation = None
         RefreshOperationId = None
 }
@@ -4793,8 +4833,10 @@ let private clearBusy (model: GitState) = {
         CurrentProgress = None
         CurrentProgressPhase = None
         CurrentSteps = [||]
-        CurrentStepPhase = None
+        CurrentStepPhases = [||]
         CurrentLog = OperationLog.empty
+        OperationReported = false
+        OperationStartedAt = None
         CurrentOperation = None
         RefreshOperationId = None
 }
@@ -4944,26 +4986,36 @@ let private updateCore
     | ResetWorkflow -> resetFor model, Cmd.none
     | DiffPageMsg diffMsg -> GitDiffPageLoader.update deps diffMsg model
     | SetCurrentProgress(Some progress) when showsOperationEvents model progress.OperationId ->
-        let steps, stepPhase =
-            applyProgressToSteps model.CurrentSteps model.CurrentStepPhase progress
+        let steps, stepPhases =
+            applyProgressToSteps model.CurrentSteps model.CurrentStepPhases progress
 
         {
             model with
                 CurrentProgress = Some(mergeProgressUpdate model progress)
                 CurrentProgressPhase = Some progress.PhaseCode
                 CurrentSteps = steps
-                CurrentStepPhase = stepPhase
+                CurrentStepPhases = stepPhases
+                OperationReported = true
         },
         Cmd.none
-    // Progress of a silent refresh, of another operation or of the rename of the ARC folder.
-    | SetCurrentProgress(Some _) when model.BusyOperation.IsSome -> model, Cmd.none
-    | SetCurrentProgress _ ->
+    // Progress of a silent refresh, of another operation, of the rename of the ARC folder or after the busy
+    // operation ended. The same model instance returns, so the many events of a file tree action cause no render.
+    | SetCurrentProgress(Some _) -> model, Cmd.none
+    | SetCurrentProgress None when
+        model.CurrentProgress.IsNone
+        && model.CurrentProgressPhase.IsNone
+        && model.CurrentSteps.Length = 0
+        && model.CurrentLog.Lines.Length = 0
+        && model.CurrentLog.Omitted = 0
+        ->
+        model, Cmd.none
+    | SetCurrentProgress None ->
         {
             model with
                 CurrentProgress = None
                 CurrentProgressPhase = None
                 CurrentSteps = [||]
-                CurrentStepPhase = None
+                CurrentStepPhases = [||]
                 CurrentLog = OperationLog.empty
         },
         Cmd.none
@@ -4971,6 +5023,7 @@ let private updateCore
         {
             model with
                 CurrentLog = OperationLog.append output.Entries model.CurrentLog
+                OperationReported = true
         },
         Cmd.none
     | OperationOutputReceived _ -> model, Cmd.none

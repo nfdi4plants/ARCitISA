@@ -220,11 +220,12 @@ module private GitSidebarInternal =
             else
                 Html.none
 
+        // The keys count from the first line of the whole log. When the oldest lines go, a line keeps its key.
         let lines =
             section.Log.Lines
             |> Array.mapi (fun lineIndex line ->
                 Html.div [
-                    prop.key lineIndex
+                    prop.key (section.Log.Omitted + lineIndex)
                     prop.className ("swt:whitespace-pre-wrap swt:break-words " + logLineClassName line.Kind)
                     prop.text (logLineText line)
                 ]
@@ -412,6 +413,7 @@ type private LogViewerProps = {
     Sections: GitSidebarInternal.LogSection[]
     ShowTestId: string
     PanelTestId: string
+    PanelLabel: string
 }
 
 [<Erase; Mangle(false)>]
@@ -431,6 +433,7 @@ type GitSidebar =
     [<ReactComponent>]
     static member private LogViewer(props: LogViewerProps) =
         let isOpen, setIsOpen = React.useState false
+        let panelId = React.useId ()
         let panelRef = React.useElementRef ()
         let followsEnd = React.useRef true
 
@@ -445,6 +448,7 @@ type GitSidebar =
                 prop.testId props.ShowTestId
                 prop.type'.button
                 prop.ariaExpanded isOpen
+                prop.custom ("aria-controls", panelId)
                 prop.className "swt:btn swt:btn-ghost swt:btn-xs swt:self-start swt:gap-1 swt:normal-case"
                 prop.onClick (fun _ ->
                     followsEnd.current <- true
@@ -466,6 +470,9 @@ type GitSidebar =
         let panel =
             if isOpen then
                 Html.div [
+                    prop.id panelId
+                    prop.role "region"
+                    prop.ariaLabel props.PanelLabel
                     prop.testId props.PanelTestId
                     prop.ref panelRef
                     prop.onScroll (fun _ ->
@@ -522,6 +529,7 @@ type GitSidebar =
                         Sections = [| section |]
                         ShowTestId = "GitSidebarShowLogs"
                         PanelTestId = "GitSidebarLogPanel"
+                        PanelLabel = "Operation logs"
                     }
                 )
             | _ -> Html.none
@@ -551,6 +559,7 @@ type GitSidebar =
                         Sections = sections
                         ShowTestId = "GitSidebarBackgroundShowLogs"
                         PanelTestId = "GitSidebarBackgroundLogPanel"
+                        PanelLabel = "Background activity logs"
                     }
                 )
 
@@ -605,6 +614,11 @@ type GitSidebar =
                                         | Some value ->
                                             Html.div [
                                                 prop.testId "GitSidebarProgressBar"
+                                                prop.role "progressbar"
+                                                prop.ariaLabel "Operation progress"
+                                                prop.custom ("aria-valuenow", Math.Round value)
+                                                prop.custom ("aria-valuemin", 0)
+                                                prop.custom ("aria-valuemax", 100)
                                                 prop.className "swt:h-1.5 swt:w-full swt:rounded-full swt:bg-base-300"
                                                 prop.children [
                                                     Html.div [
@@ -712,6 +726,16 @@ type GitSidebar =
                                                                 Html.div [
                                                                     prop.testId
                                                                         $"GitSidebarBackgroundActivityBar-{index}"
+                                                                    prop.role "progressbar"
+                                                                    prop.ariaLabel activity.Label
+                                                                    prop.custom (
+                                                                        "aria-valuenow",
+                                                                        Math.Round(
+                                                                            Math.Max(0.0, Math.Min(100.0, percent))
+                                                                        )
+                                                                    )
+                                                                    prop.custom ("aria-valuemin", 0)
+                                                                    prop.custom ("aria-valuemax", 100)
                                                                     prop.className
                                                                         "swt:h-1.5 swt:w-full swt:rounded-full swt:bg-base-300"
                                                                     prop.children [

@@ -85,6 +85,9 @@ let sidebarLog
 
         Some mapped
 
+let private activityLabel (action: Renderer.Context.LfsActivityContext.LfsRunningAction) =
+    $"{activityVerb action.Kind} {Swate.Components.Shared.PathHelpers.getFileName action.Target}"
+
 /// One background item per running file tree action. The label names the kind and the folder or file. The detail
 /// and the percent come from the progress that the action reported, the same text as on the file tree row. The
 /// log is the output of the action.
@@ -94,7 +97,7 @@ let backgroundActivityItems
     actions
     |> Array.map (fun action ->
         let item: Swate.Components.Page.GitSidebarTypes.GitSidebarBackgroundActivity = {
-            Label = $"{activityVerb action.Kind} {Swate.Components.Shared.PathHelpers.getFileName action.Target}"
+            Label = activityLabel action
             Detail = Renderer.Context.LfsActivityContext.LfsRunningAction.progressText action
             ProgressPercent = Renderer.Context.LfsActivityContext.LfsRunningAction.progressPercent action
             Log = sidebarLog action.Log
@@ -113,17 +116,24 @@ let private waitsForFileTreeActions (busyOperation: Renderer.Context.GitWorkflow
     | Renderer.Context.GitWorkflow.GitBusyOperation.PushingToRemote -> true
     | _ -> false
 
-/// The headline of a busy sidebar operation that waits for a file tree action. It names the first activity. The
-/// headline stays unset once the operation reports progress, because the operation has the lock then.
+/// The headline of a busy sidebar operation that waits for a file tree action. It names the first action that
+/// started before the operation did, because only such an action can hold the session lock of the library. The
+/// headline stays unset once the operation has sent any progress or output of its own, because it has the lock
+/// then. Without an earlier action it stays unset too.
 let waitingHeadline
     (busyOperation: Renderer.Context.GitWorkflow.GitBusyOperation option)
-    (hasProgress: bool)
-    (activities: Swate.Components.Page.GitSidebarTypes.GitSidebarBackgroundActivity[])
+    (operationReported: bool)
+    (operationStartedAt: float option)
+    (actions: Renderer.Context.LfsActivityContext.LfsRunningAction[])
     : string option =
-    match busyOperation with
-    | Some operation when waitsForFileTreeActions operation && not hasProgress && activities.Length > 0 ->
-        let label = activities.[0].Label
-        Some $"Waits for {label.Substring(0, 1).ToLowerInvariant()}{label.Substring 1} to finish"
+    match busyOperation, operationStartedAt with
+    | Some operation, Some startedAt when waitsForFileTreeActions operation && not operationReported ->
+        actions
+        |> Array.tryFind (fun action -> action.StartedAt < startedAt)
+        |> Option.map (fun action ->
+            let label = activityLabel action
+            $"Waits for {label.Substring(0, 1).ToLowerInvariant()}{label.Substring 1} to finish"
+        )
     | _ -> None
 
 [<ReactComponent>]
@@ -286,8 +296,9 @@ let Main () =
             ?busyHeadlineOverride =
                 waitingHeadline
                     gitStateCtx.state.BusyOperation
-                    gitStateCtx.state.CurrentProgress.IsSome
-                    backgroundActivities,
+                    gitStateCtx.state.OperationReported
+                    gitStateCtx.state.OperationStartedAt
+                    runningLfsActions,
             ?hasRemote = Some(Renderer.Context.GitWorkflow.hasRemote gitStateCtx.state),
             ?selectedFile = gitStateCtx.state.SelectedChangePath,
             ?errorNotice = gitStateCtx.state.ErrorNotice,

@@ -32,9 +32,10 @@ let private silentBridge: RendererBridge = {
 /// Coalesces the progress of one operation. The library can report many events per second,
 /// and the renderer only needs the latest state of a phase. An event goes out at once when its
 /// phase differs from the last forwarded one or when `windowMilliseconds` have passed since
-/// the last forward. Any other event waits as the pending one (the latest wins) and goes out
-/// when the window ends. `Flush` sends the pending event, so the last state of the operation
-/// reaches the renderer before the result does.
+/// the last forward. A pending event of the previous phase goes out first, because it is the
+/// final state of that phase. Any other event waits as the pending one (the latest wins) and
+/// goes out when the window ends. `Flush` sends the pending event, so the last state of the
+/// operation reaches the renderer before the result does.
 type ProgressThrottle
     (
         forward: VersionControlProgressDto -> unit,
@@ -58,7 +59,10 @@ type ProgressThrottle
     member _.Report(progress: VersionControlProgressDto) =
         let elapsed = now () - lastForwardedAt
 
-        if lastPhase <> Some progress.PhaseCode || elapsed >= float windowMilliseconds then
+        if lastPhase <> Some progress.PhaseCode then
+            pending |> Option.iter send
+            send progress
+        elif elapsed >= float windowMilliseconds then
             send progress
         else
             pending <- Some progress

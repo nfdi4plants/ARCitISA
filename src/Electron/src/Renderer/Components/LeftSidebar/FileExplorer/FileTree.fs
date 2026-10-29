@@ -133,6 +133,7 @@ type FileTree =
                         Count = None
                         StepPercent = None
                         Log = Renderer.Context.OperationLog.empty
+                        StartedAt = 0.0
                     }
 
                     lfsActivityCtx.track runningAction (fun () -> runAction operationId path)
@@ -199,6 +200,7 @@ type FileTree =
                                         Count = None
                                         StepPercent = None
                                         Log = Renderer.Context.OperationLog.empty
+                                        StartedAt = 0.0
                                     }
 
                                     lfsActivityCtx.track

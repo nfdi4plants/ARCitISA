@@ -67,7 +67,7 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "a phase change forwards at once and drops the older pending event",
+            "a phase change forwards the pending event of the previous phase first and then the new event",
             fun () ->
                 let harness = Harness()
 
@@ -77,11 +77,32 @@ Vitest.describe (
                 harness.Advance 10.0
                 harness.Report("lfs-upload", 3.0)
 
-                Vitest.expect(harness.Forwarded).toEqual [| ("lfs-list", 1.0); ("lfs-upload", 3.0) |]
+                Vitest.expect(harness.Forwarded).toEqual [|
+                    ("lfs-list", 1.0)
+                    ("lfs-list", 2.0)
+                    ("lfs-upload", 3.0)
+                |]
 
+                // The timer of the pending event is gone, so nothing goes out a second time.
                 harness.Advance 200.0
 
-                Vitest.expect(harness.Forwarded).toEqual [| ("lfs-list", 1.0); ("lfs-upload", 3.0) |]
+                Vitest.expect(harness.Forwarded).toEqual [|
+                    ("lfs-list", 1.0)
+                    ("lfs-list", 2.0)
+                    ("lfs-upload", 3.0)
+                |]
+        )
+
+        Vitest.test (
+            "a phase change without a pending event forwards only the new event",
+            fun () ->
+                let harness = Harness()
+
+                harness.Report("lfs-list", 1.0)
+                harness.Advance 10.0
+                harness.Report("lfs-upload", 2.0)
+
+                Vitest.expect(harness.Forwarded).toEqual [| ("lfs-list", 1.0); ("lfs-upload", 2.0) |]
         )
 
         Vitest.test (
