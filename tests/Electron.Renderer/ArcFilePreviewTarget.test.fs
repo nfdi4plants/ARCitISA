@@ -17,8 +17,9 @@ let private createAssayArcFile (tableNames: string[]) =
 
     ArcFiles.Assay assay, assay
 
-let private jsonImportRequest importedFile = {
+let private jsonImportRequest importedFile nextArcFile = {
     ImportedFile = importedFile
+    NextArcFile = nextArcFile
     SourceFileName = Some "import.json"
     JsonFormat = JsonExportFormat.ARCtrl
 }
@@ -91,7 +92,7 @@ Vitest.describe (
                 let! result =
                     importJsonRequestIntoCurrentTarget
                         currentArcFile
-                        (jsonImportRequest importedStudy)
+                        (jsonImportRequest importedStudy importedStudy)
                         (fun nextArcFile -> publishedArcFile <- Some nextArcFile)
                         (fun _ -> promise {
                             inMemoryUpdated <- true
@@ -142,10 +143,15 @@ Vitest.describe (
                 let publishedArcFiles = ResizeArray<ArcFiles>()
                 let inMemoryUpdates = ResizeArray<ArcFiles>()
 
+                let nextArcFile =
+                    match Json.Import.applyToCurrentArcFile (currentArcFile, importedFile) with
+                    | Ok next -> next
+                    | Error exn -> failwith $"Expected import preparation to succeed: {exn.Message}"
+
                 let! result =
                     importJsonRequestIntoCurrentTarget
                         currentArcFile
-                        (jsonImportRequest importedFile)
+                        (jsonImportRequest importedFile nextArcFile)
                         (fun nextArcFile -> publishedArcFiles.Add nextArcFile)
                         (fun nextArcFile -> promise {
                             inMemoryUpdates.Add nextArcFile

@@ -51,7 +51,7 @@ let private jsonImportWidget
     setArcFile
     (pickJsonFile: (unit -> JS.Promise<Result<JsonImportFile option, exn>>) option)
     (onImportJson: (JsonImportRequest -> JS.Promise<Result<unit, exn>>) option)
-    onError
+    (onError: JsonImportError -> unit)
     =
     Swate.Components.Composite.Widgets.JsonImport.JsonImport.JsonImport(
         arcFile,
@@ -133,6 +133,17 @@ Vitest.describe (
                         container.querySelector ("[data-testid='json-import-picker-button']") :?> HTMLButtonElement
 
                     button.click ()
+
+                    do!
+                        waitUntil (
+                            (fun () -> not (isNull (document.querySelector "[data-testid='json-import-confirm']"))),
+                            100
+                        )
+
+                    let confirm =
+                        document.querySelector "[data-testid='json-import-confirm']" :?> HTMLButtonElement
+
+                    confirm.click ()
                     do! waitUntil ((fun () -> receivedRequest.IsSome), 100)
 
                     match receivedRequest with
@@ -193,7 +204,7 @@ Vitest.describe (
             "calls onError for parse failures from an injected picker",
             fun () -> promise {
                 let assay = ArcAssay.init "CurrentAssay"
-                let mutable observedError: exn option = None
+                let mutable observedError: JsonImportError option = None
 
                 let pickJsonFile () = promise {
                     return
@@ -211,7 +222,7 @@ Vitest.describe (
                         ignore
                         (Some pickJsonFile)
                         None
-                        (fun exn -> observedError <- Some exn)
+                        (fun error -> observedError <- Some error)
                     |> renderToBody
 
                 try

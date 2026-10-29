@@ -28,7 +28,15 @@ let importJsonRequestIntoCurrentTarget
     (setArcFileInMemory: ArcFiles -> JS.Promise<Result<unit, exn>>)
     =
     promise {
-        match Json.Import.applyToCurrentArcFile (currentArcFile, request.ImportedFile) with
-        | Error exn -> return Error exn
-        | Ok nextArcFile -> return! publishAndPersistArcFile nextArcFile setArcFilePageState setArcFileInMemory
+        let currentType = currentArcFile.RelatedArcFilesDiscriminate
+        let nextType = request.NextArcFile.RelatedArcFilesDiscriminate
+
+        if nextType <> currentType then
+            return
+                Error(
+                    exn
+                        $"Cannot import {unbox<string> nextType} JSON into the current {unbox<string> currentType} editor."
+                )
+        else
+            return! publishAndPersistArcFile request.NextArcFile setArcFilePageState setArcFileInMemory
     }

@@ -258,6 +258,8 @@
     <Compile Include="Composite\Widgets\Context.fs" />
     <Compile Include="Composite\Widgets\JsonFormatSelect.fs" />
     <Compile Include="Composite\Widgets\JsonImport\Types.fs" />
+    <Compile Include="Composite\Widgets\JsonImport\Helper.fs" />
+    <Compile Include="Composite\Widgets\JsonImport\JsonImportModal.fs" />
     <Compile Include="Composite\Widgets\JsonImport\JsonImport.fs" />
     <Compile Include="Composite\Widgets\JsonExport\JsonExport.fs" />
     <Compile Include="Composite\Widgets\BuildingBlockWidget\Dropdown.fs" />
