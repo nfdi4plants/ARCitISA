@@ -513,21 +513,16 @@ let LfsActivityCtxProvider (children: ReactElement) =
             [| box state; box scopeId |]
         )
 
-    // A change of another ARC's action recomputes the array and gets the previous one back, so the readers of the
-    // context do not render for it.
-    let scopedActionsRef = React.useRef<LfsRunningAction[]> [||]
+    // The scoped array lives in state. A change of another ARC's action recomputes it and gets the stored one
+    // back, so the readers of the context do not render for it. Only a change of the scoped records stores a new
+    // array, and React renders this component again at once with it.
+    let scopedActions, setScopedActions = React.useState<LfsRunningAction[]> [||]
 
     let runningActions =
-        React.useMemo (
-            (fun () ->
-                let next =
-                    LfsRunningActionsState.forScope scopeId scopedActionsRef.current actionsState
+        LfsRunningActionsState.forScope scopeId scopedActions actionsState
 
-                scopedActionsRef.current <- next
-                next
-            ),
-            [| box actionsState; box scopeId |]
-        )
+    if not (obj.ReferenceEquals(runningActions, scopedActions)) then
+        setScopedActions runningActions
 
     LfsActivityCtx.Provider(
         controller,

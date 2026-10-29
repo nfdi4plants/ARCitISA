@@ -768,6 +768,7 @@ type GitDependencies = {
     cancelConflict: CancelConflictRequestDto -> JS.Promise<Result<OperationResultDto<unit>, string>>
     listObjects: OperationRequestDto -> JS.Promise<Result<OperationResultDto<ObjectStateDto[]>, string>>
     materializeObject: ObjectPathRequestDto -> JS.Promise<Result<OperationResultDto<unit>, string>>
+    materializeObjects: ObjectPathsRequestDto -> JS.Promise<Result<OperationResultDto<unit>, string>>
     pruneStorage: OperationRequestDto -> JS.Promise<Result<OperationResultDto<string>, string>>
     deduplicateStorage: OperationRequestDto -> JS.Promise<Result<OperationResultDto<string>, string>>
     clearStaleLock: OperationRequestDto -> JS.Promise<Result<OperationResultDto<WorkspaceStatusDto>, string>>
@@ -1026,18 +1027,6 @@ let failureMessage (failure: OperationFailureDto) =
     | Some instructions when not (String.IsNullOrWhiteSpace instructions) -> $"{failure.Message} {instructions}"
     | _ -> failure.Message
 
-/// The message of a failure before failureMessage appended its recovery instructions. The message of a lock
-/// failure goes into the download offer that opens once the lock is gone, so it must not repeat the instructions
-/// for removing the lock.
-let private messageWithoutInstructions (instructions: string option) (message: string) =
-    match instructions with
-    | Some text when
-        not (String.IsNullOrWhiteSpace text)
-        && message.EndsWith($" {text}", StringComparison.Ordinal)
-        ->
-        message.Substring(0, message.Length - text.Length - 1)
-    | _ -> message
-
 /// A partial success counts as a success here. The explorer actions have no warning
 /// channel, so a partial that lands on one of these calls (a session-open failure the
 /// host reports once) is dropped on this path.
@@ -1087,6 +1076,39 @@ let lockBlockedDownloadMessage (partial: OperationFailureDto option) : string op
         && recoveryCode failure = Some VersionControlCodes.Recovery.RemoveIndexLock
     )
     |> Option.map _.Message
+
+/// The text of the download offer after a Download now retry stopped at a Git lock. The library message of that
+/// failure says the lock is still held, which is no longer true when the offer opens.
+let retryLockStoppedMessage =
+    "The download of the large files stopped at a Git lock."
+
+/// The large objects whose file git-lfs already wrote while the index entry stayed stale, as after a checkout that a
+/// held lock stopped. The listing marks such an object as materialized because the file has the full size, and the
+/// status lists the path as modified. The status has no split between index and working tree, so a path counts when
+/// it is a plain modification. An added, deleted, renamed or conflicted path is left out. The library restages only
+/// files that hold the committed object and refuses a real edit, so a plain modification that is an edit does no harm.
+let staleLfsPaths (objects: ObjectStateDto[]) (status: WorkspaceStatusDto) : string[] =
+    let modified =
+        status.Changes
+        |> Array.filter (fun change -> change.Kind = FileChangeKindDto.Modified && change.OldPath.IsNone)
+        |> Array.map _.Path
+        |> Set.ofArray
+
+    objects
+    |> Array.filter (fun objectState -> objectState.IsMaterialized && modified.Contains objectState.Path)
+    |> Array.map _.Path
+    |> Array.distinct
+
+/// Whether every path of the failure was refused because it has a local edit. The restage of a stale path asks for
+/// paths that may hold real edits, and the library refuses those.
+let private isLocalChangesRefusal (failure: OperationFailureDto) =
+    let entries =
+        if failure.Details.Length > 0 then
+            failure.Details
+        else
+            [| failure.Message |]
+
+    entries |> Array.forall (fun entry -> entry.Contains "has local changes")
 
 /// The dialog the sidebar shows for a recovery. Confirm runs it, cancel keeps the
 /// workspace as it is. Restoring interrupted files discards local changes on them.
@@ -4453,13 +4475,58 @@ let private runAbandonMergeAttemptAsync (deps: GitDependencies) (state: GitState
                 (fun _ partial -> refreshAfterSuccess deps partial GitPageChange.Clear (Some None) None)
 }
 
-/// Removes a stale lock and refreshes. The refreshed status decides what follows: an
-/// active conflict session is abandoned through the normal path.
+/// Lists the large objects and the paths among them that a lock-blocked checkout left with a stale index.
+/// The status is read only when some object is on disk, because only those can be stale.
+let private listObjectsWithStalePathsAsync (deps: GitDependencies) = promise {
+    let! listed = toResult (deps.listObjects (request deps))
+
+    match listed with
+    | Error failure -> return Error failure
+    | Ok(objectsOutcome, _) ->
+        let objects = objectsOutcome.Value
+
+        if objects |> Array.exists _.IsMaterialized then
+            let! status = toResult (deps.getStatus (request deps))
+
+            return
+                status
+                |> Result.map (fun (statusOutcome, _) -> objects, staleLfsPaths objects statusOutcome.Value)
+        else
+            return Ok(objects, [||])
+}
+
+/// Asks the library to restage the stale large-file paths after a lock removal. A path that holds a real edit
+/// is refused with "has local changes" and stays as it is. Any other failure, a held lock included, is returned.
+let private restageStaleLfsPathsAsync (deps: GitDependencies) : JS.Promise<Result<unit, OperationFailureDto>> = promise {
+    let! listed = listObjectsWithStalePathsAsync deps
+
+    match listed with
+    | Error failure -> return Error failure
+    | Ok(_, [||]) -> return Ok()
+    | Ok(_, stalePaths) ->
+        let! restaged =
+            toResult (
+                deps.materializeObjects {
+                    OperationId = deps.newOperationId ()
+                    Paths = stalePaths
+                }
+            )
+
+        return
+            match restaged with
+            | Error failure
+            | Ok(_, Some failure) when not (isLocalChangesRefusal failure) -> Error failure
+            | _ -> Ok()
+}
+
+/// Removes a stale lock, restages the large files that git-lfs had already written when the lock stopped a
+/// checkout, and refreshes. The refreshed status decides what follows: an active conflict session is abandoned
+/// through the normal path.
 let private runClearStaleLockAttemptAsync (deps: GitDependencies) =
     runTrackedWriteAsync
         deps
         (fun () -> deps.clearStaleLock (request deps))
-        (fun outcome partial ->
+        (fun outcome partial -> promise {
             let removedLockPaths =
                 outcome.Warnings
                 |> Array.choose (fun warning ->
@@ -4477,8 +4544,12 @@ let private runClearStaleLockAttemptAsync (deps: GitDependencies) =
                     let joined = String.concat ", " paths
                     Some $"Removed stale lock files: {joined}."
 
-            refreshAfterSuccess deps partial GitPageChange.NoChange None warningMessage
-        )
+            let! restaged = restageStaleLfsPathsAsync deps
+
+            match restaged with
+            | Error failure -> return! routedToOutcome deps (routeFailure None failure)
+            | Ok() -> return! refreshAfterSuccess deps partial GitPageChange.NoChange None warningMessage
+        })
 
 let private runRestoreInterruptedPathsAttemptAsync (deps: GitDependencies) (state: GitState) (paths: string[]) = promise {
     match requireWorkspaceVersion state with
@@ -4498,32 +4569,38 @@ let private runRestoreInterruptedPathsAttemptAsync (deps: GitDependencies) (stat
 }
 
 /// Downloads the large objects an interrupted update left behind, one per object,
-/// stopping at the first failure so its message is reported.
+/// stopping at the first failure so its message is reported. The stale paths of a lock-blocked checkout
+/// are requested as well, so the library restages them. Such a path that holds a real edit is refused
+/// and does not count as a failure.
 let private runRetryMaterializationAttemptAsync (deps: GitDependencies) = promise {
-    let! objects = toResult (deps.listObjects (request deps))
+    let! listed = listObjectsWithStalePathsAsync deps
 
-    match objects with
+    match listed with
     | Error failure -> return! routedToOutcome deps (routeFailure None failure)
-    | Ok(outcome, _) ->
+    | Ok(objects, stalePaths) ->
         let pending =
-            outcome.Value
+            objects
             |> Array.filter (fun objectState -> not objectState.IsMaterialized)
+            |> Array.map _.Path
+            |> Array.append stalePaths
+            |> Array.distinct
 
         let mutable failure: OperationFailureDto option = None
 
-        for index, objectState in pending |> Array.indexed do
+        for index, path in pending |> Array.indexed do
             if failure.IsNone then
                 let! materialized =
                     toResult (
                         deps.materializeObject {
                             OperationId = deps.newOperationId ()
-                            Path = objectState.Path
+                            Path = path
                             RefreshTree = Some(index = pending.Length - 1)
                         }
                     )
 
                 match materialized with
                 | Ok _ -> ()
+                | Error error when Array.contains path stalePaths && isLocalChangesRefusal error -> ()
                 | Error error -> failure <- Some error
 
         match failure with
@@ -6165,16 +6242,15 @@ let private updateCore
     | WriteCompleted(_, _, writeRequest, Ok(RequiresRecovery(recovery, message))) ->
         // The recovery offer stays open. A refresh requested meanwhile runs after the offer is resolved.
         // A download retry that a held lock stopped is remembered like the hydration of a pull, so the
-        // download is offered again once the lock is gone. The remembered message leaves out the lock
-        // instructions.
+        // download is offered again once the lock is gone. The library message of the retry failure says
+        // the lock is still held, so the offer gets a fixed sentence.
         let nextModel = {
             clearBusy model with
                 ErrorNotice = None
                 WarningNotice = Some message
                 RetryMaterializationAfterLockClear =
                     match writeRequest, recovery with
-                    | RetryMaterialization, GitPendingRecovery.ClearStaleLock instructions ->
-                        Some(messageWithoutInstructions instructions message)
+                    | RetryMaterialization, GitPendingRecovery.ClearStaleLock _ -> Some retryLockStoppedMessage
                     | _ -> model.RetryMaterializationAfterLockClear
                 PendingRecovery = Some recovery
                 PendingConfirmation = Some(recoveryDialog recovery)

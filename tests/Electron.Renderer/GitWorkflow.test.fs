@@ -364,6 +364,7 @@ let private defaultDependencies: GitDependencies = {
     cancelConflict = fun _ -> unexpectedPromise "cancelConflict"
     listObjects = fun _ -> unexpectedPromise "listObjects"
     materializeObject = fun _ -> unexpectedPromise "materializeObject"
+    materializeObjects = fun _ -> unexpectedPromise "materializeObjects"
     pruneStorage = fun _ -> unexpectedPromise "pruneStorage"
     deduplicateStorage = fun _ -> unexpectedPromise "deduplicateStorage"
     clearStaleLock = fun _ -> unexpectedPromise "clearStaleLock"
@@ -558,6 +559,37 @@ let private completeOne deps model cmd = promise {
     | _ -> return failwith "Expected one command message."
 }
 
+/// The listing of a workspace without large objects.
+let private noObjects (_: OperationRequestDto) = promise { return Ok(succeeded ([||]: ObjectStateDto[])) }
+
+let private objectState path isMaterialized : ObjectStateDto = {
+    Path = path
+    IsMaterialized = isMaterialized
+    IsLocallyAvailable = isMaterialized
+    SizeBytes = Some 100.
+    ObjectId = Some $"object-{path}"
+}
+
+let private statusWithChanges (changes: (string * FileChangeKindDto)[]) : WorkspaceStatusDto = {
+    cleanStatus with
+        Changes =
+            changes
+            |> Array.map (fun (path, kind) -> {
+                Path = path
+                OldPath = None
+                Kind = kind
+            })
+}
+
+/// Requests the lock removal and returns the busy state with the messages the write completes with.
+let private runClearWrite deps = promise {
+    let requested, requestCmd =
+        update deps ignore (WriteRequested ClearStaleLock) runningState
+
+    let! completion = collectMessages requestCmd
+    return requested, completion
+}
+
 /// A large-file download that ended with a held index lock. The code tells the download
 /// from other partial failures.
 let private lockedPartial code =
@@ -575,6 +607,7 @@ let private lockedPartial code =
 let private runPullWithPartial (partial: OperationFailureDto) = promise {
     let deps = {
         (withRefresh cleanStatus defaultDependencies) with
+            listObjects = noObjects
             synchronize =
                 fun _ -> promise {
                     return
@@ -7232,6 +7265,7 @@ Vitest.describe (
                 let runClear result = promise {
                     let deps = {
                         refreshDependencies with
+                            listObjects = noObjects
                             clearStaleLock = fun _ -> promise { return result }
                     }
 
@@ -7321,6 +7355,7 @@ Vitest.describe (
 
                 let deps = {
                     (withRefresh conflicted defaultDependencies) with
+                        listObjects = noObjects
                         synchronize = fun _ -> promise { return Ok(OperationResultDto.Failed canceled) }
                         clearStaleLock = fun _ -> promise { return Ok(succeeded conflicted) }
                 }
@@ -7559,17 +7594,277 @@ Vitest.describe (
                     .expect(locked.PendingRecovery)
                     .toEqual (Some(GitPendingRecovery.ClearStaleLock(Some lockInstructions)))
 
-                Vitest.expect(locked.RetryMaterializationAfterLockClear).toEqual (Some failure.Message)
+                Vitest.expect(locked.RetryMaterializationAfterLockClear.IsSome).toBe true
 
                 let! finished = confirmLockRemoval deps locked (Ok(succeeded cleanStatus))
 
-                Vitest
-                    .expect(finished.PendingRecovery)
-                    .toEqual (Some(GitPendingRecovery.RetryMaterialization failure.Message))
+                // The library message says that another process holds the index, which is no longer true when the offer
+                // opens. The offer also leaves out the instructions for removing the lock.
+                match finished.PendingRecovery with
+                | Some(GitPendingRecovery.RetryMaterialization offer) ->
+                    Vitest.expect(offer.Contains failure.Message).toBe false
+                    Vitest.expect(offer.Contains lockInstructions).toBe false
+                | _ -> failwith "Expected the download offer after the lock removal."
 
-                // The lock is gone when the offer opens, so its text leaves out the instructions for removing it.
+                Vitest.expect(finished.PendingConfirmation.Value.Message.Contains failure.Message).toBe false
                 Vitest.expect(finished.PendingConfirmation.Value.Message.Contains lockInstructions).toBe false
                 Vitest.expect(finished.RetryMaterializationAfterLockClear).toEqual None
+            }
+        )
+
+        Vitest.test (
+            "staleLfsPaths lists only materialized objects that the status shows as plain modifications",
+            fun () ->
+                let status =
+                    statusWithChanges [|
+                        "modified.bin", FileChangeKindDto.Modified
+                        "added.bin", FileChangeKindDto.Added
+                        "deleted.bin", FileChangeKindDto.Deleted
+                        "conflicted.bin", FileChangeKindDto.Conflicted
+                        "missing.bin", FileChangeKindDto.Modified
+                    |]
+
+                let renamed = {
+                    Path = "renamed.bin"
+                    OldPath = Some "old.bin"
+                    Kind = FileChangeKindDto.Renamed
+                }
+
+                let objects = [|
+                    objectState "modified.bin" true
+                    objectState "added.bin" true
+                    objectState "deleted.bin" true
+                    objectState "conflicted.bin" true
+                    objectState "renamed.bin" true
+                    objectState "unchanged.bin" true
+                    objectState "missing.bin" false
+                |]
+
+                let listed =
+                    staleLfsPaths objects {
+                        status with
+                            Changes = Array.append status.Changes [| renamed |]
+                    }
+
+                Vitest.expect(listed).toEqual [| "modified.bin" |]
+        )
+
+        Vitest.test (
+            "Removing a lock restages the large files that git-lfs had already written and skips a path with a staged change",
+            fun () -> promise {
+                let status =
+                    statusWithChanges [|
+                        "first.bin", FileChangeKindDto.Modified
+                        "second.bin", FileChangeKindDto.Modified
+                        "staged.bin", FileChangeKindDto.Added
+                    |]
+
+                let requests = ResizeArray<ObjectPathsRequestDto>()
+
+                let deps = {
+                    (withRefresh status defaultDependencies) with
+                        listObjects =
+                            fun _ -> promise {
+                                return
+                                    Ok(
+                                        succeeded [|
+                                            objectState "first.bin" true
+                                            objectState "second.bin" true
+                                            objectState "staged.bin" true
+                                            objectState "clean.bin" true
+                                        |]
+                                    )
+                            }
+                        clearStaleLock = fun _ -> promise { return Ok(succeeded status) }
+                        materializeObjects =
+                            fun request ->
+                                requests.Add request
+                                promise { return Ok(succeeded ()) }
+                }
+
+                let! requested, completion = runClearWrite deps
+
+                let finalState, finalCmd =
+                    match completion with
+                    | [| WriteCompleted(_, _, ClearStaleLock, Ok(Completed _)) |] ->
+                        update deps ignore completion[0] requested
+                    | _ -> failwith "Expected the lock removal to complete."
+
+                let! _ = collectMessages finalCmd
+
+                Vitest.expect(requests.Count).toBe 1
+                Vitest.expect(requests[0].Paths).toEqual [| "first.bin"; "second.bin" |]
+                Vitest.expect(finalState.ErrorNotice).toEqual None
+            }
+        )
+
+        Vitest.test (
+            "A restage that the library refuses for a local edit shows no error after the lock removal",
+            fun () -> promise {
+                let status =
+                    statusWithChanges [|
+                        "stale.bin", FileChangeKindDto.Modified
+                        "edited.bin", FileChangeKindDto.Modified
+                    |]
+
+                let refusal = {
+                    makeFailure ProviderError "lfs_incomplete" "1 of 2 paths failed" None [| "edited.bin" |] with
+                        Details = [|
+                            "edited.bin: 'edited.bin' has local changes. Save, discard, or commit them before downloading the Git LFS file."
+                        |]
+                }
+
+                let deps = {
+                    (withRefresh status defaultDependencies) with
+                        listObjects =
+                            fun _ -> promise {
+                                return
+                                    Ok(
+                                        succeeded [|
+                                            objectState "stale.bin" true
+                                            objectState "edited.bin" true
+                                        |]
+                                    )
+                            }
+                        clearStaleLock = fun _ -> promise { return Ok(succeeded status) }
+                        materializeObjects =
+                            fun _ -> promise { return Ok(OperationResultDto.PartiallySucceeded(operation (), refusal)) }
+                }
+
+                let! requested, completion = runClearWrite deps
+
+                let finalState, finalCmd =
+                    match completion with
+                    | [| WriteCompleted(_, _, ClearStaleLock, Ok(Completed _)) |] ->
+                        update deps ignore completion[0] requested
+                    | _ -> failwith "Expected the lock removal to complete without an error."
+
+                let! _ = collectMessages finalCmd
+
+                Vitest.expect(finalState.ErrorNotice).toEqual None
+                Vitest.expect(finalState.PendingRecovery).toEqual None
+            }
+        )
+
+        Vitest.test (
+            "A lock that stops the restage after the lock removal is routed as usual",
+            fun () -> promise {
+                let status = statusWithChanges [| "stale.bin", FileChangeKindDto.Modified |]
+
+                let lockFailure =
+                    makeFailure
+                        Concurrency
+                        VersionControlCodes.IndexLocked
+                        "Another git process holds the repository index."
+                        (Some {
+                            Code = VersionControlCodes.Recovery.RemoveIndexLock
+                            Instructions = None
+                        })
+                        [||]
+
+                let deps = {
+                    (withRefresh status defaultDependencies) with
+                        listObjects = fun _ -> promise { return Ok(succeeded [| objectState "stale.bin" true |]) }
+                        clearStaleLock = fun _ -> promise { return Ok(succeeded status) }
+                        materializeObjects = fun _ -> promise { return Ok(OperationResultDto.Failed lockFailure) }
+                }
+
+                let! _, completion = runClearWrite deps
+
+                match completion with
+                | [| WriteCompleted(_, _, ClearStaleLock, Ok(RequiresRecovery(GitPendingRecovery.ClearStaleLock _, _))) |] ->
+                    ()
+                | _ -> failwith "Expected the lock to be offered for removal again."
+            }
+        )
+
+        Vitest.test (
+            "Download now requests a path that git-lfs wrote while the lock stopped the checkout, next to the missing ones",
+            fun () -> promise {
+                let status = statusWithChanges [| "stale.bin", FileChangeKindDto.Modified |]
+                let requested = ResizeArray<string>()
+
+                let deps = {
+                    (withRefresh status defaultDependencies) with
+                        listObjects =
+                            fun _ -> promise {
+                                return
+                                    Ok(
+                                        succeeded [|
+                                            objectState "missing.bin" false
+                                            objectState "stale.bin" true
+                                            objectState "clean.bin" true
+                                        |]
+                                    )
+                            }
+                        materializeObject =
+                            fun request ->
+                                requested.Add request.Path
+                                promise { return Ok(succeeded ()) }
+                }
+
+                let _, retryCmd =
+                    update deps ignore (WriteRequested RetryMaterialization) runningState
+
+                let! completion = collectMessages retryCmd
+
+                match completion with
+                | [| WriteCompleted(_, _, RetryMaterialization, Ok(Completed _)) |] -> ()
+                | _ -> failwith "Expected the download to complete."
+
+                Vitest.expect(requested.ToArray()).toEqual [| "stale.bin"; "missing.bin" |]
+            }
+        )
+
+        Vitest.test (
+            "Download now does not fail when the library refuses a stale candidate that holds a local edit",
+            fun () -> promise {
+                let status = statusWithChanges [| "edited.bin", FileChangeKindDto.Modified |]
+
+                let refusal =
+                    makeFailure
+                        ProviderError
+                        "lfs_failed"
+                        "'edited.bin' has local changes. Save, discard, or commit them before downloading the Git LFS file."
+                        None
+                        [||]
+
+                let deps = {
+                    (withRefresh status defaultDependencies) with
+                        listObjects =
+                            fun _ -> promise {
+                                return
+                                    Ok(
+                                        succeeded [|
+                                            objectState "missing.bin" false
+                                            objectState "edited.bin" true
+                                        |]
+                                    )
+                            }
+                        materializeObject =
+                            fun request -> promise {
+                                return
+                                    if request.Path = "edited.bin" then
+                                        Ok(OperationResultDto.Failed refusal)
+                                    else
+                                        Ok(succeeded ())
+                            }
+                }
+
+                let requested, retryCmd =
+                    update deps ignore (WriteRequested RetryMaterialization) runningState
+
+                let! completion = collectMessages retryCmd
+
+                let finalState, finalCmd =
+                    match completion with
+                    | [| WriteCompleted(_, _, RetryMaterialization, Ok(Completed _)) |] ->
+                        update deps ignore completion[0] requested
+                    | _ -> failwith "Expected the download to complete."
+
+                let! _ = collectMessages finalCmd
+
+                Vitest.expect(finalState.ErrorNotice).toEqual None
             }
         )
 

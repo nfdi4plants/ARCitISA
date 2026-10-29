@@ -404,6 +404,25 @@ let private RunningLogsProbe (onLogs: LfsRunningLogs -> unit) =
     React.useEffect ((fun () -> onLogs logs), [| box logs |])
     Html.none
 
+/// The provider for the ARC of the argument with a probe for the controller and one for the running actions.
+[<ReactComponent>]
+let private ArcHarness
+    (
+        arcRootPath: string option,
+        onController: LfsActivityController -> unit,
+        onActions: LfsRunningAction[] -> unit,
+        onRender: unit -> unit
+    ) =
+    Renderer.Context.AppStateContext.AppStateCtx.Provider(
+        arcRootPath,
+        LfsActivityCtxProvider(
+            React.Fragment [
+                ControllerProbe onController
+                RunningActionsProbe(onActions, onRender)
+            ]
+        )
+    )
+
 /// Mounts the provider with a probe for the controller, one for the running actions and one for their logs. The
 /// test reaches the listener that the provider registered on the IPC bridge to send it progress events.
 /// actionRenders counts the renders of the running actions probe.
@@ -569,6 +588,53 @@ Vitest.describe (
                     do! Promise.sleep 20
                     Vitest.expect(actions().Length).toBe (0)
                 })
+        )
+
+        Vitest.test (
+            "an action of another ARC that ends leaves the running actions and their readers alone",
+            fun () -> promise {
+                let container = document.createElement ("div") :?> Browser.Types.HTMLDivElement
+                document.body.appendChild container |> ignore
+                let root = ReactDOM.createRoot container
+                let controller: LfsActivityController option ref = ref None
+                let actions: LfsRunningAction[] ref = ref [||]
+                let renders = ref 0
+
+                let harness arcRootPath =
+                    ArcHarness(
+                        arcRootPath,
+                        (fun c -> controller.Value <- Some c),
+                        (fun a -> actions.Value <- a),
+                        (fun () -> renders.Value <- renders.Value + 1)
+                    )
+
+                try
+                    root.render (harness (Some "C:/arc-a"))
+                    do! waitFor (fun () -> controller.Value.IsSome)
+
+                    let work = deferred ()
+
+                    let running =
+                        controller.Value.Value.track (runningAction "op-a") (fun () -> work.pending)
+
+                    do! waitFor (fun () -> actions.Value.Length = 1)
+
+                    root.render (harness (Some "C:/arc-b"))
+                    do! waitFor (fun () -> actions.Value.Length = 0)
+
+                    let before = actions.Value
+                    let rendersBefore = renders.Value
+
+                    work.resolve (Ok())
+                    let! _ = running
+                    do! Promise.sleep 20
+
+                    Vitest.expect(obj.ReferenceEquals(actions.Value, before)).toBe true
+                    Vitest.expect(renders.Value).toBe rendersBefore
+                finally
+                    root.unmount ()
+                    container.remove ()
+            }
         )
 )
 
