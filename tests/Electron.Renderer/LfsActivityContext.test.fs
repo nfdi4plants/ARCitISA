@@ -386,22 +386,33 @@ let private runningAction (operationId: string) : LfsRunningAction = {
     FileCount = 3
     Count = None
     StepPercent = None
-    Log = Renderer.Context.OperationLog.empty
     StartedAt = 0.0
 }
 
+/// onRender runs on every render of the probe, which happens when the running actions change and not for other
+/// updates of the provider.
 [<ReactComponent>]
-let private RunningActionsProbe (onActions: LfsRunningAction[] -> unit) =
+let private RunningActionsProbe (onActions: LfsRunningAction[] -> unit, onRender: unit -> unit) =
     let actions = useLfsRunningActionsCtx ()
+    onRender ()
     React.useEffect ((fun () -> onActions actions), [| box actions |])
     Html.none
 
-/// Mounts the provider with a probe for the controller and one for the running actions. The test reaches the
-/// listener that the provider registered on the IPC bridge to send it progress events.
-let private withRunningActions
+[<ReactComponent>]
+let private RunningLogsProbe (onLogs: LfsRunningLogs -> unit) =
+    let logs = useLfsRunningLogsCtx ()
+    React.useEffect ((fun () -> onLogs logs), [| box logs |])
+    Html.none
+
+/// Mounts the provider with a probe for the controller, one for the running actions and one for their logs. The
+/// test reaches the listener that the provider registered on the IPC bridge to send it progress events.
+/// actionRenders counts the renders of the running actions probe.
+let private withRunningState
     (body:
         (unit -> LfsActivityController)
             -> (unit -> LfsRunningAction[])
+            -> (unit -> LfsRunningLogs)
+            -> (unit -> int)
             -> (VersionControlProgress -> unit)
             -> (VersionControlOutput -> unit)
             -> JS.Promise<unit>)
@@ -412,6 +423,8 @@ let private withRunningActions
         let root = ReactDOM.createRoot container
         let controller: LfsActivityController option ref = ref None
         let actions: LfsRunningAction[] ref = ref [||]
+        let logs: LfsRunningLogs ref = ref LfsRunningLogs.empty
+        let actionRenders = ref 0
 
         let progressListener: (VersionControlProgress -> unit) option ref = ref None
         let outputListener: (VersionControlOutput -> unit) option ref = ref None
@@ -427,7 +440,11 @@ let private withRunningActions
                     LfsActivityCtxProvider(
                         React.Fragment [
                             ControllerProbe(fun c -> controller.Value <- Some c)
-                            RunningActionsProbe(fun a -> actions.Value <- a)
+                            RunningActionsProbe(
+                                (fun a -> actions.Value <- a),
+                                (fun () -> actionRenders.Value <- actionRenders.Value + 1)
+                            )
+                            RunningLogsProbe(fun l -> logs.Value <- l)
                         ]
                     )
                 )
@@ -444,12 +461,27 @@ let private withRunningActions
                 body
                     (fun () -> controller.Value.Value)
                     (fun () -> actions.Value)
+                    (fun () -> logs.Value)
+                    (fun () -> actionRenders.Value)
                     (fun progress -> progressListener.Value.Value progress)
                     (fun output -> outputListener.Value.Value output)
         finally
             root.unmount ()
             container.remove ()
     }
+
+/// The tests that need only the actions and the events.
+let private withRunningActions
+    (body:
+        (unit -> LfsActivityController)
+            -> (unit -> LfsRunningAction[])
+            -> (VersionControlProgress -> unit)
+            -> (VersionControlOutput -> unit)
+            -> JS.Promise<unit>)
+    =
+    withRunningState (fun controller actions _ _ sendProgress sendOutput ->
+        body controller actions sendProgress sendOutput
+    )
 
 Vitest.describe (
     "LfsActivityCtxProvider progress",
@@ -563,7 +595,7 @@ Vitest.describe (
         Vitest.test (
             "output of a tracked action is appended to the log of that action",
             fun () ->
-                withRunningActions (fun controller actions _ sendOutput -> promise {
+                withRunningState (fun controller actions logs _ _ sendOutput -> promise {
                     let work = deferred ()
                     let running = controller().track (runningAction "op-a") (fun () -> work.pending)
                     let other = controller().track (runningAction "op-b") (fun () -> work.pending)
@@ -574,10 +606,10 @@ Vitest.describe (
                     sendOutput (outputFor "op-a" [ "second"; "third" ])
                     sendOutput (outputFor "op-b" [ "other" ])
 
-                    do! waitFor (fun () -> actions().[0].Log.Lines.Length = 3)
+                    do! waitFor (fun () -> logs().ContainsKey "op-b" && logs().["op-a"].Lines.Length = 3)
 
-                    Vitest.expect(actions().[0].Log.Lines |> Array.map _.Text).toEqual [| "first"; "second"; "third" |]
-                    Vitest.expect(actions().[1].Log.Lines |> Array.map _.Text).toEqual [| "other" |]
+                    Vitest.expect(logs().["op-a"].Lines |> Array.map _.Text).toEqual [| "first"; "second"; "third" |]
+                    Vitest.expect(logs().["op-b"].Lines |> Array.map _.Text).toEqual [| "other" |]
 
                     work.resolve (Ok())
                     let! _ = running
@@ -589,7 +621,7 @@ Vitest.describe (
         Vitest.test (
             "output of an unknown operation id is ignored",
             fun () ->
-                withRunningActions (fun controller actions _ sendOutput -> promise {
+                withRunningState (fun controller actions logs _ _ sendOutput -> promise {
                     let work = deferred ()
                     let running = controller().track (runningAction "op-a") (fun () -> work.pending)
 
@@ -597,11 +629,60 @@ Vitest.describe (
 
                     sendOutput (outputFor "op-other" [ "not ours" ])
                     do! Promise.sleep 20
-                    Vitest.expect(actions().[0].Log.Lines.Length).toBe 0
+                    Vitest.expect(logs().ContainsKey "op-other").toBe false
+                    Vitest.expect(logs().IsEmpty).toBe true
 
                     // The provider is listening, because its own operation id still gets through.
                     sendOutput (outputFor "op-a" [ "ours" ])
-                    do! waitFor (fun () -> actions().[0].Log.Lines.Length = 1)
+                    do! waitFor (fun () -> logs().ContainsKey "op-a")
+
+                    work.resolve (Ok())
+                    let! _ = running
+                    ()
+                })
+        )
+
+        Vitest.test (
+            "the log goes away when the work settles and later output does not bring it back",
+            fun () ->
+                withRunningState (fun controller actions logs _ _ sendOutput -> promise {
+                    let work = deferred ()
+                    let running = controller().track (runningAction "op-a") (fun () -> work.pending)
+
+                    do! waitFor (fun () -> actions().Length = 1)
+
+                    sendOutput (outputFor "op-a" [ "first" ])
+                    do! waitFor (fun () -> logs().ContainsKey "op-a")
+
+                    work.resolve (Ok())
+                    let! _ = running
+                    do! waitFor (fun () -> logs().IsEmpty)
+
+                    sendOutput (outputFor "op-a" [ "late" ])
+                    do! Promise.sleep 20
+                    Vitest.expect(logs().IsEmpty).toBe true
+                })
+        )
+
+        Vitest.test (
+            "a batch of output leaves the running actions reference-equal and does not render their readers",
+            fun () ->
+                withRunningState (fun controller actions logs actionRenders _ sendOutput -> promise {
+                    let work = deferred ()
+                    let running = controller().track (runningAction "op-a") (fun () -> work.pending)
+
+                    do! waitFor (fun () -> actions().Length = 1)
+
+                    let before = actions ()
+                    let rendersBefore = actionRenders ()
+
+                    sendOutput (outputFor "op-a" [ "first"; "second" ])
+                    do! waitFor (fun () -> logs().ContainsKey "op-a")
+                    sendOutput (outputFor "op-a" [ "third" ])
+                    do! waitFor (fun () -> logs().["op-a"].Lines.Length = 3)
+
+                    Vitest.expect(obj.ReferenceEquals(actions (), before)).toBe true
+                    Vitest.expect(actionRenders ()).toBe rendersBefore
 
                     work.resolve (Ok())
                     let! _ = running
@@ -693,6 +774,59 @@ Vitest.describe (
                     LfsRunningActionsState.applyProgress (eventOf "op-a" "lfs-materialize" (Some 9.0) (Some 10.0)) state
 
                 Vitest.expect(obj.ReferenceEquals(unchanged, state)).toBe true
+        )
+)
+
+Vitest.describe (
+    "LfsRunningActionsState.forScope",
+    fun () ->
+        let first = runningAction "op-a"
+        let second = runningAction "op-b"
+
+        Vitest.test (
+            "the scoped actions come back in start order and none without a scope",
+            fun () ->
+                let state = [ "scope-1", first; "scope-2", second ]
+
+                Vitest.expect(LfsRunningActionsState.forScope (Some "scope-1") [||] state).toEqual [| first |]
+                Vitest.expect(LfsRunningActionsState.forScope (Some "scope-3") [||] state).toEqual [||]
+                Vitest.expect(LfsRunningActionsState.forScope None [||] state).toEqual [||]
+        )
+
+        Vitest.test (
+            "the previous array comes back while the scoped actions are the same records",
+            fun () ->
+                let before =
+                    LfsRunningActionsState.forScope (Some "scope-1") [||] [ "scope-1", first ]
+
+                // An action of another ARC starts, and the state list is a new one.
+                let after =
+                    LfsRunningActionsState.forScope (Some "scope-1") before [ "scope-1", first; "scope-2", second ]
+
+                Vitest.expect(obj.ReferenceEquals(after, before)).toBe true
+        )
+
+        Vitest.test (
+            "a new array comes back when a scoped action starts, ends or changes",
+            fun () ->
+                let before =
+                    LfsRunningActionsState.forScope (Some "scope-1") [||] [ "scope-1", first ]
+
+                let started =
+                    LfsRunningActionsState.forScope (Some "scope-1") before [ "scope-1", first; "scope-1", second ]
+
+                let counted = { first with Count = Some(1, 3) }
+
+                let changed =
+                    LfsRunningActionsState.forScope (Some "scope-1") before [ "scope-1", counted ]
+
+                let ended = LfsRunningActionsState.forScope (Some "scope-1") before []
+
+                Vitest.expect(started.Length).toBe 2
+                Vitest.expect(obj.ReferenceEquals(started, before)).toBe false
+                Vitest.expect(changed).toEqual [| counted |]
+                Vitest.expect(obj.ReferenceEquals(changed, before)).toBe false
+                Vitest.expect(ended.Length).toBe 0
         )
 )
 

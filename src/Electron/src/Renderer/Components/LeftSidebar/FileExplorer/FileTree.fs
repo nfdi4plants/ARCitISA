@@ -132,7 +132,6 @@ type FileTree =
                         FileCount = 1
                         Count = None
                         StepPercent = None
-                        Log = Renderer.Context.OperationLog.empty
                         StartedAt = 0.0
                     }
 
@@ -199,7 +198,6 @@ type FileTree =
                                         FileCount = paths.Length
                                         Count = None
                                         StepPercent = None
-                                        Log = Renderer.Context.OperationLog.empty
                                         StartedAt = 0.0
                                     }
 

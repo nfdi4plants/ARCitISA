@@ -765,11 +765,11 @@ const pullSteps = [
 const pullLogLines = [
   { Kind: "command", Text: "git fetch origin" },
   { Kind: "stderr", Text: "From https://datahub.example.org/arc" },
-  { Kind: "stdout", Text: "Receiving objects: 100% (18/18), done." },
+  { Kind: "stderr", Text: "Receiving objects: 100% (18/18), done." },
   { Kind: "command", Text: "git merge origin/main" },
   { Kind: "notice", Text: "Already up to date with the tracked branch." },
-  { Kind: "command", Text: "git lfs pull" },
-  { Kind: "stderr", Text: "Downloading LFS objects: 33% (2/6), 524 KB | 121 KB/s" },
+  { Kind: "command", Text: "git lfs fetch origin main" },
+  { Kind: "stdout", Text: "Downloading LFS objects: 33% (2/6), 524 KB | 121 KB/s" },
 ];
 
 const buildPullProgress = () =>

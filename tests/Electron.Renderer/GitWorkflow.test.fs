@@ -463,7 +463,7 @@ let private runningState = {
 let private applyProgressEvents (state: GitState) (events: VersionControlProgressDto list) =
     events
     |> List.fold
-        (fun current event -> fst (update defaultDependencies ignore (SetCurrentProgress(Some event)) current))
+        (fun current event -> fst (update defaultDependencies ignore (SetCurrentProgress(event)) current))
         state
 
 /// Every value differs from the built-in one.
@@ -648,7 +648,7 @@ Vitest.describe (
                 }
 
                 let fallbackState, _ =
-                    update defaultDependencies ignore (SetCurrentProgress(Some progressWithoutDisplay)) busyState
+                    update defaultDependencies ignore (SetCurrentProgress(progressWithoutDisplay)) busyState
 
                 Vitest.expect(fallbackState.CurrentProgress.Value.Stage).toEqual (Some "Pushing to remote")
                 Vitest.expect(fallbackState.CurrentProgress.Value.Stage).not.toEqual (Some "git")
@@ -660,12 +660,12 @@ Vitest.describe (
                 }
 
                 let displayState, _ =
-                    update defaultDependencies ignore (SetCurrentProgress(Some progressWithDisplay)) busyState
+                    update defaultDependencies ignore (SetCurrentProgress(progressWithDisplay)) busyState
 
                 Vitest.expect(displayState.CurrentProgress.Value.Stage).toEqual (Some "Uploading objects")
 
                 let busyNoticeState, _ =
-                    update defaultDependencies ignore (SetCurrentProgress(Some progressWithoutDisplay)) displayState
+                    update defaultDependencies ignore (SetCurrentProgress(progressWithoutDisplay)) displayState
 
                 // A later update without a display message keeps the stage it already shows.
                 Vitest.expect(busyNoticeState.CurrentProgress.Value.Stage).toEqual (Some "Uploading objects")
@@ -684,7 +684,7 @@ Vitest.describe (
                     update
                         defaultDependencies
                         ignore
-                        (SetCurrentProgress(Some(progressDto "lfs-list" None (Some 10.0) (Some 10.0))))
+                        (SetCurrentProgress(progressDto "lfs-list" None (Some 10.0) (Some 10.0)))
                         busyState
 
                 Vitest.expect(lfsListState.CurrentProgress.Value.ProgressPercent).toEqual (Some 100.0)
@@ -694,7 +694,7 @@ Vitest.describe (
                         defaultDependencies
                         ignore
                         (SetCurrentProgress(
-                            Some(progressDto "lfs-upload" (Some "Uploading LFS objects (0/1)") (Some 0.0) (Some 100.0))
+                            progressDto "lfs-upload" (Some "Uploading LFS objects (0/1)") (Some 0.0) (Some 100.0)
                         ))
                         lfsListState
 
@@ -716,13 +716,9 @@ Vitest.describe (
                         defaultDependencies
                         ignore
                         (SetCurrentProgress(
-                            Some(
-                                progressDto
-                                    "lfs-upload"
-                                    (Some "Uploading LFS objects (45/100)")
-                                    (Some 45.0)
-                                    (Some 100.0)
-                            )
+
+                            progressDto "lfs-upload" (Some "Uploading LFS objects (45/100)") (Some 45.0) (Some 100.0)
+
                         ))
                         busyState
 
@@ -730,7 +726,7 @@ Vitest.describe (
                     update
                         defaultDependencies
                         ignore
-                        (SetCurrentProgress(Some(progressDto "lfs-upload" None None None)))
+                        (SetCurrentProgress(progressDto "lfs-upload" None None None))
                         firstState
 
                 Vitest.expect(samePhaseState.CurrentProgress.Value.ProgressPercent).toEqual (Some 45.0)
@@ -743,7 +739,7 @@ Vitest.describe (
                     update
                         defaultDependencies
                         ignore
-                        (SetCurrentProgress(Some(progressDto "git" None None None)))
+                        (SetCurrentProgress(progressDto "git" None None None))
                         samePhaseState
 
                 Vitest.expect(nextPhaseState.CurrentProgress.Value.ProgressPercent).toEqual (None)
@@ -3399,7 +3395,7 @@ Vitest.describe (
                     update
                         defaultDependencies
                         ignore
-                        (SetCurrentProgress(Some(sidebarProgress "Receiving objects" 72.)))
+                        (SetCurrentProgress(sidebarProgress "Receiving objects" 72.))
                         GitState.Empty
 
                 let! messages = collectMessages cmd
@@ -3429,7 +3425,7 @@ Vitest.describe (
                 }
 
                 let nextState, cmd =
-                    update defaultDependencies ignore (SetCurrentProgress(Some lfsProgress)) writeState
+                    update defaultDependencies ignore (SetCurrentProgress(lfsProgress)) writeState
 
                 let! messages = collectMessages cmd
 
@@ -3454,7 +3450,7 @@ Vitest.describe (
                 }
 
                 let ownState, _ =
-                    update defaultDependencies ignore (SetCurrentProgress(Some ownProgress)) writeState
+                    update defaultDependencies ignore (SetCurrentProgress(ownProgress)) writeState
 
                 Vitest.expect(ownState.CurrentProgress).toEqual (Some(expectedSidebarProgress "Writing objects" 40.))
 
@@ -3464,7 +3460,7 @@ Vitest.describe (
                 }
 
                 let subState, _ =
-                    update defaultDependencies ignore (SetCurrentProgress(Some subOperationProgress)) ownState
+                    update defaultDependencies ignore (SetCurrentProgress(subOperationProgress)) ownState
 
                 Vitest.expect(subState.CurrentProgress).toEqual (Some(expectedSidebarProgress "Writing objects" 80.))
             }
@@ -3480,7 +3476,7 @@ Vitest.describe (
                     update
                         defaultDependencies
                         ignore
-                        (SetCurrentProgress(Some(sidebarProgress "Receiving objects" 72.)))
+                        (SetCurrentProgress(sidebarProgress "Receiving objects" 72.))
                         silentState
 
                 let! messages = collectMessages cmd
@@ -3512,8 +3508,7 @@ Vitest.describe (
                         OperationId = "lfs-action-1"
                 }
 
-                let ignoredState, _ =
-                    update deps ignore (SetCurrentProgress(Some foreign)) refreshState
+                let ignoredState, _ = update deps ignore (SetCurrentProgress(foreign)) refreshState
 
                 Vitest.expect(ignoredState.CurrentProgress).toEqual (None)
 
@@ -3522,7 +3517,7 @@ Vitest.describe (
                         OperationId = "refresh-1/2"
                 }
 
-                let appliedState, _ = update deps ignore (SetCurrentProgress(Some own)) refreshState
+                let appliedState, _ = update deps ignore (SetCurrentProgress(own)) refreshState
 
                 Vitest
                     .expect(appliedState.CurrentProgress)
@@ -3555,8 +3550,7 @@ Vitest.describe (
                         OperationId = "lfs-action-1"
                 }
 
-                let ignoredState, _ =
-                    update deps ignore (SetCurrentProgress(Some foreign)) initState
+                let ignoredState, _ = update deps ignore (SetCurrentProgress(foreign)) initState
 
                 Vitest.expect(ignoredState.CurrentProgress).toEqual (None)
 
@@ -3565,7 +3559,7 @@ Vitest.describe (
                         OperationId = "init-1"
                 }
 
-                let appliedState, _ = update deps ignore (SetCurrentProgress(Some own)) initState
+                let appliedState, _ = update deps ignore (SetCurrentProgress(own)) initState
 
                 Vitest.expect(appliedState.CurrentProgress).toEqual (Some(expectedSidebarProgress "Initializing" 40.))
 
@@ -3606,7 +3600,7 @@ Vitest.describe (
                 }
 
                 let ignoredState, _ =
-                    update deps ignore (SetCurrentProgress(Some foreign)) confirmingState
+                    update deps ignore (SetCurrentProgress(foreign)) confirmingState
 
                 Vitest.expect(ignoredState.CurrentProgress).toEqual (None)
 
@@ -3615,8 +3609,7 @@ Vitest.describe (
                         OperationId = "resolve-1/3"
                 }
 
-                let appliedState, _ =
-                    update deps ignore (SetCurrentProgress(Some own)) confirmingState
+                let appliedState, _ = update deps ignore (SetCurrentProgress(own)) confirmingState
 
                 Vitest.expect(appliedState.CurrentProgress).toEqual (Some(expectedSidebarProgress "Restoring" 40.))
             }
@@ -3637,15 +3630,11 @@ Vitest.describe (
                     update
                         defaultDependencies
                         ignore
-                        (SetCurrentProgress(Some(sidebarProgress "Receiving objects" 72.)))
+                        (SetCurrentProgress(sidebarProgress "Receiving objects" 72.))
                         state
 
                 let nextState, cmd =
-                    update
-                        defaultDependencies
-                        ignore
-                        (SetCurrentProgress(Some(sidebarOutput "Resolving deltas")))
-                        firstState
+                    update defaultDependencies ignore (SetCurrentProgress(sidebarOutput "Resolving deltas")) firstState
 
                 let! messages = collectMessages cmd
 
@@ -3737,7 +3726,7 @@ Vitest.describe (
                     update
                         defaultDependencies
                         ignore
-                        (SetCurrentProgress(Some(progressDto "fetch" (Some "Fetching online changes") None None)))
+                        (SetCurrentProgress(progressDto "fetch" (Some "Fetching online changes") None None))
                         withOutput
 
                 Vitest.expect(withSteps.CurrentLog.Lines.Length).toBe 1
@@ -3770,12 +3759,10 @@ Vitest.describe (
 
                 let running =
                     [
-                        SetCurrentProgress(Some(progressDto "commit" (Some "Saving changes") None None))
+                        SetCurrentProgress(progressDto "commit" (Some "Saving changes") None None)
                         OperationOutputReceived(outputOf "op-1" [ "command", "git commit"; "stdout", "done" ])
-                        SetCurrentProgress(Some(progressDto "push" (Some "Uploading changes") None None))
-                        SetCurrentProgress(
-                            Some(progressDto "push" (Some "Uploading (30/100)") (Some 30.0) (Some 100.0))
-                        )
+                        SetCurrentProgress(progressDto "push" (Some "Uploading changes") None None)
+                        SetCurrentProgress(progressDto "push" (Some "Uploading (30/100)") (Some 30.0) (Some 100.0))
                     ]
                     |> List.fold apply busyState
 
@@ -3817,9 +3804,7 @@ Vitest.describe (
                 let finalState =
                     events
                     |> List.fold
-                        (fun state event ->
-                            fst (update defaultDependencies ignore (SetCurrentProgress(Some event)) state)
-                        )
+                        (fun state event -> fst (update defaultDependencies ignore (SetCurrentProgress(event)) state))
                         pullState
 
                 Vitest
@@ -3843,7 +3828,7 @@ Vitest.describe (
                 }
 
                 let apply state event =
-                    fst (update defaultDependencies ignore (SetCurrentProgress(Some event)) state)
+                    fst (update defaultDependencies ignore (SetCurrentProgress(event)) state)
 
                 let started =
                     apply pullState (progressDto "merge" (Some "Merging online changes") None None)
@@ -4034,16 +4019,10 @@ Vitest.describe (
                     update
                         defaultDependencies
                         ignore
-                        (SetCurrentProgress(Some(sidebarProgress "Receiving objects" 72.)))
+                        (SetCurrentProgress(sidebarProgress "Receiving objects" 72.))
                         runningState
 
                 Vitest.expect(obj.ReferenceEquals(idle, runningState)).toBe true
-
-                // A reset on a model without progress, steps or log changes nothing either.
-                let reset, _ =
-                    update defaultDependencies ignore (SetCurrentProgress None) runningState
-
-                Vitest.expect(obj.ReferenceEquals(reset, runningState)).toBe true
         )
 
         Vitest.test (
@@ -4071,7 +4050,7 @@ Vitest.describe (
                 }
 
                 let ignoredState, _ =
-                    update deps ignore (SetCurrentProgress(Some replaced)) secondRefresh
+                    update deps ignore (SetCurrentProgress(replaced)) secondRefresh
 
                 Vitest.expect(ignoredState.CurrentProgress).toEqual (None)
                 Vitest.expect(ignoredState.OperationReported).toBe false
@@ -4081,8 +4060,7 @@ Vitest.describe (
                         OperationId = "refresh-2/2"
                 }
 
-                let appliedState, _ =
-                    update deps ignore (SetCurrentProgress(Some current)) secondRefresh
+                let appliedState, _ = update deps ignore (SetCurrentProgress(current)) secondRefresh
 
                 Vitest
                     .expect(appliedState.CurrentProgress)
@@ -4102,7 +4080,7 @@ Vitest.describe (
                     update
                         defaultDependencies
                         ignore
-                        (SetCurrentProgress(Some(sidebarProgress "Receiving objects" 72.)))
+                        (SetCurrentProgress(sidebarProgress "Receiving objects" 72.))
                         renaming
 
                 Vitest.expect(afterProgress.CurrentProgress).toEqual (None)
@@ -4139,7 +4117,7 @@ Vitest.describe (
                 }
 
                 let afterForeign, _ =
-                    update deps ignore (SetCurrentProgress(Some foreignProgress)) started
+                    update deps ignore (SetCurrentProgress(foreignProgress)) started
 
                 let afterForeignOutput, _ =
                     update deps ignore (OperationOutputReceived(outputOf "lfs-action-1" [ "stdout", "x" ])) started
@@ -4148,7 +4126,7 @@ Vitest.describe (
                 Vitest.expect(afterForeignOutput.OperationReported).toBe false
 
                 let afterProgress, _ =
-                    update deps ignore (SetCurrentProgress(Some(sidebarProgress "Pushing objects" 10.))) started
+                    update deps ignore (SetCurrentProgress(sidebarProgress "Pushing objects" 10.)) started
 
                 let afterOutput, _ =
                     update deps ignore (OperationOutputReceived(outputOf "op-1/2" [ "stdout", "x" ])) started
@@ -4181,7 +4159,7 @@ Vitest.describe (
                     true
 
                 let reported, _ =
-                    update deps ignore (SetCurrentProgress(Some(sidebarProgress "Pushing objects" 10.))) started
+                    update deps ignore (SetCurrentProgress(sidebarProgress "Pushing objects" 10.)) started
 
                 let nextPhase, _ =
                     update
@@ -4699,7 +4677,7 @@ Vitest.describe (
                 let expectedProgress = expectedSidebarProgress "Receiving objects" 72.
 
                 let nextState, cmd =
-                    update defaultDependencies ignore (SetCurrentProgress(Some progress)) stateAfterRequest
+                    update defaultDependencies ignore (SetCurrentProgress(progress)) stateAfterRequest
 
                 let! messages = collectMessages cmd
 
@@ -7458,6 +7436,37 @@ Vitest.describe (
         )
 
         Vitest.test (
+            "The download offer after a removed index lock leaves out the instructions for removing the lock",
+            fun () -> promise {
+                let lockInstructions =
+                    "Make sure no git process runs on the repository, then remove the lock file."
+
+                let partial =
+                    makeFailure
+                        ProviderError
+                        VersionControlCodes.HydrationFailed
+                        "The large-file download did not finish."
+                        (Some {
+                            Code = VersionControlCodes.Recovery.RemoveIndexLock
+                            Instructions = Some lockInstructions
+                        })
+                        [||]
+
+                let! deps, locked = runPullWithPartial partial
+
+                Vitest.expect(locked.RetryMaterializationAfterLockClear).toEqual (Some partial.Message)
+
+                let! finished = confirmLockRemoval deps locked (Ok(succeeded cleanStatus))
+
+                Vitest
+                    .expect(finished.PendingRecovery)
+                    .toEqual (Some(GitPendingRecovery.RetryMaterialization partial.Message))
+
+                Vitest.expect(finished.PendingConfirmation.Value.Message.Contains lockInstructions).toBe false
+            }
+        )
+
+        Vitest.test (
             "A failed lock removal does not offer the download of the large files",
             fun () -> promise {
                 let! deps, locked = runPullWithPartial (lockedPartial VersionControlCodes.HydrationFailed)
@@ -7495,7 +7504,20 @@ Vitest.describe (
         Vitest.test (
             "A download retry that an index lock stopped offers the download again once the lock is removed",
             fun () -> promise {
-                let failure = lockedPartial VersionControlCodes.HydrationFailed
+                // The failure that a single Materialize returns for a held lock.
+                let lockInstructions =
+                    "Make sure no git process runs on the repository, then remove the lock file."
+
+                let failure =
+                    makeFailure
+                        Concurrency
+                        VersionControlCodes.IndexLocked
+                        "Another git process holds the repository index."
+                        (Some {
+                            Code = VersionControlCodes.Recovery.RemoveIndexLock
+                            Instructions = Some lockInstructions
+                        })
+                        [||]
 
                 let deps = {
                     (withRefresh cleanStatus defaultDependencies) with
@@ -7533,15 +7555,20 @@ Vitest.describe (
 
                 let! _ = collectMessages lockedCmd
 
-                Vitest.expect(locked.PendingRecovery).toEqual (Some(GitPendingRecovery.ClearStaleLock None))
-                Vitest.expect(locked.RetryMaterializationAfterLockClear).toEqual (Some(failureMessage failure))
+                Vitest
+                    .expect(locked.PendingRecovery)
+                    .toEqual (Some(GitPendingRecovery.ClearStaleLock(Some lockInstructions)))
+
+                Vitest.expect(locked.RetryMaterializationAfterLockClear).toEqual (Some failure.Message)
 
                 let! finished = confirmLockRemoval deps locked (Ok(succeeded cleanStatus))
 
                 Vitest
                     .expect(finished.PendingRecovery)
-                    .toEqual (Some(GitPendingRecovery.RetryMaterialization(failureMessage failure)))
+                    .toEqual (Some(GitPendingRecovery.RetryMaterialization failure.Message))
 
+                // The lock is gone when the offer opens, so its text leaves out the instructions for removing it.
+                Vitest.expect(finished.PendingConfirmation.Value.Message.Contains lockInstructions).toBe false
                 Vitest.expect(finished.RetryMaterializationAfterLockClear).toEqual None
             }
         )

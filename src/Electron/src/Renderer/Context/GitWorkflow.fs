@@ -650,7 +650,7 @@ type GitDiffMsg =
 type Msg =
     | ResetWorkflow
     | DiffPageMsg of GitDiffMsg
-    | SetCurrentProgress of VersionControlProgressDto option
+    | SetCurrentProgress of VersionControlProgressDto
     | OperationOutputReceived of VersionControlOutputDto
     | OperationStarted of OperationRequestDto
     | ArcPathChanged of ArcRootPath
@@ -1026,6 +1026,18 @@ let failureMessage (failure: OperationFailureDto) =
     | Some instructions when not (String.IsNullOrWhiteSpace instructions) -> $"{failure.Message} {instructions}"
     | _ -> failure.Message
 
+/// The message of a failure before failureMessage appended its recovery instructions. The message of a lock
+/// failure goes into the download offer that opens once the lock is gone, so it must not repeat the instructions
+/// for removing the lock.
+let private messageWithoutInstructions (instructions: string option) (message: string) =
+    match instructions with
+    | Some text when
+        not (String.IsNullOrWhiteSpace text)
+        && message.EndsWith($" {text}", StringComparison.Ordinal)
+        ->
+        message.Substring(0, message.Length - text.Length - 1)
+    | _ -> message
+
 /// A partial success counts as a success here. The explorer actions have no warning
 /// channel, so a partial that lands on one of these calls (a session-open failure the
 /// host reports once) is dropped on this path.
@@ -1066,14 +1078,15 @@ let recoveryOfPartial (partial: OperationFailureDto option) : GitPendingRecovery
     )
 
 /// The message of a large-file download that a held index lock stopped. The failure keeps the
-/// hydration code and carries the lock removal as its recovery.
+/// hydration code and carries the lock removal as its recovery. The message leaves out the lock
+/// instructions, because the offer that uses it opens after the lock is removed.
 let lockBlockedDownloadMessage (partial: OperationFailureDto option) : string option =
     partial
     |> Option.filter (fun failure ->
         failure.Code = VersionControlCodes.HydrationFailed
         && recoveryCode failure = Some VersionControlCodes.Recovery.RemoveIndexLock
     )
-    |> Option.map failureMessage
+    |> Option.map _.Message
 
 /// The dialog the sidebar shows for a recovery. Confirm runs it, cancel keeps the
 /// workspace as it is. Restoring interrupted files discards local changes on them.
@@ -4989,7 +5002,7 @@ let private updateCore
     match msg with
     | ResetWorkflow -> resetFor model, Cmd.none
     | DiffPageMsg diffMsg -> GitDiffPageLoader.update deps diffMsg model
-    | SetCurrentProgress(Some progress) when showsOperationEvents model progress.OperationId ->
+    | SetCurrentProgress progress when showsOperationEvents model progress.OperationId ->
         let steps, stepPhases =
             applyProgressToSteps model.CurrentSteps model.CurrentStepPhases progress
 
@@ -5004,25 +5017,7 @@ let private updateCore
         Cmd.none
     // Progress of a silent refresh, of another operation, of the rename of the ARC folder or after the busy
     // operation ended. The same model instance returns, so the many events of a file tree action cause no render.
-    | SetCurrentProgress(Some _) -> model, Cmd.none
-    | SetCurrentProgress None when
-        model.CurrentProgress.IsNone
-        && model.CurrentProgressPhase.IsNone
-        && model.CurrentSteps.Length = 0
-        && model.CurrentLog.Lines.Length = 0
-        && model.CurrentLog.Omitted = 0
-        ->
-        model, Cmd.none
-    | SetCurrentProgress None ->
-        {
-            model with
-                CurrentProgress = None
-                CurrentProgressPhase = None
-                CurrentSteps = [||]
-                CurrentStepPhases = [||]
-                CurrentLog = OperationLog.empty
-        },
-        Cmd.none
+    | SetCurrentProgress _ -> model, Cmd.none
     | OperationOutputReceived output when showsOperationEvents model output.OperationId ->
         {
             model with
@@ -6170,14 +6165,16 @@ let private updateCore
     | WriteCompleted(_, _, writeRequest, Ok(RequiresRecovery(recovery, message))) ->
         // The recovery offer stays open. A refresh requested meanwhile runs after the offer is resolved.
         // A download retry that a held lock stopped is remembered like the hydration of a pull, so the
-        // download is offered again once the lock is gone.
+        // download is offered again once the lock is gone. The remembered message leaves out the lock
+        // instructions.
         let nextModel = {
             clearBusy model with
                 ErrorNotice = None
                 WarningNotice = Some message
                 RetryMaterializationAfterLockClear =
                     match writeRequest, recovery with
-                    | RetryMaterialization, GitPendingRecovery.ClearStaleLock _ -> Some message
+                    | RetryMaterialization, GitPendingRecovery.ClearStaleLock instructions ->
+                        Some(messageWithoutInstructions instructions message)
                     | _ -> model.RetryMaterializationAfterLockClear
                 PendingRecovery = Some recovery
                 PendingConfirmation = Some(recoveryDialog recovery)
@@ -6542,7 +6539,7 @@ let subscribe (_model: GitState) : Sub<Msg> = [
     fun dispatch ->
         let dispose =
             Renderer.IpcReceiver.subscribeProxyReceiver<IVersionControlRendererApi> {
-                versionControlProgress = fun progress -> dispatch (SetCurrentProgress(Some progress))
+                versionControlProgress = fun progress -> dispatch (SetCurrentProgress progress)
                 versionControlOperationStarted = fun key -> dispatch (OperationStarted key)
                 versionControlOutput = fun output -> dispatch (OperationOutputReceived output)
             }

@@ -202,6 +202,51 @@ module private GitSidebarInternal =
             ]
         ]
 
+    /// One background activity: the label with its detail, and a bar while it has a percent.
+    let backgroundActivityElement (index: int) (activity: GitSidebarBackgroundActivity) : ReactElement =
+        let text =
+            match activity.Detail with
+            | Some detail -> $"{activity.Label} | {detail}"
+            | None -> activity.Label
+
+        let bar =
+            match activity.ProgressPercent with
+            | Some percent ->
+                let value = Math.Max(0.0, Math.Min(100.0, percent))
+
+                Html.div [
+                    prop.testId $"GitSidebarBackgroundActivityBar-{index}"
+                    prop.role "progressbar"
+                    prop.ariaLabel activity.Label
+                    prop.custom ("aria-valuenow", Math.Round value)
+                    prop.custom ("aria-valuemin", 0)
+                    prop.custom ("aria-valuemax", 100)
+                    prop.className "swt:h-1.5 swt:w-full swt:rounded-full swt:bg-base-300"
+                    prop.children [
+                        Html.div [
+                            prop.className "swt:h-full swt:rounded-full swt:transition-all swt:duration-300"
+                            prop.style [
+                                style.width (length.percent value)
+                                style.custom ("backgroundColor", "var(--color-base-content)")
+                            ]
+                        ]
+                    ]
+                ]
+            | None -> Html.none
+
+        Html.div [
+            prop.key index
+            prop.testId $"GitSidebarBackgroundActivityItem-{index}"
+            prop.className "swt:flex swt:min-w-0 swt:flex-col swt:gap-1"
+            prop.children [
+                Html.span [
+                    prop.className "swt:min-w-0 swt:wrap-anywhere"
+                    prop.text text
+                ]
+                bar
+            ]
+        ]
+
     let logSectionElement (panelTestId: string) (sectionIndex: int) (section: LogSection) : ReactElement =
         let title =
             match section.Title with
@@ -708,64 +753,9 @@ type GitSidebar =
                                     prop.children [
                                         Html.div [
                                             prop.className "swt:flex swt:min-w-0 swt:flex-col swt:gap-2"
-                                            prop.children [
-                                                for index, activity in Array.indexed activities ->
-                                                    Html.div [
-                                                        prop.key index
-                                                        prop.testId $"GitSidebarBackgroundActivityItem-{index}"
-                                                        prop.className "swt:flex swt:min-w-0 swt:flex-col swt:gap-1"
-                                                        prop.children [
-                                                            Html.span [
-                                                                prop.className "swt:min-w-0 swt:wrap-anywhere"
-                                                                prop.text (
-                                                                    match activity.Detail with
-                                                                    | Some detail -> $"{activity.Label} | {detail}"
-                                                                    | None -> activity.Label
-                                                                )
-                                                            ]
-
-                                                            match activity.ProgressPercent with
-                                                            | Some percent ->
-                                                                Html.div [
-                                                                    prop.testId
-                                                                        $"GitSidebarBackgroundActivityBar-{index}"
-                                                                    prop.role "progressbar"
-                                                                    prop.ariaLabel activity.Label
-                                                                    prop.custom (
-                                                                        "aria-valuenow",
-                                                                        Math.Round(
-                                                                            Math.Max(0.0, Math.Min(100.0, percent))
-                                                                        )
-                                                                    )
-                                                                    prop.custom ("aria-valuemin", 0)
-                                                                    prop.custom ("aria-valuemax", 100)
-                                                                    prop.className
-                                                                        "swt:h-1.5 swt:w-full swt:rounded-full swt:bg-base-300"
-                                                                    prop.children [
-                                                                        Html.div [
-                                                                            prop.className
-                                                                                "swt:h-full swt:rounded-full swt:transition-all swt:duration-300"
-                                                                            prop.style [
-                                                                                style.width (
-                                                                                    length.percent (
-                                                                                        Math.Max(
-                                                                                            0.0,
-                                                                                            Math.Min(100.0, percent)
-                                                                                        )
-                                                                                    )
-                                                                                )
-                                                                                style.custom (
-                                                                                    "backgroundColor",
-                                                                                    "var(--color-base-content)"
-                                                                                )
-                                                                            ]
-                                                                        ]
-                                                                    ]
-                                                                ]
-                                                            | None -> Html.none
-                                                        ]
-                                                    ]
-                                            ]
+                                            prop.children (
+                                                activities |> Array.mapi GitSidebarInternal.backgroundActivityElement
+                                            )
                                         ]
 
                                         backgroundLogView activities
@@ -1300,7 +1290,7 @@ type GitSidebar =
                         props.SubmitUpdateFromOnline,
                         testId = "GitSidebarPullButton",
                         tooltipText =
-                            "Download Changes:\n- git fetch origin\n- git merge-tree (conflict preflight)\n- git merge origin/<branch>\n- git lfs pull origin (when Download Large Files is on)"
+                            "Download Changes:\n- git fetch origin\n- git merge-tree (conflict preflight)\n- git merge origin/<branch>\n- git lfs fetch origin <branch> and git lfs checkout (when Download Large Files is on)"
                     )
                     GitSidebar.ActionButton(
                         "Upload Changes",

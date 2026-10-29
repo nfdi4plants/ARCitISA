@@ -31,7 +31,6 @@ let private runningAction (kind: LfsActionKind) (target: string) (isFolder: bool
     FileCount = 10
     Count = None
     StepPercent = None
-    Log = Renderer.Context.OperationLog.empty
     StartedAt = 500.0
 }
 
@@ -43,7 +42,8 @@ let private folderAction = {
 
 let private fileAction = runningAction LfsActionKind.Free "notes/big.bin" false
 
-let private items = backgroundActivityItems [| folderAction; fileAction |]
+let private items =
+    backgroundActivityItems [| folderAction; fileAction |] LfsRunningLogs.empty
 
 Vitest.describe (
     "GitSidebarPanel background activities",
@@ -73,7 +73,7 @@ Vitest.describe (
                         StepPercent = Some 45.5
                 }
 
-                let item = (backgroundActivityItems [| metered |]).[0]
+                let item = (backgroundActivityItems [| metered |] LfsRunningLogs.empty).[0]
 
                 Vitest.expect(item.ProgressPercent).toEqual None
                 Vitest.expect(item.Detail).toEqual None
@@ -90,31 +90,46 @@ Vitest.describe (
                         {
                             CommandId = "cmd-1"
                             Kind = "command"
-                            Text = "git lfs pull"
+                            Text = "git lfs fetch"
                             IsPartial = false
                         }
                     |]
                 }
 
-                let withOutput = {
-                    folderAction with
-                        Log = Renderer.Context.OperationLog.append output.Entries folderAction.Log
+                // Each action takes the log of its own operation id.
+                let otherOutput = {
+                    output with
+                        OperationId = fileAction.OperationId
+                        Entries = [|
+                            {
+                                CommandId = "cmd-2"
+                                Kind = "command"
+                                Text = "git lfs checkout"
+                                IsPartial = false
+                            }
+                        |]
                 }
 
-                let log = (backgroundActivityItems [| withOutput |]).[0].Log
+                let logs =
+                    LfsRunningLogs.empty
+                    |> LfsRunningLogs.append output
+                    |> LfsRunningLogs.append otherOutput
 
-                Vitest.expect(log.Value.Lines |> Array.map (fun line -> line.Kind, line.Text)).toEqual [|
-                    "command", "git lfs pull"
-                |]
+                let withLogs = backgroundActivityItems [| folderAction; fileAction |] logs
 
-                Vitest.expect(log.Value.Omitted).toBe 0
+                let linesOf (item: Swate.Components.Page.GitSidebarTypes.GitSidebarBackgroundActivity) =
+                    item.Log.Value.Lines |> Array.map (fun line -> line.Kind, line.Text)
+
+                Vitest.expect(linesOf withLogs.[0]).toEqual [| "command", "git lfs fetch" |]
+                Vitest.expect(linesOf withLogs.[1]).toEqual [| "command", "git lfs checkout" |]
+                Vitest.expect(withLogs.[0].Log.Value.Omitted).toBe 0
         )
 
         // The operation started at 1000. The actions above started at 500, so they hold the lock.
         let startedAt = Some 1000.0
 
         Vitest.test (
-            "the waiting headline names the first earlier action while Save, Download Changes or Upload Changes is busy without events",
+            "the waiting headline names the first earlier action while a write that takes the mutation lock is busy without events",
             fun () ->
                 for operation in
                     [
@@ -122,6 +137,14 @@ Vitest.describe (
                         GitBusyOperation.CommittingAllChanges
                         GitBusyOperation.PullingFromRemote
                         GitBusyOperation.PushingToRemote
+                        GitBusyOperation.DiscardingSelectedChanges
+                        GitBusyOperation.CreatingBranch
+                        GitBusyOperation.SwitchingBranch
+                        GitBusyOperation.ConfirmingMergeResolution "notes/a.md"
+                        GitBusyOperation.FinalizingMerge
+                        GitBusyOperation.AbandoningMerge
+                        GitBusyOperation.RestoringInterruptedPaths
+                        GitBusyOperation.RetryingMaterialization
                     ] do
                     match waitingHeadline (Some operation) false startedAt [| folderAction; fileAction |] with
                     | Some headline ->
@@ -131,7 +154,7 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "the waiting headline stays unset when nothing is busy, no action runs, the operation reported or another operation runs",
+            "the waiting headline stays unset when nothing is busy, no action runs or the operation reported",
             fun () ->
                 let actions = [| folderAction; fileAction |]
                 let saving = Some GitBusyOperation.CommittingAllChanges
@@ -139,11 +162,31 @@ Vitest.describe (
                 Vitest.expect(waitingHeadline None false startedAt actions).toEqual None
                 Vitest.expect(waitingHeadline saving false startedAt [||]).toEqual None
                 Vitest.expect(waitingHeadline saving true startedAt actions).toEqual None
-
-                Vitest.expect(waitingHeadline (Some GitBusyOperation.SwitchingBranch) false startedAt actions).toEqual
-                    None
-
                 Vitest.expect(waitingHeadline saving false None actions).toEqual None
+        )
+
+        Vitest.test (
+            "the waiting headline stays unset for busy operations that do not take the mutation lock",
+            fun () ->
+                for operation in
+                    [
+                        GitBusyOperation.Refreshing
+                        GitBusyOperation.FetchingFromRemote
+                        GitBusyOperation.CloningRepository "C:/arcs/clone"
+                        GitBusyOperation.InitializingRepository
+                        GitBusyOperation.SavingGitLfsThreshold
+                        GitBusyOperation.SavingDiffIndexingLimit
+                        GitBusyOperation.SavingGitLfsDownloadPreference
+                        GitBusyOperation.PruningGitLfsCache
+                        GitBusyOperation.DeduplicatingGitLfsStorage
+                        GitBusyOperation.InstallingDependency "git-lfs"
+                        GitBusyOperation.RenamingRepository
+                        GitBusyOperation.ClearingStaleLock
+                    ] do
+                    Vitest
+                        .expect(waitingHeadline (Some operation) false startedAt [| folderAction; fileAction |])
+                        .toEqual
+                        None
         )
 
         Vitest.test (

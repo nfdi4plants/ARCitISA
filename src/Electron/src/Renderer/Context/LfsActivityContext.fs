@@ -155,7 +155,8 @@ module LfsProgressPhase =
     let MaterializeCheckout = "lfs-materialize-checkout"
 
 /// One running download or free of the file tree. Count and StepPercent come from the progress events that the
-/// library reported for OperationId. Log holds the raw output that it sent for OperationId.
+/// library reported for OperationId. The raw output of OperationId lives in LfsRunningLogsCtx, because it changes
+/// with every batch and only the Git sidebar shows it.
 type LfsRunningAction = {
     OperationId: string
     Kind: LfsActionKind
@@ -168,7 +169,6 @@ type LfsRunningAction = {
     /// Percent of the current transfer step while Git LFS reports one. None when no meter with numbers is active,
     /// and after any event that is not a meter of the transfer or the checkout step.
     StepPercent: float option
-    Log: OperationLog.OperationLog
     /// Date.now () when `track` listed the action. `track` sets it, so the caller passes any value.
     StartedAt: float
 }
@@ -277,32 +277,51 @@ module LfsRunningActionsState =
         else
             next
 
-    /// Appends the entries to the log of the action that owns the operation id of the output. Output of an
-    /// unknown operation id leaves the state as it is.
-    let applyOutput (output: VersionControlOutputDto) (state: LfsRunningActionsState) : LfsRunningActionsState =
-        if output.Entries.Length = 0 || not (owns output.OperationId state) then
-            state
-        else
-            state
-            |> List.map (fun (scopeId, action) ->
-                if action.OperationId = output.OperationId then
-                    scopeId,
-                    {
-                        action with
-                            Log = OperationLog.append output.Entries action.Log
-                    }
-                else
-                    scopeId, action
-            )
+    /// The running actions of one ARC in start order. The previous result comes back when it holds the same action
+    /// records, so a change in another ARC leaves the array that the file tree and the sidebar read alone.
+    let forScope
+        (scopeId: string option)
+        (previous: LfsRunningAction[])
+        (state: LfsRunningActionsState)
+        : LfsRunningAction[] =
+        let next =
+            match scopeId with
+            | None -> [||]
+            | Some scopeId ->
+                state
+                |> List.choose (fun (actionScopeId, action) -> if actionScopeId = scopeId then Some action else None)
+                |> List.toArray
 
-    /// The running actions of one ARC in start order.
-    let forScope (scopeId: string option) (state: LfsRunningActionsState) : LfsRunningAction[] =
-        match scopeId with
-        | None -> [||]
-        | Some scopeId ->
-            state
-            |> List.choose (fun (actionScopeId, action) -> if actionScopeId = scopeId then Some action else None)
-            |> List.toArray
+        if
+            next.Length = previous.Length
+            && Array.forall2 (fun before after -> obj.ReferenceEquals(before, after)) previous next
+        then
+            previous
+        else
+            next
+
+/// The raw output of the running actions by operation id. It lives apart from the actions, because output arrives in
+/// many batches and only the Git sidebar shows the lines. A batch changes this value and leaves the running actions
+/// alone, so the file tree does not render for it.
+type LfsRunningLogs = Map<string, OperationLog.OperationLog>
+
+module LfsRunningLogs =
+
+    let empty: LfsRunningLogs = Map.empty
+
+    /// Appends the entries of the output to the log of its operation id.
+    let append (output: VersionControlOutputDto) (logs: LfsRunningLogs) : LfsRunningLogs =
+        let log =
+            logs |> Map.tryFind output.OperationId |> Option.defaultValue OperationLog.empty
+
+        Map.add output.OperationId (OperationLog.append output.Entries log) logs
+
+    /// Drops the log of a settled action. The same map comes back when the action sent no output.
+    let finish (operationId: string) (logs: LfsRunningLogs) : LfsRunningLogs =
+        if Map.containsKey operationId logs then
+            Map.remove operationId logs
+        else
+            logs
 
 type LfsActivityController = {
     /// Activities of the open ARC, keyed by the ARC-relative path.
@@ -341,11 +360,19 @@ let LfsActivityCtx =
 let useLfsActivityCtx () = React.useContext LfsActivityCtx
 
 /// The running actions of the open ARC with their latest progress. A progress event changes this value but
-/// not the LfsActivityCtx value, so the file tree does not render for every event.
+/// not the LfsActivityCtx value, so the file tree does not render for every event. The value changes only when an
+/// action starts or ends, or when its count or step percent changes. Output does not change it.
 let LfsRunningActionsCtx = React.createContext<LfsRunningAction[]> [||]
 
 [<Hook>]
 let useLfsRunningActionsCtx () = React.useContext LfsRunningActionsCtx
+
+/// The raw output of the running actions by operation id. Only the Git sidebar reads it, so the file tree stays out
+/// of the renders that a batch of output causes.
+let LfsRunningLogsCtx = React.createContext<LfsRunningLogs> LfsRunningLogs.empty
+
+[<Hook>]
+let useLfsRunningLogsCtx () = React.useContext LfsRunningLogsCtx
 
 let private toScopeId (arcRootPath: string option) =
     arcRootPath
@@ -371,6 +398,13 @@ let LfsActivityCtxProvider (children: ReactElement) =
         actionsRef.current <- next
         setActionsState next
 
+    let logsState, setLogsState = React.useState LfsRunningLogs.empty
+    let logsRef = React.useRef logsState
+
+    let updateLogs next =
+        logsRef.current <- next
+        setLogsState next
+
     // Each action keeps the numbers and the output of its own operation id and ignores every other operation.
     // An event that changes no number does not touch the state.
     Renderer.IpcReceiver.useProxyReceiver<IVersionControlRendererApi> (
@@ -385,10 +419,11 @@ let LfsActivityCtxProvider (children: ReactElement) =
             versionControlOperationStarted = ignore
             versionControlOutput =
                 fun output ->
-                    let next = LfsRunningActionsState.applyOutput output actionsRef.current
-
-                    if not (obj.ReferenceEquals(next, actionsRef.current)) then
-                        updateActions next
+                    if
+                        output.Entries.Length > 0
+                        && LfsRunningActionsState.owns output.OperationId actionsRef.current
+                    then
+                        updateLogs (LfsRunningLogs.append output logsRef.current)
         }),
         [||]
     )
@@ -464,6 +499,7 @@ let LfsActivityCtxProvider (children: ReactElement) =
                 return! work ()
             finally
                 updateActions (LfsRunningActionsState.finish action.OperationId actionsRef.current)
+                updateLogs (LfsRunningLogs.finish action.OperationId logsRef.current)
     }
 
     let controller =
@@ -477,10 +513,23 @@ let LfsActivityCtxProvider (children: ReactElement) =
             [| box state; box scopeId |]
         )
 
+    // A change of another ARC's action recomputes the array and gets the previous one back, so the readers of the
+    // context do not render for it.
+    let scopedActionsRef = React.useRef<LfsRunningAction[]> [||]
+
     let runningActions =
         React.useMemo (
-            (fun () -> LfsRunningActionsState.forScope scopeId actionsState),
+            (fun () ->
+                let next =
+                    LfsRunningActionsState.forScope scopeId scopedActionsRef.current actionsState
+
+                scopedActionsRef.current <- next
+                next
+            ),
             [| box actionsState; box scopeId |]
         )
 
-    LfsActivityCtx.Provider(controller, LfsRunningActionsCtx.Provider(runningActions, children))
+    LfsActivityCtx.Provider(
+        controller,
+        LfsRunningActionsCtx.Provider(runningActions, LfsRunningLogsCtx.Provider(logsState, children))
+    )
