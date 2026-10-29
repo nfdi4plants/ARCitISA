@@ -269,6 +269,11 @@ type JsonImportModal =
                         | Ok() -> setPhase (JsonImportModalPhase.Succeeded summary)
                         | Error e -> setPhase (JsonImportModalPhase.Failed(e.Message, false))
                 }
+                // Only the apply step can throw here, before the host sees the import, so a retry is safe.
+                |> Promise.catch (fun e ->
+                    submitting.current <- false
+                    setPhase (JsonImportModalPhase.Failed(e.Message, true))
+                )
                 |> Promise.start
 
         let setIsOpen (isOpen: bool) =

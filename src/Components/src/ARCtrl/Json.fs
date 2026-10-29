@@ -166,7 +166,7 @@ module Import =
             // The file keeps its identifier so its path stays the same.
             | ArcFiles.Workflow currentWorkflow, ArcFiles.Workflow importedWorkflow ->
                 let source = importedWorkflow.Copy()
-                // ArcWorkflow has no Identifier setter under .NET, so the copy is rebuilt.
+                // ArcWorkflow has no public Identifier setter, so the copy is rebuilt.
                 Ok(
                     ArcFiles.Workflow(
                         ArcWorkflow.make
