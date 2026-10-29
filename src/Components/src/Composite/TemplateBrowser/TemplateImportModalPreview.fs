@@ -4,7 +4,7 @@ open ARCtrl
 open Fable.Core
 open Feliz
 
-module TemplateHelper = Swate.Components.Composite.Template.Helper
+module TableImportHelper = Swate.Components.Composite.TableImport.Helper
 module TemplateTypes = Swate.Components.Composite.Template.Types
 
 [<Erase; Mangle(false)>]
@@ -250,7 +250,7 @@ type TemplateImportModalPreview =
                                                                                     for columnIndex in
                                                                                         0 .. columns.Length - 1 do
                                                                                         let valuePreviewText =
-                                                                                            TemplateHelper.templateColumnValuePreview
+                                                                                            TableImportHelper.columnValuePreview
                                                                                                 template.Table
                                                                                                 columnIndex
 

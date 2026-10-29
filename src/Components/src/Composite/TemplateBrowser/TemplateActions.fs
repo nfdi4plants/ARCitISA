@@ -3,6 +3,7 @@ module Swate.Components.Composite.Template.TemplateActions
 open ARCtrl
 open Swate.Components.Shared
 open Swate.Components.Composite.Template.Types
+open Swate.Components.Composite.TableImport.Types
 
 /// Syncs the selected template IDs with the currently loaded templates, removing any IDs that no longer exist in the loaded templates.
 let syncSelectedTemplateIds
@@ -155,7 +156,7 @@ let importIntoCopy (arcFile: ArcFiles) (activeTableIndex: int option) (payload: 
 
     let nextArcFile = ArcFiles.refreshRef arcFile
 
-    Helper.updateTables
+    Swate.Components.Composite.TableImport.Helper.updateTables
         (selected |> Array.map (fun (template, _) -> template.Table) |> ResizeArray)
         importConfig
         activeTableIndex

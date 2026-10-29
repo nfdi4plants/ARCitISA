@@ -143,7 +143,7 @@ type TemplateImportModal =
                         Html.div [
                             prop.className "swt:flex swt:flex-col swt:gap-1"
                             prop.children [
-                                for importMode, _, label in Helper.TemplateImportMode.options do
+                                for importMode, _, label, _ in Swate.Components.Composite.TableImport.Helper.ImportMode.options do
                                     let isChecked = importType = importMode
 
                                     Html.label [
