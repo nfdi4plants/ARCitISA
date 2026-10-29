@@ -110,24 +110,35 @@ type TableImportPreview =
         let dimmed (selected: bool) =
             if selected then "" else "swt:opacity-50"
 
-        let rowNumberCell (children: ReactElement list) =
+        // The row number column sticks to the left edge, so the row checkboxes stay visible while scrolling sideways.
+        // The corner cell of the header sits above the sticky column of the rows and above the scrolling headers.
+        let rowNumberCell (isHeader: bool) (children: ReactElement list) =
             Html.div [
-                prop.className "swt:w-14 swt:min-w-14 swt:shrink-0 swt:px-2 swt:flex swt:items-center swt:gap-1"
+                if isHeader then
+                    prop.role.columnHeader
+                else
+                    prop.custom ("role", "cell")
+                prop.className [
+                    "swt:sticky swt:left-0 swt:bg-base-100 swt:w-14 swt:min-w-14 swt:shrink-0 swt:px-2 swt:flex swt:items-center swt:gap-1"
+                    if isHeader then "swt:z-20" else "swt:z-[5]"
+                ]
                 prop.children children
             ]
 
         Html.div [
             prop.testId $"table-import-grid-{index}"
             prop.ref scrollRef
+            prop.custom ("role", "table")
             prop.className "swt:max-h-64 swt:overflow-auto swt:relative"
             prop.children [
                 Html.div [
                     prop.className "swt:w-max swt:min-w-full"
                     prop.children [
                         Html.div [
+                            prop.role.row
                             prop.className "swt:sticky swt:top-0 swt:z-10 swt:bg-base-100 swt:flex"
                             prop.children [
-                                rowNumberCell [
+                                rowNumberCell true [
                                     Html.span [
                                         prop.className "swt:text-xs swt:opacity-70"
                                         prop.text "#"
@@ -139,6 +150,7 @@ type TableImportPreview =
 
                                     Html.div [
                                         prop.key $"{index}_{columnIndex}_header_card"
+                                        prop.role.columnHeader
                                         prop.className "swt:w-52 swt:min-w-52 swt:shrink-0 swt:px-2 swt:py-1"
                                         prop.children [
                                             Html.label [
@@ -183,17 +195,18 @@ type TableImportPreview =
 
                                         Html.div [
                                             prop.key $"{index}_{row}"
+                                            prop.role.row
                                             prop.className [
                                                 "swt:flex swt:items-center swt:absolute swt:left-0 swt:top-0 swt:border-t swt:border-base-300"
                                                 dimmed (rowSelected || not showRowSelection)
                                             ]
                                             prop.style [ style.top start; style.height rowHeight ]
                                             prop.children [
-                                                rowNumberCell [
+                                                rowNumberCell false [
                                                     if showRowSelection then
                                                         Html.input [
                                                             prop.testId $"table-import-row-{index}-{row}"
-                                                            prop.ariaLabel $"Row {row + 1}"
+                                                            prop.ariaLabel $"Row {row + 1} of {source.Name}"
                                                             prop.type'.checkbox
                                                             prop.className "swt:checkbox swt:checkbox-xs"
                                                             prop.isChecked rowSelected
@@ -215,6 +228,7 @@ type TableImportPreview =
 
                                                     Html.div [
                                                         prop.key $"{index}_{row}_{columnIndex}"
+                                                        prop.custom ("role", "cell")
                                                         prop.className [
                                                             "swt:w-52 swt:min-w-52 swt:shrink-0 swt:px-2 swt:text-xs swt:truncate"
                                                             dimmed (callbacks.IsColumnSelected index columnIndex)
@@ -382,11 +396,11 @@ type TableImportPreview =
                                                 prop.children [
                                                     toolbarButton
                                                         None
-                                                        "Select all"
+                                                        "Select all columns"
                                                         (fun () -> callbacks.SelectAllColumns index)
                                                     toolbarButton
                                                         None
-                                                        "Unselect all"
+                                                        "Unselect all columns"
                                                         (fun () -> callbacks.UnselectAllColumns index columnCount)
                                                     if hasRowSelection then
                                                         toolbarButton

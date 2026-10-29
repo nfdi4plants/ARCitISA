@@ -730,24 +730,68 @@ for importType in [ TableJoinOptions.WithValues; TableJoinOptions.WithUnit ] do
     )
 
 Vitest.test (
-    "deselected rows land in the first rows of the active table when appending",
+    "left-out rows stay empty at their position when appending",
     fun () ->
         let current = createBasicAssay ()
+        let activeTable = current.Tables().[0]
+        activeTable.AddRowsEmpty 2
         let sources = [| sourceOf 0 (createRowSource 5) |]
 
         let decisions = {
             decisionsFor TableJoinOptions.WithValues TableImportAction.AppendToActiveTable with
-                DeselectedRows = Set.ofList [ 0, 1; 0, 3 ]
+                DeselectedRows = Set.singleton (0, 1)
         }
 
         let result = applyImport current sources decisions |> applied
         let table = (importedTables result).[0]
 
-        Vitest.expect(table.RowCount).toBe 3
+        Vitest.expect(table.RowCount).toBe 5
         Vitest.expect(table.GetCellAt(0, 0)).toEqual (CompositeCell.FreeText "source-1")
 
-        let organisms = [| for row in 0..2 -> cellText (table.GetCellAt(4, row)) |]
-        Vitest.expect(organisms).toEqual [| "organism 1"; "organism 3"; "organism 5" |]
+        let organisms = [| for row in 0..4 -> cellText (table.GetCellAt(4, row)) |]
+
+        Vitest.expect(organisms).toEqual [|
+            "organism 1"
+            ""
+            "organism 3"
+            "organism 4"
+            "organism 5"
+        |]
+
+        let temperatures = [| for row in 0..4 -> cellText (table.GetCellAt(3, row)) |]
+
+        Vitest.expect(temperatures).toEqual [|
+            "1 degree Celsius"
+            ""
+            "3 degree Celsius"
+            "4 degree Celsius"
+            "5 degree Celsius"
+        |]
+)
+
+Vitest.test (
+    "clearRows keeps the row count and empties the deselected rows",
+    fun () ->
+        let source = createRowSource 5
+        let before = source.Copy()
+        let cleared = clearRows source (Set.ofList [ 1; 3 ])
+
+        Vitest.expect(cleared.Name).toBe source.Name
+        Vitest.expect(cleared.Headers).toEqual source.Headers
+        Vitest.expect(cleared.RowCount).toBe 5
+
+        for columnIndex in 0 .. source.ColumnCount - 1 do
+            for rowIndex in 0..4 do
+                let expected =
+                    if rowIndex = 1 || rowIndex = 3 then
+                        (source.GetCellAt(columnIndex, rowIndex)).GetEmptyCell()
+                    else
+                        source.GetCellAt(columnIndex, rowIndex)
+
+                Vitest.expect(cleared.GetCellAt(columnIndex, rowIndex)).toEqual expected
+
+        Vitest.expect(cellText (cleared.GetCellAt(0, 1))).toBe ""
+        expectSameTable source before
 )
 
 Vitest.test (
@@ -855,4 +899,26 @@ Vitest.test (
         Vitest.expect(cellText (CompositeCell.Data(Data(name = "file.csv")))).toBe "file.csv"
         Vitest.expect(cellText (CompositeCell.Term(OntologyAnnotation.empty ()))).toBe ""
         Vitest.expect(cellText (CompositeCell.FreeText "")).toBe ""
+)
+
+Vitest.test (
+    "a deselected row and a deselected column of the same source are both left out of the result",
+    fun () ->
+        let sources = [| sourceOf 0 (createRowSource 5) |]
+
+        let decisions = {
+            jsonDefaults with
+                DeselectedColumns = Set.singleton (0, 0)
+                DeselectedRows = Set.singleton (0, 1)
+        }
+
+        let result = applyImport (createBasicAssay ()) sources decisions |> applied
+        let table = (importedTables result).[1]
+
+        Vitest.expect(table.ColumnCount).toBe 1
+        Vitest.expect(table.RowCount).toBe 4
+
+        let organisms = [| for row in 0..3 -> cellText (table.GetCellAt(0, row)) |]
+        Vitest.expect(organisms).toEqual [| "organism 1"; "organism 3"; "organism 4"; "organism 5" |]
+        verifyReadableAndSerializable result.ArcFile
 )

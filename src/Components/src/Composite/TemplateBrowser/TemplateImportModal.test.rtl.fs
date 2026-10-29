@@ -127,7 +127,7 @@ Vitest.test (
         RTL.fireEvent.click (RTL.screen.getByLabelText "Create new table")
         Vitest.expect(isImportDisabled ()).toBe false
 
-        RTL.fireEvent.click (RTL.screen.getByText "Unselect all")
+        RTL.fireEvent.click (RTL.screen.getByText "Unselect all columns")
         Vitest.expect(isImportDisabled ()).toBe true
         RTL.screen.getByTestId "table-import-no-columns-0" |> ignore
 
@@ -146,7 +146,7 @@ Vitest.test (
         for radio in RTL.screen.getAllByLabelText "Create new table" do
             RTL.fireEvent.click radio
 
-        RTL.fireEvent.click (RTL.screen.getAllByText("Unselect all").[0])
+        RTL.fireEvent.click (RTL.screen.getAllByText("Unselect all columns").[0])
         Vitest.expect(isImportDisabled ()).toBe true
 
         RTL.fireEvent.click (RTL.screen.getAllByLabelText("Do not import").[0])
@@ -182,4 +182,36 @@ Vitest.test (
         RTL.fireEvent.click (importButton ())
 
         Vitest.expect(Set.toArray submitted.Value.DeselectedTemplateRows).toEqual [| template.Id, 1 |]
+)
+
+Vitest.test (
+    "unselecting all rows disables the import until only headers are imported",
+    fun () ->
+        let template = Template.init "SugarExtraction"
+
+        template.Table.AddColumn(
+            CompositeHeader.Input IOType.Source,
+            ResizeArray [ for i in 1..3 -> CompositeCell.FreeText $"Sample {i}" ]
+        )
+
+        let modalWith importType =
+            TemplateImportModal.TemplateImportModal(
+                isOpen = true,
+                importType = importType,
+                selectedTemplates = [| template |],
+                setIsOpen = ignore,
+                setImportType = ignore,
+                submitImport = ignore
+            )
+
+        let rendered = RTL.render (modalWith TableJoinOptions.WithValues)
+        RTL.fireEvent.click (RTL.screen.getByLabelText "Create new table")
+        Vitest.expect(isImportDisabled ()).toBe false
+
+        RTL.fireEvent.click (RTL.screen.getByText "Unselect all rows")
+        Vitest.expect(isImportDisabled ()).toBe true
+
+        rendered.rerender (modalWith TableJoinOptions.Headers)
+        Vitest.expect(isImportDisabled ()).toBe false
+        Vitest.expect(RTL.screen.queryByTestId("table-import-row-0-0").IsNone).toBe true
 )

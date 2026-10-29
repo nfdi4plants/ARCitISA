@@ -56,6 +56,41 @@ let filterRows (table: ArcTable) (selectedRowIndices: int[]) : ArcTable =
     result.AddColumns columns
     result
 
+/// Returns a new table with the rows of the given table, where each deselected row holds empty cells.
+/// An appended source keeps its rows at their position this way, so they keep lining up with the rows
+/// of the active table.
+let clearRows (table: ArcTable) (deselectedRowIndices: Set<int>) : ArcTable =
+    // Like filterRows, this builds the columns directly and avoids RemoveRows.
+    let result = ArcTable.init table.Name
+
+    let columns =
+        table.Headers
+        |> Seq.mapi (fun columnIndex header ->
+            // A gap is already empty, and GetCellAt infers it once per column as in filterRows.
+            let gapCell: CompositeCell option ref = ref None
+
+            let cells =
+                Array.init
+                    table.RowCount
+                    (fun rowIndex ->
+                        match table.TryGetCellAt(columnIndex, rowIndex) with
+                        // GetEmptyCell returns ARCtrl's shared empty cells, so each use gets its own copy.
+                        | Some cell when deselectedRowIndices.Contains rowIndex -> cell.GetEmptyCell().Copy()
+                        | Some cell -> cell.Copy()
+                        | None ->
+                            if gapCell.Value.IsNone then
+                                gapCell.Value <- Some(table.GetCellAt(columnIndex, rowIndex))
+
+                            gapCell.Value.Value.Copy()
+                    )
+
+            CompositeColumn.create (header.Copy(), ResizeArray cells)
+        )
+        |> ResizeArray
+
+    result.AddColumns columns
+    result
+
 [<RequireQualifiedAccess>]
 module ImportMode =
 
@@ -374,7 +409,8 @@ let applyImport
                     |> Set.ofSeq
         }
 
-        // Deselected columns are column indices and stay valid after the rows are filtered.
+        // Deselected columns are column indices and stay valid after the rows are filtered or cleared.
+        // A new table packs the kept rows. An appended source keeps its row positions.
         let rowFilteredTable (source: ImportSource) =
             if decisions.ImportType = TableJoinOptions.Headers then
                 source.Table
@@ -385,6 +421,11 @@ let applyImport
 
                 if selectedRows.Length = source.Table.RowCount then
                     source.Table
+                elif actionOf source.Index = TableImportAction.AppendToActiveTable then
+                    let deselectedRows =
+                        Set.difference (Set.ofSeq (seq { 0 .. source.Table.RowCount - 1 })) (Set.ofArray selectedRows)
+
+                    clearRows source.Table deselectedRows
                 else
                     filterRows source.Table selectedRows
 

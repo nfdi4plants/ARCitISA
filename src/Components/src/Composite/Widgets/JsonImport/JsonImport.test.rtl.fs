@@ -701,3 +701,30 @@ Vitest.test (
         Vitest.expect(exists "table-import-no-rows-0").toBe true
     }
 )
+
+Vitest.test (
+    "the summary names the kept rows of a source with deselected rows, and only when rows are imported",
+    fun () -> promise {
+        let harness = newHarness ()
+
+        renderWidget
+            harness
+            (currentAssay ())
+            None
+            (pickerOf (jsonOf (assayWithRows "A" 3) JsonExportFormat.ROCrate))
+            None
+
+        do! openReview ()
+
+        let summary () =
+            (RTL.screen.getByTestId "json-import-summary").textContent
+
+        Vitest.expect(summary().Contains "rows)").toBe false
+
+        RTL.fireEvent.click (RTL.screen.getByTestId "table-import-row-0-1")
+        Vitest.expect(summary().Contains "(2 of 3 rows)").toBe true
+
+        RTL.fireEvent.click (RTL.screen.getByTestId "table-import-mode-Headers")
+        Vitest.expect(summary().Contains "rows)").toBe false
+    }
+)

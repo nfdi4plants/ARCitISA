@@ -206,17 +206,12 @@ type TemplateImportModal =
                             prop.className "swt:text-xs swt:opacity-70"
                             prop.textf "Template preview (%d selected)" selectedTemplates.Length
                         ]
-                        Html.div [
-                            prop.className "swt:max-h-64 swt:overflow-y-auto"
-                            prop.children [
-                                TableImportPreview.TableImportPreview(
-                                    sources,
-                                    previewCallbacks,
-                                    emptyText = "No templates selected.",
-                                    showRowSelection = (importType <> TableJoinOptions.Headers)
-                                )
-                            ]
-                        ]
+                        TableImportPreview.TableImportPreview(
+                            sources,
+                            previewCallbacks,
+                            emptyText = "No templates selected.",
+                            showRowSelection = (importType <> TableJoinOptions.Headers)
+                        )
                         match importError with
                         | Some message ->
                             Html.div [
