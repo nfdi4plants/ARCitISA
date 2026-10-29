@@ -59,6 +59,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Renaming the ARC folder on Windows retries for longer and reports the reason when it fails. (by @caroott)
 - Canceling the download of large files during Download Changes or a clone no longer leaves a Git lock behind. (by @caroott)
 - When a Git lock stops the download of large files, ARCitISA offers "Remove lock" and then "Download now". A Save or Upload Changes that was held back from publishing continues after the download, or when you close the lock dialog. (by @caroott)
+- When a Git lock also stops "Download now", ARCitISA offers "Remove lock" and then "Download now" again. (by @caroott)
 
 ## 3.1.0 - 2026-10-21
 

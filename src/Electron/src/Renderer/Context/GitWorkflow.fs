@@ -896,9 +896,13 @@ let progressPercent (progress: VersionControlProgressDto) =
     | Some completed, Some total when total > 0.0 -> Some(Math.Min(100.0, completed / total * 100.0))
     | _ -> None
 
-let private mergeProgressUpdate (model: GitState) (progress: VersionControlProgressDto) =
+/// The headline of an event that starts a phase without a display message (a reset) stays on the label of the
+/// current step. The busy notice shows only while the operation has no step yet.
+let private mergeProgressUpdate (model: GitState) (steps: GitSidebarStep[]) (progress: VersionControlProgressDto) =
     let incomingPercent = progressPercent progress
     let samePhase = model.CurrentProgressPhase = Some progress.PhaseCode
+
+    let currentStepLabel = steps |> Array.tryFind _.IsCurrent |> Option.map _.Label
 
     let current =
         model.CurrentProgress
@@ -920,83 +924,83 @@ let private mergeProgressUpdate (model: GitState) (progress: VersionControlProgr
     else
         {
             Method = None
-            Stage = progress.DisplayMessage |> Option.orElse model.BusyNotice
+            Stage =
+                progress.DisplayMessage
+                |> Option.orElse currentStepLabel
+                |> Option.orElse model.BusyNotice
             ProgressPercent = incomingPercent
         }
 
-/// Applies one progress event to the step list. Only a step start event begins a step: it has a display message
-/// and no numbers. A start event with a phase code that already has a step makes that step current again, so
-/// a batch that repeats its phases (one materialization per file) keeps the same few steps. A start event with
-/// a new phase code adds a step. Every other event with a display message (a meter, a per-file result) sets the
-/// detail (the display message, when it differs from the label) and the percent of the current step, whatever
-/// its phase code. An event without display message starts no step and moves only the percent of the current
-/// step, and only when it has the phase of that step. The library sends resets such as "refresh-state" this way.
+/// The label of a meter message: the text before the first " (". A message without " (" is its own label.
+let stepLabelOf (message: string) : string =
+    match message.IndexOf(" (", StringComparison.Ordinal) with
+    | index when index > 0 -> message.Substring(0, index)
+    | _ -> message
+
+/// True for a meter message: a label followed by " (k/n)", with or without a trailing size or rate.
+let private isMeterMessage (message: string) =
+    System.Text.RegularExpressions.Regex.IsMatch(message, @"^[^(]+ \(\d+/\d+\)")
+
+/// Applies one progress event to the step list. A step belongs to one phase code, so the steps never outnumber
+/// the phase codes of the operation. A phase that repeats (one materialization per file) keeps its step.
+/// - An event with a display message and no numbers starts the step of its phase code. A phase that has a step
+///   makes that step current again and keeps its label.
+/// - An event with a display message that is a meter ("Downloading LFS objects (0/1), 1.2 MB") starts the step of
+///   its phase code when the phase has none. The step is labelled with the meter's label only.
+/// - Every other event changes only the step with the phase code of the event. The detail is the display message
+///   when it differs from the label, and the percent is the one of the event, or none when the event has no
+///   numbers. The step becomes current. An event of a phase without a step that starts none changes nothing, for
+///   example the "Preparing" and "materialized" events of a download that carry numbers but no meter.
 let private applyProgressToSteps
     (steps: GitSidebarStep[])
     (stepPhases: string[])
     (progress: VersionControlProgressDto)
     : GitSidebarStep[] * string[] =
     let percent = progressPercent progress
+    let hasNumbers = progress.Completed.IsSome || progress.Total.IsSome
 
-    let withProgress (step: GitSidebarStep) = {
-        step with
-            Detail =
-                match progress.DisplayMessage with
-                | Some message when message <> step.Label -> Some message
-                | Some _ -> None
-                | None -> step.Detail
-            Percent = percent |> Option.orElse step.Percent
-    }
+    let message =
+        progress.DisplayMessage
+        |> Option.filter (fun text -> not (String.IsNullOrWhiteSpace text))
 
-    let updateCurrent () =
-        steps
-        |> Array.map (fun step -> if step.IsCurrent then withProgress step else step)
+    let detailFor (label: string) (previous: string option) =
+        match message with
+        | Some text when text <> label -> Some text
+        | Some _ -> None
+        | None -> previous
 
-    match progress.DisplayMessage with
-    | Some message when progress.Completed.IsNone && progress.Total.IsNone ->
-        match stepPhases |> Array.tryFindIndex (fun phase -> phase = progress.PhaseCode) with
-        | Some startedIndex ->
-            let resumed =
-                steps
-                |> Array.mapi (fun index step ->
-                    if index <> startedIndex then
-                        { step with IsCurrent = false }
-                    else
-                        let labelled =
-                            if String.IsNullOrWhiteSpace step.Label then
-                                { step with Label = message }
-                            else
-                                step
+    match stepPhases |> Array.tryFindIndex (fun phase -> phase = progress.PhaseCode) with
+    | Some index ->
+        let updated =
+            steps
+            |> Array.mapi (fun stepIndex step ->
+                if stepIndex <> index then
+                    { step with IsCurrent = false }
+                else
+                    {
+                        step with
+                            Detail = detailFor step.Label step.Detail
+                            Percent = percent
+                            IsCurrent = true
+                    }
+            )
 
-                        {
-                            withProgress labelled with
-                                IsCurrent = true
-                        }
-                )
-
-            resumed, stepPhases
-        | None ->
+        updated, stepPhases
+    | None ->
+        match message with
+        | Some text when not hasNumbers || isMeterMessage text ->
+            let label = if isMeterMessage text then stepLabelOf text else text
             let earlier = steps |> Array.map (fun step -> { step with IsCurrent = false })
 
             let started: GitSidebarStep = {
-                Label = message
-                Detail = None
+                Label = label
+                Detail = detailFor label None
                 Percent = percent
                 IsCurrent = true
             }
 
             Array.append earlier [| started |], Array.append stepPhases [| progress.PhaseCode |]
-    | Some _ -> updateCurrent (), stepPhases
-    | None ->
-        let currentPhase =
-            steps
-            |> Array.tryFindIndex _.IsCurrent
-            |> Option.bind (fun index -> stepPhases |> Array.tryItem index)
-
-        if currentPhase = Some progress.PhaseCode then
-            updateCurrent (), stepPhases
-        else
-            steps, stepPhases
+        | _ -> steps, stepPhases
 
 /// The message shown for a structured failure: the library message plus its
 /// recovery instructions when it has any.
@@ -4991,7 +4995,7 @@ let private updateCore
 
         {
             model with
-                CurrentProgress = Some(mergeProgressUpdate model progress)
+                CurrentProgress = Some(mergeProgressUpdate model steps progress)
                 CurrentProgressPhase = Some progress.PhaseCode
                 CurrentSteps = steps
                 CurrentStepPhases = stepPhases
@@ -6165,10 +6169,16 @@ let private updateCore
         ]
     | WriteCompleted(_, _, writeRequest, Ok(RequiresRecovery(recovery, message))) ->
         // The recovery offer stays open. A refresh requested meanwhile runs after the offer is resolved.
+        // A download retry that a held lock stopped is remembered like the hydration of a pull, so the
+        // download is offered again once the lock is gone.
         let nextModel = {
             clearBusy model with
                 ErrorNotice = None
                 WarningNotice = Some message
+                RetryMaterializationAfterLockClear =
+                    match writeRequest, recovery with
+                    | RetryMaterialization, GitPendingRecovery.ClearStaleLock _ -> Some message
+                    | _ -> model.RetryMaterializationAfterLockClear
                 PendingRecovery = Some recovery
                 PendingConfirmation = Some(recoveryDialog recovery)
                 PendingRemoteAction = GitPendingRemoteAction.Recover

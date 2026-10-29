@@ -427,3 +427,51 @@ Vitest.test (
         Vitest.expect(backgroundBar.getAttribute "role").toBe "progressbar"
         Vitest.expect(backgroundBar.getAttribute "aria-valuenow").toBe "25"
 )
+
+/// The class names of the elements between a panel and its notice, from the panel outward.
+[<Emit("(() => { const names = []; for (let node = $0.parentElement; node && node !== $1; node = node.parentElement) names.push(node.className); return names; })()")>]
+let private classesBetween (panel: HTMLElement) (notice: HTMLElement) : string[] = jsNative
+
+/// jsdom has no layout, so the test checks the classes that keep a long line inside the notice.
+let private expectPanelScrollsInsideNotice (noticeTestId: string) (panelTestId: string) (longLine: string) =
+    let notice = RTL.screen.getByTestId noticeTestId
+    let panel = RTL.screen.getByTestId panelTestId
+    let panelClasses = panel.className
+
+    Vitest.expect(panelClasses.Contains "swt:overflow-auto").toBe true
+    Vitest.expect(panelClasses.Contains "swt:max-w-full").toBe true
+    Vitest.expect(panelClasses.Contains "swt:min-w-0").toBe true
+    Vitest.expect((logLineNode panel longLine).className.Contains "swt:whitespace-pre").toBe true
+
+    // Each element between the panel and the notice may shrink below its content. The column that holds the
+    // panel takes the width of its grid track, which a grid item with a start alignment does not do by itself.
+    let ancestors = classesBetween panel notice
+    Vitest.expect(ancestors |> Array.forall (fun classes -> classes.Contains "swt:min-w-0")).toBe true
+    Vitest.expect((Array.last ancestors).Contains "swt:w-full").toBe true
+
+Vitest.test (
+    "the operation log panel of the notice scrolls for a long line instead of growing past the notice",
+    fun () ->
+        let longLine = String.replicate 40 "--include=/assays/assayA/dataset/big.bin,"
+
+        renderOperation (GitSidebarRunStatus.Busy "Pulling") None (Some(logOf 0 [ "command", longLine ]))
+        RTL.fireEvent.click (RTL.screen.getByTestId "GitSidebarShowLogs")
+
+        expectPanelScrollsInsideNotice "GitSidebarProgressNotice" "GitSidebarLogPanel" ("$ " + longLine)
+)
+
+Vitest.test (
+    "the background log panel of the notice scrolls for a long line instead of growing past the notice",
+    fun () ->
+        let longLine = String.replicate 40 "--include=/assays/assayA/dataset/big.bin,"
+
+        let withLog = {
+            activity "Downloading raw-data" None None with
+                Log = Some(logOf 0 [ "command", longLine ])
+        }
+
+        render GitSidebarRunStatus.Idle [| withLog |] None
+        RTL.fireEvent.click (RTL.screen.getByTestId "GitSidebarBackgroundShowLogs")
+
+        expectPanelScrollsInsideNotice "GitSidebarBackgroundActivity" "GitSidebarBackgroundLogPanel" ("$ " + longLine)
+)

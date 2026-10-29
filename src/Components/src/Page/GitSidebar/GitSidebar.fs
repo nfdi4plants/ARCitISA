@@ -135,13 +135,15 @@ module private GitSidebarInternal =
         else
             $"{omitted} earlier lines were left out"
 
-    /// Command lines are bold. Stderr lines use the warning color and notices are muted.
+    /// Command lines are bold and notices are muted. A stderr line keeps the text color of the panel and has a
+    /// warning stripe at its left edge, because the warning color as text has too little contrast on the light panel.
+    /// Every line reserves the stripe so the text of all kinds starts at the same place.
     let logLineClassName (kind: string) =
         match kind with
-        | "command" -> "swt:font-bold"
-        | "stderr" -> "swt:text-warning"
-        | "notice" -> "swt:italic swt:opacity-70"
-        | _ -> ""
+        | "command" -> "swt:border-transparent swt:font-bold"
+        | "stderr" -> "swt:border-warning"
+        | "notice" -> "swt:border-transparent swt:italic swt:opacity-70"
+        | _ -> "swt:border-transparent"
 
     let logLineText (line: GitSidebarLogLine) =
         if line.Kind = "command" then
@@ -175,7 +177,7 @@ module private GitSidebarInternal =
             if step.IsCurrent && detail <> "" then
                 Html.span [
                     prop.testId $"GitSidebarStepDetail-{index}"
-                    prop.className "swt:min-w-0 swt:opacity-70 swt:wrap-anywhere"
+                    prop.className "swt:min-w-0 swt:wrap-anywhere"
                     prop.text detail
                 ]
             else
@@ -226,7 +228,7 @@ module private GitSidebarInternal =
             |> Array.mapi (fun lineIndex line ->
                 Html.div [
                     prop.key (section.Log.Omitted + lineIndex)
-                    prop.className ("swt:whitespace-pre-wrap swt:break-words " + logLineClassName line.Kind)
+                    prop.className ("swt:whitespace-pre swt:border-l-2 swt:pl-1.5 " + logLineClassName line.Kind)
                     prop.text (logLineText line)
                 ]
             )
@@ -482,7 +484,7 @@ type GitSidebar =
                         )
                     )
                     prop.className
-                        "swt:max-h-40 swt:overflow-auto swt:rounded swt:border swt:border-base-content/30 swt:bg-base-100 swt:p-2 swt:font-mono swt:text-xs swt:text-base-content"
+                        "swt:max-h-40 swt:min-w-0 swt:max-w-full swt:overflow-auto swt:rounded swt:border swt:border-base-content/30 swt:bg-base-100 swt:p-2 swt:font-mono swt:text-xs swt:text-base-content"
                     prop.children (
                         props.Sections
                         |> Array.mapi (GitSidebarInternal.logSectionElement props.PanelTestId)
@@ -568,7 +570,8 @@ type GitSidebar =
             |> Option.map (fun cancel ->
                 Html.button [
                     prop.testId "GitSidebarCancelOperationButton"
-                    prop.className "swt:btn swt:btn-ghost swt:btn-xs swt:shrink-0 swt:gap-1 swt:normal-case"
+                    prop.className
+                        "swt:btn swt:btn-ghost swt:btn-xs swt:shrink-0 swt:gap-1 swt:normal-case swt:text-info-content"
                     prop.title "Cancel"
                     prop.onClick (fun _ -> cancel ())
                     prop.children [
@@ -586,7 +589,7 @@ type GitSidebar =
                 let progressValue = GitSidebarInternal.progressPercentValue progress
 
                 Html.div [
-                    prop.className "swt:px-3 swt:pt-3 swt:@max-xs:px-2"
+                    prop.className "swt:min-w-0 swt:px-3 swt:pt-3 swt:@max-xs:px-2"
                     prop.children [
                         Html.div [
                             if busyTestId.IsSome then
@@ -598,7 +601,7 @@ type GitSidebar =
                                     prop.className "swt:loading swt:loading-spinner swt:loading-xs swt:shrink-0"
                                 ]
                                 Html.div [
-                                    prop.className "swt:flex swt:min-w-0 swt:flex-1 swt:flex-col swt:gap-2"
+                                    prop.className "swt:flex swt:w-full swt:min-w-0 swt:flex-1 swt:flex-col swt:gap-2"
                                     prop.children [
                                         Html.span [
                                             prop.className "swt:min-w-0 swt:wrap-anywhere"
@@ -651,7 +654,7 @@ type GitSidebar =
                 // Same structure as the progress notice, so the open state of the logs survives the switch from
                 // one to the other when the first progress event arrives.
                 Html.div [
-                    prop.className "swt:px-3 swt:pt-3 swt:@max-xs:px-2"
+                    prop.className "swt:min-w-0 swt:px-3 swt:pt-3 swt:@max-xs:px-2"
                     prop.children [
                         Html.div [
                             if busyTestId.IsSome then
@@ -663,7 +666,7 @@ type GitSidebar =
                                     prop.className "swt:loading swt:loading-spinner swt:loading-xs swt:shrink-0"
                                 ]
                                 Html.div [
-                                    prop.className "swt:flex swt:min-w-0 swt:flex-1 swt:flex-col swt:gap-2"
+                                    prop.className "swt:flex swt:w-full swt:min-w-0 swt:flex-1 swt:flex-col swt:gap-2"
                                     prop.children [
                                         Html.span [
                                             prop.testId "GitSidebarBusyHeadline"
@@ -690,7 +693,7 @@ type GitSidebar =
             match backgroundActivities with
             | Some activities when activities.Length > 0 ->
                 Html.div [
-                    prop.className "swt:px-3 swt:pt-3 swt:@max-xs:px-2"
+                    prop.className "swt:min-w-0 swt:px-3 swt:pt-3 swt:@max-xs:px-2"
                     prop.children [
                         Html.div [
                             prop.testId "GitSidebarBackgroundActivity"
@@ -701,7 +704,7 @@ type GitSidebar =
                                     prop.className "swt:loading swt:loading-spinner swt:loading-xs swt:shrink-0"
                                 ]
                                 Html.div [
-                                    prop.className "swt:flex swt:min-w-0 swt:flex-1 swt:flex-col swt:gap-2"
+                                    prop.className "swt:flex swt:w-full swt:min-w-0 swt:flex-1 swt:flex-col swt:gap-2"
                                     prop.children [
                                         Html.div [
                                             prop.className "swt:flex swt:min-w-0 swt:flex-col swt:gap-2"

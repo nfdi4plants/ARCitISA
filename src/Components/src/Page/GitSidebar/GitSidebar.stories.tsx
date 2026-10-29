@@ -831,6 +831,51 @@ export const PullWithOmittedLogLines: Story = {
   },
 };
 
+const longFetchLine =
+  "git lfs fetch --include=" +
+  Array.from({ length: 40 }, (_, index) => `/assays/assayA/dataset/big${index}.bin`).join(",") +
+  " origin HEAD";
+
+export const LongLogLinesScrollInsideTheNotice: Story = {
+  args: {
+    ...PullWithStepsAndLogs.args,
+    operationLog: {
+      Lines: [...pullLogLines, { Kind: "command", Text: longFetchLine }],
+      Omitted: 0,
+    },
+    backgroundActivities: [
+      {
+        Label: "Downloading raw-data",
+        Detail: "5/12 45%",
+        ProgressPercent: 41.7,
+        Log: { Lines: [{ Kind: "command", Text: longFetchLine }], Omitted: 0 },
+      },
+    ],
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    await userEvent.click(canvas.getByTestId("GitSidebarShowLogs"));
+    await userEvent.click(canvas.getByTestId("GitSidebarBackgroundShowLogs"));
+
+    const cases = [
+      ["GitSidebarProgressNotice", "GitSidebarLogPanel"],
+      ["GitSidebarBackgroundActivity", "GitSidebarBackgroundLogPanel"],
+    ];
+
+    for (const [noticeId, panelId] of cases) {
+      const notice = canvas.getByTestId(noticeId);
+      const panel = canvas.getByTestId(panelId);
+      // The panel keeps the width of the notice and scrolls sideways for the long line.
+      await expect(panel.getBoundingClientRect().right).toBeLessThanOrEqual(
+        notice.getBoundingClientRect().right + 1,
+      );
+      await expect(panel.scrollWidth).toBeGreaterThan(panel.clientWidth);
+      await expect(getComputedStyle(panel).overflowX).toBe("auto");
+    }
+  },
+};
+
 export const CreateBranchModal: Story = {
   args: {
     status: baseStatus,

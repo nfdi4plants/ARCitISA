@@ -747,7 +747,47 @@ Vitest.describe (
                         samePhaseState
 
                 Vitest.expect(nextPhaseState.CurrentProgress.Value.ProgressPercent).toEqual (None)
-                Vitest.expect(nextPhaseState.CurrentProgress.Value.Stage).toEqual busyState.BusyNotice
+
+                // The meter started a step, so the reset keeps the headline on the label of that step.
+                Vitest.expect(nextPhaseState.CurrentProgress.Value.Stage).toEqual (Some "Uploading LFS objects")
+        )
+
+        Vitest.test (
+            "a reset that starts a phase keeps the headline on the current step",
+            fun () ->
+                let pullState = {
+                    runningState with
+                        BusyOperation = Some GitBusyOperation.PullingFromRemote
+                        BusyNotice = Some "Pulling from remote"
+                }
+
+                let fetching =
+                    applyProgressEvents pullState [
+                        progressDto "fetch" (Some "Fetching online changes") None None
+                        progressDto "fetch" (Some "Receiving objects (12/80)") (Some 15.0) (Some 100.0)
+                    ]
+
+                let reset =
+                    applyProgressEvents fetching [ progressDto "refresh-state" None None None ]
+
+                Vitest.expect(reset.CurrentProgress.Value.Stage).toEqual (Some "Fetching online changes")
+                Vitest.expect(reset.CurrentProgress.Value.ProgressPercent).toEqual None
+        )
+
+        Vitest.test (
+            "a reset that starts a phase shows the busy notice while the operation has no step",
+            fun () ->
+                let pullState = {
+                    runningState with
+                        BusyOperation = Some GitBusyOperation.PullingFromRemote
+                        BusyNotice = Some "Pulling from remote"
+                }
+
+                let reset =
+                    applyProgressEvents pullState [ progressDto "refresh-state" None None None ]
+
+                Vitest.expect(reset.CurrentSteps.Length).toBe 0
+                Vitest.expect(reset.CurrentProgress.Value.Stage).toEqual pullState.BusyNotice
         )
 
         Vitest.test (
@@ -3840,21 +3880,15 @@ Vitest.describe (
                         |]
                     )
 
-                // The label again as message means the step has no extra detail.
+                // The label again as message means the step has no extra detail. An event without numbers clears the percent.
                 let restated =
                     apply moved (progressDto "merge" (Some "Merging online changes") None None)
 
-                Vitest
-                    .expect(restated.CurrentSteps)
-                    .toEqual (
-                        [|
-                            sidebarStep "Merging online changes" None (Some 40.0) true
-                        |]
-                    )
+                Vitest.expect(restated.CurrentSteps).toEqual ([| sidebarStep "Merging online changes" None None true |])
         )
 
         Vitest.test (
-            "the per-file events of a download for two files keep the step list at two steps",
+            "the per-file events of a download for two files give one download step and one checkout step",
             fun () ->
                 let deps = {
                     defaultDependencies with
@@ -3864,36 +3898,101 @@ Vitest.describe (
                 let running, _ =
                     update deps ignore (WriteRequested RetryMaterialization) runningState
 
-                let start =
-                    progressDto "lfs-materialize" (Some "Preparing Git LFS materialization") None None
+                let preparing size =
+                    progressDto "lfs-materialize" (Some "Preparing Git LFS materialization") (Some 0.0) (Some size)
 
-                let rest = [
-                    progressDto "lfs-materialize-transfer" (Some "Downloading from Git LFS") None None
-                    progressDto "lfs-materialize-transfer" (Some "Downloading (3/10)") (Some 30.0) (Some 100.0)
-                    progressDto "lfs-materialize-checkout" (Some "Checking out (50/100)") (Some 50.0) (Some 100.0)
-                    progressDto "lfs-materialize" (Some "Git LFS file materialized") (Some 2048.0) (Some 2048.0)
-                ]
+                let materialized size =
+                    progressDto "lfs-materialize" (Some "Git LFS file materialized") (Some size) (Some size)
 
-                let firstFile = applyProgressEvents running (start :: rest)
+                let transferStart = progressDto "lfs-materialize-transfer" None None None
 
-                Vitest.expect(firstFile.CurrentSteps.Length).toBe 2
+                let transferMeter =
+                    progressDto "lfs-materialize-transfer" (Some "Downloading LFS objects (0/1), 1.2 MB") None None
 
-                // The result of the file and the checkout meter only change the detail of the current step.
-                Vitest.expect(firstFile.CurrentSteps.[1].Detail).toEqual (Some "Git LFS file materialized")
+                let transferDone =
+                    progressDto
+                        "lfs-materialize-transfer"
+                        (Some "Downloading LFS objects (1/1), 1.2 MB")
+                        (Some 100.0)
+                        (Some 100.0)
 
-                // The second file starts the first step again instead of adding steps.
-                let secondStart = applyProgressEvents firstFile [ start ]
+                let checkoutMeter =
+                    progressDto "lfs-materialize-checkout" (Some "Checking out LFS objects (0/1)") None None
+
+                // The preparing event carries numbers but no meter, so it starts no step.
+                let prepared = applyProgressEvents running [ preparing 2048.0 ]
+                Vitest.expect(prepared.CurrentSteps.Length).toBe 0
+
+                // The meter with numbers sets a percent that the second file must not keep.
+                let firstFile =
+                    applyProgressEvents prepared [
+                        transferStart
+                        transferMeter
+                        transferDone
+                        checkoutMeter
+                        materialized 2048.0
+                    ]
+
+                Vitest.expect(firstFile.CurrentSteps |> Array.map _.Label).toEqual [|
+                    "Downloading LFS objects"
+                    "Checking out LFS objects"
+                |]
+
+                Vitest.expect(firstFile.CurrentSteps |> Array.map _.IsCurrent).toEqual [| false; true |]
+                Vitest.expect(firstFile.CurrentSteps.[0].Percent).toEqual (Some 100.0)
+
+                // The result of a file changes no step.
+                let afterResult = applyProgressEvents firstFile [ materialized 4096.0 ]
+                Vitest.expect(afterResult.CurrentSteps).toEqual firstFile.CurrentSteps
+
+                // The second file reaches its transfer, which makes the download step current again.
+                let secondStart = applyProgressEvents firstFile [ preparing 4096.0; transferStart ]
+
                 Vitest.expect(secondStart.CurrentSteps.Length).toBe 2
                 Vitest.expect(secondStart.CurrentSteps |> Array.map _.IsCurrent).toEqual [| true; false |]
 
-                let secondFile = applyProgressEvents secondStart rest
+                let secondFile =
+                    applyProgressEvents secondStart [ transferMeter; checkoutMeter; materialized 4096.0 ]
 
                 Vitest.expect(secondFile.CurrentSteps |> Array.map _.Label).toEqual [|
-                    "Preparing Git LFS materialization"
-                    "Downloading from Git LFS"
+                    "Downloading LFS objects"
+                    "Checking out LFS objects"
                 |]
 
                 Vitest.expect(secondFile.CurrentSteps |> Array.map _.IsCurrent).toEqual [| false; true |]
+                Vitest.expect(secondFile.CurrentSteps |> Array.map _.Percent).toEqual [| None; None |]
+
+                Vitest.expect(secondFile.CurrentSteps.[1].Detail).toEqual (Some "Checking out LFS objects (0/1)")
+        )
+
+        Vitest.test (
+            "a meter with numbers starts a step labelled with the meter label when its phase has no step",
+            fun () ->
+                let pushState = {
+                    runningState with
+                        BusyOperation = Some GitBusyOperation.PushingToRemote
+                        BusyNotice = Some "Pushing to remote"
+                }
+
+                let metered =
+                    applyProgressEvents pushState [
+                        progressDto "lfs-upload" (Some "Uploading LFS objects (45/100)") (Some 45.0) (Some 100.0)
+                    ]
+
+                Vitest
+                    .expect(metered.CurrentSteps)
+                    .toEqual (
+                        [|
+                            sidebarStep "Uploading LFS objects" (Some "Uploading LFS objects (45/100)") (Some 45.0) true
+                        |]
+                    )
+        )
+
+        Vitest.test (
+            "stepLabelOf keeps the text before the first parenthesis of a meter and any other message as it is",
+            fun () ->
+                Vitest.expect(stepLabelOf "Receiving objects (12/80), 1.2 MB").toBe "Receiving objects"
+                Vitest.expect(stepLabelOf "Merging online changes").toBe "Merging online changes"
         )
 
         Vitest.test (
@@ -7390,6 +7489,60 @@ Vitest.describe (
 
                 Vitest.expect(finished.PendingRecovery).toEqual (None)
                 Vitest.expect(finished.RetryMaterializationAfterLockClear).toEqual (None)
+            }
+        )
+
+        Vitest.test (
+            "A download retry that an index lock stopped offers the download again once the lock is removed",
+            fun () -> promise {
+                let failure = lockedPartial VersionControlCodes.HydrationFailed
+
+                let deps = {
+                    (withRefresh cleanStatus defaultDependencies) with
+                        listObjects =
+                            fun _ -> promise {
+                                return
+                                    Ok(
+                                        succeeded [|
+                                            {
+                                                Path = "large.bin"
+                                                IsMaterialized = false
+                                                IsLocallyAvailable = false
+                                                SizeBytes = Some 100.
+                                                ObjectId = Some "object-1"
+                                            }
+                                        |]
+                                    )
+                            }
+                        materializeObject = fun _ -> promise { return Ok(OperationResultDto.Failed failure) }
+                }
+
+                let requested, requestCmd =
+                    update deps ignore (WriteRequested RetryMaterialization) runningState
+
+                let! completion = collectMessages requestCmd
+
+                let locked, lockedCmd =
+                    match completion with
+                    | [| WriteCompleted(_,
+                                        _,
+                                        RetryMaterialization,
+                                        Ok(RequiresRecovery(GitPendingRecovery.ClearStaleLock _, _))) |] ->
+                        update deps ignore completion[0] requested
+                    | _ -> failwith "Expected the retry to offer the lock removal."
+
+                let! _ = collectMessages lockedCmd
+
+                Vitest.expect(locked.PendingRecovery).toEqual (Some(GitPendingRecovery.ClearStaleLock None))
+                Vitest.expect(locked.RetryMaterializationAfterLockClear).toEqual (Some(failureMessage failure))
+
+                let! finished = confirmLockRemoval deps locked (Ok(succeeded cleanStatus))
+
+                Vitest
+                    .expect(finished.PendingRecovery)
+                    .toEqual (Some(GitPendingRecovery.RetryMaterialization(failureMessage failure)))
+
+                Vitest.expect(finished.RetryMaterializationAfterLockClear).toEqual None
             }
         )
 

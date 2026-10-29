@@ -224,12 +224,16 @@ module LfsRunningAction =
         else
             None
 
-    /// The share of finished files of a folder. A single file has no percent.
+    /// The percent of a folder action: the percent of the current step while Git LFS reports one, else the share
+    /// of finished files. The bar then moves with the detail text. A single file has no percent.
     let progressPercent (action: LfsRunningAction) : float option =
         if action.IsFolder then
-            match action.Count with
-            | Some(completed, total) when total > 0 -> Some(float completed / float total * 100.0)
-            | _ -> None
+            action.StepPercent
+            |> Option.orElse (
+                match action.Count with
+                | Some(completed, total) when total > 0 -> Some(float completed / float total * 100.0)
+                | _ -> None
+            )
         else
             None
 

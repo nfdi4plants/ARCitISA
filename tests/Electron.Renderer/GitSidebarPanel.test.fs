@@ -59,10 +59,10 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "a folder item carries the progress text and the share of finished files",
+            "a folder item carries the progress text and the step percent of its action",
             fun () ->
                 Vitest.expect(items.[0].Detail).toEqual (LfsRunningAction.progressText folderAction)
-                Vitest.expect(items.[0].ProgressPercent).toEqual (Some 50.0)
+                Vitest.expect(items.[0].ProgressPercent).toEqual (Some 45.5)
         )
 
         Vitest.test (

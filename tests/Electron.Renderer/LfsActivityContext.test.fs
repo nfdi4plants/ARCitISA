@@ -744,3 +744,36 @@ Vitest.describe (
                 Vitest.expect(LfsRunningAction.progressPercent metered).toEqual None
         )
 )
+
+Vitest.describe (
+    "LfsRunningAction.progressPercent",
+    fun () ->
+        let folder = {
+            runningAction "op-a" with
+                FileCount = 40
+        }
+
+        Vitest.test (
+            "a folder uses the step percent while Git LFS reports one",
+            fun () ->
+                let metered = {
+                    folder with
+                        Count = Some(10, 40)
+                        StepPercent = Some 45.9
+                }
+
+                Vitest.expect(LfsRunningAction.progressPercent metered).toEqual (Some 45.9)
+        )
+
+        Vitest.test (
+            "a folder falls back to the share of finished files without a step percent",
+            fun () ->
+                let counted = { folder with Count = Some(10, 40) }
+                Vitest.expect(LfsRunningAction.progressPercent counted).toEqual (Some 25.0)
+        )
+
+        Vitest.test (
+            "a folder has no percent before the first count event and without a step percent",
+            fun () -> Vitest.expect(LfsRunningAction.progressPercent folder).toEqual None
+        )
+)
