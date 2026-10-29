@@ -172,6 +172,8 @@ The library reports more than counters. Live meters cover fetch, clone, the larg
 
 The bridge coalesces progress per operation (`ProgressThrottle` in `Main/IPC/IVersionControlApi.fs`). An event goes out at once when its phase code differs from the last forwarded one or when at least 100 ms have passed since the last forward. Any other event waits as the pending event, a newer one replaces it, and it goes out when the window ends. When the operation ends, `runTracked` sends the pending event before it returns the result, so the last state reaches the renderer first.
 
+The Git workflow shows only the events of the operation it runs. `isForeignOperation` compares the root of the event's operation id with the root of `CurrentOperation` (a refresh that shows a notice uses `RefreshOperationId`). The sub-operations of a write have ids of the form `<id>/<n>` and share the root. Events of other operations are dropped, for example the progress of a file tree LFS action in the same window. A silent refresh and the rename of the ARC folder show no events at all.
+
 
 Every operation can be canceled with `cancelOperation` and the operation id from `versionControlOperationStarted`. The running-operation registry stores each operation id with its workspace root. Cancellation kills the underlying process. The library then restores a clean state where it can and reports what is left through the recovery code.
 

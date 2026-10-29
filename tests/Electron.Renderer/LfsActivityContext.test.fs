@@ -351,14 +351,24 @@ Vitest.describe (
         )
 )
 
-let private progressFor (operationId: string) (completed: float) : VersionControlProgress = {
-    OperationId = operationId
-    PhaseCode = "lfs-download"
-    Item = None
-    Completed = Some completed
-    Total = Some 10.0
-    DisplayMessage = None
-}
+let private eventOf
+    (operationId: string)
+    (phase: string)
+    (completed: float option)
+    (total: float option)
+    : VersionControlProgress =
+    {
+        OperationId = operationId
+        PhaseCode = phase
+        Item = None
+        Completed = completed
+        Total = total
+        DisplayMessage = None
+    }
+
+/// A count event of a batch with ten files.
+let private countEventFor (operationId: string) (completed: float) =
+    eventOf operationId LfsProgressPhase.MaterializeFiles (Some completed) (Some 10.0)
 
 let private runningAction (operationId: string) : LfsRunningAction = {
     OperationId = operationId
@@ -366,7 +376,8 @@ let private runningAction (operationId: string) : LfsRunningAction = {
     Target = "runs"
     IsFolder = true
     FileCount = 3
-    Progress = None
+    Count = None
+    StepPercent = None
 }
 
 [<ReactComponent>]
@@ -424,19 +435,19 @@ Vitest.describe (
     "LfsActivityCtxProvider progress",
     fun () ->
         Vitest.test (
-            "the latest progress of a tracked operation id is stored with its running action",
+            "the latest count event of a tracked operation id is stored with its running action",
             fun () ->
                 withRunningActions (fun controller actions sendProgress -> promise {
                     let work = deferred ()
                     let running = controller().track (runningAction "op-a") (fun () -> work.pending)
 
                     do! waitFor (fun () -> actions().Length = 1)
-                    Vitest.expect(actions().[0].Progress).toEqual (None)
+                    Vitest.expect(actions().[0].Count).toEqual (None)
 
-                    sendProgress (progressFor "op-a" 2.0)
-                    sendProgress (progressFor "op-a" 6.0)
+                    sendProgress (countEventFor "op-a" 2.0)
+                    sendProgress (countEventFor "op-a" 6.0)
 
-                    do! waitFor (fun () -> actions().[0].Progress = Some(progressFor "op-a" 6.0))
+                    do! waitFor (fun () -> actions().[0].Count = Some(6, 10))
                     Vitest.expect(actions().[0].OperationId).toBe ("op-a")
 
                     work.resolve (Ok())
@@ -454,13 +465,13 @@ Vitest.describe (
 
                     do! waitFor (fun () -> actions().Length = 1)
 
-                    sendProgress (progressFor "op-other" 5.0)
+                    sendProgress (countEventFor "op-other" 5.0)
                     do! Promise.sleep 20
-                    Vitest.expect(actions().[0].Progress).toEqual (None)
+                    Vitest.expect(actions().[0].Count).toEqual (None)
 
                     // The provider is listening, because its own operation id still gets through.
-                    sendProgress (progressFor "op-a" 1.0)
-                    do! waitFor (fun () -> actions().[0].Progress = Some(progressFor "op-a" 1.0))
+                    sendProgress (countEventFor "op-a" 1.0)
+                    do! waitFor (fun () -> actions().[0].Count = Some(1, 10))
 
                     work.resolve (Ok())
                     let! _ = running
@@ -483,9 +494,115 @@ Vitest.describe (
 
                     do! waitFor (fun () -> actions().Length = 0)
 
-                    sendProgress (progressFor "op-a" 9.0)
+                    sendProgress (countEventFor "op-a" 9.0)
                     do! Promise.sleep 20
                     Vitest.expect(actions().Length).toBe (0)
                 })
+        )
+)
+
+let private applyEvent (action: LfsRunningAction) (progress: VersionControlProgress) =
+    match LfsRunningActionsState.applyProgress progress [ ("scope", action) ] with
+    | [ _, next ] -> next
+    | _ -> failwith "Expected the single running action."
+
+Vitest.describe (
+    "LfsRunningActionsState.applyProgress",
+    fun () ->
+        Vitest.test (
+            "a meter event with numbers sets the step percent and a meter event without numbers clears it",
+            fun () ->
+                let transfer = LfsProgressPhase.MaterializeTransfer
+
+                let running =
+                    applyEvent (runningAction "op-a") (eventOf "op-a" transfer (Some 45.0) (Some 100.0))
+
+                Vitest.expect(running.StepPercent).toEqual (Some 45.0)
+
+                let checkout =
+                    applyEvent running (eventOf "op-a" LfsProgressPhase.MaterializeCheckout (Some 10.0) (Some 100.0))
+
+                Vitest.expect(checkout.StepPercent).toEqual (Some 10.0)
+
+                let cleared = applyEvent checkout (eventOf "op-a" transfer None None)
+                Vitest.expect(cleared.StepPercent).toEqual (None)
+        )
+
+        Vitest.test (
+            "the count and the step percent are independent and other phases change nothing",
+            fun () ->
+                let counted = applyEvent (runningAction "op-a") (countEventFor "op-a" 4.0)
+
+                let metered =
+                    applyEvent counted (eventOf "op-a" LfsProgressPhase.MaterializeTransfer (Some 30.0) (Some 100.0))
+
+                Vitest.expect(metered.Count).toEqual (Some(4, 10))
+                Vitest.expect(metered.StepPercent).toEqual (Some 30.0)
+
+                let state = [ ("scope", metered) ]
+
+                for phase in
+                    [
+                        "lfs-materialize"
+                        "lfs-dematerialize"
+                        "lfs-download"
+                        "git"
+                    ] do
+                    let next =
+                        LfsRunningActionsState.applyProgress (eventOf "op-a" phase (Some 9.0) (Some 10.0)) state
+
+                    Vitest.expect(obj.ReferenceEquals(next, state)).toBe true
+
+                // A repeated event with the same numbers does not produce a new state either.
+                let repeated = LfsRunningActionsState.applyProgress (countEventFor "op-a" 4.0) state
+                Vitest.expect(obj.ReferenceEquals(repeated, state)).toBe true
+        )
+)
+
+Vitest.describe (
+    "LfsRunningAction.progressText",
+    fun () ->
+        let folder = {
+            runningAction "op-a" with
+                FileCount = 40
+        }
+
+        let single = {
+            runningAction "op-a" with
+                IsFolder = false
+                FileCount = 1
+        }
+
+        Vitest.test (
+            "a folder reads 0 of its file count before the first count event",
+            fun () -> Vitest.expect(LfsRunningAction.progressText folder).toEqual (Some $"0/{folder.FileCount}")
+        )
+
+        Vitest.test (
+            "a folder reads the count of the latest count event",
+            fun () ->
+                let counted = { folder with Count = Some(3, 38) }
+                Vitest.expect(LfsRunningAction.progressText counted).toEqual (Some "3/38")
+        )
+
+        Vitest.test (
+            "a folder appends the step percent rounded down",
+            fun () ->
+                let metered = {
+                    folder with
+                        Count = Some(3, 40)
+                        StepPercent = Some 45.9
+                }
+
+                Vitest.expect(LfsRunningAction.progressText metered).toEqual (Some "3/40 45%")
+        )
+
+        Vitest.test (
+            "a single file shows the step percent rounded down and nothing without one",
+            fun () ->
+                Vitest.expect(LfsRunningAction.progressText single).toEqual None
+
+                let metered = { single with StepPercent = Some 7.5 }
+                Vitest.expect(LfsRunningAction.progressText metered).toEqual (Some "7%")
         )
 )

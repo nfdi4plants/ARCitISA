@@ -4,7 +4,6 @@ open Fable.Core.JsInterop
 open Renderer.Components.LeftSidebar.Git.GitSidebarPanel
 open Renderer.Context.GitWorkflow
 open Renderer.Context.LfsActivityContext
-open Swate.Electron.Shared.VersionControlTypes
 open Vitest
 
 // The panel module reaches the IPC bridges through the Git state context. The preload is absent in tests,
@@ -24,47 +23,59 @@ Vitest.vi.mock (
 )
 |> ignore
 
-let private runningAction
-    (kind: LfsActionKind)
-    (target: string)
-    (progress: VersionControlProgressDto option)
-    : LfsRunningAction =
-    {
-        OperationId = $"op-{target}"
-        Kind = kind
-        Target = target
-        IsFolder = false
-        FileCount = 1
-        Progress = progress
-    }
-
-let private progressOf completed total : VersionControlProgressDto = {
-    OperationId = "op"
-    PhaseCode = "lfs-download"
-    Item = None
-    Completed = Some completed
-    Total = Some total
-    DisplayMessage = None
+let private runningAction (kind: LfsActionKind) (target: string) (isFolder: bool) : LfsRunningAction = {
+    OperationId = $"op-{target}"
+    Kind = kind
+    Target = target
+    IsFolder = isFolder
+    FileCount = 10
+    Count = None
+    StepPercent = None
 }
 
-let private items =
-    backgroundActivityItems [|
-        runningAction LfsActionKind.Download "data/raw-data" (Some(progressOf 5.0 10.0))
-        runningAction LfsActionKind.Free "notes/big.bin" None
-    |]
+let private folderAction = {
+    runningAction LfsActionKind.Download "data/raw-data" true with
+        Count = Some(5, 10)
+        StepPercent = Some 45.5
+}
+
+let private fileAction = runningAction LfsActionKind.Free "notes/big.bin" false
+
+let private items = backgroundActivityItems [| folderAction; fileAction |]
 
 Vitest.describe (
     "GitSidebarPanel background activities",
     fun () ->
         Vitest.test (
-            "one item per running action names the kind and the file or folder name and carries the percent",
+            "one item per running action names the kind and the file or folder name",
             fun () ->
                 Vitest.expect(items.Length).toBe 2
                 Vitest.expect(items.[0].Label.Contains "raw-data").toBe true
                 Vitest.expect(items.[0].Label.Contains "data/").toBe false
                 Vitest.expect(items.[1].Label.Contains "big.bin").toBe true
                 Vitest.expect(items.[0].Label).not.toBe items.[1].Label
+        )
+
+        Vitest.test (
+            "a folder item carries the progress text and the share of finished files",
+            fun () ->
+                Vitest.expect(items.[0].Detail).toEqual (LfsRunningAction.progressText folderAction)
                 Vitest.expect(items.[0].ProgressPercent).toEqual (Some 50.0)
+        )
+
+        Vitest.test (
+            "a single file item carries the step percent as its percent and as its detail",
+            fun () ->
+                let metered = {
+                    fileAction with
+                        StepPercent = Some 45.5
+                }
+
+                let item = (backgroundActivityItems [| metered |]).[0]
+
+                Vitest.expect(item.ProgressPercent).toEqual (Some 45.5)
+                Vitest.expect(item.Detail).toEqual (LfsRunningAction.progressText metered)
+                Vitest.expect(items.[1].Detail).toEqual None
                 Vitest.expect(items.[1].ProgressPercent).toEqual None
         )
 

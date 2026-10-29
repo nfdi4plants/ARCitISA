@@ -3367,6 +3367,137 @@ Vitest.describe (
         )
 
         Vitest.test (
+            "SetCurrentProgress ignores the progress of another operation id during a refresh and applies its own",
+            fun () -> promise {
+                let operationIds = ResizeArray<string>()
+
+                let deps = {
+                    (withRefresh cleanStatus defaultDependencies) with
+                        newOperationId = fun () -> "refresh-1"
+                        getSessionInfo =
+                            fun request ->
+                                operationIds.Add request.OperationId
+                                promise { return Ok(succeeded sessionInfo) }
+                }
+
+                let refreshState, refreshCmd = update deps ignore RefreshRequested runningState
+
+                let foreign = {
+                    sidebarProgress "Git LFS file dematerialized" 100. with
+                        OperationId = "lfs-action-1"
+                }
+
+                let ignoredState, _ =
+                    update deps ignore (SetCurrentProgress(Some foreign)) refreshState
+
+                Vitest.expect(ignoredState.CurrentProgress).toEqual (None)
+
+                let own = {
+                    sidebarProgress "Receiving objects" 40. with
+                        OperationId = "refresh-1/2"
+                }
+
+                let appliedState, _ = update deps ignore (SetCurrentProgress(Some own)) refreshState
+
+                Vitest
+                    .expect(appliedState.CurrentProgress)
+                    .toEqual (Some(expectedSidebarProgress "Receiving objects" 40.))
+
+                // The calls of the refresh run under the id of the refresh, so its own progress passes the filter.
+                let! _ = collectMessages refreshCmd
+                Vitest.expect(operationIds.ToArray()).toEqual [| "refresh-1" |]
+            }
+        )
+
+        Vitest.test (
+            "SetCurrentProgress ignores the progress of another operation id while the repository is initialized",
+            fun () -> promise {
+                let operationIds = ResizeArray<string>()
+
+                let deps = {
+                    defaultDependencies with
+                        newOperationId = fun () -> "init-1"
+                        initializeWorkspace =
+                            fun request ->
+                                operationIds.Add request.OperationId
+                                promise { return Ok(succeeded request.TargetPath) }
+                }
+
+                let initState, initCmd = update deps ignore InitRepositoryRequested runningState
+
+                let foreign = {
+                    sidebarProgress "Git LFS file dematerialized" 100. with
+                        OperationId = "lfs-action-1"
+                }
+
+                let ignoredState, _ =
+                    update deps ignore (SetCurrentProgress(Some foreign)) initState
+
+                Vitest.expect(ignoredState.CurrentProgress).toEqual (None)
+
+                let own = {
+                    sidebarProgress "Initializing" 40. with
+                        OperationId = "init-1"
+                }
+
+                let appliedState, _ = update deps ignore (SetCurrentProgress(Some own)) initState
+
+                Vitest.expect(appliedState.CurrentProgress).toEqual (Some(expectedSidebarProgress "Initializing" 40.))
+
+                let! _ = collectMessages initCmd
+                Vitest.expect(operationIds.ToArray()).toEqual [| "init-1" |]
+            }
+        )
+
+        Vitest.test (
+            "SetCurrentProgress ignores the progress of another operation id while a merge resolution is confirmed",
+            fun () -> promise {
+                let conflict = (conflictedStatus [| "conflict.txt" |]).ActiveConflictSession.Value
+
+                let deps = {
+                    defaultDependencies with
+                        newOperationId = fun () -> "resolve-1"
+                }
+
+                let request = {
+                    Path = "conflict.txt"
+                    Handle = conflict.Handle
+                    WorkspaceVersion = "v1"
+                    Resolution = ConflictResolutionDto.SupplyResolvedContent "resolved"
+                }
+
+                let state = {
+                    runningState with
+                        ActiveConflict = Some conflict
+                        SelectedChangePath = Some "conflict.txt"
+                }
+
+                let confirmingState, _ =
+                    update deps ignore (ConfirmMergeResolutionRequested request) state
+
+                let foreign = {
+                    sidebarProgress "Git LFS file dematerialized" 100. with
+                        OperationId = "lfs-action-1"
+                }
+
+                let ignoredState, _ =
+                    update deps ignore (SetCurrentProgress(Some foreign)) confirmingState
+
+                Vitest.expect(ignoredState.CurrentProgress).toEqual (None)
+
+                let own = {
+                    sidebarProgress "Restoring" 40. with
+                        OperationId = "resolve-1/3"
+                }
+
+                let appliedState, _ =
+                    update deps ignore (SetCurrentProgress(Some own)) confirmingState
+
+                Vitest.expect(appliedState.CurrentProgress).toEqual (Some(expectedSidebarProgress "Restoring" 40.))
+            }
+        )
+
+        Vitest.test (
             "SetCurrentProgress keeps Output empty for display messages",
             fun () -> promise {
                 let current = expectedSidebarProgress "Receiving objects" 72.

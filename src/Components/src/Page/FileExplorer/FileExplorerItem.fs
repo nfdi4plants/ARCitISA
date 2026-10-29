@@ -278,6 +278,16 @@ type FileExplorerItem =
             ]
 
     [<ReactComponent>]
+    static member private BusyDetail(detail: string) =
+        Html.span [
+            prop.testId "lfs-busy-progress"
+            // The text follows the pill label: narrow rows keep the file name and the controls instead.
+            prop.className
+                "swt:shrink-0 swt:whitespace-nowrap swt:text-xs swt:tabular-nums swt:text-base-content/70 swt:@max-[12rem]:hidden"
+            prop.text detail
+        ]
+
+    [<ReactComponent>]
     static member private StatusControl(item: FileItem, statusAction: ContextMenuItem option) =
         if Helper.isLfs item || item.LfsActivity.IsSome then
             FileExplorerItem.LFSStatusPill(item, ?statusAction = statusAction)
@@ -391,6 +401,10 @@ type FileExplorerItem =
 
                                     FileExplorerItem.DeleteItemButton(item, onDeleteItem, canDeleteItem)
 
+                                    match item.LfsActivityDetail with
+                                    | Some detail -> FileExplorerItem.BusyDetail detail
+                                    | None -> ()
+
                                     if hasStatusControl then
                                         FileExplorerItem.StatusControl(item, statusAction)
 
@@ -478,6 +492,10 @@ type FileExplorerItem =
                                 |> List.map (fun action -> FileExplorerItem.ItemActionButton(item, action))
 
                             FileExplorerItem.DeleteItemButton(item, onDeleteItem, canDeleteItem)
+
+                            match item.LfsActivityDetail with
+                            | Some detail -> FileExplorerItem.BusyDetail detail
+                            | None -> ()
 
                             if hasStatusControl then
                                 FileExplorerItem.StatusControl(item, statusAction)

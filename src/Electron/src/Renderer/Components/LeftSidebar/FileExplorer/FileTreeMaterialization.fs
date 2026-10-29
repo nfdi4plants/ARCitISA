@@ -120,6 +120,37 @@ let rec overlayDirectories (overlay: FileItem -> FileItem) (items: FileItem list
         else
             overlaid
 
+/// Sets the live detail on the busy rows whose path has an entry in details. A row without a running activity gets
+/// none, and the rows below a busy folder keep only their own state. A list without a changed row comes back as the
+/// same instance, so memoized rows and lists stay equal.
+let rec overlayBusyDetails (details: Map<string, string>) (items: FileItem list) : FileItem list =
+    let overlaid =
+        items
+        |> List.map (fun item ->
+            let detailed =
+                match item.Path |> Option.bind (fun path -> Map.tryFind path details) with
+                | Some detail when item.LfsActivity.IsSome && item.LfsActivityDetail <> Some detail -> {
+                    item with
+                        LfsActivityDetail = Some detail
+                  }
+                | _ -> item
+
+            match detailed.Children with
+            | Some children when not children.IsEmpty ->
+                let next = overlayBusyDetails details children
+
+                if obj.ReferenceEquals(next, children) then
+                    detailed
+                else
+                    { detailed with Children = Some next }
+            | _ -> detailed
+        )
+
+    if List.forall2 (fun a b -> obj.ReferenceEquals(a, b)) items overlaid then
+        items
+    else
+        overlaid
+
 /// Builds the items of the root's children. Only expanded directories are walked, so the cost follows the visible
 /// rows. An unloaded directory gets no children (it can expand), a loaded empty one gets an empty list.
 /// withBusy adds entries of running large-file actions that the listing misses.

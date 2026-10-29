@@ -80,6 +80,10 @@ type FileTree =
         let largeObjectStore = Renderer.Context.LargeObjectStore.useLargeObjectStore ()
         let lfsActivityByPath = lfsActivityCtx.activities
 
+        // Progress changes this value but not lfsActivityCtx, so the path indexes below stay as they are.
+        let runningLfsActions =
+            Renderer.Context.LfsActivityContext.useLfsRunningActionsCtx ()
+
         // The row checks (Rename and Delete locks) and the busy children of a folder read these once per change of
         // the activities, so a tree rebuild stays linear when thousands of files are busy.
         let lfsActivePaths =
@@ -126,7 +130,8 @@ type FileTree =
                         Target = path
                         IsFolder = false
                         FileCount = 1
-                        Progress = None
+                        Count = None
+                        StepPercent = None
                     }
 
                     lfsActivityCtx.track runningAction (fun () -> runAction operationId path)
@@ -190,7 +195,8 @@ type FileTree =
                                         Target = folderPath
                                         IsFolder = true
                                         FileCount = paths.Length
-                                        Progress = None
+                                        Count = None
+                                        StepPercent = None
                                     }
 
                                     lfsActivityCtx.track
@@ -345,6 +351,31 @@ type FileTree =
                     box expansionCtx.loadStates
                     box snapshot.CaseInsensitive
                 |]
+            )
+
+        // The live progress text goes on the rows of the running actions. Only these rows are copied. The item
+        // cache and the path indexes above are not rebuilt for a progress event.
+        let busyDetails =
+            React.useMemo (
+                (fun () -> Renderer.Context.LfsActivityContext.LfsRunningAction.busyDetails runningLfsActions),
+                [| box runningLfsActions |]
+            )
+
+        let fileItem =
+            React.useMemo (
+                (fun () ->
+                    if busyDetails.IsEmpty then
+                        fileItem
+                    else
+                        fileItem
+                        |> Option.map (fun root -> {
+                            root with
+                                Children =
+                                    root.Children
+                                    |> Option.map (FileTreeMaterialization.overlayBusyDetails busyDetails)
+                        })
+                ),
+                [| box fileItem; box busyDetails |]
             )
 
         let applyPreviewResult itemName result =

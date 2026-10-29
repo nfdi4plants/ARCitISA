@@ -133,8 +133,28 @@ type LfsActionKind =
     | Download
     | Free
 
-/// One running download or free of the file tree. Progress is the latest event that the library
-/// reported for OperationId. It stays None until the first event arrives.
+/// Phase codes of the library's progress events for large-file batches and transfers. The other phases of an
+/// operation (per-file events and the like) do not matter to the file tree.
+module LfsProgressPhase =
+
+    /// Count event of a download batch with more than one path.
+    [<Literal>]
+    let MaterializeFiles = "lfs-materialize-files"
+
+    /// Count event of a free batch with more than one path.
+    [<Literal>]
+    let DematerializeFiles = "lfs-dematerialize-files"
+
+    /// Meter of the git lfs fetch step of a download.
+    [<Literal>]
+    let MaterializeTransfer = "lfs-materialize-transfer"
+
+    /// Meter of the git lfs checkout step of a download.
+    [<Literal>]
+    let MaterializeCheckout = "lfs-materialize-checkout"
+
+/// One running download or free of the file tree. Count and StepPercent come from the progress events that the
+/// library reported for OperationId.
 type LfsRunningAction = {
     OperationId: string
     Kind: LfsActionKind
@@ -142,8 +162,76 @@ type LfsRunningAction = {
     Target: string
     IsFolder: bool
     FileCount: int
-    Progress: VersionControlProgressDto option
+    /// Files done and files requested by the latest count event of a batch. None before the first event.
+    Count: (int * int) option
+    /// Percent of the current transfer step while Git LFS reports one. None when no meter with numbers is active.
+    StepPercent: float option
 }
+
+module LfsRunningAction =
+
+    /// Applies one progress event. The action comes back as the same instance when the event changes nothing, so
+    /// the caller can skip the state update.
+    let withProgress (progress: VersionControlProgressDto) (action: LfsRunningAction) : LfsRunningAction =
+        match progress.PhaseCode with
+        | LfsProgressPhase.MaterializeFiles
+        | LfsProgressPhase.DematerializeFiles ->
+            match progress.Completed, progress.Total with
+            | Some completed, Some total ->
+                let count = Some(int completed, int total)
+
+                if count = action.Count then
+                    action
+                else
+                    { action with Count = count }
+            | _ -> action
+        | LfsProgressPhase.MaterializeTransfer
+        | LfsProgressPhase.MaterializeCheckout ->
+            // A meter of a single object, and the start event of the transfer, carry no numbers.
+            let percent =
+                match progress.Completed, progress.Total with
+                | Some completed, Some total when total > 0.0 ->
+                    Some(Math.Max(0.0, Math.Min(100.0, completed / total * 100.0)))
+                | _ -> None
+
+            if percent = action.StepPercent then
+                action
+            else
+                { action with StepPercent = percent }
+        | _ -> action
+
+    /// The live text of the action: "k/N" with the percent of the current step appended for a folder, and the
+    /// percent alone for a single file. A folder reads 0 of FileCount before the first count event.
+    let progressText (action: LfsRunningAction) : string option =
+        let percentText =
+            action.StepPercent
+            |> Option.map (fun percent -> string (int (Math.Floor percent)) + "%")
+
+        if action.IsFolder then
+            let completed, total = action.Count |> Option.defaultValue (0, action.FileCount)
+
+            let counts = $"{completed}/{total}"
+
+            match percentText with
+            | Some percent -> Some $"{counts} {percent}"
+            | None -> Some counts
+        else
+            percentText
+
+    /// The share of finished files for a folder and the step percent for a single file.
+    let progressPercent (action: LfsRunningAction) : float option =
+        if action.IsFolder then
+            match action.Count with
+            | Some(completed, total) when total > 0 -> Some(float completed / float total * 100.0)
+            | _ -> None
+        else
+            action.StepPercent
+
+    /// The progress text by target path, for the rows that show it. Actions without a text are left out.
+    let busyDetails (actions: LfsRunningAction[]) : Map<string, string> =
+        actions
+        |> Array.choose (fun action -> progressText action |> Option.map (fun text -> action.Target, text))
+        |> Map.ofArray
 
 /// The running actions in start order, each with the ARC scope it started in.
 type LfsRunningActionsState = (string * LfsRunningAction) list
@@ -162,15 +250,22 @@ module LfsRunningActionsState =
     let owns (operationId: string) (state: LfsRunningActionsState) =
         state |> List.exists (fun (_, action) -> action.OperationId = operationId)
 
-    /// Stores the event as the latest progress of the action that owns its operation id.
+    /// Applies the event to the action that owns its operation id. The same list comes back when the event
+    /// changes nothing.
     let applyProgress (progress: VersionControlProgressDto) (state: LfsRunningActionsState) : LfsRunningActionsState =
-        state
-        |> List.map (fun (scopeId, action) ->
-            if action.OperationId = progress.OperationId then
-                scopeId, { action with Progress = Some progress }
-            else
-                scopeId, action
-        )
+        let next =
+            state
+            |> List.map (fun (scopeId, action) ->
+                if action.OperationId = progress.OperationId then
+                    scopeId, LfsRunningAction.withProgress progress action
+                else
+                    scopeId, action
+            )
+
+        if List.forall2 (fun (_, before) (_, after) -> obj.ReferenceEquals(before, after)) state next then
+            state
+        else
+            next
 
     /// The running actions of one ARC in start order.
     let forScope (scopeId: string option) (state: LfsRunningActionsState) : LfsRunningAction[] =
@@ -248,13 +343,17 @@ let LfsActivityCtxProvider (children: ReactElement) =
         actionsRef.current <- next
         setActionsState next
 
-    // Each action keeps the events of its own operation id and ignores the progress of every other operation.
+    // Each action keeps the numbers of its own operation id and ignores the progress of every other operation.
+    // An event that changes no number does not touch the state.
     Renderer.IpcReceiver.useProxyReceiver<IVersionControlRendererApi> (
         (fun () -> {
             versionControlProgress =
                 fun progress ->
                     if LfsRunningActionsState.owns progress.OperationId actionsRef.current then
-                        updateActions (LfsRunningActionsState.applyProgress progress actionsRef.current)
+                        let next = LfsRunningActionsState.applyProgress progress actionsRef.current
+
+                        if not (obj.ReferenceEquals(next, actionsRef.current)) then
+                            updateActions next
             versionControlOperationStarted = ignore
         }),
         [||]

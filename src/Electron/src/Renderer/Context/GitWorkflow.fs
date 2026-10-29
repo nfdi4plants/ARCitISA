@@ -218,6 +218,10 @@ type GitState = {
     BusyNotice: string option
     /// The operation the renderer can cancel. The renderer chooses its id before the call starts.
     CurrentOperation: OperationRequestDto option
+    /// The id of the non-silent refresh that runs. A refresh keeps CurrentOperation empty, because a new refresh
+    /// request replaces a running refresh, while a write that reports the Refreshing phase owns CurrentOperation
+    /// and holds new refreshes back.
+    RefreshOperationId: string option
     CurrentProgress: GitSidebarProgress option
     CurrentProgressPhase: string option
     ErrorNotice: string option
@@ -282,6 +286,7 @@ type GitState = {
         BusyOperation = None
         BusyNotice = None
         CurrentOperation = None
+        RefreshOperationId = None
         CurrentProgress = None
         CurrentProgressPhase = None
         ErrorNotice = None
@@ -1395,6 +1400,7 @@ let private withBusyOperation busyOperation model = {
         CurrentProgress = None
         CurrentProgressPhase = None
         CurrentOperation = None
+        RefreshOperationId = None
 }
 
 let private startRefreshRequest requestId model = {
@@ -4708,6 +4714,7 @@ let private clearBusy (model: GitState) = {
         CurrentProgress = None
         CurrentProgressPhase = None
         CurrentOperation = None
+        RefreshOperationId = None
 }
 
 let private writeErrorModel (message: string) (model: GitState) = {
@@ -4792,10 +4799,16 @@ let private operationRootId (operationId: string) =
 
 /// Whether a progress event belongs to an operation other than the one this workflow runs, such as
 /// a file tree action that started in the same window. The sub-operations of a write share the root
-/// id of the write. A workflow that does not know its operation id (a refresh) takes every event.
+/// id of the write. A workflow that does not know its operation id (a silent refresh, the rename of the ARC
+/// folder) takes every event.
 let private isForeignOperation (model: GitState) (progress: VersionControlProgressDto) =
-    match model.CurrentOperation with
-    | Some current -> operationRootId current.OperationId <> operationRootId progress.OperationId
+    let ownOperationId =
+        model.CurrentOperation
+        |> Option.map _.OperationId
+        |> Option.orElse model.RefreshOperationId
+
+    match ownOperationId with
+    | Some current -> operationRootId current <> operationRootId progress.OperationId
     | None -> false
 
 let private writeCmd
@@ -4845,6 +4858,8 @@ let private updateCore
         ->
         model, Cmd.none
     | SetCurrentProgress(Some progress) when isForeignOperation model progress -> model, Cmd.none
+    // The rename of the ARC folder runs no version control call, so any progress belongs to another operation.
+    | SetCurrentProgress(Some _) when model.BusyOperation = Some GitBusyOperation.RenamingRepository -> model, Cmd.none
     | SetCurrentProgress(Some progress) when model.BusyOperation.IsSome ->
         {
             model with
@@ -5013,6 +5028,9 @@ let private updateCore
         Cmd.none
     | RefreshRequested ->
         let requestId = nextRefreshRequestId model
+        // The calls of the refresh take sub-ids of this id. isForeignOperation then drops the progress of other
+        // operations, such as a file tree action in the same window.
+        let operationId = deps.newOperationId ()
 
         let nextModel =
             model
@@ -5020,6 +5038,7 @@ let private updateCore
             |> startRefreshRequest requestId
             |> fun state -> {
                 state with
+                    RefreshOperationId = Some operationId
                     ErrorNotice = None
                     WarningNotice =
                         match state.PendingRefreshWarningNotice with
@@ -5030,7 +5049,7 @@ let private updateCore
         let cmd =
             Cmd.OfPromise.either
                 refreshAllAsync
-                deps
+                (withFirstOperationId deps operationId)
                 (fun refreshResult -> RefreshCompleted(requestId, Ok refreshResult))
                 (fun err -> RefreshCompleted(requestId, Error(string err)))
 
@@ -5150,6 +5169,8 @@ let private updateCore
         loadingModel, Cmd.batch [ publishCmd; loadCmd ]
     | InitRepositoryRequested when model.CurrentArcPath.IsNone -> model, Cmd.none
     | InitRepositoryRequested ->
+        let operationId = deps.newOperationId ()
+
         let nextModel =
             model
             |> withBusyOperation (Some GitBusyOperation.InitializingRepository)
@@ -5157,12 +5178,13 @@ let private updateCore
                 state with
                     ErrorNotice = None
                     WarningNotice = None
+                    CurrentOperation = Some { OperationId = operationId }
             }
 
         let cmd =
             Cmd.OfPromise.either
                 (fun (deps, arcPath) -> runInitRepositoryAsync deps arcPath)
-                (deps, Option.get model.CurrentArcPath)
+                (withFirstOperationId deps operationId, Option.get model.CurrentArcPath)
                 (fun result -> InitRepositoryCompleted(model.ArcSessionId, result))
                 (fun err -> InitRepositoryCompleted(model.ArcSessionId, Error(string err)))
 
@@ -5272,11 +5294,14 @@ let private updateCore
                     |> Option.exists (fun candidate -> candidate.Preview.IsNone && candidate.Object.IsNone)
                 | ConflictResolutionDto.SupplyResolvedContent _ -> false
 
+            let operationId = deps.newOperationId ()
+
             let nextModel =
                 model
                 |> withBusyOperation (Some(GitBusyOperation.ConfirmingMergeResolution resolution.Path))
                 |> fun state -> {
                     state with
+                        CurrentOperation = Some { OperationId = operationId }
                         MergeResolutionPendingPath = Some resolution.Path
                         ErrorNotice = None
                         WarningNotice =
@@ -5303,7 +5328,7 @@ let private updateCore
                             deletedCandidatePick
                             resolution
                     )
-                    (deps,
+                    (withFirstOperationId deps operationId,
                      model.DownloadLargeFiles,
                      model.PendingMaterializations,
                      model.PendingMaterializationSessionId,

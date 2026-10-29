@@ -83,6 +83,8 @@ type FileItem = {
     Checkout: string option
     Downloaded: bool option
     LfsActivity: string option
+    /// Live detail next to the busy pill while LfsActivity is set, for example "3/40 45%".
+    LfsActivityDetail: string option
     Size: int64 option
     SizeFormatted: string option
     ItemType: string
@@ -127,6 +129,7 @@ module FileTree =
         Checkout = None
         Downloaded = None
         LfsActivity = None
+        LfsActivityDetail = None
         Size = None
         SizeFormatted = None
         ItemType = "node"
@@ -149,6 +152,7 @@ module FileTree =
         Checkout = None
         Downloaded = None
         LfsActivity = None
+        LfsActivityDetail = None
         Size = None
         SizeFormatted = None
         ItemType = "node"
@@ -171,6 +175,7 @@ module FileTree =
         Checkout = None
         Downloaded = None
         LfsActivity = None
+        LfsActivityDetail = None
         Size = None
         SizeFormatted = None
         ItemType = config.ItemType
@@ -232,6 +237,7 @@ module FileTree =
         Checkout = None
         Downloaded = None
         LfsActivity = None
+        LfsActivityDetail = None
         Size = None
         SizeFormatted = None
         ItemType = "empty"

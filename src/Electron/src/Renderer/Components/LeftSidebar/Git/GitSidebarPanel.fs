@@ -63,8 +63,8 @@ let private activityVerb (kind: Renderer.Context.LfsActivityContext.LfsActionKin
     | Renderer.Context.LfsActivityContext.LfsActionKind.Download -> "Downloading"
     | Renderer.Context.LfsActivityContext.LfsActionKind.Free -> "Freeing"
 
-/// One background item per running file tree action. The label names the kind and the folder or file, and the
-/// percent comes from the latest progress that the action reported.
+/// One background item per running file tree action. The label names the kind and the folder or file. The detail
+/// and the percent come from the progress that the action reported, the same text as on the file tree row.
 let backgroundActivityItems
     (actions: Renderer.Context.LfsActivityContext.LfsRunningAction[])
     : Swate.Components.Page.GitSidebarTypes.GitSidebarBackgroundActivity[] =
@@ -72,8 +72,8 @@ let backgroundActivityItems
     |> Array.map (fun action ->
         let item: Swate.Components.Page.GitSidebarTypes.GitSidebarBackgroundActivity = {
             Label = $"{activityVerb action.Kind} {Swate.Components.Shared.PathHelpers.getFileName action.Target}"
-            Detail = None
-            ProgressPercent = action.Progress |> Option.bind Renderer.Context.GitWorkflow.progressPercent
+            Detail = Renderer.Context.LfsActivityContext.LfsRunningAction.progressText action
+            ProgressPercent = Renderer.Context.LfsActivityContext.LfsRunningAction.progressPercent action
         }
 
         item

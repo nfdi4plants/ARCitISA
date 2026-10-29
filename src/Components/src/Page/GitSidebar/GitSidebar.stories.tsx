@@ -733,7 +733,7 @@ export const BusyNoticeState: Story = {
 
 const waitingHeadline = "Waits for downloading raw-data to finish";
 const backgroundActivities = [
-  { Label: "Downloading raw-data", Detail: "12 files", ProgressPercent: 40 },
+  { Label: "Downloading raw-data", Detail: "5/12 45%", ProgressPercent: 41.7 },
   { Label: "Freeing notes.bin", Detail: undefined, ProgressPercent: undefined },
 ];
 
@@ -756,7 +756,7 @@ export const WaitingForBackgroundActivity: Story = {
       waitingHeadline,
     );
     const background = canvas.getByTestId("GitSidebarBackgroundActivity");
-    await expect(background).toHaveTextContent("Downloading raw-data | 12 files");
+    await expect(background).toHaveTextContent("Downloading raw-data | 5/12 45%");
     await expect(background).toHaveTextContent("Freeing notes.bin");
     await expect(canvas.getByTestId("GitSidebarBackgroundActivityBar-0")).toBeInTheDocument();
     await expect(canvas.queryByTestId("GitSidebarBackgroundActivityBar-1")).not.toBeInTheDocument();
