@@ -116,47 +116,43 @@ let newTableNames
 let importIntoCopy (arcFile: ArcFiles) (activeTableIndex: int option) (payload: ImportModalConfirmPayload) =
     let selected = payload.SelectedTemplatesForImport
 
-    let tableIndexById =
+    let sources =
         selected
-        |> Array.mapi (fun tableIndex (template, _) -> template.Id, tableIndex)
+        |> Array.mapi (fun index (template, _) -> {
+            Index = index
+            Name = template.Name
+            Table = template.Table
+        })
+
+    let indexById =
+        selected
+        |> Array.mapi (fun index (template, _) -> template.Id, index)
         |> Map.ofArray
 
-    let importConfig = {
-        SelectiveImportConfig.init () with
-            ImportType = payload.ImportType
-            ImportTables =
-                selected
-                |> Array.mapi (fun tableIndex (template, action) ->
-                    let fullImport = action = TableImportAction.ImportAsNewTable
-
-                    ({
-                        Index = tableIndex
-                        FullImport = fullImport
-                        Name =
-                            if fullImport then
-                                payload.NewTableNames.TryFind template.Id |> Option.map _.Trim()
-                            else
-                                None
-                    }
-                    : ImportTable)
-                )
-                |> Array.toList
-            DeselectedColumns =
-                payload.DeselectedTemplateColumns
-                |> Seq.choose (fun (templateId, columnIndex) ->
-                    tableIndexById.TryFind templateId
-                    |> Option.map (fun tableIndex -> tableIndex, columnIndex)
-                )
-                |> Set.ofSeq
+    let decisions: TableImportDecisions = {
+        ImportType = payload.ImportType
+        DefaultAction = TableImportAction.NoImport
+        Actions = selected |> Array.mapi (fun index (_, action) -> index, action) |> Map.ofArray
+        DeselectedColumns =
+            payload.DeselectedTemplateColumns
+            |> Seq.choose (fun (templateId, columnIndex) ->
+                indexById.TryFind templateId |> Option.map (fun index -> index, columnIndex)
+            )
+            |> Set.ofSeq
+        EnteredNames =
+            selected
+            |> Array.mapi (fun index (template, action) -> index, template, action)
+            |> Array.choose (fun (index, template, action) ->
+                if action = TableImportAction.ImportAsNewTable then
+                    payload.NewTableNames.TryFind template.Id
+                    |> Option.map (fun name -> index, name.Trim())
+                else
+                    None
+            )
+            |> Map.ofArray
+        ActiveTableIndex = activeTableIndex
     }
 
-    let nextArcFile = ArcFiles.refreshRef arcFile
-
-    Swate.Components.Composite.TableImport.Helper.updateTables
-        (selected |> Array.map (fun (template, _) -> template.Table) |> ResizeArray)
-        importConfig
-        activeTableIndex
-        (Some nextArcFile)
-    |> ignore
-
-    nextArcFile
+    match Swate.Components.Composite.TableImport.Helper.applyImport arcFile sources decisions with
+    | Ok result -> result.ArcFile
+    | Error error -> raise error

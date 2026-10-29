@@ -1,6 +1,7 @@
 module ARCtrl.Json
 
 open Swate.Components.Shared
+open Swate.Components.Composite.TableImport.Types
 
 open ARCtrl
 open System
@@ -143,26 +144,25 @@ module Import =
                 if importedTables.Length = 0 then
                     Error(exn $"Imported {arcFileTypeLabel importedFileType} JSON does not contain tables to append.")
                 else
-                    let newTableNames =
+                    let sources =
                         importedTables
-                        |> Array.map (fun table -> table.Name, None)
-                        |> resolveNewTableNames (currentArcFile.ArcTables().TableNames)
+                        |> Array.mapi (fun index table -> {
+                            Index = index
+                            Name = table.Name
+                            Table = table
+                        })
 
-                    // Tables are added to a copy, so the open file stays untouched.
-                    let nextArcFile = ArcFiles.refreshRef currentArcFile
+                    let defaults: TableImportDecisions = {
+                        ImportType = TableJoinOptions.WithValues
+                        DefaultAction = TableImportAction.ImportAsNewTable
+                        Actions = Map.empty
+                        DeselectedColumns = Set.empty
+                        EnteredNames = Map.empty
+                        ActiveTableIndex = None
+                    }
 
-                    Array.zip importedTables newTableNames
-                    |> Array.map (fun (table, newTableName) ->
-                        let copy = table.Copy()
-
-                        if newTableName.Name = copy.Name then
-                            copy
-                        else
-                            ArcTable.fromArcTableValues (newTableName.Name, copy.Headers, copy.Values)
-                    )
-                    |> nextArcFile.ArcTables().AddTables
-
-                    Ok nextArcFile
+                    Swate.Components.Composite.TableImport.Helper.applyImport currentArcFile sources defaults
+                    |> Result.map (fun result -> result.ArcFile)
             | _ -> Ok importedArcFile
 
     let tryParseFromJsonString

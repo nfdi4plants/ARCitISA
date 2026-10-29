@@ -46,3 +46,23 @@ type SelectiveImportConfig = {
         ImportTables = []
         DeselectedColumns = Set.empty
     }
+
+type TableImportDecisions = {
+    ImportType: TableJoinOptions
+    /// Used for a source index missing from Actions.
+    DefaultAction: TableImportAction
+    /// By source index.
+    Actions: Map<int, TableImportAction>
+    /// (source index, column index)
+    DeselectedColumns: Set<int * int>
+    /// By source index, the raw text the user typed.
+    EnteredNames: Map<int, string>
+    /// Index of the table in the current file to append to.
+    ActiveTableIndex: int option
+}
+
+type TableImportResult = {
+    ArcFile: ArcFiles
+    CreatedTableNames: string list
+    ModifiedTableNames: string list
+}

@@ -92,7 +92,7 @@ for fileType, createEmptyFile in tableFileTypes do
                     Vitest
                         .expect(fun () -> importIntoCopy arcFile (Some 0) (appendAndImportAsNewTable "Sugar") |> ignore)
                         .toThrowError
-                        "table names must be unique"
+                        "A table named \"Sugar\" already exists."
 
                     Vitest.expect(tableSummary arcFile).toEqual [| "New Table 0", 1; "Sugar", 0 |]
             )
