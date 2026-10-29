@@ -185,6 +185,9 @@ type GitState = {
     /// A primary save that still has to publish once the update or merge is done.
     PendingPostMergePush: bool
     PendingRecovery: GitPendingRecovery option
+    /// The message of a large-file download that an index lock stopped. The lock dialog is open for it. A removed
+    /// lock turns it into the download offer, and any other end of that dialog drops it.
+    RetryMaterializationAfterLockClear: string option
     ProvisionedRemote: GitProvisionedRemote option
     /// A publish that waits until the refresh of a renamed ARC root has loaded the
     /// workspace token.
@@ -274,6 +277,7 @@ type GitState = {
         PublishOwnerChoice = None
         PendingPostMergePush = false
         PendingRecovery = None
+        RetryMaterializationAfterLockClear = None
         ProvisionedRemote = None
         PendingPublishAfterRefresh = false
         PendingPublishForPath = None
@@ -1014,8 +1018,20 @@ let recoveryOfPartial (partial: OperationFailureDto option) : GitPendingRecovery
             Some(GitPendingRecovery.RetryMaterialization(failureMessage failure))
         | Some code when code = VersionControlCodes.Recovery.RetryPublish ->
             Some(GitPendingRecovery.RetryPublish(failureMessage failure))
+        | Some code when code = VersionControlCodes.Recovery.RemoveIndexLock ->
+            Some(GitPendingRecovery.ClearStaleLock(failure.RecoveryAction |> Option.bind _.Instructions))
         | _ -> None
     )
+
+/// The message of a large-file download that a held index lock stopped. The failure keeps the
+/// hydration code and carries the lock removal as its recovery.
+let lockBlockedDownloadMessage (partial: OperationFailureDto option) : string option =
+    partial
+    |> Option.filter (fun failure ->
+        failure.Code = VersionControlCodes.HydrationFailed
+        && recoveryCode failure = Some VersionControlCodes.Recovery.RemoveIndexLock
+    )
+    |> Option.map failureMessage
 
 /// The dialog the sidebar shows for a recovery. Confirm runs it, cancel keeps the
 /// workspace as it is. Restoring interrupted files discards local changes on them.
@@ -3685,6 +3701,11 @@ let private runCloneAttemptAsync (deps: GitDependencies) (cloneRequest: CloneWor
             Error(
                 $"The ARC was cloned to '{outcome.Value}', but its large files could not be downloaded. Open the folder and use Download LFS file to get them."
             )
+    | Ok(outcome, Some failure) when recoveryCode failure = Some VersionControlCodes.Recovery.RemoveIndexLock ->
+        return
+            Error(
+                $"The ARC was cloned to '{outcome.Value}', but a Git lock (index.lock) blocked the download of its large files. Open the folder, remove the lock once no other Git program uses it, and use Download LFS file to get the files."
+            )
     | Ok(outcome, _) -> return Ok(Completed(CloneSuccess outcome.Value))
     | Error failure ->
         let routed = routeFailure (Some cloneRequest.TargetPath) failure
@@ -5976,6 +5997,7 @@ let private updateCore
         {
             model with
                 PendingRecovery = None
+                RetryMaterializationAfterLockClear = None
                 RefreshPending = false
                 PendingPostMergePush =
                     if shouldRunPostMergePush model then
@@ -6283,6 +6305,10 @@ let private updateCore
                 WarningNotice = warningMessage
                 PendingPublishRename = None
                 PendingRecovery = recovery
+                RetryMaterializationAfterLockClear =
+                    match success with
+                    | UnitSuccess completed -> lockBlockedDownloadMessage completed.Partial
+                    | CloneSuccess _ -> None
                 PendingConfirmation = recovery |> Option.map recoveryDialog
                 PendingRemoteAction =
                     match recovery with
@@ -6332,10 +6358,12 @@ let private updateCore
             // Only a materialization recovery leaves the publish undone with nothing else
             // offering it. The publish resumes after that recovery. The retry_publish partial
             // is its own offer, and an unmapped partial has no path that could resume.
+            // A download that an index lock stopped reaches the same retry once the lock is gone.
             | (PrimarySave _ | Push _) when published = Some false && partial.IsSome ->
                 let resumesAfterMaterialization =
                     match recovery with
                     | Some(GitPendingRecovery.RetryMaterialization _) -> true
+                    | Some(GitPendingRecovery.ClearStaleLock _) -> nextModel.RetryMaterializationAfterLockClear.IsSome
                     | _ -> false
 
                 {
@@ -6362,6 +6390,30 @@ let private updateCore
             followUp
         ]
 
+/// A removed index lock turns the stopped download into the download offer. Any other end of the
+/// lock removal drops it, because the next pull offers the download again.
+let private offerDownloadAfterLockRemoval (msg: Msg) (model: GitState) (next: GitState) =
+    match msg with
+    | WriteCompleted(sessionId, writeRequestId, ClearStaleLock, result) when
+        sessionId = model.ArcSessionId && writeRequestId = model.WriteRequestId
+        ->
+        match result, model.RetryMaterializationAfterLockClear with
+        | Ok(Completed _), Some message ->
+            let recovery = GitPendingRecovery.RetryMaterialization message
+
+            {
+                next with
+                    RetryMaterializationAfterLockClear = None
+                    PendingRecovery = Some recovery
+                    PendingConfirmation = Some(recoveryDialog recovery)
+                    PendingRemoteAction = GitPendingRemoteAction.Recover
+            }
+        | _ -> {
+            next with
+                RetryMaterializationAfterLockClear = None
+          }
+    | _ -> next
+
 /// The wrapper holds a refresh until the write finishes and any open confirmation is resolved.
 /// It also waits for the pending recovery to be handled.
 let update
@@ -6387,6 +6439,8 @@ let update
                       PublishOwnerChoice = None
               }
         | _ -> next
+
+    let next = offerDownloadAfterLockRemoval msg model next
 
     // Every way of leaving a diff page ends here: another selection, another page, a closed
     // page or a reset for another ARC.

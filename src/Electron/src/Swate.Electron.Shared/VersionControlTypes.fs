@@ -428,6 +428,10 @@ module VersionControlCodes =
     [<Literal>]
     let ObjectNotMaterialized = "object_not_materialized"
 
+    /// The library's code for a large-file download that did not finish after the update itself was done.
+    [<Literal>]
+    let HydrationFailed = "hydration_failed"
+
     [<Literal>]
     let InvalidLfsThreshold = "invalid_lfs_threshold"
 

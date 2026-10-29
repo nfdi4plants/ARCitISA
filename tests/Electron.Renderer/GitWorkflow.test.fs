@@ -552,6 +552,66 @@ let private completeOne deps model cmd = promise {
     | _ -> return failwith "Expected one command message."
 }
 
+/// A large-file download that ended with a held index lock. The code tells the download
+/// from other partial failures.
+let private lockedPartial code =
+    makeFailure
+        ProviderError
+        code
+        "The large-file download did not finish."
+        (Some {
+            Code = VersionControlCodes.Recovery.RemoveIndexLock
+            Instructions = None
+        })
+        [||]
+
+/// Runs a Download Changes whose update succeeded and whose partial failure is the given one.
+let private runPullWithPartial (partial: OperationFailureDto) = promise {
+    let deps = {
+        (withRefresh cleanStatus defaultDependencies) with
+            synchronize =
+                fun _ -> promise {
+                    return
+                        Ok(OperationResultDto.PartiallySucceeded(operation cleanStatus.Synchronization.Value, partial))
+                }
+    }
+
+    let requested, requestCmd =
+        update deps ignore (WriteRequested(Pull GitUpdateAcceptance.RequirePreview)) runningState
+
+    let! completion = collectMessages requestCmd
+
+    match completion with
+    | [| WriteCompleted(_, _, Pull _, Ok(Completed _)) |] ->
+        let finished, finishCmd = update deps ignore completion[0] requested
+        let! _ = collectMessages finishCmd
+        return deps, finished
+    | _ -> return failwith "Expected the download to complete with its partial failure."
+}
+
+/// Confirms the lock dialog of the state and finishes the lock removal with the given result.
+let private confirmLockRemoval deps (lockedState: GitState) clearResult = promise {
+    let deps = {
+        deps with
+            clearStaleLock = fun _ -> promise { return clearResult }
+    }
+
+    let confirmed, confirmCmd =
+        update deps ignore ConfirmPendingRemoteActionRequested lockedState
+
+    let! confirmMessages = collectMessages confirmCmd
+
+    let lockRequested, lockRequestedCmd =
+        update deps ignore confirmMessages[0] confirmed
+
+    let! requestedMessages = collectMessages lockRequestedCmd
+    let clearing, clearCmd = update deps ignore requestedMessages[0] lockRequested
+    let! clearMessages = collectMessages clearCmd
+    let finished, finishCmd = update deps ignore clearMessages[0] clearing
+    let! _ = collectMessages finishCmd
+    return finished
+}
+
 let private refreshed status = {
     Session = Ok sessionInfo
     Status = Ok status
@@ -3650,6 +3710,45 @@ Vitest.describe (
         )
 
         Vitest.test (
+            "a phase change of the write keeps the steps and the log and starts the progress over",
+            fun () ->
+                let busyState = {
+                    runningState with
+                        BusyOperation = Some GitBusyOperation.CommittingAllChanges
+                        BusyNotice = Some "Committing all changes"
+                        CurrentOperation = Some { OperationId = "op-1" }
+                }
+
+                let apply state message =
+                    fst (update defaultDependencies ignore message state)
+
+                let running =
+                    [
+                        SetCurrentProgress(Some(progressDto "commit" (Some "Saving changes") None None))
+                        OperationOutputReceived(outputOf "op-1" [ "command", "git commit"; "stdout", "done" ])
+                        SetCurrentProgress(Some(progressDto "push" (Some "Uploading changes") (Some 30.0) (Some 100.0)))
+                    ]
+                    |> List.fold apply busyState
+
+                Vitest.expect(running.CurrentSteps.Length).toBe 2
+                Vitest.expect(running.CurrentLog.Lines.Length).toBe 2
+                Vitest.expect(running.CurrentProgress.IsSome).toBe true
+
+                let afterPhase =
+                    apply
+                        running
+                        (WritePhaseChanged(
+                            running.ArcSessionId,
+                            running.WriteRequestId,
+                            GitBusyOperation.PushingToRemote
+                        ))
+
+                Vitest.expect(afterPhase.CurrentSteps).toEqual running.CurrentSteps
+                Vitest.expect(afterPhase.CurrentLog.Lines.Length).toBe 2
+                Vitest.expect(afterPhase.CurrentProgress).toEqual None
+        )
+
+        Vitest.test (
             "a progress event with a display message and a new phase code starts the next step",
             fun () ->
                 let pullState = {
@@ -5034,6 +5133,120 @@ Vitest.describe (
                     | [| WriteCompleted(_, _, RetryMaterialization, Ok(Completed _)) |] ->
                         update deps ignore retryCompletionMessages[0] retryRunningState
                     | _ -> failwith "Expected materialization retry to complete."
+
+                let! finishMessages = collectMessages finishCmd
+
+                Vitest.expect(materializeCalls).toBe (1)
+                Vitest.expect(finalState.PendingPostMergePush).toBe (false)
+
+                Vitest
+                    .expect(
+                        finishMessages
+                        |> hasMessage (
+                            function
+                            | WriteRequested(Push GitUpdateAcceptance.RequirePreview) -> true
+                            | _ -> false
+                        )
+                    )
+                    .toBe (true)
+            }
+        )
+
+        Vitest.test (
+            "A save whose download an index lock stopped resumes the pending publish after the lock removal and the download",
+            fun () -> promise {
+                let mutable materializeCalls = 0
+
+                let deps = {
+                    (withRefresh cleanStatus defaultDependencies) with
+                        createRevision = fun _ -> promise { return Ok(succeeded "revision-1") }
+                        synchronize =
+                            fun _ -> promise {
+                                return
+                                    Ok(
+                                        OperationResultDto.PartiallySucceeded(
+                                            operationWithPublication
+                                                PublicationStateDto.LocalOnly
+                                                cleanStatus.Synchronization.Value,
+                                            lockedPartial VersionControlCodes.HydrationFailed
+                                        )
+                                    )
+                            }
+                        listObjects =
+                            fun _ -> promise {
+                                return
+                                    Ok(
+                                        succeeded [|
+                                            {
+                                                Path = "large.bin"
+                                                IsMaterialized = false
+                                                IsLocallyAvailable = false
+                                                SizeBytes = Some 100.
+                                                ObjectId = Some "object-1"
+                                            }
+                                        |]
+                                    )
+                            }
+                        materializeObject =
+                            fun _ ->
+                                materializeCalls <- materializeCalls + 1
+                                promise { return Ok(succeeded ()) }
+                }
+
+                let saveState = {
+                    runningState with
+                        ChangedFiles = [| changedFile "README.md" "M" " " false |]
+                }
+
+                let stateAfterRequest, requestCmd =
+                    update deps ignore (PrimarySaveAllRequested "Save") saveState
+
+                let! requestMessages = collectMessages requestCmd
+
+                let stateAfterWrite, writeCmd =
+                    match requestMessages with
+                    | [| WriteRequested(PrimarySave _) |] -> update deps ignore requestMessages[0] stateAfterRequest
+                    | _ -> failwith "Expected the primary save request."
+
+                let! completionMessages = collectWriteMessages writeCmd
+
+                let lockedState, completionCmd =
+                    match completionMessages with
+                    | [| WriteCompleted(_, _, PrimarySave _, Ok(Completed _)) |] ->
+                        update deps ignore completionMessages[0] stateAfterWrite
+                    | _ -> failwith "Expected the partial save completion."
+
+                let! _ = collectMessages completionCmd
+
+                Vitest.expect(lockedState.PendingRecovery).toEqual (Some(GitPendingRecovery.ClearStaleLock None))
+                Vitest.expect(lockedState.PendingPostMergePush).toBe (true)
+
+                let! downloadOfferState = confirmLockRemoval deps lockedState (Ok(succeeded cleanStatus))
+
+                let confirmedState, confirmCmd =
+                    update deps ignore ConfirmPendingRemoteActionRequested downloadOfferState
+
+                let! confirmMessages = collectMessages confirmCmd
+
+                let retryState, retryRequestCmd =
+                    match confirmMessages with
+                    | [| RetryMaterializationRequested |] -> update deps ignore confirmMessages[0] confirmedState
+                    | _ -> failwith "Expected the download offer to be confirmed."
+
+                let! retryRequestMessages = collectMessages retryRequestCmd
+
+                let retryRunningState, retryCmd =
+                    match retryRequestMessages with
+                    | [| WriteRequested RetryMaterialization |] -> update deps ignore retryRequestMessages[0] retryState
+                    | _ -> failwith "Expected the download to start."
+
+                let! retryCompletionMessages = collectMessages retryCmd
+
+                let finalState, finishCmd =
+                    match retryCompletionMessages with
+                    | [| WriteCompleted(_, _, RetryMaterialization, Ok(Completed _)) |] ->
+                        update deps ignore retryCompletionMessages[0] retryRunningState
+                    | _ -> failwith "Expected the download to complete."
 
                 let! finishMessages = collectMessages finishCmd
 
@@ -6809,6 +7022,130 @@ Vitest.describe (
 
                 Vitest.expect(nextState.PendingRecovery).toEqual (Some(GitPendingRecovery.ClearStaleLock None))
                 Vitest.expect(nextState.PendingConfirmation.IsSome).toBe (true)
+            }
+        )
+
+        Vitest.test (
+            "A download that an index lock stopped offers the lock dialog and remembers the download",
+            fun () -> promise {
+                let partial = lockedPartial VersionControlCodes.HydrationFailed
+                let! _, finished = runPullWithPartial partial
+
+                Vitest.expect(finished.PendingRecovery).toEqual (Some(GitPendingRecovery.ClearStaleLock None))
+                Vitest.expect(finished.PendingConfirmation.IsSome).toBe (true)
+                Vitest.expect(finished.RetryMaterializationAfterLockClear).toEqual (Some(failureMessage partial))
+            }
+        )
+
+        Vitest.test (
+            "A removed index lock offers the download of the large files",
+            fun () -> promise {
+                let partial = lockedPartial VersionControlCodes.HydrationFailed
+                let! deps, locked = runPullWithPartial partial
+                let! finished = confirmLockRemoval deps locked (Ok(succeeded cleanStatus))
+
+                Vitest
+                    .expect(finished.PendingRecovery)
+                    .toEqual (Some(GitPendingRecovery.RetryMaterialization(failureMessage partial)))
+
+                Vitest.expect(finished.PendingConfirmation.IsSome).toBe (true)
+                Vitest.expect(finished.RetryMaterializationAfterLockClear).toEqual (None)
+            }
+        )
+
+        Vitest.test (
+            "A failed lock removal does not offer the download of the large files",
+            fun () -> promise {
+                let! deps, locked = runPullWithPartial (lockedPartial VersionControlCodes.HydrationFailed)
+
+                let! finished =
+                    confirmLockRemoval
+                        deps
+                        locked
+                        (Ok(
+                            failed ProviderError VersionControlCodes.LockRemovalRefused "The lock could not be removed."
+                        ))
+
+                Vitest.expect(finished.PendingRecovery).toEqual (None)
+                Vitest.expect(finished.RetryMaterializationAfterLockClear).toEqual (None)
+            }
+        )
+
+        Vitest.test (
+            "A dismissed lock dialog does not offer the download of the large files",
+            fun () -> promise {
+                let! deps, locked = runPullWithPartial (lockedPartial VersionControlCodes.HydrationFailed)
+
+                let dismissed, dismissCmd =
+                    update deps ignore CancelPendingRemoteActionRequested locked
+
+                let! dismissMessages = collectMessages dismissCmd
+                let finished, finishCmd = update deps ignore dismissMessages[0] dismissed
+                let! _ = collectMessages finishCmd
+
+                Vitest.expect(finished.PendingRecovery).toEqual (None)
+                Vitest.expect(finished.RetryMaterializationAfterLockClear).toEqual (None)
+            }
+        )
+
+        Vitest.test (
+            "A partial with an index lock and another code offers only the lock removal",
+            fun () -> promise {
+                let! deps, locked = runPullWithPartial (lockedPartial "lfs_pull_failed")
+
+                Vitest.expect(locked.PendingRecovery).toEqual (Some(GitPendingRecovery.ClearStaleLock None))
+                Vitest.expect(locked.RetryMaterializationAfterLockClear).toEqual (None)
+
+                let! finished = confirmLockRemoval deps locked (Ok(succeeded cleanStatus))
+
+                Vitest.expect(finished.PendingRecovery).toEqual (None)
+            }
+        )
+
+        Vitest.test (
+            "A clone whose large-file download met an index lock returns an error",
+            fun () -> promise {
+                let mutable replyResult = None
+                let reply result = replyResult <- Some result
+
+                let cloneRequest = {
+                    OperationId = "clone-op"
+                    ProviderLocation = "https://gitlab.example/carol/my-arc.git"
+                    DisplayName = Some "my-arc"
+                    TargetPath = "C:/clone-target"
+                    TargetRef = None
+                    MaterializeAllObjects = true
+                }
+
+                let deps = {
+                    defaultDependencies with
+                        cloneWorkspace =
+                            fun _ -> promise {
+                                return
+                                    Ok(
+                                        OperationResultDto.PartiallySucceeded(
+                                            operation "C:/clone-target",
+                                            lockedPartial VersionControlCodes.HydrationFailed
+                                        )
+                                    )
+                            }
+                }
+
+                let stateAfterRequest, requestCmd =
+                    update deps ignore (WriteRequested(Clone(cloneRequest, reply))) GitState.Empty
+
+                let! completionMessages = collectMessages requestCmd
+
+                match completionMessages with
+                | [| WriteCompleted(_, _, Clone _, Error _) |] ->
+                    let _, finishCmd = update deps ignore completionMessages[0] stateAfterRequest
+                    let! _ = collectMessages finishCmd
+                    ()
+                | _ -> failwith "Expected a clone with a locked download to return an error."
+
+                match replyResult with
+                | Some(Error _) -> ()
+                | _ -> failwith "Expected the clone reply to be an error."
             }
         )
 
