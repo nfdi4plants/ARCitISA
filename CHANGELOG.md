@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The JSON import opens a dialog that lists the tables of the file with their columns and example values. You choose which tables and columns to import, and whether each table becomes a new table or is appended to the table open in the editor. (by @Etschbeijer)
 - In the JSON import dialog you can import column headers only, headers with units, or headers with all values, and you can rename new tables. (by @Etschbeijer)
 - After a JSON import, the dialog lists the new and changed tables and reminds you to save the ARC. (by @Etschbeijer)
+- The JSON and template import dialogs show each table as a scrollable grid, where you can leave out rows the same way as columns. In "Headers only" mode the grid hides the row checkboxes, because that mode imports no values. (by @Etschbeijer)
 
 ### 🔄 Changed
 
