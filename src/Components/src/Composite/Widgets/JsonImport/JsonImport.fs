@@ -83,9 +83,8 @@ type JsonImport =
                         jsonFile.FileName
                     )
                 with
-                | None ->
-                    return Error(exn $"Could not parse {jsonFormat.AsStringRdbl} JSON for {fileType |> unbox<string>}.")
-                | Some importedFile ->
+                | Error exn -> return Error exn
+                | Ok importedFile ->
                     return!
                         importJson {
                             ImportedFile = importedFile

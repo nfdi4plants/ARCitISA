@@ -107,6 +107,7 @@
     <Compile Include="ARCtrl\Json.fs" />
     <Compile Include="ARCtrl\TableFiles.test.helpers.fs" />
     <Compile Include="ARCtrl\Json.test.fs" />
+    <Compile Include="ARCtrl\JsonParse.test.fs" />
     <Compile Include="ARCtrl\EmptyColumnJson.test.fs" />
     <Compile Include="Composite\TableImport\Helper.test.fs" />
     <Compile Include="ARCtrl\Extensions\ARC.fs" />
