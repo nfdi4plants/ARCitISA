@@ -66,10 +66,14 @@ let private deferred () =
 let private versionControlBridgeName = "FABLE_REMOTING_IVersionControlRendererApi"
 
 type private VersionControlProgress = Swate.Electron.Shared.VersionControlTypes.VersionControlProgressDto
+type private VersionControlOutput = Swate.Electron.Shared.VersionControlTypes.VersionControlOutputDto
 
 /// The provider listens for version control progress on the IPC bridge, which only exists inside Electron.
 /// `onListener` receives the listener that the provider registers.
-let private installVersionControlBridge (onListener: (VersionControlProgress -> unit) option -> unit) =
+let private installVersionControlBridge
+    (onListener: (VersionControlProgress -> unit) option -> unit)
+    (onOutputListener: (VersionControlOutput -> unit) option -> unit)
+    =
     let startedListeners = ResizeArray<obj>()
 
     window?(versionControlBridgeName) <-
@@ -82,12 +86,16 @@ let private installVersionControlBridge (onListener: (VersionControlProgress -> 
             ==> fun (listener: obj) ->
                 startedListeners.Add listener
                 fun () -> startedListeners.Remove listener |> ignore
+            "versionControlOutput"
+            ==> fun (listener: VersionControlOutput -> unit) ->
+                onOutputListener (Some listener)
+                fun () -> onOutputListener None
         ]
 
 let private removeVersionControlBridge () : unit =
     emitJsStatement versionControlBridgeName "delete window[$0]"
 
-Vitest.beforeEach (fun () -> installVersionControlBridge ignore)
+Vitest.beforeEach (fun () -> installVersionControlBridge ignore ignore)
 Vitest.afterEach (fun () -> removeVersionControlBridge ())
 
 Vitest.describe (
@@ -378,6 +386,7 @@ let private runningAction (operationId: string) : LfsRunningAction = {
     FileCount = 3
     Count = None
     StepPercent = None
+    Log = Renderer.Context.OperationLog.empty
 }
 
 [<ReactComponent>]
@@ -393,6 +402,7 @@ let private withRunningActions
         (unit -> LfsActivityController)
             -> (unit -> LfsRunningAction[])
             -> (VersionControlProgress -> unit)
+            -> (VersionControlOutput -> unit)
             -> JS.Promise<unit>)
     =
     promise {
@@ -403,8 +413,11 @@ let private withRunningActions
         let actions: LfsRunningAction[] ref = ref [||]
 
         let progressListener: (VersionControlProgress -> unit) option ref = ref None
+        let outputListener: (VersionControlOutput -> unit) option ref = ref None
 
-        installVersionControlBridge (fun listener -> progressListener.Value <- listener)
+        installVersionControlBridge
+            (fun listener -> progressListener.Value <- listener)
+            (fun listener -> outputListener.Value <- listener)
 
         try
             root.render (
@@ -419,13 +432,19 @@ let private withRunningActions
                 )
             )
 
-            do! waitFor (fun () -> controller.Value.IsSome && progressListener.Value.IsSome)
+            do!
+                waitFor (fun () ->
+                    controller.Value.IsSome
+                    && progressListener.Value.IsSome
+                    && outputListener.Value.IsSome
+                )
 
             do!
                 body
                     (fun () -> controller.Value.Value)
                     (fun () -> actions.Value)
                     (fun progress -> progressListener.Value.Value progress)
+                    (fun output -> outputListener.Value.Value output)
         finally
             root.unmount ()
             container.remove ()
@@ -437,7 +456,7 @@ Vitest.describe (
         Vitest.test (
             "the latest count event of a tracked operation id is stored with its running action",
             fun () ->
-                withRunningActions (fun controller actions sendProgress -> promise {
+                withRunningActions (fun controller actions sendProgress _ -> promise {
                     let work = deferred ()
                     let running = controller().track (runningAction "op-a") (fun () -> work.pending)
 
@@ -459,7 +478,7 @@ Vitest.describe (
         Vitest.test (
             "progress of an unknown operation id is ignored",
             fun () ->
-                withRunningActions (fun controller actions sendProgress -> promise {
+                withRunningActions (fun controller actions sendProgress _ -> promise {
                     let work = deferred ()
                     let running = controller().track (runningAction "op-a") (fun () -> work.pending)
 
@@ -482,7 +501,7 @@ Vitest.describe (
         Vitest.test (
             "the running action goes away when the work settles and later progress does not bring it back",
             fun () ->
-                withRunningActions (fun controller actions sendProgress -> promise {
+                withRunningActions (fun controller actions sendProgress _ -> promise {
                     let work = deferred ()
                     let running = controller().track (runningAction "op-a") (fun () -> work.pending)
 
@@ -497,6 +516,76 @@ Vitest.describe (
                     sendProgress (countEventFor "op-a" 9.0)
                     do! Promise.sleep 20
                     Vitest.expect(actions().Length).toBe (0)
+                })
+        )
+)
+
+let private outputFor (operationId: string) (lines: string list) : VersionControlOutput = {
+    OperationId = operationId
+    Entries =
+        lines
+        |> List.map (fun text ->
+            let entry: Swate.Electron.Shared.VersionControlTypes.VersionControlOutputEntryDto = {
+                CommandId = "cmd-1"
+                Kind = "stdout"
+                Text = text
+                IsPartial = false
+            }
+
+            entry
+        )
+        |> List.toArray
+}
+
+Vitest.describe (
+    "LfsActivityCtxProvider output",
+    fun () ->
+        Vitest.test (
+            "output of a tracked action is appended to the log of that action",
+            fun () ->
+                withRunningActions (fun controller actions _ sendOutput -> promise {
+                    let work = deferred ()
+                    let running = controller().track (runningAction "op-a") (fun () -> work.pending)
+                    let other = controller().track (runningAction "op-b") (fun () -> work.pending)
+
+                    do! waitFor (fun () -> actions().Length = 2)
+
+                    sendOutput (outputFor "op-a" [ "first" ])
+                    sendOutput (outputFor "op-a" [ "second"; "third" ])
+                    sendOutput (outputFor "op-b" [ "other" ])
+
+                    do! waitFor (fun () -> actions().[0].Log.Lines.Length = 3)
+
+                    Vitest.expect(actions().[0].Log.Lines |> Array.map _.Text).toEqual [| "first"; "second"; "third" |]
+                    Vitest.expect(actions().[1].Log.Lines |> Array.map _.Text).toEqual [| "other" |]
+
+                    work.resolve (Ok())
+                    let! _ = running
+                    let! _ = other
+                    ()
+                })
+        )
+
+        Vitest.test (
+            "output of an unknown operation id is ignored",
+            fun () ->
+                withRunningActions (fun controller actions _ sendOutput -> promise {
+                    let work = deferred ()
+                    let running = controller().track (runningAction "op-a") (fun () -> work.pending)
+
+                    do! waitFor (fun () -> actions().Length = 1)
+
+                    sendOutput (outputFor "op-other" [ "not ours" ])
+                    do! Promise.sleep 20
+                    Vitest.expect(actions().[0].Log.Lines.Length).toBe 0
+
+                    // The provider is listening, because its own operation id still gets through.
+                    sendOutput (outputFor "op-a" [ "ours" ])
+                    do! waitFor (fun () -> actions().[0].Log.Lines.Length = 1)
+
+                    work.resolve (Ok())
+                    let! _ = running
+                    ()
                 })
         )
 )

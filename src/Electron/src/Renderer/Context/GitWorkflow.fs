@@ -224,6 +224,14 @@ type GitState = {
     RefreshOperationId: string option
     CurrentProgress: GitSidebarProgress option
     CurrentProgressPhase: string option
+    /// The steps that the progress events of the running operation went through, oldest first. The last one is
+    /// the current step.
+    CurrentSteps: GitSidebarStep[]
+    /// The phase code of the last step. Events with another phase code and a display message start a new step.
+    CurrentStepPhase: string option
+    /// The raw output that the running operation sent. Only the output of the operation that the sidebar shows
+    /// lands here, see isForeignOperation.
+    CurrentLog: OperationLog.OperationLog
     ErrorNotice: string option
     WarningNotice: string option
     PendingRefreshWarningNotice: string option
@@ -289,6 +297,9 @@ type GitState = {
         RefreshOperationId = None
         CurrentProgress = None
         CurrentProgressPhase = None
+        CurrentSteps = [||]
+        CurrentStepPhase = None
+        CurrentLog = OperationLog.empty
         ErrorNotice = None
         WarningNotice = None
         PendingRefreshWarningNotice = None
@@ -626,6 +637,7 @@ type Msg =
     | ResetWorkflow
     | DiffPageMsg of GitDiffMsg
     | SetCurrentProgress of VersionControlProgressDto option
+    | OperationOutputReceived of VersionControlOutputDto
     | OperationStarted of OperationRequestDto
     | ArcPathChanged of ArcRootPath
     | GitRepositoryInitialized of arcPath: string
@@ -880,7 +892,6 @@ let private mergeProgressUpdate (model: GitState) (progress: VersionControlProgr
             Method = None
             Stage = model.BusyNotice
             ProgressPercent = None
-            Output = None
         }
 
     if samePhase then
@@ -891,15 +902,59 @@ let private mergeProgressUpdate (model: GitState) (progress: VersionControlProgr
                 |> Option.orElse current.Stage
                 |> Option.orElse model.BusyNotice
             ProgressPercent = incomingPercent |> Option.orElse current.ProgressPercent
-            Output = None
         }
     else
         {
             Method = None
             Stage = progress.DisplayMessage |> Option.orElse model.BusyNotice
             ProgressPercent = incomingPercent
-            Output = None
         }
+
+/// Applies one progress event to the step list. A display message with a phase code other than the one of the
+/// last step starts a new step and the earlier steps are done. An event of the current phase updates the detail
+/// (the display message, when it differs from the label) and the percent of the current step. An event without
+/// display message starts no step. The library sends resets such as "refresh-state" this way.
+let private applyProgressToSteps
+    (steps: GitSidebarStep[])
+    (stepPhase: string option)
+    (progress: VersionControlProgressDto)
+    : GitSidebarStep[] * string option =
+    let percent = progressPercent progress
+
+    match progress.DisplayMessage with
+    | Some message when stepPhase <> Some progress.PhaseCode ->
+        let earlier = steps |> Array.map (fun step -> { step with IsCurrent = false })
+
+        let current: GitSidebarStep = {
+            Label = message
+            Detail = None
+            Percent = percent
+            IsCurrent = true
+        }
+
+        Array.append earlier [| current |], Some progress.PhaseCode
+    | _ when stepPhase = Some progress.PhaseCode ->
+        let lastIndex = steps.Length - 1
+
+        let updated =
+            steps
+            |> Array.mapi (fun index step ->
+                if index <> lastIndex then
+                    step
+                else
+                    {
+                        step with
+                            Detail =
+                                match progress.DisplayMessage with
+                                | Some message when message <> step.Label -> Some message
+                                | Some _ -> None
+                                | None -> step.Detail
+                            Percent = percent |> Option.orElse step.Percent
+                    }
+            )
+
+        updated, stepPhase
+    | _ -> steps, stepPhase
 
 /// The message shown for a structured failure: the library message plus its
 /// recovery instructions when it has any.
@@ -1399,6 +1454,9 @@ let private withBusyOperation busyOperation model = {
         BusyNotice = busyOperation |> Option.bind busyNoticeFromOperation
         CurrentProgress = None
         CurrentProgressPhase = None
+        CurrentSteps = [||]
+        CurrentStepPhase = None
+        CurrentLog = OperationLog.empty
         CurrentOperation = None
         RefreshOperationId = None
 }
@@ -4713,6 +4771,9 @@ let private clearBusy (model: GitState) = {
         BusyNotice = None
         CurrentProgress = None
         CurrentProgressPhase = None
+        CurrentSteps = [||]
+        CurrentStepPhase = None
+        CurrentLog = OperationLog.empty
         CurrentOperation = None
         RefreshOperationId = None
 }
@@ -4797,19 +4858,30 @@ let private operationRootId (operationId: string) =
     else
         operationId.Substring(0, separatorIndex)
 
-/// Whether a progress event belongs to an operation other than the one this workflow runs, such as
+/// Whether an event belongs to an operation other than the one this workflow runs, such as
 /// a file tree action that started in the same window. The sub-operations of a write share the root
 /// id of the write. A workflow that does not know its operation id (a silent refresh, the rename of the ARC
 /// folder) takes every event.
-let private isForeignOperation (model: GitState) (progress: VersionControlProgressDto) =
+let private isForeignOperation (model: GitState) (operationId: string) =
     let ownOperationId =
         model.CurrentOperation
         |> Option.map _.OperationId
         |> Option.orElse model.RefreshOperationId
 
     match ownOperationId with
-    | Some current -> operationRootId current <> operationRootId progress.OperationId
+    | Some current -> operationRootId current <> operationRootId operationId
     | None -> false
+
+/// Whether the sidebar shows the events (progress and output) of the operation with this id. A silent refresh has
+/// no notice text. Events from another source, such as the text diff scan, would otherwise show the progress
+/// banner that the silent refresh avoids. The rename of the ARC folder runs no version control call, so any event
+/// belongs to another operation.
+let private showsOperationEvents (model: GitState) (operationId: string) =
+    match model.BusyOperation with
+    | None -> false
+    | Some GitBusyOperation.Refreshing when model.BusyNotice.IsNone -> false
+    | Some GitBusyOperation.RenamingRepository -> false
+    | Some _ -> not (isForeignOperation model operationId)
 
 let private writeCmd
     (deps: GitDependencies)
@@ -4850,30 +4922,37 @@ let private updateCore
     match msg with
     | ResetWorkflow -> resetFor model, Cmd.none
     | DiffPageMsg diffMsg -> GitDiffPageLoader.update deps diffMsg model
-    // A silent refresh has no notice text. Progress from another source, such as the text diff
-    // scan, would otherwise show the progress banner that the silent refresh avoids.
-    | SetCurrentProgress(Some _) when
-        model.BusyOperation = Some GitBusyOperation.Refreshing
-        && model.BusyNotice.IsNone
-        ->
-        model, Cmd.none
-    | SetCurrentProgress(Some progress) when isForeignOperation model progress -> model, Cmd.none
-    // The rename of the ARC folder runs no version control call, so any progress belongs to another operation.
-    | SetCurrentProgress(Some _) when model.BusyOperation = Some GitBusyOperation.RenamingRepository -> model, Cmd.none
-    | SetCurrentProgress(Some progress) when model.BusyOperation.IsSome ->
+    | SetCurrentProgress(Some progress) when showsOperationEvents model progress.OperationId ->
+        let steps, stepPhase =
+            applyProgressToSteps model.CurrentSteps model.CurrentStepPhase progress
+
         {
             model with
                 CurrentProgress = Some(mergeProgressUpdate model progress)
                 CurrentProgressPhase = Some progress.PhaseCode
+                CurrentSteps = steps
+                CurrentStepPhase = stepPhase
         },
         Cmd.none
+    // Progress of a silent refresh, of another operation or of the rename of the ARC folder.
+    | SetCurrentProgress(Some _) when model.BusyOperation.IsSome -> model, Cmd.none
     | SetCurrentProgress _ ->
         {
             model with
                 CurrentProgress = None
                 CurrentProgressPhase = None
+                CurrentSteps = [||]
+                CurrentStepPhase = None
+                CurrentLog = OperationLog.empty
         },
         Cmd.none
+    | OperationOutputReceived output when showsOperationEvents model output.OperationId ->
+        {
+            model with
+                CurrentLog = OperationLog.append output.Entries model.CurrentLog
+        },
+        Cmd.none
+    | OperationOutputReceived _ -> model, Cmd.none
     | OperationStarted key when model.BusyOperation.IsSome ->
         match model.CurrentOperation with
         | Some currentOperation ->
@@ -5936,6 +6015,7 @@ let private updateCore
             model with
                 BusyOperation = Some phase
                 BusyNotice = busyNoticeFromOperation phase
+                // The bar starts over with each phase. The steps and the log cover the whole write.
                 CurrentProgress = None
                 CurrentProgressPhase = None
         },
@@ -6347,6 +6427,7 @@ let subscribe (_model: GitState) : Sub<Msg> = [
             Renderer.IpcReceiver.subscribeProxyReceiver<IVersionControlRendererApi> {
                 versionControlProgress = fun progress -> dispatch (SetCurrentProgress(Some progress))
                 versionControlOperationStarted = fun key -> dispatch (OperationStarted key)
+                versionControlOutput = fun output -> dispatch (OperationOutputReceived output)
             }
 
         { new System.IDisposable with

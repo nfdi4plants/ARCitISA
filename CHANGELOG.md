@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The whole provenance graph can be saved as a PNG image or copied to paste into Slack or Teams. (by @caroott)
 - Right-clicking a folder in the file tree offers "Download all LFS files" and "Free all local LFS copies", which act on every Git LFS file in the folder and its subfolders. (by @caroott)
 - While a folder downloads or frees its Git LFS files, its row in the file tree shows how many files are done, such as "3/40", and during a download the progress of the current step. (by @caroott)
+- The Git sidebar lists the steps of Download Changes and Upload Changes as they run, for example "Fetching online changes" and "Merging online changes", with live progress for the current step. A Save lists its steps in the same way. (by @caroott)
 - The Git sidebar shows the Git LFS downloads and frees that run from the file tree. When a Save waits for such an action, and when Download Changes or Upload Changes does, the sidebar names the action it waits for. (by @caroott)
 
 ### 🔄 Changed

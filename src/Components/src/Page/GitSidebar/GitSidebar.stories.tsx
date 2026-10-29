@@ -59,7 +59,6 @@ const buildProgressRunStatus = (progress: {
   Method?: string;
   Stage?: string;
   ProgressPercent?: number;
-  Output?: string;
 }) => ({
   // Fable DU: GitSidebarRunStatus.Progress
   tag: 2,
@@ -623,7 +622,6 @@ export const BusyProgressState: Story = {
       Method: "pull",
       Stage: "Receiving objects",
       ProgressPercent: 54,
-      Output: "remote: Enumerating objects: 18, done.\nremote: Counting objects: 100% (18/18), done.\n",
     }),
     callbacks: buildCallbacks(),
     downloadLargeFiles: true,
@@ -638,15 +636,6 @@ export const BusyProgressState: Story = {
     await expect(canvas.getByTestId("GitSidebarProgressBar")).toBeInTheDocument();
     const fillBar = canvas.getByTestId("GitSidebarProgressBar").firstElementChild;
     await expect(fillBar).toHaveAttribute("style", expect.stringContaining("width: 54%"));
-    const outputDetails = canvas.getByTestId("GitSidebarProgressOutput");
-    await expect(outputDetails).not.toHaveAttribute("open");
-    await expect(outputDetails).toHaveTextContent(
-      "remote: Enumerating objects: 18, done.",
-    );
-    const outputConsole = within(outputDetails).getByText(/remote: Enumerating objects/);
-    await expect(outputConsole).toHaveClass("swt:bg-base-content");
-    await expect(outputConsole).toHaveClass("swt:text-base-100");
-
     const sourceControlTitle = canvas.getByTestId("GitSidebarTitle");
     const trackingInfo = canvas.getByText("Tracking origin/feature/git-sidebar");
     expect(
@@ -668,7 +657,6 @@ export const CancelableUploadProgressState: Story = {
     runStatus: buildProgressRunStatus({
       Method: "lfs",
       Stage: "Uploading Git LFS objects",
-      Output: "Uploading LFS objects: 0% (0/6), 524 KB | 121 KB/s\n",
     }),
     callbacks: buildCallbacks({
       OnCancelOperation: cancelOperationSpy,
@@ -733,8 +721,8 @@ export const BusyNoticeState: Story = {
 
 const waitingHeadline = "Waits for downloading raw-data to finish";
 const backgroundActivities = [
-  { Label: "Downloading raw-data", Detail: "5/12 45%", ProgressPercent: 41.7 },
-  { Label: "Freeing notes.bin", Detail: undefined, ProgressPercent: undefined },
+  { Label: "Downloading raw-data", Detail: "5/12 45%", ProgressPercent: 41.7, Log: undefined },
+  { Label: "Freeing notes.bin", Detail: undefined, ProgressPercent: undefined, Log: undefined },
 ];
 
 export const WaitingForBackgroundActivity: Story = {
@@ -760,6 +748,86 @@ export const WaitingForBackgroundActivity: Story = {
     await expect(background).toHaveTextContent("Freeing notes.bin");
     await expect(canvas.getByTestId("GitSidebarBackgroundActivityBar-0")).toBeInTheDocument();
     await expect(canvas.queryByTestId("GitSidebarBackgroundActivityBar-1")).not.toBeInTheDocument();
+  },
+};
+
+const pullSteps = [
+  { Label: "Fetching online changes", Detail: undefined, Percent: undefined, IsCurrent: false },
+  { Label: "Merging online changes", Detail: undefined, Percent: undefined, IsCurrent: false },
+  {
+    Label: "Downloading large files",
+    Detail: "Downloading LFS objects (2/6), 524 KB",
+    Percent: 33,
+    IsCurrent: true,
+  },
+];
+
+const pullLogLines = [
+  { Kind: "command", Text: "git fetch origin" },
+  { Kind: "stderr", Text: "From https://datahub.example.org/arc" },
+  { Kind: "stdout", Text: "Receiving objects: 100% (18/18), done." },
+  { Kind: "command", Text: "git merge origin/main" },
+  { Kind: "notice", Text: "Already up to date with the tracked branch." },
+  { Kind: "command", Text: "git lfs pull" },
+  { Kind: "stderr", Text: "Downloading LFS objects: 33% (2/6), 524 KB | 121 KB/s" },
+];
+
+const buildPullProgress = () =>
+  buildProgressRunStatus({
+    Method: "pull",
+    Stage: "Downloading LFS objects (2/6), 524 KB",
+    ProgressPercent: 33,
+  });
+
+export const PullWithStepsAndLogs: Story = {
+  args: {
+    status: baseStatus,
+    changedFiles: changedFiles.slice(),
+    branchOptions: branchOptions.slice(),
+    runStatus: buildPullProgress(),
+    operationSteps: pullSteps,
+    operationLog: { Lines: pullLogLines, Omitted: 0 },
+    callbacks: buildCallbacks(),
+    downloadLargeFiles: true,
+    lfsAutoTrackThresholdMb: 1,
+    diffIndexingLimitMb: 1024,
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    await expect(canvas.getAllByTestId(/^GitSidebarStep-/)).toHaveLength(3);
+    await expect(canvas.getByTestId("GitSidebarStepDetail-2")).toHaveTextContent(
+      "Downloading LFS objects (2/6), 524 KB",
+    );
+
+    await expect(canvas.queryByTestId("GitSidebarLogPanel")).not.toBeInTheDocument();
+    await userEvent.click(canvas.getByTestId("GitSidebarShowLogs"));
+
+    const panel = canvas.getByTestId("GitSidebarLogPanel");
+    await expect(panel).toHaveTextContent("$ git fetch origin");
+    await expect(panel).toHaveTextContent("Receiving objects: 100% (18/18), done.");
+    await expect(canvas.queryByTestId("GitSidebarLogPanelOmitted-0")).not.toBeInTheDocument();
+
+    await userEvent.click(canvas.getByTestId("GitSidebarShowLogs"));
+    await expect(canvas.queryByTestId("GitSidebarLogPanel")).not.toBeInTheDocument();
+  },
+};
+
+export const PullWithOmittedLogLines: Story = {
+  args: {
+    ...PullWithStepsAndLogs.args,
+    operationLog: { Lines: pullLogLines, Omitted: 1342 },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    await userEvent.click(canvas.getByTestId("GitSidebarShowLogs"));
+
+    const panel = canvas.getByTestId("GitSidebarLogPanel");
+    await expect(canvas.getByTestId("GitSidebarLogPanelOmitted-0")).toHaveTextContent("1342");
+    await expect(panel.firstElementChild?.firstElementChild).toBe(
+      canvas.getByTestId("GitSidebarLogPanelOmitted-0"),
+    );
   },
 };
 

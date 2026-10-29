@@ -28,6 +28,7 @@
     <Compile Include="GitDiffPageWorkflow.test.fs" />
     <Compile Include="GitWorkflowUnitResult.test.fs" />
     <Compile Include="GitLabCreateProject.test.fs" />
+    <Compile Include="OperationLog.test.fs" />
     <Compile Include="LfsActivityContext.test.fs" />
     <Compile Include="LargeObjectStore.test.fs" />
     <Compile Include="LargeObjectStore.test.rtl.fs" />

@@ -221,7 +221,26 @@ let private expectedSidebarProgress stage percent : GitSidebarProgress = {
     Method = None
     Stage = Some stage
     ProgressPercent = Some percent
-    Output = None
+}
+
+let private outputOf operationId (lines: (string * string) list) : VersionControlOutputDto = {
+    OperationId = operationId
+    Entries =
+        lines
+        |> List.map (fun (kind, text) -> {
+            CommandId = "cmd-1"
+            Kind = kind
+            Text = text
+            IsPartial = false
+        })
+        |> List.toArray
+}
+
+let private sidebarStep label detail percent isCurrent : GitSidebarStep = {
+    Label = label
+    Detail = detail
+    Percent = percent
+    IsCurrent = isCurrent
 }
 
 [<Emit("new Event($0, { bubbles: true })")>]
@@ -3498,7 +3517,7 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "SetCurrentProgress keeps Output empty for display messages",
+            "SetCurrentProgress shows the display message as the stage",
             fun () -> promise {
                 let current = expectedSidebarProgress "Receiving objects" 72.
 
@@ -3528,9 +3547,202 @@ Vitest.describe (
 
                 Vitest.expect(nextState.CurrentProgress).toEqual (Some expectedProgress)
                 Vitest.expect(currentRunStatus nextState).toEqual (Some(GitSidebarRunStatus.Progress expectedProgress))
-                Vitest.expect(nextState.CurrentProgress.Value.Output).toEqual (None)
                 Vitest.expect(messages).toEqual ([||])
             }
+        )
+
+        Vitest.test (
+            "OperationOutputReceived appends the output of the operation that the workflow runs and of its sub-operations",
+            fun () ->
+                let pullState = {
+                    runningState with
+                        BusyOperation = Some GitBusyOperation.PullingFromRemote
+                        BusyNotice = Some "Pulling from remote"
+                        CurrentOperation = Some { OperationId = "pull-1" }
+                }
+
+                let first, _ =
+                    update
+                        defaultDependencies
+                        ignore
+                        (OperationOutputReceived(outputOf "pull-1" [ "command", "git fetch" ]))
+                        pullState
+
+                let second, _ =
+                    update
+                        defaultDependencies
+                        ignore
+                        (OperationOutputReceived(outputOf "pull-1/2" [ "stdout", "done" ]))
+                        first
+
+                Vitest.expect(second.CurrentLog.Lines |> Array.map _.Text).toEqual [| "git fetch"; "done" |]
+        )
+
+        Vitest.test (
+            "OperationOutputReceived ignores the output of another operation id",
+            fun () ->
+                let pullState = {
+                    runningState with
+                        BusyOperation = Some GitBusyOperation.PullingFromRemote
+                        BusyNotice = Some "Pulling from remote"
+                        CurrentOperation = Some { OperationId = "pull-1" }
+                }
+
+                let nextState, _ =
+                    update
+                        defaultDependencies
+                        ignore
+                        (OperationOutputReceived(outputOf "lfs-action-1" [ "command", "git lfs pull" ]))
+                        pullState
+
+                Vitest.expect(nextState.CurrentLog.Lines.Length).toBe 0
+        )
+
+        Vitest.test (
+            "OperationOutputReceived ignores output while nothing is busy",
+            fun () ->
+                let nextState, _ =
+                    update
+                        defaultDependencies
+                        ignore
+                        (OperationOutputReceived(outputOf "late-1" [ "stdout", "late" ]))
+                        runningState
+
+                Vitest.expect(nextState.CurrentLog.Lines.Length).toBe 0
+        )
+
+        Vitest.test (
+            "the log and the steps reset when the operation ends",
+            fun () ->
+                let busyState = {
+                    runningState with
+                        BusyOperation = Some GitBusyOperation.Refreshing
+                        BusyNotice = Some "Refreshing"
+                }
+
+                let withOutput, _ =
+                    update
+                        defaultDependencies
+                        ignore
+                        (OperationOutputReceived(outputOf "op-1" [ "stdout", "line" ]))
+                        busyState
+
+                let withSteps, _ =
+                    update
+                        defaultDependencies
+                        ignore
+                        (SetCurrentProgress(Some(progressDto "fetch" (Some "Fetching online changes") None None)))
+                        withOutput
+
+                Vitest.expect(withSteps.CurrentLog.Lines.Length).toBe 1
+                Vitest.expect(withSteps.CurrentSteps.Length).toBe 1
+
+                let ended, _ =
+                    update
+                        defaultDependencies
+                        ignore
+                        (RefreshCompleted(withSteps.RefreshRequestId, Error "failed"))
+                        withSteps
+
+                Vitest.expect(ended.CurrentLog.Lines.Length).toBe 0
+                Vitest.expect(ended.CurrentSteps.Length).toBe 0
+                Vitest.expect(ended.CurrentStepPhase).toEqual None
+        )
+
+        Vitest.test (
+            "a progress event with a display message and a new phase code starts the next step",
+            fun () ->
+                let pullState = {
+                    runningState with
+                        BusyOperation = Some GitBusyOperation.PullingFromRemote
+                        BusyNotice = Some "Pulling from remote"
+                }
+
+                let events = [
+                    progressDto "fetch" (Some "Fetching online changes") None None
+                    progressDto "merge" (Some "Merging online changes") None None
+                    // A reset has no display message and starts no step.
+                    progressDto "refresh-state" None None None
+                    progressDto "lfs-pull" (Some "Downloading large files") None None
+                ]
+
+                let finalState =
+                    events
+                    |> List.fold
+                        (fun state event ->
+                            fst (update defaultDependencies ignore (SetCurrentProgress(Some event)) state)
+                        )
+                        pullState
+
+                Vitest
+                    .expect(finalState.CurrentSteps)
+                    .toEqual (
+                        [|
+                            sidebarStep "Fetching online changes" None None false
+                            sidebarStep "Merging online changes" None None false
+                            sidebarStep "Downloading large files" None None true
+                        |]
+                    )
+        )
+
+        Vitest.test (
+            "progress events of the current phase update the detail and the percent of the current step",
+            fun () ->
+                let pullState = {
+                    runningState with
+                        BusyOperation = Some GitBusyOperation.PullingFromRemote
+                        BusyNotice = Some "Pulling from remote"
+                }
+
+                let apply state event =
+                    fst (update defaultDependencies ignore (SetCurrentProgress(Some event)) state)
+
+                let started =
+                    apply pullState (progressDto "merge" (Some "Merging online changes") None None)
+
+                let metered =
+                    apply
+                        started
+                        (progressDto "merge" (Some "Receiving objects (12/80), 1.2 MB") (Some 15.0) (Some 100.0))
+
+                Vitest
+                    .expect(metered.CurrentSteps)
+                    .toEqual (
+                        [|
+                            sidebarStep
+                                "Merging online changes"
+                                (Some "Receiving objects (12/80), 1.2 MB")
+                                (Some 15.0)
+                                true
+                        |]
+                    )
+
+                // An event without a message keeps the detail and moves the percent.
+                let moved = apply metered (progressDto "merge" None (Some 40.0) (Some 100.0))
+
+                Vitest
+                    .expect(moved.CurrentSteps)
+                    .toEqual (
+                        [|
+                            sidebarStep
+                                "Merging online changes"
+                                (Some "Receiving objects (12/80), 1.2 MB")
+                                (Some 40.0)
+                                true
+                        |]
+                    )
+
+                // The label again as message means the step has no extra detail.
+                let restated =
+                    apply moved (progressDto "merge" (Some "Merging online changes") None None)
+
+                Vitest
+                    .expect(restated.CurrentSteps)
+                    .toEqual (
+                        [|
+                            sidebarStep "Merging online changes" None (Some 40.0) true
+                        |]
+                    )
         )
 
         Vitest.test (

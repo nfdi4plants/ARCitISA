@@ -343,6 +343,7 @@ module MainToRendererIpc =
     type IVersionControlRendererApi = {
         versionControlProgress: VersionControlProgressDto -> unit
         versionControlOperationStarted: OperationRequestDto -> unit
+        versionControlOutput: VersionControlOutputDto -> unit
     }
 
     type IHasUnsavedArcChangesRendererApi = {

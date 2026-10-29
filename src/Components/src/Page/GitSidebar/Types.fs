@@ -37,7 +37,24 @@ type GitSidebarProgress = {
     Method: string option
     Stage: string option
     ProgressPercent: float option
-    Output: string option
+}
+
+/// One step of the running operation, for example "Fetching online changes". The steps before the current one
+/// are done. Detail is the latest message of the current step, such as "Receiving objects (12/80)".
+type GitSidebarStep = {
+    Label: string
+    Detail: string option
+    Percent: float option
+    IsCurrent: bool
+}
+
+/// One line of the raw output of a command. Kind is "command", "stdout", "stderr" or "notice".
+type GitSidebarLogLine = { Kind: string; Text: string }
+
+/// The raw output of an operation. Omitted counts the oldest lines that the log no longer holds.
+type GitSidebarLog = {
+    Lines: GitSidebarLogLine[]
+    Omitted: int
 }
 
 [<RequireQualifiedAccess>]
@@ -54,6 +71,8 @@ type GitSidebarBackgroundActivity = {
     /// Extra text after the label, such as a count.
     Detail: string option
     ProgressPercent: float option
+    /// The raw output of the task. The notice offers "Show logs" when it holds a line.
+    Log: GitSidebarLog option
 }
 
 type GitSidebarCreateBranchRequest = {

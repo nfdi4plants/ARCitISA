@@ -132,6 +132,7 @@ type FileTree =
                         FileCount = 1
                         Count = None
                         StepPercent = None
+                        Log = Renderer.Context.OperationLog.empty
                     }
 
                     lfsActivityCtx.track runningAction (fun () -> runAction operationId path)
@@ -197,6 +198,7 @@ type FileTree =
                                         FileCount = paths.Length
                                         Count = None
                                         StepPercent = None
+                                        Log = Renderer.Context.OperationLog.empty
                                     }
 
                                     lfsActivityCtx.track
@@ -354,12 +356,19 @@ type FileTree =
             )
 
         // The live progress text goes on the rows of the running actions. Only these rows are copied. The item
-        // cache and the path indexes above are not rebuilt for a progress event.
+        // cache and the path indexes above are not rebuilt for a progress event. Log output also changes the running
+        // actions, so the memo below follows the text of the details, and a log batch leaves the rows alone.
+        let busyDetailsNow =
+            Renderer.Context.LfsActivityContext.LfsRunningAction.busyDetails runningLfsActions
+
+        let busyDetailsKey =
+            busyDetailsNow
+            |> Map.toArray
+            |> Array.map (fun (path, text) -> path + "\u0000" + text)
+            |> String.concat "\n"
+
         let busyDetails =
-            React.useMemo (
-                (fun () -> Renderer.Context.LfsActivityContext.LfsRunningAction.busyDetails runningLfsActions),
-                [| box runningLfsActions |]
-            )
+            React.useMemo ((fun () -> busyDetailsNow), [| box busyDetailsKey |])
 
         let fileItem =
             React.useMemo (

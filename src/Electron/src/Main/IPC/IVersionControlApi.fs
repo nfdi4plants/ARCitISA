@@ -19,9 +19,14 @@ open VersionControlService.Abstractions
 type private RendererBridge = {
     Progress: VersionControlProgressDto -> unit
     Started: OperationRequestDto -> unit
+    Output: VersionControlOutputDto -> unit
 }
 
-let private silentBridge: RendererBridge = { Progress = ignore; Started = ignore }
+let private silentBridge: RendererBridge = {
+    Progress = ignore
+    Started = ignore
+    Output = ignore
+}
 
 /// Coalesces the progress of one operation. The library can report many events per second,
 /// and the renderer only needs the latest state of a phase. An event goes out at once when its
@@ -112,6 +117,7 @@ let private bridgeForWindow (window: BrowserWindow) : RendererBridge =
     {
         Progress = fun progress -> send (fun api -> api.versionControlProgress progress)
         Started = fun key -> send (fun api -> api.versionControlOperationStarted key)
+        Output = fun output -> send (fun api -> api.versionControlOutput output)
     }
 
 let private tryBridgeFromEvent (event: IpcMainInvokeEvent) =

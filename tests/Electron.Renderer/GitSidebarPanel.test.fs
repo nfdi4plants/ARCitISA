@@ -31,6 +31,7 @@ let private runningAction (kind: LfsActionKind) (target: string) (isFolder: bool
     FileCount = 10
     Count = None
     StepPercent = None
+    Log = Renderer.Context.OperationLog.empty
 }
 
 let private folderAction = {
@@ -77,6 +78,37 @@ Vitest.describe (
                 Vitest.expect(item.Detail).toEqual (LfsRunningAction.progressText metered)
                 Vitest.expect(items.[1].Detail).toEqual None
                 Vitest.expect(items.[1].ProgressPercent).toEqual None
+        )
+
+        Vitest.test (
+            "a background item carries the lines of its action log and no log while the action has no output",
+            fun () ->
+                Vitest.expect(items.[0].Log).toEqual None
+
+                let output: Swate.Electron.Shared.VersionControlTypes.VersionControlOutputDto = {
+                    OperationId = folderAction.OperationId
+                    Entries = [|
+                        {
+                            CommandId = "cmd-1"
+                            Kind = "command"
+                            Text = "git lfs pull"
+                            IsPartial = false
+                        }
+                    |]
+                }
+
+                let withOutput = {
+                    folderAction with
+                        Log = Renderer.Context.OperationLog.append output.Entries folderAction.Log
+                }
+
+                let log = (backgroundActivityItems [| withOutput |]).[0].Log
+
+                Vitest.expect(log.Value.Lines |> Array.map (fun line -> line.Kind, line.Text)).toEqual [|
+                    "command", "git lfs pull"
+                |]
+
+                Vitest.expect(log.Value.Omitted).toBe 0
         )
 
         Vitest.test (

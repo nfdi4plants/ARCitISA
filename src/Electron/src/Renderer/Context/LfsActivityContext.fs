@@ -154,7 +154,7 @@ module LfsProgressPhase =
     let MaterializeCheckout = "lfs-materialize-checkout"
 
 /// One running download or free of the file tree. Count and StepPercent come from the progress events that the
-/// library reported for OperationId.
+/// library reported for OperationId. Log holds the raw output that it sent for OperationId.
 type LfsRunningAction = {
     OperationId: string
     Kind: LfsActionKind
@@ -166,6 +166,7 @@ type LfsRunningAction = {
     Count: (int * int) option
     /// Percent of the current transfer step while Git LFS reports one. None when no meter with numbers is active.
     StepPercent: float option
+    Log: OperationLog.OperationLog
 }
 
 module LfsRunningAction =
@@ -267,6 +268,24 @@ module LfsRunningActionsState =
         else
             next
 
+    /// Appends the entries to the log of the action that owns the operation id of the output. Output of an
+    /// unknown operation id leaves the state as it is.
+    let applyOutput (output: VersionControlOutputDto) (state: LfsRunningActionsState) : LfsRunningActionsState =
+        if output.Entries.Length = 0 || not (owns output.OperationId state) then
+            state
+        else
+            state
+            |> List.map (fun (scopeId, action) ->
+                if action.OperationId = output.OperationId then
+                    scopeId,
+                    {
+                        action with
+                            Log = OperationLog.append output.Entries action.Log
+                    }
+                else
+                    scopeId, action
+            )
+
     /// The running actions of one ARC in start order.
     let forScope (scopeId: string option) (state: LfsRunningActionsState) : LfsRunningAction[] =
         match scopeId with
@@ -343,7 +362,7 @@ let LfsActivityCtxProvider (children: ReactElement) =
         actionsRef.current <- next
         setActionsState next
 
-    // Each action keeps the numbers of its own operation id and ignores the progress of every other operation.
+    // Each action keeps the numbers and the output of its own operation id and ignores every other operation.
     // An event that changes no number does not touch the state.
     Renderer.IpcReceiver.useProxyReceiver<IVersionControlRendererApi> (
         (fun () -> {
@@ -355,6 +374,12 @@ let LfsActivityCtxProvider (children: ReactElement) =
                         if not (obj.ReferenceEquals(next, actionsRef.current)) then
                             updateActions next
             versionControlOperationStarted = ignore
+            versionControlOutput =
+                fun output ->
+                    let next = LfsRunningActionsState.applyOutput output actionsRef.current
+
+                    if not (obj.ReferenceEquals(next, actionsRef.current)) then
+                        updateActions next
         }),
         [||]
     )

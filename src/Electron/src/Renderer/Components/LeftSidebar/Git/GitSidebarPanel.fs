@@ -63,8 +63,31 @@ let private activityVerb (kind: Renderer.Context.LfsActivityContext.LfsActionKin
     | Renderer.Context.LfsActivityContext.LfsActionKind.Download -> "Downloading"
     | Renderer.Context.LfsActivityContext.LfsActionKind.Free -> "Freeing"
 
+/// The log for the sidebar. A log without lines is None, so the notice offers no "Show logs" button for it.
+let sidebarLog
+    (log: Renderer.Context.OperationLog.OperationLog)
+    : Swate.Components.Page.GitSidebarTypes.GitSidebarLog option =
+    if log.Lines.Length = 0 then
+        None
+    else
+        let lines =
+            log.Lines
+            |> Array.map (fun line ->
+                let mapped: Swate.Components.Page.GitSidebarTypes.GitSidebarLogLine = {
+                    Kind = line.Kind
+                    Text = line.Text
+                }
+
+                mapped
+            )
+
+        let mapped: Swate.Components.Page.GitSidebarTypes.GitSidebarLog = { Lines = lines; Omitted = log.Omitted }
+
+        Some mapped
+
 /// One background item per running file tree action. The label names the kind and the folder or file. The detail
-/// and the percent come from the progress that the action reported, the same text as on the file tree row.
+/// and the percent come from the progress that the action reported, the same text as on the file tree row. The
+/// log is the output of the action.
 let backgroundActivityItems
     (actions: Renderer.Context.LfsActivityContext.LfsRunningAction[])
     : Swate.Components.Page.GitSidebarTypes.GitSidebarBackgroundActivity[] =
@@ -74,6 +97,7 @@ let backgroundActivityItems
             Label = $"{activityVerb action.Kind} {Swate.Components.Shared.PathHelpers.getFileName action.Target}"
             Detail = Renderer.Context.LfsActivityContext.LfsRunningAction.progressText action
             ProgressPercent = Renderer.Context.LfsActivityContext.LfsRunningAction.progressPercent action
+            Log = sidebarLog action.Log
         }
 
         item
@@ -121,6 +145,10 @@ let Main () =
 
     let backgroundActivities =
         React.useMemo ((fun () -> backgroundActivityItems runningLfsActions), [| box runningLfsActions |])
+
+    // The log changes with every batch of output. A sidebar render for something else keeps the mapped lines.
+    let operationLog =
+        React.useMemo ((fun () -> sidebarLog gitStateCtx.state.CurrentLog), [| box gitStateCtx.state.CurrentLog |])
 
     // The dialog resets its name and owner state when the prompt object changes. The model keeps
     // the same prompt object between unrelated updates, so a re-render of the panel keeps them.
@@ -253,6 +281,8 @@ let Main () =
             branchOptions = gitStateCtx.state.BranchOptions,
             ?runStatus = runStatus,
             backgroundActivities = backgroundActivities,
+            operationSteps = gitStateCtx.state.CurrentSteps,
+            ?operationLog = operationLog,
             ?busyHeadlineOverride =
                 waitingHeadline
                     gitStateCtx.state.BusyOperation

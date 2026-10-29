@@ -362,6 +362,22 @@ type VersionControlProgressDto = {
     DisplayMessage: string option
 }
 
+/// One line of the raw output of a command that an operation runs. Kind is "command", "stdout", "stderr" or
+/// "notice". Text is redacted. A partial entry is a snapshot of a line that is still being rewritten (a progress
+/// meter). The next entry with the same CommandId and Kind replaces it.
+type VersionControlOutputEntryDto = {
+    CommandId: string
+    Kind: string
+    Text: string
+    IsPartial: bool
+}
+
+/// A batch of output entries of the operation with this id.
+type VersionControlOutputDto = {
+    OperationId: string
+    Entries: VersionControlOutputEntryDto[]
+}
+
 /// Codes the library and the host report. The renderer routes on some of them,
 /// and tests build failures with others.
 /// Each group below names its producer.
