@@ -164,7 +164,7 @@ type TemplateImportModal =
                 Html.div [
                     prop.className "swt:flex swt:flex-col swt:gap-2"
                     prop.children [
-                        TableImportPreview.ImportModeSelect(importType, setImportType)
+                        ImportModeSelect.ImportModeSelect(importType, setImportType)
                         Html.div [ prop.className "swt:divider swt:my-1" ]
                         Html.div [
                             prop.className "swt:text-xs swt:opacity-70"

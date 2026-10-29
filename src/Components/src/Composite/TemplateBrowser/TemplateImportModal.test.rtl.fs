@@ -109,3 +109,46 @@ Vitest.test (
         let nameInput = RTL.screen.getByLabelText "New table name" :?> HTMLInputElement
         Vitest.expect(nameInput.value).toBe "SugarExtraction"
 )
+
+let private withColumns (template: Template) =
+    template.Table.AddColumn(CompositeHeader.Input IOType.Source)
+    template.Table.AddColumn(CompositeHeader.Output IOType.Sample)
+    template
+
+let private isImportDisabled () =
+    (importButton () :?> HTMLButtonElement).disabled
+
+Vitest.test (
+    "unselecting all columns disables the import until a column is selected again",
+    fun () ->
+        let template = withColumns (Template.init "SugarExtraction")
+        renderModal template [||] ignore
+
+        RTL.fireEvent.click (RTL.screen.getByLabelText "Create new table")
+        Vitest.expect(isImportDisabled ()).toBe false
+
+        RTL.fireEvent.click (RTL.screen.getByText "Unselect all")
+        Vitest.expect(isImportDisabled ()).toBe true
+        RTL.screen.getByTestId "table-import-no-columns-0" |> ignore
+
+        RTL.fireEvent.click (RTL.screen.getAllByRole("checkbox").[0])
+        Vitest.expect(isImportDisabled ()).toBe false
+        Vitest.expect(RTL.screen.queryByTestId("table-import-no-columns-0").IsNone).toBe true
+)
+
+Vitest.test (
+    "a template that is not imported does not block the import when all its columns are unselected",
+    fun () ->
+        let first = withColumns (Template.init "First")
+        let second = withColumns (Template.init "Second")
+        RTL.render (modal [| first; second |] [||] ignore) |> ignore
+
+        for radio in RTL.screen.getAllByLabelText "Create new table" do
+            RTL.fireEvent.click radio
+
+        RTL.fireEvent.click (RTL.screen.getAllByText("Unselect all").[0])
+        Vitest.expect(isImportDisabled ()).toBe true
+
+        RTL.fireEvent.click (RTL.screen.getAllByLabelText("Do not import").[0])
+        Vitest.expect(isImportDisabled ()).toBe false
+)

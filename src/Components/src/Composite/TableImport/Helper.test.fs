@@ -421,8 +421,7 @@ Vitest.test (
         let sources = [|
             for i in 0..2 ->
                 let table = createTemplate 1
-                table.Name <- "Same"
-                sourceOf i table
+                sourceOf i (ArcTable.fromArcTableValues ("Same", table.Headers, table.Values))
         |]
 
         let result = applyImport (createBasicAssay ()) sources jsonDefaults |> applied
@@ -488,14 +487,66 @@ Vitest.test (
         let decisions = {
             jsonDefaults with
                 Actions = Map [ 1, TableImportAction.NoImport ]
-                DeselectedColumns = Set.singleton (0, 3)
+                DeselectedColumns = Set.ofList [ 0, 3; 2, 4 ]
         }
 
         let result = applyImport (createBasicAssay ()) sources decisions |> applied
         let tables = importedTables result
+
+        let parameter (index: int) =
+            CompositeHeader.Parameter(OntologyAnnotation($"Parameter {index}"))
+
         Vitest.expect(tables.Count).toBe 3
         Vitest.expect(tables.[1].ColumnCount).toBe (sources.[0].Table.ColumnCount - 1)
-        Vitest.expect(tables.[2].ColumnCount).toBe sources.[2].Table.ColumnCount
+        Vitest.expect(tables.[1].Headers.Contains(parameter 0)).toBe false
+        Vitest.expect(tables.[1].Headers.Contains(parameter 1)).toBe true
+        // Source 2 sits behind the skipped source 1, so its deselection needs the position remap.
+        Vitest.expect(tables.[2].ColumnCount).toBe (sources.[2].Table.ColumnCount - 1)
+        Vitest.expect(tables.[2].Headers.Contains(parameter 1)).toBe false
+        Vitest.expect(tables.[2].Headers.Contains(parameter 0)).toBe true
+)
+
+Vitest.test (
+    "an error inside the import returns Error and leaves the current file unchanged",
+    fun () ->
+        let template = ArcTable.init "Comments"
+
+        for name in [ "A"; "B"; "C" ] do
+            template.AddColumn(
+                CompositeHeader.Comment name,
+                ResizeArray [
+                    CompositeCell.FreeText $"{name}0"
+                    CompositeCell.FreeText $"{name}1"
+                ]
+            )
+
+        // AddColumn refuses a second Comment "Notes", but a table decoded from JSON can contain one.
+        let source =
+            ArcTable.fromArcTableValues (
+                "Comments",
+                ResizeArray [
+                    CompositeHeader.Comment "Notes"
+                    CompositeHeader.Comment "Notes"
+                    CompositeHeader.Comment "Other"
+                ],
+                template.Copy().Values
+            )
+
+        let current = createBasicAssay ()
+        // Deselecting one column leaves the plain copy path, so the duplicate header is rejected.
+        let decisions = {
+            jsonDefaults with
+                DeselectedColumns = Set.singleton (0, 2)
+        }
+
+        match applyImport current [| sourceOf 0 source |] decisions with
+        | Ok _ -> failwith "Expected an error"
+        | Error _ -> ()
+
+        let tables = current.Tables()
+        Vitest.expect(tables.Count).toBe 1
+        Vitest.expect(tables.[0].Name).toBe "New Table 0"
+        Vitest.expect(tables.[0].ColumnCount).toBe 3
 )
 
 Vitest.test (
@@ -572,4 +623,50 @@ Vitest.test (
 
         applyImport current sources noTarget
         |> expectError "Select a table in the editor to append columns to."
+)
+
+let private columnTable (cells: CompositeCell list) =
+    let table = ArcTable.init "Preview"
+    table.AddColumn(CompositeHeader.FreeText "Values", ResizeArray cells)
+    table
+
+let private freeTexts (values: string list) =
+    values |> List.map CompositeCell.FreeText
+
+Vitest.test (
+    "a column preview skips a missing cell",
+    fun () ->
+        let table = ArcTable.init "Sparse"
+
+        table.AddColumn(
+            CompositeHeader.Input IOType.Source,
+            ResizeArray [ for i in 1..3 -> CompositeCell.FreeText $"s{i}" ]
+        )
+
+        table.AddColumn(CompositeHeader.Parameter(OntologyAnnotation "Sparse"))
+        table.SetCellAt(1, 1, CompositeCell.Term(OntologyAnnotation "set"))
+
+        Vitest.expect((table.TryGetCellAt(1, 0)).IsNone).toBe true
+        Vitest.expect(columnValuePreview table 1).toBe "set"
+)
+
+Vitest.test (
+    "a column preview keeps the first three distinct values in row order",
+    fun () ->
+        let table = columnTable (freeTexts [ "b"; "a"; "b"; "c"; "d"; "e" ])
+        Vitest.expect(columnValuePreview table 0).toBe "b | a | c"
+)
+
+Vitest.test (
+    "a column preview drops whitespace-only values",
+    fun () ->
+        let table = columnTable (freeTexts [ "  "; " a "; "	" ])
+        Vitest.expect(columnValuePreview table 0).toBe "a"
+)
+
+Vitest.test (
+    "a column preview of empty cells says there are no values",
+    fun () ->
+        let table = columnTable (freeTexts [ ""; " " ])
+        Vitest.expect(columnValuePreview table 0).toBe "No values"
 )

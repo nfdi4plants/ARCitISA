@@ -10,6 +10,7 @@ type TableImportAction =
     | NoImport
 
 /// A table offered for import. Index is the position among the offered tables and is the key everywhere.
+/// Name is the label shown to the user. A new table is named after Table.Name.
 type ImportSource = {
     Index: int
     Name: string

@@ -246,6 +246,7 @@
     <Compile Include="Composite\TemplateBrowser\TemplateActions.fs" />
     <Compile Include="Composite\TemplateBrowser\TemplateActions.test.fs" />
     <Compile Include="Composite\TemplateBrowser\TemplateFilter.fs" />
+    <Compile Include="Composite\TableImport\ImportModeSelect.fs" />
     <Compile Include="Composite\TableImport\TableImportPreview.fs" />
     <Compile Include="Composite\TableImport\TableImportPreview.test.rtl.fs" />
     <Compile Include="Composite\TemplateBrowser\TemplateImportModal.fs" />
