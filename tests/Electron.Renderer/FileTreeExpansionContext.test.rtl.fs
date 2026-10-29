@@ -1110,6 +1110,26 @@ Vitest.describe (
         )
 
         Vitest.test (
+            "a selected folder stays collapsed while the folders above it open",
+            fun () -> promise {
+                let ctx = ref None
+                let store = newStore ()
+                store.ApplyDirectoryUpdate(update 2 "data" [ dir "data/S1" ])
+                store.ApplyDirectoryUpdate(update 3 "data/S1" [ file "data/S1/isa.study.xlsx" ])
+
+                let env =
+                    mount store (apiWith (newCalls ()) unusedLoad) (Probe(fun value -> ctx.Value <- Some value))
+
+                do! RTL.act (fun () -> promise { ctx.Value.Value.revealPaths [ "data" ] })
+                do! RTL.act (fun () -> promise { env.SetSelection(ArcSelection.forTreePath (Some "data/S1")) })
+                do! waitFor (fun () -> ctx.Value.Value.expandedIds.Contains "data")
+                do! Promise.sleep 30
+
+                Vitest.expect(ctx.Value.Value.expandedIds.Contains "data/S1").toBe false
+            }
+        )
+
+        Vitest.test (
             "opens a folder target itself as well as the folders above it",
             fun () -> promise {
                 let ctx = ref None
