@@ -32,9 +32,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### 🔄 Changed
 
 - Choosing a JSON file no longer changes the ARC right away. The ARC changes only when you confirm the import in the dialog. (by @Etschbeijer)
-- For an investigation, workflow, template or DataMap, the JSON import asks before it replaces the content of the open file. (by @Etschbeijer)
+- For an investigation, workflow, template or DataMap, the JSON import asks before it replaces the content of the open file. A workflow keeps its identifier, so it stays in its folder. (by @Etschbeijer)
 - The JSON import describes each JSON format and says why a file could not be read. (by @Etschbeijer)
-- The template import dialog shows the size of each template and explains each import mode. Import stays disabled while an imported template has no column selected. (by @Etschbeijer)
+- The template import dialog uses the same choices as the JSON import ("Create new table", "Append to active table", "Do not import", and "Headers only", "With units", "With values"). It shows the size of each template and explains each import mode. (by @Etschbeijer)
+- Import in the template dialog stays disabled while an imported template has no column selected. (by @Etschbeijer)
 - New files and folders and renamed items can't use names that Windows does not allow, such as names with a colon or names like CON and AUX, so the ARC can also be downloaded and used on Windows. #1429 (by @Etschbeijer)
 - "Import files" and "Import folders" stop with a message if a name does not work on Windows, for example a name with a colon or a device name like CON or AUX, or if a name starts or ends with a space. This covers everything inside picked folders, too. #1429 (by @Etschbeijer)
 - "Import files" and "Import folders" treat upper and lower case as the same. They stop with a message if an item with the same name, ignoring case, already exists in the target folder, or if two imported items in the same folder differ only in case. The same holds for names that look alike but are stored differently, such as "Café" with a combined or a separate accent. #1429 (by @Etschbeijer)
