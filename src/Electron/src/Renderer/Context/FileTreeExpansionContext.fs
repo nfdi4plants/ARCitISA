@@ -57,6 +57,21 @@ let ancestorPaths (path: string) : string list =
     [ 1 .. segments.Length - 1 ]
     |> List.map (fun count -> String.concat "/" segments.[.. count - 1])
 
+/// The expanded ids after a reveal opens the folders in toOpen. Collapsing a folder keeps the ids
+/// below it, so a plain union would reopen subfolders the user closed. For each folder that was not
+/// expanded before, it drops the ids below it that the reveal does not open too.
+let revealExpansion (current: Set<string>) (toOpen: Set<string>) : Set<string> =
+    if Set.isSubset toOpen current then
+        current
+    else
+        let newlyOpened = Set.difference toOpen current
+
+        // The root "" gives the prefix "/", which no id has. The root is always shown, so a reveal of it drops nothing.
+        let isBelowNewlyOpened (id: string) =
+            newlyOpened |> Set.exists (fun folder -> id.StartsWith(folder + "/"))
+
+        current |> Set.filter (isBelowNewlyOpened >> not) |> Set.union toOpen
+
 type FileTreeExpansionApi = {
     loadDirectory: string -> JS.Promise<Result<FileTreeDirectoryUpdateDto, exn>>
     revalidateDirectories: string[] -> JS.Promise<Result<unit, exn>>
@@ -376,12 +391,7 @@ let FileTreeExpansionCtxProvider (api: FileTreeExpansionApi, children: ReactElem
                 && (r.IsExplicit || selectionRef.current |> Option.exists (fun s -> r.Paths = [ s ]))
                 && not toOpen.IsEmpty
             then
-                setExpandedIds (fun current ->
-                    if Set.isSubset toOpen current then
-                        current
-                    else
-                        Set.union current toOpen
-                )
+                setExpandedIds (fun current -> revealExpansion current toOpen)
 
             if slot.current = Some r then
                 slot.current <- None
