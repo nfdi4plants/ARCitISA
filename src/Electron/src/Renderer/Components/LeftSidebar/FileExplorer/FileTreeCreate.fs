@@ -29,7 +29,8 @@ module FileTreeCreateWorkflow =
 
         { item with Id = path }
 
-    /// Creates the item and asks the tree to reveal it. Success closes the dialog and an error keeps it open.
+    /// Creates the item and asks the tree to reveal the path the create call returns, which is the zone folder for a
+    /// study or assay. Success closes the dialog and an error keeps it open.
     /// The created item then opens like a click on it, so a study or assay shows its metadata and a new file opens.
     let createAndReveal
         (config: CreateConfig)
@@ -41,9 +42,9 @@ module FileTreeCreateWorkflow =
             config.applyError
             (fun () -> promise {
                 match! create () with
-                | Ok createdPath ->
-                    config.revealInTree [ createdPath ]
-                    config.openCreated (createdItem createdPath)
+                | Ok revealPath ->
+                    config.revealInTree [ revealPath ]
+                    config.openCreated (createdItem revealPath)
                     config.closeCreateModal ()
                     return Ok()
                 | Error exn -> return Error exn.Message
@@ -54,13 +55,20 @@ module FileTreeCreateWorkflow =
         (addArcFile: FileContentDTO -> JS.Promise<Result<unit, exn>>)
         (draft: ArcCreateDraft)
         =
+        let entityFolder =
+            PathHelpers.tryGetParentPath draft.Path |> Option.defaultValue draft.Path
+
+        let zoneFolder =
+            PathHelpers.tryGetParentPath entityFolder |> Option.defaultValue entityFolder
+
+        // The reveal opens only the zone folder, so the new entity shows up collapsed and selected.
         createAndReveal
             config
             (fun () -> promise {
                 let! result = ArcFileApiHelper.withArcFileRequest draft.ArcFile addArcFile
-                return result |> Result.map (fun () -> draft.Path)
+                return result |> Result.map (fun () -> zoneFolder)
             })
-            (fun path -> toItem true (PathHelpers.tryGetParentPath path |> Option.defaultValue path))
+            (fun _ -> toItem true entityFolder)
 
     let createFileSystemItem
         (config: CreateConfig)
