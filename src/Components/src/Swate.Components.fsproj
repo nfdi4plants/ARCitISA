@@ -248,6 +248,7 @@
     <Compile Include="Composite\TemplateBrowser\TemplateFilter.fs" />
     <Compile Include="Composite\TableImport\ImportModeSelect.fs" />
     <Compile Include="Composite\TableImport\TableImportPreview.fs" />
+    <Compile Include="Composite\TableImport\TableImportPreview.sample.fs" />
     <Compile Include="Composite\TableImport\TableImportPreview.test.rtl.fs" />
     <Compile Include="Composite\TemplateBrowser\TemplateImportModal.fs" />
     <Compile Include="Composite\TemplateBrowser\TemplateImportModal.test.rtl.fs" />
@@ -261,6 +262,8 @@
     <Compile Include="Composite\Widgets\JsonImport\Helper.fs" />
     <Compile Include="Composite\Widgets\JsonImport\JsonImportModal.fs" />
     <Compile Include="Composite\Widgets\JsonImport\JsonImport.fs" />
+    <Compile Include="Composite\Widgets\JsonImport\JsonImport.sample.fs" />
+    <Compile Include="Composite\Widgets\JsonImport\JsonImport.test.rtl.fs" />
     <Compile Include="Composite\Widgets\JsonExport\JsonExport.fs" />
     <Compile Include="Composite\Widgets\BuildingBlockWidget\Dropdown.fs" />
     <Compile Include="Composite\Widgets\BuildingBlockWidget\BuildingBlockWidget.fs" />
