@@ -1,6 +1,7 @@
 module internal Swate.Components.Composite.TableImport.TableImportPreviewTests
 
 open ARCtrl
+open Browser.Event
 open Browser.Types
 open Fable.Core
 open Vitest
@@ -106,12 +107,6 @@ Vitest.test (
 
 [<Emit("$0.spyOn(HTMLElement.prototype, $1, 'get').mockReturnValue($2)")>]
 let private mockHTMLElementGeometry (vi: Vi) (propertyName: string) (value: int) : unit = jsNative
-
-[<Emit("$0.scrollTop = $1")>]
-let private setScrollTop (el: HTMLElement) (value: float) : unit = jsNative
-
-[<Emit("$0.dispatchEvent(new Event('scroll'))")>]
-let private dispatchScroll (el: HTMLElement) : unit = jsNative
 
 /// Without layout the grid renders its first rows through a fallback. The size lets the virtualizer measure,
 /// so rows past the fallback render and a scroll moves the rendered window.
@@ -246,8 +241,8 @@ Vitest.test (
         Vitest.expect(RTL.screen.queryByTestId("table-import-row-0-3000").IsNone).toBe true
 
         let grid = RTL.screen.getByTestId "table-import-grid-0"
-        setScrollTop grid (3000.0 * 28.0)
-        dispatchScroll grid
+        grid.scrollTop <- 3000.0 * 28.0
+        grid.dispatchEvent (Event.Create "scroll") |> ignore
 
         let! row = RTL.screen.findByTestId "table-import-row-0-3000"
         RTL.fireEvent.click row

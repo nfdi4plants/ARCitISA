@@ -770,7 +770,7 @@ Vitest.test (
 )
 
 Vitest.test (
-    "clearRows keeps the row count and empties the deselected rows",
+    "clearRows empties the deselected rows and ends after the last kept row",
     fun () ->
         let source = createRowSource 5
         let before = source.Copy()
@@ -792,6 +792,55 @@ Vitest.test (
 
         Vitest.expect(cellText (cleared.GetCellAt(0, 1))).toBe ""
         expectSameTable source before
+
+        let endCleared = clearRows source (Set.ofList [ 1; 3; 4 ])
+        Vitest.expect(endCleared.RowCount).toBe 3
+        Vitest.expect(cellText (endCleared.GetCellAt(0, 1))).toBe ""
+        Vitest.expect(endCleared.GetCellAt(0, 2)).toEqual (source.GetCellAt(0, 2))
+)
+
+Vitest.test (
+    "left-out rows at the end of an appended source do not add rows to the active table",
+    fun () ->
+        let activeTable = ArcTable.init "Active"
+
+        activeTable.AddColumn(
+            CompositeHeader.Input IOType.Source,
+            ResizeArray [ for i in 1..3 -> CompositeCell.FreeText $"s{i}" ]
+        )
+
+        activeTable.AddColumn(
+            CompositeHeader.ProtocolREF,
+            ResizeArray [ for _ in 1..3 -> CompositeCell.FreeText "protocol" ]
+        )
+
+        let assay = ArcAssay.init "TestAssay"
+        assay.AddTable activeTable
+        let current = ArcFiles.Assay assay
+
+        let extra = ArcTable.init "Extra"
+
+        extra.AddColumn(
+            CompositeHeader.Comment "Extra",
+            ResizeArray [ for i in 1..5 -> CompositeCell.FreeText $"e{i}" ]
+        )
+
+        let decisions = {
+            decisionsFor TableJoinOptions.WithValues TableImportAction.AppendToActiveTable with
+                DeselectedRows = Set.ofList [ 0, 3; 0, 4 ]
+        }
+
+        let result = applyImport current [| sourceOf 0 extra |] decisions |> applied
+        let table = (importedTables result).[0]
+
+        Vitest.expect(table.RowCount).toBe 3
+        Vitest.expect([| for row in 0..2 -> cellText (table.GetCellAt(2, row)) |]).toEqual [| "e1"; "e2"; "e3" |]
+
+        Vitest.expect([| for row in 0..2 -> cellText (table.GetCellAt(1, row)) |]).toEqual [|
+            "protocol"
+            "protocol"
+            "protocol"
+        |]
 )
 
 Vitest.test (

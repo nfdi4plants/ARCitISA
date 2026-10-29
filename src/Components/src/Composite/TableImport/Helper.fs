@@ -57,11 +57,21 @@ let filterRows (table: ArcTable) (selectedRowIndices: int[]) : ArcTable =
     result
 
 /// Returns a new table with the rows of the given table, where each deselected row holds empty cells.
+/// The table ends after the last kept row, so left-out rows at the end do not add rows to the active table.
 /// An appended source keeps its rows at their position this way, so they keep lining up with the rows
 /// of the active table.
 let clearRows (table: ArcTable) (deselectedRowIndices: Set<int>) : ArcTable =
     // Like filterRows, this builds the columns directly and avoids RemoveRows.
     let result = ArcTable.init table.Name
+
+    let rowCount =
+        match
+            Seq.tryFindBack
+                (fun rowIndex -> not (deselectedRowIndices.Contains rowIndex))
+                (seq { 0 .. table.RowCount - 1 })
+        with
+        | Some lastKept -> lastKept + 1
+        | None -> 0
 
     let columns =
         table.Headers
@@ -71,11 +81,10 @@ let clearRows (table: ArcTable) (deselectedRowIndices: Set<int>) : ArcTable =
 
             let cells =
                 Array.init
-                    table.RowCount
+                    rowCount
                     (fun rowIndex ->
                         match table.TryGetCellAt(columnIndex, rowIndex) with
-                        // GetEmptyCell returns ARCtrl's shared empty cells, so each use gets its own copy.
-                        | Some cell when deselectedRowIndices.Contains rowIndex -> cell.GetEmptyCell().Copy()
+                        | Some cell when deselectedRowIndices.Contains rowIndex -> cell.GetEmptyCell()
                         | Some cell -> cell.Copy()
                         | None ->
                             if gapCell.Value.IsNone then
