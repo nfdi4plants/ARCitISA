@@ -16,11 +16,14 @@ export const Default: Story = {
   render: () => <Sample />,
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    expect(canvas.getAllByText('Columns: 5/5 selected')).toHaveLength(3);
+    expect(canvas.getAllByText('Columns: 5/5 selected, rows: 20/20 selected')).toHaveLength(3);
 
     await userEvent.click(canvas.getAllByRole('checkbox')[0]);
-    expect(canvas.getAllByText('Columns: 5/5 selected')).toHaveLength(2);
-    expect(canvas.getByText('Columns: 4/5 selected')).toBeInTheDocument();
+    expect(canvas.getAllByText('Columns: 5/5 selected, rows: 20/20 selected')).toHaveLength(2);
+    expect(canvas.getByText('Columns: 4/5 selected, rows: 20/20 selected')).toBeInTheDocument();
+
+    await userEvent.click(canvas.getByTestId('table-import-row-0-0'));
+    expect(canvas.getByText('Columns: 4/5 selected, rows: 19/20 selected')).toBeInTheDocument();
 
     await userEvent.click(canvas.getByTestId('table-import-action-2-NoImport'));
     expect(canvas.getByTestId('table-import-action-2-NoImport')).toBeChecked();

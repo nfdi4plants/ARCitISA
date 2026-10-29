@@ -152,3 +152,34 @@ Vitest.test (
         RTL.fireEvent.click (RTL.screen.getAllByLabelText("Do not import").[0])
         Vitest.expect(isImportDisabled ()).toBe false
 )
+
+Vitest.test (
+    "a deselected template row reaches the import payload",
+    fun () ->
+        let template = Template.init "SugarExtraction"
+
+        template.Table.AddColumn(
+            CompositeHeader.Input IOType.Source,
+            ResizeArray [ for i in 1..3 -> CompositeCell.FreeText $"Sample {i}" ]
+        )
+
+        let mutable submitted: ImportModalConfirmPayload option = None
+
+        RTL.render (
+            TemplateImportModal.TemplateImportModal(
+                isOpen = true,
+                importType = TableJoinOptions.WithValues,
+                selectedTemplates = [| template |],
+                setIsOpen = ignore,
+                setImportType = ignore,
+                submitImport = (fun payload -> submitted <- Some payload)
+            )
+        )
+        |> ignore
+
+        RTL.fireEvent.click (RTL.screen.getByLabelText "Create new table")
+        RTL.fireEvent.click (RTL.screen.getByTestId "table-import-row-0-1")
+        RTL.fireEvent.click (importButton ())
+
+        Vitest.expect(Set.toArray submitted.Value.DeselectedTemplateRows).toEqual [| template.Id, 1 |]
+)

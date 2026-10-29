@@ -26,6 +26,12 @@ type TableImportPreviewCallbacks = {
     SelectAllColumns: int -> unit
     /// sourceIndex -> columnCount
     UnselectAllColumns: int -> int -> unit
+    /// sourceIndex -> rowIndex -> selected
+    IsRowSelected: int -> int -> bool
+    ToggleRowSelection: int -> int -> unit
+    SelectAllRows: int -> unit
+    /// sourceIndex -> rowCount
+    UnselectAllRows: int -> int -> unit
     GetNewTableName: int -> NewTableName option
     SetNewTableName: int -> string -> unit
 }

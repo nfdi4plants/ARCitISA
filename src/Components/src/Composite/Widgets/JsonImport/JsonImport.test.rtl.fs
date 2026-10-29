@@ -114,9 +114,11 @@ let private button (testId: string) =
 let private radio (index: int) (action: string) =
     RTL.screen.getByTestId $"table-import-action-{index}-{action}" :?> HTMLInputElement
 
+/// The column checkboxes. The row checkboxes are looked up by their own test ids.
 let private checkboxes () =
     RTL.screen.getAllByRole "checkbox"
     |> Seq.map (fun el -> el :?> HTMLInputElement)
+    |> Seq.filter (fun el -> el.getAttribute("data-testid").StartsWith "table-import-column-")
     |> Array.ofSeq
 
 let private eventually (check: unit -> unit) : JS.Promise<unit> =
@@ -620,5 +622,82 @@ Vitest.test (
         Vitest.expect(error.Message).toBe "Could not read \"x.json\"."
         Vitest.expect(error.Details.IsSome).toBe true
         Vitest.expect(modalIsOpen ()).toBe false
+    }
+)
+
+let private assayWithRows (tableName: string) (rowCount: int) =
+    let table = ArcTable.init tableName
+
+    let cells prefix =
+        ResizeArray [
+            for i in 1..rowCount -> CompositeCell.FreeText $"{prefix} {i}"
+        ]
+
+    table.AddColumn(CompositeHeader.Input IOType.Source, cells "Source")
+    table.AddColumn(CompositeHeader.Output IOType.Sample, cells "Sample")
+    let assay = ArcAssay.init "FixtureAssay"
+    assay.AddTable table
+    ArcFiles.Assay assay
+
+Vitest.test (
+    "a deselected row is not imported",
+    fun () -> promise {
+        let harness = newHarness ()
+
+        renderWidget
+            harness
+            (currentAssay ())
+            None
+            (pickerOf (jsonOf (assayWithRows "A" 3) JsonExportFormat.ROCrate))
+            None
+
+        do! openReview ()
+        RTL.fireEvent.click (RTL.screen.getByTestId "table-import-row-0-2")
+        RTL.fireEvent.click (button "json-import-confirm")
+        let! _ = RTL.screen.findByTestId "json-import-success"
+
+        let created =
+            harness.SetArcFileCalls.[0].Tables() |> Seq.find (fun table -> table.Name = "A")
+
+        Vitest.expect(created.RowCount).toBe 2
+    }
+)
+
+Vitest.test (
+    "importing headers only hides the row checkboxes",
+    fun () -> promise {
+        let harness = newHarness ()
+
+        renderWidget
+            harness
+            (currentAssay ())
+            None
+            (pickerOf (jsonOf (assayWithRows "A" 3) JsonExportFormat.ROCrate))
+            None
+
+        do! openReview ()
+        Vitest.expect(exists "table-import-row-0-0").toBe true
+        RTL.fireEvent.click (RTL.screen.getByTestId "table-import-mode-Headers")
+        Vitest.expect(exists "table-import-row-0-0").toBe false
+    }
+)
+
+Vitest.test (
+    "unselecting all rows disables Import and shows the hint",
+    fun () -> promise {
+        let harness = newHarness ()
+
+        renderWidget
+            harness
+            (currentAssay ())
+            None
+            (pickerOf (jsonOf (assayWithRows "A" 3) JsonExportFormat.ROCrate))
+            None
+
+        do! openReview ()
+        RTL.fireEvent.click (RTL.screen.getByTestId "table-import-unselect-all-rows-0")
+
+        Vitest.expect((button "json-import-confirm").disabled).toBe true
+        Vitest.expect(exists "table-import-no-rows-0").toBe true
     }
 )

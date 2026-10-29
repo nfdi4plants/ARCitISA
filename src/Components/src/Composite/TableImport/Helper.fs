@@ -12,42 +12,6 @@ let private tryTrimmed (value: string) =
     else
         Some(value.Trim())
 
-let compositeCellPreviewValues (cell: CompositeCell) =
-    match cell with
-    | CompositeCell.FreeText text -> [| text |]
-    | CompositeCell.Term ontologyAnnotation -> [|
-        ontologyAnnotation.NameText
-        defaultArg ontologyAnnotation.TermSourceREF ""
-        defaultArg ontologyAnnotation.TermAccessionNumber ""
-      |]
-    | CompositeCell.Unitized(value, ontologyAnnotation) -> [|
-        value
-        ontologyAnnotation.NameText
-        defaultArg ontologyAnnotation.TermSourceREF ""
-        defaultArg ontologyAnnotation.TermAccessionNumber ""
-      |]
-    | CompositeCell.Data data -> [|
-        defaultArg data.FilePath ""
-        data.NameText
-        defaultArg data.Selector ""
-        defaultArg data.Format ""
-        defaultArg data.SelectorFormat ""
-      |]
-    |> Array.choose tryTrimmed
-
-let columnValuePreview (table: ArcTable) (columnIndex: int) =
-    seq {
-        for rowIndex in 0 .. table.RowCount - 1 do
-            match table.TryGetCellAt(columnIndex, rowIndex) with
-            | Some cell -> yield cell
-            | None -> ()
-    }
-    |> Seq.collect compositeCellPreviewValues
-    |> Seq.distinct
-    |> Seq.truncate 3
-    |> String.concat " | "
-    |> fun preview -> if preview = "" then "No values" else preview
-
 /// The text a grid cell shows: the value and unit of a unitized cell, the name of a term or data cell.
 let cellText (cell: CompositeCell) : string =
     let text =

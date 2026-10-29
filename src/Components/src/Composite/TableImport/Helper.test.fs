@@ -626,52 +626,6 @@ Vitest.test (
         |> expectError "Select a table in the editor to append columns to."
 )
 
-let private columnTable (cells: CompositeCell list) =
-    let table = ArcTable.init "Preview"
-    table.AddColumn(CompositeHeader.FreeText "Values", ResizeArray cells)
-    table
-
-let private freeTexts (values: string list) =
-    values |> List.map CompositeCell.FreeText
-
-Vitest.test (
-    "a column preview skips a missing cell",
-    fun () ->
-        let table = ArcTable.init "Sparse"
-
-        table.AddColumn(
-            CompositeHeader.Input IOType.Source,
-            ResizeArray [ for i in 1..3 -> CompositeCell.FreeText $"s{i}" ]
-        )
-
-        table.AddColumn(CompositeHeader.Parameter(OntologyAnnotation "Sparse"))
-        table.SetCellAt(1, 1, CompositeCell.Term(OntologyAnnotation "set"))
-
-        Vitest.expect((table.TryGetCellAt(1, 0)).IsNone).toBe true
-        Vitest.expect(columnValuePreview table 1).toBe "set"
-)
-
-Vitest.test (
-    "a column preview keeps the first three distinct values in row order",
-    fun () ->
-        let table = columnTable (freeTexts [ "b"; "a"; "b"; "c"; "d"; "e" ])
-        Vitest.expect(columnValuePreview table 0).toBe "b | a | c"
-)
-
-Vitest.test (
-    "a column preview drops whitespace-only values",
-    fun () ->
-        let table = columnTable (freeTexts [ "  "; " a "; "	" ])
-        Vitest.expect(columnValuePreview table 0).toBe "a"
-)
-
-Vitest.test (
-    "a column preview of empty cells says there are no values",
-    fun () ->
-        let table = columnTable (freeTexts [ ""; " " ])
-        Vitest.expect(columnValuePreview table 0).toBe "No values"
-)
-
 let private createRowSource (rowCount: int) =
     let table = ArcTable.init "Rows"
 

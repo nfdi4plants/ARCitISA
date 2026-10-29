@@ -33,6 +33,9 @@ type TemplateImportModal =
         let deselectedTemplateColumns, setDeselectedTemplateColumns =
             React.useStateWithUpdater (Set.empty<System.Guid * int>)
 
+        let deselectedTemplateRows, setDeselectedTemplateRows =
+            React.useStateWithUpdater (Set.empty<System.Guid * int>)
+
         let enteredNewTableNames, setEnteredNewTableNames =
             React.useStateWithUpdater (Map.empty<System.Guid, string>)
 
@@ -56,6 +59,12 @@ type TemplateImportModal =
                 )
                 |> ignore
 
+                setDeselectedTemplateRows (fun deselected ->
+                    deselected
+                    |> Set.filter (fun (templateId, _) -> selectedTemplateIds.Contains templateId)
+                )
+                |> ignore
+
                 setEnteredNewTableNames (fun names ->
                     names
                     |> Map.filter (fun templateId _ -> selectedTemplateIds.Contains templateId)
@@ -67,6 +76,9 @@ type TemplateImportModal =
 
         let isTemplateColumnSelected (templateId: System.Guid) (columnIndex: int) =
             TemplateActions.isTemplateColumnSelected templateId columnIndex deselectedTemplateColumns
+
+        let isTemplateRowSelected (templateId: System.Guid) (rowIndex: int) =
+            TemplateActions.isTemplateRowSelected templateId rowIndex deselectedTemplateRows
 
         let getTemplateImportAction (templateId: System.Guid) =
             TemplateActions.getTemplateImportAction templateId templateImportDecisions
@@ -83,6 +95,15 @@ type TemplateImportModal =
         let unselectAllTemplateColumns (template: Template) =
             TemplateActions.unselectAllTemplateColumns template setDeselectedTemplateColumns
 
+        let toggleTemplateRowSelection (templateId: System.Guid) (rowIndex: int) =
+            TemplateActions.toggleTemplateRowSelection templateId rowIndex setDeselectedTemplateRows
+
+        let selectAllTemplateRows (templateId: System.Guid) =
+            TemplateActions.selectAllTemplateRows templateId setDeselectedTemplateRows
+
+        let unselectAllTemplateRows (template: Template) =
+            TemplateActions.unselectAllTemplateRows template setDeselectedTemplateRows
+
         let selectedTemplatesForImport =
             TemplateActions.selectedTemplatesForImport selectedTemplates selectedTemplateIds templateImportDecisions
 
@@ -94,6 +115,7 @@ type TemplateImportModal =
             selectedTemplatesForImport
             |> Array.map (fun (template, action) -> template.Id, action),
             deselectedTemplateColumns,
+            deselectedTemplateRows,
             enteredNewTableNames
 
         let submittedImportInputs, setSubmittedImportInputs = React.useState None
@@ -112,6 +134,15 @@ type TemplateImportModal =
                    columnCount = 0
                    || Seq.init columnCount id
                       |> Seq.exists (fun columnIndex -> isTemplateColumnSelected template.Id columnIndex)
+               )
+            && selectedTemplatesForImport
+               |> Array.forall (fun (template, _) ->
+                   let rowCount = template.Table.RowCount
+
+                   importType = TableJoinOptions.Headers
+                   || rowCount = 0
+                   || Seq.init rowCount id
+                      |> Seq.exists (fun rowIndex -> isTemplateRowSelected template.Id rowIndex)
                )
 
         let sources =
@@ -137,6 +168,10 @@ type TemplateImportModal =
                 fun index columnIndex -> toggleTemplateColumnSelection (templateAt index).Id columnIndex
             SelectAllColumns = fun index -> selectAllTemplateColumns (templateAt index).Id
             UnselectAllColumns = fun index _ -> unselectAllTemplateColumns (templateAt index)
+            IsRowSelected = fun index rowIndex -> isTemplateRowSelected (templateAt index).Id rowIndex
+            ToggleRowSelection = fun index rowIndex -> toggleTemplateRowSelection (templateAt index).Id rowIndex
+            SelectAllRows = fun index -> selectAllTemplateRows (templateAt index).Id
+            UnselectAllRows = fun index _ -> unselectAllTemplateRows (templateAt index)
             GetNewTableName = fun index -> newTableNames.TryFind (templateAt index).Id
             SetNewTableName =
                 fun index name ->
@@ -151,7 +186,7 @@ type TemplateImportModal =
                 ImportType = importType
                 SelectedTemplatesForImport = selectedTemplatesForImport
                 DeselectedTemplateColumns = deselectedTemplateColumns
-                DeselectedTemplateRows = Set.empty
+                DeselectedTemplateRows = deselectedTemplateRows
                 NewTableNames = newTableNames |> Map.map (fun _ newTableName -> newTableName.Name)
             }
 
@@ -177,7 +212,8 @@ type TemplateImportModal =
                                 TableImportPreview.TableImportPreview(
                                     sources,
                                     previewCallbacks,
-                                    emptyText = "No templates selected."
+                                    emptyText = "No templates selected.",
+                                    showRowSelection = (importType <> TableJoinOptions.Headers)
                                 )
                             ]
                         ]

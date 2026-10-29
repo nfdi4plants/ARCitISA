@@ -3,6 +3,7 @@ namespace Swate.Components.Composite.TableImport
 open ARCtrl
 open Fable.Core
 open Feliz
+open Swate.Components
 open Swate.Components.Composite.TableImport.Types
 
 module PreviewHelper = Swate.Components.Composite.TableImport.Helper
@@ -78,34 +79,184 @@ type TableImportPreview =
         ]
 
     [<ReactComponent>]
+    static member private RowGrid
+        (source: ImportSource, callbacks: TableImportPreviewCallbacks, canEdit: bool, showRowSelection: bool)
+        =
+        let table = source.Table
+        let index = source.Index
+        let columnCount = table.ColumnCount
+        let rowCount = table.RowCount
+        let rowHeight = 28
+        let headers = table.Headers |> Seq.map string |> Array.ofSeq
+        let scrollRef = React.useElementRef ()
+
+        let virtualizer =
+            Virtual.useVirtualizer (
+                count = rowCount,
+                getScrollElement = (fun () -> scrollRef.current),
+                estimateSize = (fun _ -> rowHeight),
+                overscan = 8
+            )
+
+        // The first render has no measured items before the scroll element reports its size.
+        let visibleRows =
+            let measured = virtualizer.getVirtualItems ()
+
+            if measured.Length = 0 && rowCount > 0 then
+                [| 0 .. min (rowCount - 1) 12 |] |> Array.map (fun row -> row, row * rowHeight)
+            else
+                measured |> Array.map (fun item -> item.index, item.start)
+
+        let dimmed (selected: bool) =
+            if selected then "" else "swt:opacity-50"
+
+        let rowNumberCell (children: ReactElement list) =
+            Html.div [
+                prop.className "swt:w-14 swt:min-w-14 swt:shrink-0 swt:px-2 swt:flex swt:items-center swt:gap-1"
+                prop.children children
+            ]
+
+        Html.div [
+            prop.testId $"table-import-grid-{index}"
+            prop.ref scrollRef
+            prop.className "swt:max-h-64 swt:overflow-auto swt:relative"
+            prop.children [
+                Html.div [
+                    prop.className "swt:w-max swt:min-w-full"
+                    prop.children [
+                        Html.div [
+                            prop.className "swt:sticky swt:top-0 swt:z-10 swt:bg-base-100 swt:flex"
+                            prop.children [
+                                rowNumberCell [
+                                    Html.span [
+                                        prop.className "swt:text-xs swt:opacity-70"
+                                        prop.text "#"
+                                    ]
+                                ]
+                                for columnIndex in 0 .. columnCount - 1 do
+                                    let header = headers.[columnIndex]
+                                    let selected = callbacks.IsColumnSelected index columnIndex
+
+                                    Html.div [
+                                        prop.key $"{index}_{columnIndex}_header_card"
+                                        prop.className "swt:w-52 swt:min-w-52 swt:shrink-0 swt:px-2 swt:py-1"
+                                        prop.children [
+                                            Html.label [
+                                                prop.className [
+                                                    "swt:flex swt:items-center swt:gap-2 swt:cursor-pointer swt:border swt:border-base-300 swt:rounded-box swt:px-2 swt:py-1"
+                                                    dimmed selected
+                                                ]
+                                                prop.children [
+                                                    Html.input [
+                                                        prop.testId $"table-import-column-{index}-{columnIndex}"
+                                                        prop.type'.checkbox
+                                                        prop.className "swt:checkbox swt:checkbox-xs"
+                                                        prop.isChecked selected
+                                                        prop.disabled (not canEdit)
+                                                        prop.onChange (fun (_: bool) ->
+                                                            callbacks.ToggleColumnSelection index columnIndex
+                                                        )
+                                                    ]
+                                                    Html.span [
+                                                        prop.className "swt:text-xs swt:font-medium swt:truncate"
+                                                        prop.title header
+                                                        prop.text header
+                                                    ]
+                                                ]
+                                            ]
+                                        ]
+                                    ]
+                            ]
+                        ]
+                        if rowCount = 0 then
+                            Html.div [
+                                prop.className "swt:text-xs swt:opacity-70 swt:px-2 swt:py-1"
+                                prop.text "This table has no rows."
+                            ]
+                        else
+                            Html.div [
+                                prop.className "swt:relative"
+                                prop.style [ style.height (virtualizer.getTotalSize ()) ]
+                                prop.children [
+                                    for (row, start) in visibleRows do
+                                        let rowSelected = callbacks.IsRowSelected index row
+
+                                        Html.div [
+                                            prop.key $"{index}_{row}"
+                                            prop.className [
+                                                "swt:flex swt:items-center swt:absolute swt:left-0 swt:top-0 swt:border-t swt:border-base-300"
+                                                dimmed (rowSelected || not showRowSelection)
+                                            ]
+                                            prop.style [ style.top start; style.height rowHeight ]
+                                            prop.children [
+                                                rowNumberCell [
+                                                    if showRowSelection then
+                                                        Html.input [
+                                                            prop.testId $"table-import-row-{index}-{row}"
+                                                            prop.ariaLabel $"Row {row + 1}"
+                                                            prop.type'.checkbox
+                                                            prop.className "swt:checkbox swt:checkbox-xs"
+                                                            prop.isChecked rowSelected
+                                                            prop.disabled (not canEdit)
+                                                            prop.onChange (fun (_: bool) ->
+                                                                callbacks.ToggleRowSelection index row
+                                                            )
+                                                        ]
+                                                    Html.span [
+                                                        prop.className "swt:text-xs swt:opacity-70"
+                                                        prop.text (row + 1)
+                                                    ]
+                                                ]
+                                                for columnIndex in 0 .. columnCount - 1 do
+                                                    let text =
+                                                        match table.TryGetCellAt(columnIndex, row) with
+                                                        | Some cell -> PreviewHelper.cellText cell
+                                                        | None -> ""
+
+                                                    Html.div [
+                                                        prop.key $"{index}_{row}_{columnIndex}"
+                                                        prop.className [
+                                                            "swt:w-52 swt:min-w-52 swt:shrink-0 swt:px-2 swt:text-xs swt:truncate"
+                                                            dimmed (callbacks.IsColumnSelected index columnIndex)
+                                                        ]
+                                                        prop.title text
+                                                        prop.text text
+                                                    ]
+                                            ]
+                                        ]
+                                ]
+                            ]
+                    ]
+                ]
+            ]
+        ]
+
+    [<ReactComponent>]
     static member private SourceCard
         (
             source: ImportSource,
             callbacks: TableImportPreviewCallbacks,
             canAppend: bool,
-            appendDisabledNote: string option
+            appendDisabledNote: string option,
+            showRowSelection: bool
         ) =
         let table = source.Table
         let index = source.Index
         let columnCount = table.ColumnCount
         let rowCount = table.RowCount
 
-        // Scanning a table for previews is linear in its size, so it must not rerun on every checkbox toggle.
-        let valuePreviews =
-            React.useMemo (
-                (fun () -> Array.init table.ColumnCount (PreviewHelper.columnValuePreview table)),
-                [| box table |]
-            )
-
         let importAction = callbacks.GetImportAction index
-        let headers = table.Headers |> Seq.map string |> Array.ofSeq
 
         let selectedColumnsCount =
             Seq.init columnCount id
             |> Seq.filter (callbacks.IsColumnSelected index)
             |> Seq.length
 
-        let canEditColumns = importAction <> TableImportAction.NoImport
+        let selectedRowsCount =
+            Seq.init rowCount id |> Seq.filter (callbacks.IsRowSelected index) |> Seq.length
+
+        let canEdit = importAction <> TableImportAction.NoImport
+        let hasRowSelection = showRowSelection && rowCount > 0
 
         let plural (count: int) (singular: string) =
             if count = 1 then
@@ -116,6 +267,37 @@ type TableImportPreview =
         let rowText = plural rowCount "row"
         let columnText = plural columnCount "column"
         let sizeText = $"{rowText}, {columnText}"
+
+        let summaryText =
+            let columns = $"Columns: {selectedColumnsCount}/{columnCount} selected"
+
+            if hasRowSelection then
+                $"{columns}, rows: {selectedRowsCount}/{rowCount} selected"
+            else
+                columns
+
+        let hint (testId: string) (text: string) =
+            Html.div [
+                prop.testId testId
+                prop.className "swt:flex swt:items-center swt:gap-1 swt:text-xs swt:text-warning"
+                prop.children [
+                    Html.i [
+                        prop.className "swt:iconify swt:fluent--warning-12-filled"
+                    ]
+                    Html.span text
+                ]
+            ]
+
+        let toolbarButton (testId: string option) (text: string) (onClick: unit -> unit) =
+            Html.button [
+                match testId with
+                | Some testId -> prop.testId testId
+                | None -> ()
+                prop.className "swt:btn swt:btn-ghost swt:btn-xs"
+                prop.text text
+                prop.disabled (not canEdit)
+                prop.onClick (fun _ -> onClick ())
+            ]
 
         Html.div [
             prop.className "swt:border swt:border-base-300 swt:rounded-box swt:p-2 swt:flex swt:flex-col swt:gap-2"
@@ -177,19 +359,12 @@ type TableImportPreview =
                     prop.children [
                         Html.summary [
                             prop.className "swt:cursor-pointer swt:text-xs swt:font-medium"
-                            prop.textf "Columns: %d/%d selected" selectedColumnsCount columnCount
+                            prop.text summaryText
                         ]
-                        if canEditColumns && columnCount > 0 && selectedColumnsCount = 0 then
-                            Html.div [
-                                prop.testId $"table-import-no-columns-{index}"
-                                prop.className "swt:flex swt:items-center swt:gap-1 swt:text-xs swt:text-warning"
-                                prop.children [
-                                    Html.i [
-                                        prop.className "swt:iconify swt:fluent--warning-12-filled"
-                                    ]
-                                    Html.span "Select at least one column to import this table."
-                                ]
-                            ]
+                        if canEdit && columnCount > 0 && selectedColumnsCount = 0 then
+                            hint $"table-import-no-columns-{index}" "Select at least one column to import this table."
+                        if hasRowSelection && canEdit && selectedRowsCount = 0 then
+                            hint $"table-import-no-rows-{index}" "Select at least one row to import this table."
                         Html.div [
                             prop.className "swt:flex swt:flex-col swt:gap-2 swt:mt-2"
                             prop.children [
@@ -202,97 +377,33 @@ type TableImportPreview =
                                     Html.div [
                                         prop.className "swt:flex swt:items-center swt:gap-2"
                                         prop.children [
-                                            Html.button [
-                                                prop.className "swt:btn swt:btn-ghost swt:btn-xs swt:ml-auto"
-                                                prop.text "Select all"
-                                                prop.disabled (not canEditColumns)
-                                                prop.onClick (fun _ -> callbacks.SelectAllColumns index)
-                                            ]
-                                            Html.button [
-                                                prop.className "swt:btn swt:btn-ghost swt:btn-xs"
-                                                prop.text "Unselect all"
-                                                prop.disabled (not canEditColumns)
-                                                prop.onClick (fun _ -> callbacks.UnselectAllColumns index columnCount)
-                                            ]
-                                        ]
-                                    ]
-
-                                    Html.div [
-                                        prop.className "swt:overflow-x-auto"
-                                        prop.children [
-                                            Html.table [
-                                                prop.className "swt:table swt:table-xs swt:table-fixed swt:w-max"
+                                            Html.div [
+                                                prop.className "swt:ml-auto swt:flex swt:flex-wrap swt:gap-1"
                                                 prop.children [
-                                                    Html.tbody [
-                                                        Html.tr [
-                                                            prop.children [
-                                                                for columnIndex in 0 .. columnCount - 1 do
-                                                                    let header = headers.[columnIndex]
+                                                    toolbarButton
+                                                        None
+                                                        "Select all"
+                                                        (fun () -> callbacks.SelectAllColumns index)
+                                                    toolbarButton
+                                                        None
+                                                        "Unselect all"
+                                                        (fun () -> callbacks.UnselectAllColumns index columnCount)
+                                                    if hasRowSelection then
+                                                        toolbarButton
+                                                            (Some $"table-import-select-all-rows-{index}")
+                                                            "Select all rows"
+                                                            (fun () -> callbacks.SelectAllRows index)
 
-                                                                    Html.td [
-                                                                        prop.key $"{index}_{columnIndex}_header_card"
-                                                                        prop.className
-                                                                            "swt:w-52 swt:min-w-52 swt:px-2 swt:py-1"
-                                                                        prop.children [
-                                                                            Html.label [
-                                                                                prop.className
-                                                                                    "swt:flex swt:items-center swt:gap-2 swt:cursor-pointer swt:border swt:border-base-300 swt:rounded-box swt:px-2 swt:py-1"
-                                                                                prop.children [
-                                                                                    Html.input [
-                                                                                        prop.type'.checkbox
-                                                                                        prop.className
-                                                                                            "swt:checkbox swt:checkbox-xs"
-                                                                                        prop.isChecked (
-                                                                                            callbacks.IsColumnSelected
-                                                                                                index
-                                                                                                columnIndex
-                                                                                        )
-                                                                                        prop.disabled (
-                                                                                            not canEditColumns
-                                                                                        )
-                                                                                        prop.onChange (fun (_: bool) ->
-                                                                                            callbacks.ToggleColumnSelection
-                                                                                                index
-                                                                                                columnIndex
-                                                                                        )
-                                                                                    ]
-                                                                                    Html.span [
-                                                                                        prop.className
-                                                                                            "swt:text-xs swt:font-medium swt:truncate"
-                                                                                        prop.title header
-                                                                                        prop.text header
-                                                                                    ]
-                                                                                ]
-                                                                            ]
-                                                                        ]
-                                                                    ]
-                                                            ]
-                                                        ]
-                                                        Html.tr [
-                                                            prop.children [
-                                                                for columnIndex in 0 .. columnCount - 1 do
-                                                                    let valuePreviewText = valuePreviews.[columnIndex]
-
-                                                                    Html.td [
-                                                                        prop.key $"{index}_{columnIndex}_values_card"
-                                                                        prop.className
-                                                                            "swt:w-52 swt:min-w-52 swt:px-2 swt:pt-0 swt:pb-1"
-                                                                        prop.children [
-                                                                            Html.span [
-                                                                                prop.className
-                                                                                    "swt:block swt:text-[10px] swt:opacity-70 swt:truncate"
-                                                                                prop.title valuePreviewText
-                                                                                prop.text valuePreviewText
-                                                                            ]
-                                                                        ]
-                                                                    ]
-                                                            ]
-                                                        ]
-                                                    ]
+                                                        toolbarButton
+                                                            (Some $"table-import-unselect-all-rows-{index}")
+                                                            "Unselect all rows"
+                                                            (fun () -> callbacks.UnselectAllRows index rowCount)
                                                 ]
                                             ]
                                         ]
                                     ]
+
+                                    TableImportPreview.RowGrid(source, callbacks, canEdit, showRowSelection)
                             ]
                         ]
                     ]
@@ -307,9 +418,11 @@ type TableImportPreview =
             callbacks: TableImportPreviewCallbacks,
             ?canAppend: bool,
             ?appendDisabledNote: string,
-            ?emptyText: string
+            ?emptyText: string,
+            ?showRowSelection: bool
         ) =
         let canAppend = defaultArg canAppend true
+        let showRowSelection = defaultArg showRowSelection true
 
         if sources.Length = 0 then
             Html.div [
@@ -324,7 +437,13 @@ type TableImportPreview =
                         React.KeyedFragment(
                             source.Index,
                             [
-                                TableImportPreview.SourceCard(source, callbacks, canAppend, appendDisabledNote)
+                                TableImportPreview.SourceCard(
+                                    source,
+                                    callbacks,
+                                    canAppend,
+                                    appendDisabledNote,
+                                    showRowSelection
+                                )
                             ]
                         )
                 ]

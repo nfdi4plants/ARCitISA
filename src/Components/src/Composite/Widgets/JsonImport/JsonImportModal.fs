@@ -106,6 +106,30 @@ type JsonImportModal =
                                     d.DeselectedColumns
                                     (Set.ofList [ for c in 0 .. columnCount - 1 -> index, c ])
                     })
+            IsRowSelected = TableHelper.isRowSelected decisions
+            ToggleRowSelection =
+                fun index rowIndex ->
+                    setDecisions (fun d -> {
+                        d with
+                            DeselectedRows =
+                                if d.DeselectedRows.Contains(index, rowIndex) then
+                                    d.DeselectedRows.Remove(index, rowIndex)
+                                else
+                                    d.DeselectedRows.Add(index, rowIndex)
+                    })
+            SelectAllRows =
+                fun index ->
+                    setDecisions (fun d -> {
+                        d with
+                            DeselectedRows = d.DeselectedRows |> Set.filter (fun (i, _) -> i <> index)
+                    })
+            UnselectAllRows =
+                fun index rowCount ->
+                    setDecisions (fun d -> {
+                        d with
+                            DeselectedRows =
+                                Set.union d.DeselectedRows (Set.ofList [ for r in 0 .. rowCount - 1 -> index, r ])
+                    })
             GetNewTableName = fun index -> names.TryFind index
             SetNewTableName =
                 fun index name ->
@@ -114,6 +138,22 @@ type JsonImportModal =
                             EnteredNames = d.EnteredNames.Add(index, name)
                     })
         }
+
+        let showRowSelection = decisions.ImportType <> TableJoinOptions.Headers
+
+        // Names the kept rows when the user left out rows and the mode imports values.
+        let rowsText (source: ImportSource) =
+            let total = source.Table.RowCount
+
+            let kept =
+                Seq.init total id
+                |> Seq.filter (TableHelper.isRowSelected decisions source.Index)
+                |> Seq.length
+
+            if showRowSelection && kept < total then
+                $" ({kept} of {total} rows)"
+            else
+                ""
 
         let summaryLines =
             sources
@@ -126,10 +166,12 @@ type JsonImportModal =
                         |> Option.map (fun n -> n.Name.Trim())
                         |> Option.defaultValue source.Name
 
-                    Some(source.Index, $"{source.Name}: new table \"{name}\"")
+                    Some(source.Index, $"{source.Name}: new table \"{name}\"{rowsText source}")
                 | TableImportAction.AppendToActiveTable ->
                     appendTarget
-                    |> Option.map (fun (_, table) -> source.Index, $"{source.Name}: append to \"{table.Name}\"")
+                    |> Option.map (fun (_, table) ->
+                        source.Index, $"{source.Name}: append to \"{table.Name}\"{rowsText source}"
+                    )
             )
 
         Html.div [
@@ -144,7 +186,8 @@ type JsonImportModal =
                     sources,
                     callbacks,
                     canAppend = appendTarget.IsSome,
-                    appendDisabledNote = "Select a table in the editor first to append columns to it."
+                    appendDisabledNote = "Select a table in the editor first to append columns to it.",
+                    showRowSelection = showRowSelection
                 )
                 Html.div [
                     prop.testId "json-import-summary"

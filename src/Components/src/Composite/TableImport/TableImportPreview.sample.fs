@@ -78,6 +78,7 @@ type TableImportPreviewSample =
     static member private Preview(canAppend: bool) =
         let actions, setActions = React.useState Map.empty<int, TableImportAction>
         let deselected, setDeselected = React.useState Set.empty<int * int>
+        let deselectedRows, setDeselectedRows = React.useState Set.empty<int * int>
         let entered, setEntered = React.useState Map.empty<int, string>
 
         let actionOf index =
@@ -94,6 +95,14 @@ type TableImportPreviewSample =
             UnselectAllColumns =
                 fun index count ->
                     setDeselected (Set.union deselected (Set.ofList [ for column in 0 .. count - 1 -> index, column ]))
+            IsRowSelected = fun index row -> not (deselectedRows.Contains(index, row))
+            ToggleRowSelection = fun index row -> setDeselectedRows (toggle (index, row) deselectedRows)
+            SelectAllRows = fun index -> setDeselectedRows (deselectedRows |> Set.filter (fun (i, _) -> i <> index))
+            UnselectAllRows =
+                fun index count ->
+                    setDeselectedRows (
+                        Set.union deselectedRows (Set.ofList [ for row in 0 .. count - 1 -> index, row ])
+                    )
             GetNewTableName = fun index -> names.TryFind index
             SetNewTableName = fun index name -> setEntered (entered.Add(index, name))
         }
