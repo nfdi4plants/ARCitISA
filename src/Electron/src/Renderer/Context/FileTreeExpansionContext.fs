@@ -184,9 +184,11 @@ let FileTreeExpansionCtxProvider (api: FileTreeExpansionApi, children: ReactElem
     // store change tries them again.
     let pending = React.useRef (Set.empty: Set<PathKey>)
     let isRevalidating = React.useRef false
-    // The selected path, or the created or imported paths, whose folders are not all loaded and expanded yet.
-    // A store change tries it again.
-    let revealTarget = React.useRef (None: RevealTarget option)
+    // The created or imported paths whose folders are not all loaded and expanded yet.
+    let explicitTarget = React.useRef (None: RevealTarget option)
+    // The selected path whose folders are not all loaded and expanded yet. A store change tries both targets again.
+    // They are kept apart so a new selection does not drop a create or import that waits for the tree push.
+    let selectionTarget = React.useRef (None: RevealTarget option)
     let nextRevealId = React.useRef 0
     let isRevealing = React.useRef false
     // Set by a reveal request or a store change (including the answers of this pass's own loads) that arrives while
@@ -296,125 +298,146 @@ let FileTreeExpansionCtxProvider (api: FileTreeExpansionApi, children: ReactElem
                 |> Promise.start
             | None -> ()
 
+    /// Reveals one target. The slot holds it until it is ready or dropped.
+    let revealOne (slot: IRefValue<RevealTarget option>) (r: RevealTarget) = promise {
+        let ancestors =
+            r.Paths
+            |> List.collect ancestorPaths
+            |> List.distinct
+            |> List.sortBy (fun p -> p.Split('/').Length)
+
+        for ancestor in ancestors do
+            match knows store.Snapshot ancestor with
+            | Present entry when
+                entry.isDirectory
+                && not (isLoaded store.Snapshot ancestor)
+                && not (pending.current.Contains(keyOf ancestor))
+                ->
+                do! loadDirectory ancestor false
+            | _ -> ()
+
+        let states =
+            ancestors |> List.map (fun ancestor -> ancestor, knows store.Snapshot ancestor)
+
+        let present =
+            states
+            |> List.choose (fun (_, state) ->
+                match state with
+                | Present entry when entry.isDirectory -> Some entry.path
+                | _ -> None
+            )
+            |> Set.ofList
+
+        let complete =
+            states
+            |> List.forall (fun (_, state) ->
+                match state with
+                | Present entry -> entry.isDirectory && isLoaded store.Snapshot entry.path
+                | _ -> false
+            )
+
+        let targets = r.Paths |> List.map (knows store.Snapshot)
+
+        // A create or import can return before the tree push that contains all of its paths.
+        let ready =
+            if r.IsExplicit then
+                targets
+                |> List.forall (fun target ->
+                    match target with
+                    | Present _ -> true
+                    | _ -> false
+                )
+            else
+                complete
+
+        let ancestorFailed =
+            ancestors
+            |> List.exists (fun ancestor -> failed.current.Contains(keyOf ancestor))
+
+        let ancestorAbsent = states |> List.exists (fun (_, state) -> state = Absent)
+
+        if ready then
+            let toOpen =
+                if r.IsExplicit then
+                    targets
+                    |> List.fold
+                        (fun (opened: Set<string>) target ->
+                            match target with
+                            | Present entry when entry.isDirectory -> opened.Add entry.path
+                            | _ -> opened
+                        )
+                        present
+                else
+                    present
+
+            if
+                isMounted.current
+                && slot.current = Some r
+                && (r.IsExplicit || selectionRef.current |> Option.exists (fun s -> r.Paths = [ s ]))
+                && not toOpen.IsEmpty
+            then
+                setExpandedIds (fun current ->
+                    if Set.isSubset toOpen current then
+                        current
+                    else
+                        Set.union current toOpen
+                )
+
+            if slot.current = Some r then
+                slot.current <- None
+        elif ancestorFailed || (ancestorAbsent && not r.IsExplicit) then
+            // A failed folder ends both kinds. A missing folder ends a selection, while created or
+            // imported paths wait for the tree push.
+            if slot.current = Some r then
+                slot.current <- None
+    }
+
     /// Loads the folders above the reveal target one after another and expands them once the target is ready. A
     /// folder whose answer is held back (a pull is running) leaves the target in place, and the next store change
     /// runs this again. A selection is ready when the folders above it are loaded and is dropped when one of them is
     /// missing. Created or imported paths are ready once the tree contains all of them, and the folders among them
-    /// open too. A folder above a target that fails to load drops either kind.
+    /// open too. A folder above a target that fails to load drops either kind. The selection and a created or
+    /// imported target wait side by side, so a new selection does not drop a create or import that waits for the
+    /// tree push.
     let rec reveal () =
-        match revealTarget.current with
-        | Some r when not isRevealing.current ->
+        if
+            (explicitTarget.current.IsSome || selectionTarget.current.IsSome)
+            && not isRevealing.current
+        then
             isRevealing.current <- true
             rerunRequested.current <- false
+            let startExplicit = explicitTarget.current
+            let startSelection = selectionTarget.current
 
             promise {
                 try
+                    match explicitTarget.current with
+                    | Some r -> do! revealOne explicitTarget r
+                    | None -> ()
 
-                    let ancestors =
-                        r.Paths
-                        |> List.collect ancestorPaths
-                        |> List.distinct
-                        |> List.sortBy (fun p -> p.Split('/').Length)
-
-                    for ancestor in ancestors do
-                        match knows store.Snapshot ancestor with
-                        | Present entry when
-                            entry.isDirectory
-                            && not (isLoaded store.Snapshot ancestor)
-                            && not (pending.current.Contains(keyOf ancestor))
-                            ->
-                            do! loadDirectory ancestor false
-                        | _ -> ()
-
-                    let states =
-                        ancestors |> List.map (fun ancestor -> ancestor, knows store.Snapshot ancestor)
-
-                    let present =
-                        states
-                        |> List.choose (fun (_, state) ->
-                            match state with
-                            | Present entry when entry.isDirectory -> Some entry.path
-                            | _ -> None
-                        )
-                        |> Set.ofList
-
-                    let complete =
-                        states
-                        |> List.forall (fun (_, state) ->
-                            match state with
-                            | Present entry -> entry.isDirectory && isLoaded store.Snapshot entry.path
-                            | _ -> false
-                        )
-
-                    let targets = r.Paths |> List.map (knows store.Snapshot)
-
-                    // A create or import can return before the tree push that contains all of its paths.
-                    let ready =
-                        if r.IsExplicit then
-                            targets
-                            |> List.forall (fun target ->
-                                match target with
-                                | Present _ -> true
-                                | _ -> false
-                            )
-                        else
-                            complete
-
-                    let ancestorFailed =
-                        ancestors
-                        |> List.exists (fun ancestor -> failed.current.Contains(keyOf ancestor))
-
-                    let ancestorAbsent = states |> List.exists (fun (_, state) -> state = Absent)
-
-                    if ready then
-                        let toOpen =
-                            if r.IsExplicit then
-                                targets
-                                |> List.fold
-                                    (fun (opened: Set<string>) target ->
-                                        match target with
-                                        | Present entry when entry.isDirectory -> opened.Add entry.path
-                                        | _ -> opened
-                                    )
-                                    present
-                            else
-                                present
-
-                        if
-                            isMounted.current
-                            && revealTarget.current = Some r
-                            && (r.IsExplicit || selectionRef.current |> Option.exists (fun s -> r.Paths = [ s ]))
-                            && not toOpen.IsEmpty
-                        then
-                            setExpandedIds (fun current ->
-                                if Set.isSubset toOpen current then
-                                    current
-                                else
-                                    Set.union current toOpen
-                            )
-
-                        if revealTarget.current = Some r then
-                            revealTarget.current <- None
-                    elif ancestorFailed || (ancestorAbsent && not r.IsExplicit) then
-                        // A failed folder ends both kinds. A missing folder ends a selection, while created or
-                        // imported paths wait for the tree push.
-                        if revealTarget.current = Some r then
-                            revealTarget.current <- None
+                    match selectionTarget.current with
+                    | Some r -> do! revealOne selectionTarget r
+                    | None -> ()
                 finally
                     isRevealing.current <- false
 
                 // A request that came in while this pass waited for a folder has its own pass now.
                 if
                     isMounted.current
-                    && revealTarget.current.IsSome
-                    && (rerunRequested.current || revealTarget.current <> Some r)
+                    && (explicitTarget.current.IsSome || selectionTarget.current.IsSome)
+                    && (rerunRequested.current
+                        || explicitTarget.current <> startExplicit
+                        || selectionTarget.current <> startSelection)
                 then
                     reveal ()
             }
             |> Promise.catch ignore
             |> Promise.start
-        | Some _ -> rerunRequested.current <- true
-        | None -> ()
+        elif
+            isRevealing.current
+            && (explicitTarget.current.IsSome || selectionTarget.current.IsSome)
+        then
+            rerunRequested.current <- true
 
     let evaluateRef = React.useRef evaluate
     evaluateRef.current <- evaluate
@@ -455,9 +478,7 @@ let FileTreeExpansionCtxProvider (api: FileTreeExpansionApi, children: ReactElem
                 failed.current <- Set.empty
                 pending.current <- Set.empty
 
-                match revealTarget.current with
-                | Some r when r.IsExplicit -> revealTarget.current <- None
-                | _ -> ()
+                explicitTarget.current <- None
 
                 // A rename keeps the expanded folders. Another ARC and a closed one start collapsed.
                 if scope.IsNone || not fileCtx.rootChangeIsRename then
@@ -553,7 +574,7 @@ let FileTreeExpansionCtxProvider (api: FileTreeExpansionApi, children: ReactElem
     // expands them.
     React.useEffect (
         (fun () ->
-            revealTarget.current <- selectionPath |> Option.map (fun p -> newTarget [ p ] false)
+            selectionTarget.current <- selectionPath |> Option.map (fun p -> newTarget [ p ] false)
             revealRef.current ()
         ),
         [| box selectionPath |]
@@ -563,7 +584,7 @@ let FileTreeExpansionCtxProvider (api: FileTreeExpansionApi, children: ReactElem
         React.useCallback (
             (fun (paths: string list) ->
                 if isMounted.current && scopeRef.current = scope && not paths.IsEmpty then
-                    revealTarget.current <-
+                    explicitTarget.current <-
                         Some(newTarget (paths |> List.map PathHelpers.normalizePath |> List.distinct) true)
 
                     revealRef.current ()
