@@ -246,7 +246,8 @@ type PageState =
         | FileContentType.PNG
         | FileContentType.JPG
         | FileContentType.SVG
-        | FileContentType.GIF -> PageState.ImagePage(dto.fileType, dto.content)
+        | FileContentType.GIF
+            -> PageState.ImagePage(dto.fileType, dto.content)
         | FileContentType.Html -> PageState.HtmlPage dto.content
         | FileContentType.FileContentTypeIsPlainTextVariant -> PageState.TextPage dto.content
         | FileContentType.FileContentTypeIsISAFileVariant ->

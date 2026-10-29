@@ -211,8 +211,7 @@ module FileContentType =
         | FileContentType.JPG -> None
         | FileContentType.SVG -> None
         | FileContentType.GIF -> None
-        | FileContentType.NoPreview -> None
-        | FileContentType.Html -> None
+        | FileContentType.Html -> None 
         | FileContentType.NoPreview -> None
 
     /// Maps ARCtrl DTOType values to custom file content types.
@@ -283,12 +282,12 @@ module FileContentDTO =
         | Some "md" -> FileContentType.Markdown
         | Some "pdf" -> FileContentType.PDF
         | Some "html" -> FileContentType.Html
-        | Some "svg" -> FileContentType.SVG
+        | Some "svg" -> FileContentType.SVG 
         | Some "png" -> FileContentType.PNG
         | Some "jpg" -> FileContentType.JPG
         | Some "jpeg" -> FileContentType.JPG
-        | Some "gif" -> FileContentType.GIF
-        | _ -> FileContentType.PlainText
+        | Some "gif" -> FileContentType.GIF 
+        | _ -> FileContentType.PlainText 
 
     let normalizeArcFileRequestPath (request: FileContentDTO) : FileContentDTO =
         let normalizedPath = PathHelpers.normalizePath request.path
