@@ -5,6 +5,7 @@ open Fable.Core.JsInterop
 open ARCtrl
 open Renderer.Components.LeftSidebar.FileExplorer
 open Swate.Components.Shared
+open Swate.Components.Page.FileExplorer.Types
 open Swate.Electron.Shared.FileIOTypes
 open Vitest
 
@@ -26,6 +27,7 @@ type private CreateProbe = {
     mutable Busy: bool
     mutable Errors: string list
     mutable Revealed: string list
+    mutable Opened: FileItem list
     mutable Closed: bool
 }
 
@@ -33,6 +35,7 @@ let private createProbe () = {
     Busy = false
     Errors = []
     Revealed = []
+    Opened = []
     Closed = false
 }
 
@@ -40,6 +43,7 @@ let private createConfig (probe: CreateProbe) : FileTreeCreateWorkflow.CreateCon
     setIsCreating = fun busy -> probe.Busy <- busy
     applyError = fun message -> probe.Errors <- probe.Errors @ [ message ]
     revealInTree = fun paths -> probe.Revealed <- probe.Revealed @ paths
+    openCreated = fun item -> probe.Opened <- probe.Opened @ [ item ]
     closeCreateModal = fun () -> probe.Closed <- true
 }
 
@@ -58,7 +62,7 @@ Vitest.describe (
     "FileTreeCreateWorkflow",
     fun () ->
         Vitest.test (
-            "createArcEntry reveals the new path and closes the modal",
+            "createArcEntry reveals the new path, opens the entity folder and closes the modal",
             fun () -> promise {
                 let probe = createProbe ()
                 let draft = createDraft ()
@@ -68,6 +72,9 @@ Vitest.describe (
                 do! waitUntilIdle probe
 
                 Vitest.expect(List.toArray probe.Revealed).toEqual ([| draft.Path |])
+                Vitest.expect(probe.Opened.Length).toBe (1)
+                Vitest.expect(probe.Opened.Head.Path).toEqual (Some "studies/S1")
+                Vitest.expect(probe.Opened.Head.IsDirectory).toBe (true)
                 Vitest.expect(probe.Closed).toBe (true)
                 Vitest.expect(probe.Errors.Length).toBe (0)
                 Vitest.expect(probe.Busy).toBe (false)
@@ -87,6 +94,7 @@ Vitest.describe (
                 do! waitUntilIdle probe
 
                 Vitest.expect(List.toArray probe.Errors).toEqual ([| "disk full" |])
+                Vitest.expect(probe.Opened.Length).toBe (0)
                 Vitest.expect(probe.Closed).toBe (false)
                 Vitest.expect(probe.Revealed.Length).toBe (0)
                 Vitest.expect(probe.Busy).toBe (false)
@@ -94,7 +102,7 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "createFileSystemItem reveals the path the create call returns",
+            "createFileSystemItem reveals and opens the path the create call returns",
             fun () -> promise {
                 let probe = createProbe ()
 
@@ -112,8 +120,35 @@ Vitest.describe (
                 do! waitUntilIdle probe
 
                 Vitest.expect(List.toArray probe.Revealed).toEqual ([| "assays/A/notes.txt" |])
+                Vitest.expect(probe.Opened.Length).toBe (1)
+                Vitest.expect(probe.Opened.Head.Path).toEqual (Some "assays/A/notes.txt")
+                Vitest.expect(probe.Opened.Head.IsDirectory).toBe (false)
                 Vitest.expect(probe.Closed).toBe (true)
                 Vitest.expect(probe.Errors.Length).toBe (0)
+            }
+        )
+
+        Vitest.test (
+            "createFileSystemItem opens a folder item for a created folder",
+            fun () -> promise {
+                let probe = createProbe ()
+
+                let request: CreateFileSystemItemRequest = {
+                    parentPath = "assays/A"
+                    name = "data"
+                    kind = FileSystemItemKind.Folder
+                }
+
+                FileTreeCreateWorkflow.createFileSystemItem
+                    (createConfig probe)
+                    (fun _ -> promise { return Ok "assays/A/data" })
+                    request
+
+                do! waitUntilIdle probe
+
+                Vitest.expect(probe.Opened.Length).toBe (1)
+                Vitest.expect(probe.Opened.Head.Path).toEqual (Some "assays/A/data")
+                Vitest.expect(probe.Opened.Head.IsDirectory).toBe (true)
             }
         )
 
@@ -139,6 +174,7 @@ Vitest.describe (
                 do! waitUntilIdle probe
 
                 Vitest.expect(List.toArray probe.Errors).toEqual ([| "boom" |])
+                Vitest.expect(probe.Opened.Length).toBe (0)
                 Vitest.expect(probe.Closed).toBe (false)
                 Vitest.expect(probe.Revealed.Length).toBe (0)
                 Vitest.expect(probe.Busy).toBe (false)
@@ -159,12 +195,13 @@ Vitest.describe (
                 do! waitUntilIdle probe
 
                 Vitest.expect(List.toArray probe.Errors).toEqual ([| "denied" |])
+                Vitest.expect(probe.Opened.Length).toBe (0)
                 Vitest.expect(probe.Revealed.Length).toBe (0)
             }
         )
 
         Vitest.test (
-            "createDataMap reveals the new DataMap file",
+            "createDataMap reveals and opens the new DataMap file",
             fun () -> promise {
                 let probe = createProbe ()
                 let parentInfo = DatamapParentInfo.create "A" DataMapParent.Assay
@@ -173,6 +210,9 @@ Vitest.describe (
                 do! waitUntilIdle probe
 
                 Vitest.expect(List.toArray probe.Revealed).toEqual ([| DatamapParentInfo.toPath parentInfo |])
+                Vitest.expect(probe.Opened.Length).toBe (1)
+                Vitest.expect(probe.Opened.Head.Path).toEqual (Some(DatamapParentInfo.toPath parentInfo))
+                Vitest.expect(probe.Opened.Head.IsDirectory).toBe (false)
                 Vitest.expect(probe.Errors.Length).toBe (0)
             }
         )
