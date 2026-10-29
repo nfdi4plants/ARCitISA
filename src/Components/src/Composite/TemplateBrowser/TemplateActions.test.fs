@@ -2,6 +2,7 @@ module internal Swate.Components.Composite.Template.TemplateActionsTests
 
 open ARCtrl
 open Swate.Components.Shared
+open Swate.Components.Composite.TableImport.Types
 open Swate.Components.Composite.Template.Types
 open Swate.Components.Composite.Template.TemplateActions
 open Swate.Components.Tests.TableFiles
@@ -14,7 +15,7 @@ let private createTemplate (tableName: string) =
     template
 
 let private asNewTable (template: Template) =
-    template, TemplateImportAction.ImportAsNewTable
+    template, TableImportAction.ImportAsNewTable
 
 // The naming rules are tested with resolveNewTableNames in tests/Shared; this covers the template adapter.
 Vitest.test (
@@ -29,7 +30,7 @@ Vitest.test (
                 [ "Sugar" ]
                 [|
                     asNewTable first
-                    appended, TemplateImportAction.AppendToActiveTable
+                    appended, TableImportAction.AppendToActiveTable
                     asNewTable second
                 |]
                 (Map [ second.Id, "Own name" ])
@@ -53,7 +54,7 @@ let private appendAndImportAsNewTable (newTableName: string) =
     {
         ImportType = TableJoinOptions.Headers
         SelectedTemplatesForImport = [|
-            appended, TemplateImportAction.AppendToActiveTable
+            appended, TableImportAction.AppendToActiveTable
             asNewTable imported
         |]
         DeselectedTemplateColumns = Set.empty

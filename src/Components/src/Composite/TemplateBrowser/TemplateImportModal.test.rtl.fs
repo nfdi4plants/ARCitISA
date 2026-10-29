@@ -40,7 +40,7 @@ Vitest.test (
         let mutable submitted: ImportModalConfirmPayload option = None
         renderModal template [| "SugarExtraction" |] (fun payload -> submitted <- Some payload)
 
-        RTL.fireEvent.click (RTL.screen.getByLabelText "Import (new table)")
+        RTL.fireEvent.click (RTL.screen.getByLabelText "Create new table")
         let nameInput = RTL.screen.getByLabelText "New table name" :?> HTMLInputElement
         Vitest.expect(nameInput.value).toBe "SugarExtraction 1"
         let notice = "\"SugarExtraction\" already exists, so the new table is renamed."
@@ -82,7 +82,7 @@ Vitest.test (
         let rendered = RTL.render (modalWithError None)
         let error = "Import failed: table names must be unique"
 
-        RTL.fireEvent.click (RTL.screen.getByLabelText "Import (new table)")
+        RTL.fireEvent.click (RTL.screen.getByLabelText "Create new table")
         RTL.fireEvent.click (importButton ())
         rendered.rerender (modalWithError (Some "table names must be unique"))
         RTL.screen.getByText error |> ignore
@@ -100,12 +100,12 @@ Vitest.test (
         let template = Template.init "SugarExtraction"
         let rendered = RTL.render (modal [| template |] [||] ignore)
 
-        RTL.fireEvent.click (RTL.screen.getByLabelText "Import (new table)")
+        RTL.fireEvent.click (RTL.screen.getByLabelText "Create new table")
         setNewTableName "Day 2"
         rendered.rerender (modal [||] [| "Day 2" |] ignore)
         rendered.rerender (modal [| template |] [| "Day 2" |] ignore)
 
-        RTL.fireEvent.click (RTL.screen.getByLabelText "Import (new table)")
+        RTL.fireEvent.click (RTL.screen.getByLabelText "Create new table")
         let nameInput = RTL.screen.getByLabelText "New table name" :?> HTMLInputElement
         Vitest.expect(nameInput.value).toBe "SugarExtraction"
 )

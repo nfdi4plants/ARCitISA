@@ -24,19 +24,15 @@ let toggleTemplateSelection (templateId: System.Guid) (selectedTemplateIds: Set<
     else
         selectedTemplateIds.Add templateId
 
-let getTemplateImportAction
-    (templateId: System.Guid)
-    (templateImportDecisions: Map<System.Guid, TemplateImportAction>)
-    =
+let getTemplateImportAction (templateId: System.Guid) (templateImportDecisions: Map<System.Guid, TableImportAction>) =
     templateImportDecisions
     |> Map.tryFind templateId
-    |> Option.defaultValue TemplateImportAction.AppendToActiveTable
+    |> Option.defaultValue TableImportAction.AppendToActiveTable
 
 let setTemplateImportAction
     (templateId: System.Guid)
-    (importAction: TemplateImportAction)
-    (setTemplateImportDecisions:
-        (Map<System.Guid, TemplateImportAction> -> Map<System.Guid, TemplateImportAction>) -> unit)
+    (importAction: TableImportAction)
+    (setTemplateImportDecisions: (Map<System.Guid, TableImportAction> -> Map<System.Guid, TableImportAction>) -> unit)
     =
     setTemplateImportDecisions (fun decisions -> decisions.Add(templateId, importAction))
     |> ignore
@@ -86,25 +82,25 @@ let unselectAllTemplateColumns
 let selectedTemplatesForImport
     (templates: Template[])
     (selectedTemplateIds: Set<System.Guid>)
-    (templateImportDecisions: Map<System.Guid, TemplateImportAction>)
+    (templateImportDecisions: Map<System.Guid, TableImportAction>)
     =
     templates
     |> Array.filter (fun template -> selectedTemplateIds.Contains template.Id)
     |> Array.choose (fun template ->
         match getTemplateImportAction template.Id templateImportDecisions with
-        | TemplateImportAction.NoImport -> None
+        | TableImportAction.NoImport -> None
         | nextAction -> Some(template, nextAction)
     )
 
 let newTableNames
     (existingTableNames: string seq)
-    (selectedTemplatesForImport: (Template * TemplateImportAction)[])
+    (selectedTemplatesForImport: (Template * TableImportAction)[])
     (enteredNames: Map<System.Guid, string>)
     =
     let newTableTemplates =
         selectedTemplatesForImport
         |> Array.choose (fun (template, action) ->
-            if action = TemplateImportAction.ImportAsNewTable then
+            if action = TableImportAction.ImportAsNewTable then
                 Some template
             else
                 None
@@ -131,7 +127,7 @@ let importIntoCopy (arcFile: ArcFiles) (activeTableIndex: int option) (payload: 
             ImportTables =
                 selected
                 |> Array.mapi (fun tableIndex (template, action) ->
-                    let fullImport = action = TemplateImportAction.ImportAsNewTable
+                    let fullImport = action = TableImportAction.ImportAsNewTable
 
                     ({
                         Index = tableIndex

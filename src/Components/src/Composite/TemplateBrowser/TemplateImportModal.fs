@@ -5,6 +5,8 @@ open Feliz
 open ARCtrl
 open Swate.Components
 open Swate.Components.Primitive.BaseModal
+open Swate.Components.Composite.TableImport
+open Swate.Components.Composite.TableImport.Types
 open Swate.Components.Composite.Template.Types
 
 [<Erase; Mangle(false)>]
@@ -26,7 +28,7 @@ type TemplateImportModal =
         let existingTableNames = defaultArg existingTableNames [||]
 
         let templateImportDecisions, setTemplateImportDecisions =
-            React.useStateWithUpdater (Map.empty<System.Guid, TemplateImportAction>)
+            React.useStateWithUpdater (Map.empty<System.Guid, TableImportAction>)
 
         let deselectedTemplateColumns, setDeselectedTemplateColumns =
             React.useStateWithUpdater (Set.empty<System.Guid * int>)
@@ -69,7 +71,7 @@ type TemplateImportModal =
         let getTemplateImportAction (templateId: System.Guid) =
             TemplateActions.getTemplateImportAction templateId templateImportDecisions
 
-        let setTemplateImportAction (templateId: System.Guid) (importAction: TemplateImportAction) =
+        let setTemplateImportAction (templateId: System.Guid) (importAction: TableImportAction) =
             TemplateActions.setTemplateImportAction templateId importAction setTemplateImportDecisions
 
         let toggleTemplateColumnSelection (templateId: System.Guid) (columnIndex: int) =
@@ -103,17 +105,43 @@ type TemplateImportModal =
         let canConfirmImport =
             selectedTemplatesForImport.Length > 0
             && newTableNames |> Map.forall (fun _ newTableName -> newTableName.Error.IsNone)
+            && selectedTemplatesForImport
+               |> Array.forall (fun (template, _) ->
+                   let columnCount = template.Table.ColumnCount
 
-        let previewCallbacks: TemplatePreviewCallbacks = {
-            GetTemplateImportAction = getTemplateImportAction
-            SetTemplateImportAction = setTemplateImportAction
-            IsColumnSelected = isTemplateColumnSelected
-            ToggleColumnSelection = toggleTemplateColumnSelection
-            SelectAllTemplateColumns = selectAllTemplateColumns
-            UnselectAllTemplateColumns = unselectAllTemplateColumns
-            GetNewTableName = newTableNames.TryFind
+                   columnCount = 0
+                   || Seq.init columnCount id
+                      |> Seq.exists (fun columnIndex -> isTemplateColumnSelected template.Id columnIndex)
+               )
+
+        let sources =
+            React.useMemo (
+                (fun () ->
+                    selectedTemplates
+                    |> Array.mapi (fun index template -> {
+                        Index = index
+                        Name = template.Name
+                        Table = template.Table
+                    })
+                ),
+                [| box selectedTemplates |]
+            )
+
+        let templateAt (index: int) = selectedTemplates.[index]
+
+        let previewCallbacks: TableImportPreviewCallbacks = {
+            GetImportAction = fun index -> getTemplateImportAction (templateAt index).Id
+            SetImportAction = fun index action -> setTemplateImportAction (templateAt index).Id action
+            IsColumnSelected = fun index columnIndex -> isTemplateColumnSelected (templateAt index).Id columnIndex
+            ToggleColumnSelection =
+                fun index columnIndex -> toggleTemplateColumnSelection (templateAt index).Id columnIndex
+            SelectAllColumns = fun index -> selectAllTemplateColumns (templateAt index).Id
+            UnselectAllColumns = fun index _ -> unselectAllTemplateColumns (templateAt index)
+            GetNewTableName = fun index -> newTableNames.TryFind (templateAt index).Id
             SetNewTableName =
-                fun templateId name -> setEnteredNewTableNames (fun names -> names.Add(templateId, name)) |> ignore
+                fun index name ->
+                    setEnteredNewTableNames (fun names -> names.Add((templateAt index).Id, name))
+                    |> ignore
         }
 
         let confirmImport () =
@@ -136,34 +164,7 @@ type TemplateImportModal =
                 Html.div [
                     prop.className "swt:flex swt:flex-col swt:gap-2"
                     prop.children [
-                        Html.div [
-                            prop.className "swt:text-sm swt:font-medium swt:truncate"
-                            prop.text "Import mode"
-                        ]
-                        Html.div [
-                            prop.className "swt:flex swt:flex-col swt:gap-1"
-                            prop.children [
-                                for importMode, _, label, _ in Swate.Components.Composite.TableImport.Helper.ImportMode.options do
-                                    let isChecked = importType = importMode
-
-                                    Html.label [
-                                        prop.className "swt:inline-flex swt:items-center swt:gap-2 swt:cursor-pointer"
-                                        prop.children [
-                                            Html.input [
-                                                prop.type'.radio
-                                                prop.name "template-import-mode"
-                                                prop.className "swt:radio swt:radio-sm"
-                                                prop.isChecked isChecked
-                                                prop.onChange (fun (_: bool) -> setImportType importMode)
-                                            ]
-                                            Html.span [
-                                                prop.className "swt:text-sm swt:text-base-content"
-                                                prop.text label
-                                            ]
-                                        ]
-                                    ]
-                            ]
-                        ]
+                        TableImportPreview.ImportModeSelect(importType, setImportType)
                         Html.div [ prop.className "swt:divider swt:my-1" ]
                         Html.div [
                             prop.className "swt:text-xs swt:opacity-70"
@@ -172,9 +173,10 @@ type TemplateImportModal =
                         Html.div [
                             prop.className "swt:max-h-64 swt:overflow-y-auto"
                             prop.children [
-                                TemplateImportModalPreview.TemplateImportModalPreview(
-                                    selectedTemplates,
-                                    previewCallbacks
+                                TableImportPreview.TableImportPreview(
+                                    sources,
+                                    previewCallbacks,
+                                    emptyText = "No templates selected."
                                 )
                             ]
                         ]

@@ -52,18 +52,12 @@ module ImportMode =
 
     /// Each entry is (mode, key, label, description).
     let options: (ARCtrl.TableJoinOptions * string * string * string)[] = [|
-        ARCtrl.TableJoinOptions.Headers,
-        "Headers",
-        "Headers only",
-        "Adds the column headers. The new cells stay empty."
+        ARCtrl.TableJoinOptions.Headers, "Headers", "Headers only", "Adds the column headers. The new cells stay empty."
         ARCtrl.TableJoinOptions.WithUnit,
         "WithUnit",
         "With units",
         "Adds the column headers and keeps units. Other values stay empty."
-        ARCtrl.TableJoinOptions.WithValues,
-        "WithValues",
-        "With values",
-        "Adds the column headers with all values."
+        ARCtrl.TableJoinOptions.WithValues, "WithValues", "With values", "Adds the column headers with all values."
     |]
 
 let private getDeselectedTableColumnIndices (deselectedColumns: Set<int * int>) (tableIndex: int) =
