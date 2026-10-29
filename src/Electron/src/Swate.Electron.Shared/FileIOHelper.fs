@@ -208,6 +208,11 @@ module FileContentType =
         | FileContentType.CLI -> Some DTOType.CLI
         | FileContentType.Markdown -> None
         | FileContentType.PDF -> None
+        | FileContentType.PNG -> None
+        | FileContentType.JPG -> None
+        | FileContentType.SVG -> None
+        | FileContentType.GIF -> None
+        | FileContentType.Html -> None
         | FileContentType.NoPreview -> None
 
     /// Maps ARCtrl DTOType values to custom file content types.
@@ -266,13 +271,24 @@ module FileContentDTO =
     let inferTextFileTypeFromPath (path: string) : FileContentType =
         let normalizedPath = PathHelpers.normalizePath path
 
-        if normalizedPath.EndsWith(".md", StringComparison.OrdinalIgnoreCase) then
-            FileContentType.Markdown
+        let ending =
+            let lastDotIndex = normalizedPath.LastIndexOf('.')
 
-        elif normalizedPath.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase) then
-            FileContentType.PDF
-        else
-            FileContentType.PlainText
+            if lastDotIndex >= 0 && lastDotIndex < normalizedPath.Length - 1 then
+                Some(normalizedPath.Substring(lastDotIndex + 1).ToLowerInvariant())
+            else
+                None
+
+        match ending with
+        | Some "md" -> FileContentType.Markdown
+        | Some "pdf" -> FileContentType.PDF
+        | Some "html" -> FileContentType.Html
+        | Some "svg" -> FileContentType.SVG
+        | Some "png" -> FileContentType.PNG
+        | Some "jpg" -> FileContentType.JPG
+        | Some "jpeg" -> FileContentType.JPG
+        | Some "gif" -> FileContentType.GIF
+        | _ -> FileContentType.PlainText
 
     let normalizeArcFileRequestPath (request: FileContentDTO) : FileContentDTO =
         let normalizedPath = PathHelpers.normalizePath request.path

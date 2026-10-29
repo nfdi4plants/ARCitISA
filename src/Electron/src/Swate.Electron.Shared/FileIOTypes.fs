@@ -34,6 +34,11 @@ type FileContentType =
     | PlainText
     | Markdown
     | PDF
+    | PNG
+    | JPG
+    | SVG
+    | GIF
+    | Html
     | ISA_Investigation
     | ISA_Study
     | ISA_Assay
