@@ -16,16 +16,17 @@ open Swate.Electron.Shared.IPCTypes.MainToRendererIpc
 open Swate.Electron.Shared.VersionControlTypes
 open VersionControlService.Abstractions
 
+/// Output is None for a call without a window. Its operations ask the library for no output.
 type private RendererBridge = {
     Progress: VersionControlProgressDto -> unit
     Started: OperationRequestDto -> unit
-    Output: VersionControlOutputDto -> unit
+    Output: (VersionControlOutputDto -> unit) option
 }
 
 let private silentBridge: RendererBridge = {
     Progress = ignore
     Started = ignore
-    Output = ignore
+    Output = None
 }
 
 /// Coalesces the progress of one operation. The library can report many events per second,
@@ -117,7 +118,7 @@ let private bridgeForWindow (window: BrowserWindow) : RendererBridge =
     {
         Progress = fun progress -> send (fun api -> api.versionControlProgress progress)
         Started = fun key -> send (fun api -> api.versionControlOperationStarted key)
-        Output = fun output -> send (fun api -> api.versionControlOutput output)
+        Output = Some(fun output -> send (fun api -> api.versionControlOutput output))
     }
 
 let private tryBridgeFromEvent (event: IpcMainInvokeEvent) =
@@ -172,13 +173,21 @@ let private runTracked
     promise {
         let throttle = newProgressThrottle bridge.Progress
 
+        // Output is not throttled here, because the library batches it. The bridge sends
+        // without an async hop, so the batches the library flushes before the operation
+        // completes reach the window before the result does.
+        let reportOutput =
+            bridge.Output
+            |> Option.map (fun send -> fun entries -> send (Mappings.output operationId entries))
+
         match
             host.TryBeginOperation(
                 operationId,
                 workspaceRoot,
                 windowId,
                 mutating,
-                fun progress -> throttle.Report(Mappings.progress operationId progress)
+                (fun progress -> throttle.Report(Mappings.progress operationId progress)),
+                reportOutput
             )
         with
         | Error failure ->

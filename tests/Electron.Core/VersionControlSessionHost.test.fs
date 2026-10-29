@@ -351,6 +351,66 @@ Vitest.describe (
         )
 
         Vitest.test (
+            "an operation started with an output callback gets an output channel that reaches the callback",
+            fun () ->
+                withFixture (fun fixture -> promise {
+                    let mutable received: OperationOutput[] list = []
+
+                    let tracked =
+                        match
+                            fixture.Host.TryBeginOperation(
+                                "op-with-output",
+                                Some fixture.RepoRoot,
+                                Some 1,
+                                false,
+                                ignore,
+                                Some(fun entries -> received <- entries :: received)
+                            )
+                        with
+                        | Ok tracked -> tracked
+                        | Error failure -> failwith failure.Message
+
+                    let batch = [|
+                        {
+                            CommandId = "git-1"
+                            Kind = OperationOutputKind.StdOut
+                            Text = "Uploading LFS objects"
+                            IsPartial = false
+                        }
+                    |]
+
+                    Vitest.expect(tracked.Context.OperationId).toBe "op-with-output"
+                    Vitest.expect(tracked.Context.ReportOutput.IsSome).toBe true
+                    tracked.Context.ReportOutput |> Option.iter (fun report -> report batch)
+                    Vitest.expect(received).toEqual [ batch ]
+                    tracked.Complete()
+                })
+        )
+
+        Vitest.test (
+            "an operation started without an output callback has no output channel",
+            fun () ->
+                withFixture (fun fixture -> promise {
+                    let tracked =
+                        match
+                            fixture.Host.TryBeginOperation(
+                                "op-without-output",
+                                Some fixture.RepoRoot,
+                                None,
+                                false,
+                                ignore,
+                                None
+                            )
+                        with
+                        | Ok tracked -> tracked
+                        | Error failure -> failwith failure.Message
+
+                    Vitest.expect(tracked.Context.ReportOutput.IsNone).toBe true
+                    tracked.Complete()
+                })
+        )
+
+        Vitest.test (
             "the diff window owner is the window registered for the operation, else unknown",
             fun () ->
                 let runtime =

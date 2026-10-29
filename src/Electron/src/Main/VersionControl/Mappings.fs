@@ -101,6 +101,25 @@ let progress (operationId: string) (progress: OperationProgress) : VersionContro
     DisplayMessage = progress.DisplayMessage
 }
 
+let outputKind (kind: OperationOutputKind) : string =
+    match kind with
+    | OperationOutputKind.Command -> "command"
+    | OperationOutputKind.StdOut -> "stdout"
+    | OperationOutputKind.StdErr -> "stderr"
+    | OperationOutputKind.Notice -> "notice"
+
+let output (operationId: string) (entries: OperationOutput[]) : VersionControlOutputDto = {
+    OperationId = operationId
+    Entries =
+        entries
+        |> Array.map (fun entry -> {
+            CommandId = entry.CommandId
+            Kind = outputKind entry.Kind
+            Text = entry.Text
+            IsPartial = entry.IsPartial
+        })
+}
+
 let logicalRef (reference: LogicalRef) : LogicalRefDto = {
     Name = reference.Name
     ProviderRef = ProviderRef.value reference.ProviderRef
