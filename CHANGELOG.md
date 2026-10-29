@@ -60,7 +60,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Canceling the download of large files during Download Changes or a clone no longer leaves a Git lock behind. (by @caroott)
 - When a Git lock stops the download of large files, ARCitISA offers "Remove lock" and then "Download now". A Save or Upload Changes that was held back from publishing continues after the download, or when you close the lock dialog. (by @caroott)
 - When a Git lock also stops "Download now", ARCitISA offers "Remove lock" and then "Download now" again. (by @caroott)
-- After a Git lock stopped a download of large files, removing the lock in ARCitISA also clears the files that git-lfs had already written from the changed files list. (by @caroott)
+- After a Git lock stopped a download of large files, removing the lock in ARCitISA also clears the files that git-lfs had already written from the changed files list. ARCitISA then offers "Download now" only when a large file is still missing. (by @caroott)
+- "Download now" no longer shows an error for a large file with your own edits. The file keeps its edit. (by @caroott)
 
 ## 3.1.0 - 2026-10-21
 

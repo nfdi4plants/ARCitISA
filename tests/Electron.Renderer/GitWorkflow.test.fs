@@ -570,6 +570,11 @@ let private objectState path isMaterialized : ObjectStateDto = {
     ObjectId = Some $"object-{path}"
 }
 
+/// The listing of a workspace with one large object that is not on disk.
+let private oneMissingObject (_: OperationRequestDto) = promise {
+    return Ok(succeeded [| objectState "missing.bin" false |])
+}
+
 let private statusWithChanges (changes: (string * FileChangeKindDto)[]) : WorkspaceStatusDto = {
     cleanStatus with
         Changes =
@@ -629,7 +634,8 @@ let private runPullWithPartial (partial: OperationFailureDto) = promise {
 }
 
 /// Confirms the lock dialog of the state and finishes the lock removal with the given result.
-let private confirmLockRemoval deps (lockedState: GitState) clearResult = promise {
+/// Returns the finished state with the messages that its completion produced.
+let private confirmLockRemovalWithMessages deps (lockedState: GitState) clearResult = promise {
     let deps = {
         deps with
             clearStaleLock = fun _ -> promise { return clearResult }
@@ -647,7 +653,12 @@ let private confirmLockRemoval deps (lockedState: GitState) clearResult = promis
     let clearing, clearCmd = update deps ignore requestedMessages[0] lockRequested
     let! clearMessages = collectMessages clearCmd
     let finished, finishCmd = update deps ignore clearMessages[0] clearing
-    let! _ = collectMessages finishCmd
+    let! finishMessages = collectMessages finishCmd
+    return finished, finishMessages
+}
+
+let private confirmLockRemoval deps (lockedState: GitState) clearResult = promise {
+    let! finished, _ = confirmLockRemovalWithMessages deps lockedState clearResult
     return finished
 }
 
@@ -5070,6 +5081,7 @@ Vitest.describe (
                                         Warning = None
                                         Partial = None
                                         Published = None
+                                        ObjectsMissing = None
                                     }
                                 )
                             )
@@ -6041,6 +6053,7 @@ Vitest.describe (
                                         Warning = None
                                         Partial = Some partial
                                         Published = None
+                                        ObjectsMissing = None
                                     },
                                     dialog,
                                     GitPendingRemoteAction.FinalizeMerge
@@ -7459,7 +7472,15 @@ Vitest.describe (
             fun () -> promise {
                 let partial = lockedPartial VersionControlCodes.HydrationFailed
                 let! deps, locked = runPullWithPartial partial
-                let! finished = confirmLockRemoval deps locked (Ok(succeeded cleanStatus))
+
+                let! finished =
+                    confirmLockRemoval
+                        {
+                            deps with
+                                listObjects = oneMissingObject
+                        }
+                        locked
+                        (Ok(succeeded cleanStatus))
 
                 Vitest
                     .expect(finished.PendingRecovery)
@@ -7491,7 +7512,14 @@ Vitest.describe (
 
                 Vitest.expect(locked.RetryMaterializationAfterLockClear).toEqual (Some partial.Message)
 
-                let! finished = confirmLockRemoval deps locked (Ok(succeeded cleanStatus))
+                let! finished =
+                    confirmLockRemoval
+                        {
+                            deps with
+                                listObjects = oneMissingObject
+                        }
+                        locked
+                        (Ok(succeeded cleanStatus))
 
                 Vitest
                     .expect(finished.PendingRecovery)
@@ -7707,12 +7735,10 @@ Vitest.describe (
                         "edited.bin", FileChangeKindDto.Modified
                     |]
 
-                let refusal = {
-                    makeFailure ProviderError "lfs_incomplete" "1 of 2 paths failed" None [| "edited.bin" |] with
-                        Details = [|
-                            "edited.bin: 'edited.bin' has local changes. Save, discard, or commit them before downloading the Git LFS file."
-                        |]
-                }
+                let refusal =
+                    makeFailure ProviderError VersionControlCodes.LocalChanges "1 of 2 paths failed" None [|
+                        "edited.bin"
+                    |]
 
                 let deps = {
                     (withRefresh status defaultDependencies) with
@@ -7779,6 +7805,186 @@ Vitest.describe (
         )
 
         Vitest.test (
+            "A restage failure that only mentions local changes in its text is routed as an error",
+            fun () -> promise {
+                let status = statusWithChanges [| "stale.bin", FileChangeKindDto.Modified |]
+
+                let failure =
+                    makeFailure ProviderError "lfs_failed" "'stale.bin' has local changes." None [||]
+
+                let deps = {
+                    (withRefresh status defaultDependencies) with
+                        listObjects = fun _ -> promise { return Ok(succeeded [| objectState "stale.bin" true |]) }
+                        clearStaleLock = fun _ -> promise { return Ok(succeeded status) }
+                        materializeObjects = fun _ -> promise { return Ok(OperationResultDto.Failed failure) }
+                }
+
+                let! _, completion = runClearWrite deps
+
+                match completion with
+                | [| WriteCompleted(_, _, ClearStaleLock, Error _) |] -> ()
+                | _ -> failwith "Expected the restage failure to be reported."
+            }
+        )
+
+        Vitest.test (
+            "A listing that fails after the lock removal completes the write, refreshes and abandons an open merge",
+            fun () -> promise {
+                let conflicted = conflictedStatus [| "conflict.txt" |]
+                let mutable statusReads = 0
+
+                let deps = {
+                    (withRefresh conflicted defaultDependencies) with
+                        listObjects =
+                            fun _ -> promise { return Ok(failed ProviderError "lfs_failed" "The listing failed.") }
+                        getStatus =
+                            fun _ ->
+                                statusReads <- statusReads + 1
+                                promise { return Ok(succeeded conflicted) }
+                        clearStaleLock = fun _ -> promise { return Ok(succeeded conflicted) }
+                }
+
+                let! requested, completion = runClearWrite deps
+
+                let finalState, finalCmd =
+                    match completion with
+                    | [| WriteCompleted(_, _, ClearStaleLock, Ok(Completed _)) |] ->
+                        update deps ignore completion[0] requested
+                    | _ -> failwith "Expected the lock removal to complete."
+
+                let! finalMessages = collectMessages finalCmd
+
+                Vitest.expect(statusReads > 0).toBe true
+                Vitest.expect(finalState.ErrorNotice).toEqual None
+                Vitest.expect(finalMessages).toEqual ([| WriteRequested AbandonMerge |])
+            }
+        )
+
+        Vitest.test (
+            "A status that fails while the restage looks for stale paths completes the write and refreshes",
+            fun () -> promise {
+                let status = statusWithChanges [| "stale.bin", FileChangeKindDto.Modified |]
+                let mutable statusReads = 0
+
+                let deps = {
+                    (withRefresh status defaultDependencies) with
+                        listObjects = fun _ -> promise { return Ok(succeeded [| objectState "stale.bin" true |]) }
+                        getStatus =
+                            fun _ ->
+                                statusReads <- statusReads + 1
+
+                                promise {
+                                    return
+                                        if statusReads = 1 then
+                                            Ok(failed ProviderError "status_failed" "The status failed.")
+                                        else
+                                            Ok(succeeded status)
+                                }
+                        clearStaleLock = fun _ -> promise { return Ok(succeeded status) }
+                }
+
+                let! requested, completion = runClearWrite deps
+
+                let finalState, finalCmd =
+                    match completion with
+                    | [| WriteCompleted(_, _, ClearStaleLock, Ok(Completed _)) |] ->
+                        update deps ignore completion[0] requested
+                    | _ -> failwith "Expected the lock removal to complete."
+
+                let! _ = collectMessages finalCmd
+
+                Vitest.expect(statusReads > 1).toBe true
+                Vitest.expect(finalState.ErrorNotice).toEqual None
+            }
+        )
+
+        Vitest.test (
+            "A removed lock whose restage leaves no large object missing offers no download",
+            fun () -> promise {
+                let status = statusWithChanges [| "stale.bin", FileChangeKindDto.Modified |]
+                let restageRequests = ResizeArray<ObjectPathsRequestDto>()
+                let! deps, locked = runPullWithPartial (lockedPartial VersionControlCodes.HydrationFailed)
+
+                let staleDeps = {
+                    (withRefresh status deps) with
+                        listObjects = fun _ -> promise { return Ok(succeeded [| objectState "stale.bin" true |]) }
+                        materializeObjects =
+                            fun request ->
+                                restageRequests.Add request
+                                promise { return Ok(succeeded ()) }
+                }
+
+                let! finished = confirmLockRemoval staleDeps locked (Ok(succeeded status))
+
+                Vitest.expect(restageRequests.Count).toBe 1
+                Vitest.expect(finished.PendingRecovery).toEqual None
+                Vitest.expect(finished.PendingConfirmation).toEqual None
+                Vitest.expect(finished.RetryMaterializationAfterLockClear).toEqual None
+            }
+        )
+
+        Vitest.test (
+            "A removed lock whose restage leaves a large object missing offers the download",
+            fun () -> promise {
+                let status = statusWithChanges [| "stale.bin", FileChangeKindDto.Modified |]
+                let partial = lockedPartial VersionControlCodes.HydrationFailed
+                let! deps, locked = runPullWithPartial partial
+
+                let staleDeps = {
+                    (withRefresh status deps) with
+                        listObjects =
+                            fun _ -> promise {
+                                return
+                                    Ok(
+                                        succeeded [|
+                                            objectState "stale.bin" true
+                                            objectState "missing.bin" false
+                                        |]
+                                    )
+                            }
+                        materializeObjects = fun _ -> promise { return Ok(succeeded ()) }
+                }
+
+                let! finished = confirmLockRemoval staleDeps locked (Ok(succeeded status))
+
+                Vitest
+                    .expect(finished.PendingRecovery)
+                    .toEqual (Some(GitPendingRecovery.RetryMaterialization(failureMessage partial)))
+
+                Vitest.expect(finished.RetryMaterializationAfterLockClear).toEqual None
+            }
+        )
+
+        Vitest.test (
+            "A removed lock with no large object missing resumes the publish that waited for the download",
+            fun () -> promise {
+                let! deps, locked = runPullWithPartial (lockedPartial VersionControlCodes.HydrationFailed)
+
+                let waiting = {
+                    locked with
+                        PendingPostMergePush = true
+                }
+
+                let! finished, messages = confirmLockRemovalWithMessages deps waiting (Ok(succeeded cleanStatus))
+
+                Vitest.expect(finished.PendingRecovery).toEqual None
+                Vitest.expect(finished.PendingPostMergePush).toBe false
+
+                Vitest
+                    .expect(
+                        messages
+                        |> hasMessage (
+                            function
+                            | WriteRequested(Push GitUpdateAcceptance.RequirePreview) -> true
+                            | _ -> false
+                        )
+                    )
+                    .toBe
+                    true
+            }
+        )
+
+        Vitest.test (
             "Download now requests a path that git-lfs wrote while the lock stopped the checkout, next to the missing ones",
             fun () -> promise {
                 let status = statusWithChanges [| "stale.bin", FileChangeKindDto.Modified |]
@@ -7822,12 +8028,7 @@ Vitest.describe (
                 let status = statusWithChanges [| "edited.bin", FileChangeKindDto.Modified |]
 
                 let refusal =
-                    makeFailure
-                        ProviderError
-                        "lfs_failed"
-                        "'edited.bin' has local changes. Save, discard, or commit them before downloading the Git LFS file."
-                        None
-                        [||]
+                    makeFailure ProviderError VersionControlCodes.LocalChanges "'edited.bin' has local changes." None [||]
 
                 let deps = {
                     (withRefresh status defaultDependencies) with
@@ -7864,6 +8065,57 @@ Vitest.describe (
 
                 let! _ = collectMessages finalCmd
 
+                Vitest.expect(finalState.ErrorNotice).toEqual None
+            }
+        )
+
+        Vitest.test (
+            "Download now skips a pending path that the library refuses for a local edit and downloads the others",
+            fun () -> promise {
+                let refusal =
+                    makeFailure ProviderError VersionControlCodes.LocalChanges "'edited.bin' has local changes." None [||]
+
+                let requested = ResizeArray<string>()
+
+                let deps = {
+                    (withRefresh cleanStatus defaultDependencies) with
+                        listObjects =
+                            fun _ -> promise {
+                                return
+                                    Ok(
+                                        succeeded [|
+                                            objectState "edited.bin" false
+                                            objectState "missing.bin" false
+                                        |]
+                                    )
+                            }
+                        materializeObject =
+                            fun request ->
+                                requested.Add request.Path
+
+                                promise {
+                                    return
+                                        if request.Path = "edited.bin" then
+                                            Ok(OperationResultDto.Failed refusal)
+                                        else
+                                            Ok(succeeded ())
+                                }
+                }
+
+                let running, retryCmd =
+                    update deps ignore (WriteRequested RetryMaterialization) runningState
+
+                let! completion = collectMessages retryCmd
+
+                let finalState, finalCmd =
+                    match completion with
+                    | [| WriteCompleted(_, _, RetryMaterialization, Ok(Completed _)) |] ->
+                        update deps ignore completion[0] running
+                    | _ -> failwith "Expected the download to complete."
+
+                let! _ = collectMessages finalCmd
+
+                Vitest.expect(requested.ToArray()).toEqual [| "edited.bin"; "missing.bin" |]
                 Vitest.expect(finalState.ErrorNotice).toEqual None
             }
         )

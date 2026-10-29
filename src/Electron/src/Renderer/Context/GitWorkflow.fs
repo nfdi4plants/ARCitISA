@@ -548,6 +548,8 @@ type WriteRequest =
 
 /// SelectedChangePath uses None for no override and Some None to clear the selection.
 /// Published says whether the synchronize published. It is None when the write was not a synchronize.
+/// ObjectsMissing says whether a large object is still missing after a lock removal. It is None when the write was
+/// not a lock removal or when the listing after it failed.
 type WriteUnitSuccess = {
     Refresh: GitRefreshResult
     PageChange: GitPageChange
@@ -555,6 +557,7 @@ type WriteUnitSuccess = {
     Warning: string option
     Partial: OperationFailureDto option
     Published: bool option
+    ObjectsMissing: bool option
 }
 
 type WriteSuccess =
@@ -568,6 +571,7 @@ let private unitSuccess (refresh: GitRefreshResult) = {
     Warning = None
     Partial = None
     Published = None
+    ObjectsMissing = None
 }
 
 let private joinMessages first second =
@@ -1099,16 +1103,10 @@ let staleLfsPaths (objects: ObjectStateDto[]) (status: WorkspaceStatusDto) : str
     |> Array.map _.Path
     |> Array.distinct
 
-/// Whether every path of the failure was refused because it has a local edit. The restage of a stale path asks for
-/// paths that may hold real edits, and the library refuses those.
+/// Whether every path of the failure was refused because it has a local edit. The restage of a stale path and the
+/// download of a pending path ask for paths that may hold real edits, and the library refuses those with its own code.
 let private isLocalChangesRefusal (failure: OperationFailureDto) =
-    let entries =
-        if failure.Details.Length > 0 then
-            failure.Details
-        else
-            [| failure.Message |]
-
-    entries |> Array.forall (fun entry -> entry.Contains "has local changes")
+    failure.Code = VersionControlCodes.LocalChanges
 
 /// The dialog the sidebar shows for a recovery. Confirm runs it, cancel keeps the
 /// workspace as it is. Restoring interrupted files discards local changes on them.
@@ -3539,6 +3537,7 @@ let private completeAfterUpdateAsync
                                 Warning = pendingWarning
                                 Partial = partialToKeep
                                 Published = None
+                                ObjectsMissing = None
                             }
                         )
                     )
@@ -3648,6 +3647,7 @@ let private refreshAfterSuccessWithOutcome
                             Warning = warningMessage
                             Partial = partial
                             Published = published
+                            ObjectsMissing = None
                         }
                     )
                 )
@@ -4495,14 +4495,21 @@ let private listObjectsWithStalePathsAsync (deps: GitDependencies) = promise {
             return Ok(objects, [||])
 }
 
+let private anyObjectMissing (objects: ObjectStateDto[]) =
+    objects |> Array.exists (fun objectState -> not objectState.IsMaterialized)
+
 /// Asks the library to restage the stale large-file paths after a lock removal. A path that holds a real edit
-/// is refused with "has local changes" and stays as it is. Any other failure, a held lock included, is returned.
-let private restageStaleLfsPathsAsync (deps: GitDependencies) : JS.Promise<Result<unit, OperationFailureDto>> = promise {
+/// is refused with the code local_changes and stays as it is. Any other failure of that call, a held lock
+/// included, is returned. A listing or status that fails means there is nothing known to restage. The refresh
+/// that follows reports a workspace that is really broken.
+/// The result says whether a large object is still missing after the restage. It is None when the listing
+/// after the restage failed.
+let private restageStaleLfsPathsAsync (deps: GitDependencies) : JS.Promise<Result<bool option, OperationFailureDto>> = promise {
     let! listed = listObjectsWithStalePathsAsync deps
 
     match listed with
-    | Error failure -> return Error failure
-    | Ok(_, [||]) -> return Ok()
+    | Error _ -> return Ok None
+    | Ok(objects, [||]) -> return Ok(Some(anyObjectMissing objects))
     | Ok(_, stalePaths) ->
         let! restaged =
             toResult (
@@ -4512,11 +4519,16 @@ let private restageStaleLfsPathsAsync (deps: GitDependencies) : JS.Promise<Resul
                 }
             )
 
-        return
-            match restaged with
-            | Error failure
-            | Ok(_, Some failure) when not (isLocalChangesRefusal failure) -> Error failure
-            | _ -> Ok()
+        match restaged with
+        | Error failure
+        | Ok(_, Some failure) when not (isLocalChangesRefusal failure) -> return Error failure
+        | _ ->
+            let! relisted = toResult (deps.listObjects (request deps))
+
+            return
+                match relisted with
+                | Ok(objectsOutcome, _) -> Ok(Some(anyObjectMissing objectsOutcome.Value))
+                | Error _ -> Ok None
 }
 
 /// Removes a stale lock, restages the large files that git-lfs had already written when the lock stopped a
@@ -4548,7 +4560,22 @@ let private runClearStaleLockAttemptAsync (deps: GitDependencies) =
 
             match restaged with
             | Error failure -> return! routedToOutcome deps (routeFailure None failure)
-            | Ok() -> return! refreshAfterSuccess deps partial GitPageChange.NoChange None warningMessage
+            | Ok objectsMissing ->
+                let! refreshed = refreshAfterSuccess deps partial GitPageChange.NoChange None warningMessage
+
+                return
+                    refreshed
+                    |> Result.map (
+                        function
+                        | Completed(UnitSuccess success) ->
+                            Completed(
+                                UnitSuccess {
+                                    success with
+                                        ObjectsMissing = objectsMissing
+                                }
+                            )
+                        | other -> other
+                    )
         })
 
 let private runRestoreInterruptedPathsAttemptAsync (deps: GitDependencies) (state: GitState) (paths: string[]) = promise {
@@ -4570,8 +4597,8 @@ let private runRestoreInterruptedPathsAttemptAsync (deps: GitDependencies) (stat
 
 /// Downloads the large objects an interrupted update left behind, one per object,
 /// stopping at the first failure so its message is reported. The stale paths of a lock-blocked checkout
-/// are requested as well, so the library restages them. Such a path that holds a real edit is refused
-/// and does not count as a failure.
+/// are requested as well, so the library restages them. A requested path that holds a real edit, stale or
+/// pending, is refused with the code local_changes. It is skipped, keeps its edit and does not count as a failure.
 let private runRetryMaterializationAttemptAsync (deps: GitDependencies) = promise {
     let! listed = listObjectsWithStalePathsAsync deps
 
@@ -4600,7 +4627,7 @@ let private runRetryMaterializationAttemptAsync (deps: GitDependencies) = promis
 
                 match materialized with
                 | Ok _ -> ()
-                | Error error when Array.contains path stalePaths && isLocalChangesRefusal error -> ()
+                | Error error when isLocalChangesRefusal error -> ()
                 | Error error -> failure <- Some error
 
         match failure with
@@ -5069,6 +5096,12 @@ let private writeCmd
 /// workspace has no open conflict session anymore.
 let private shouldRunPostMergePush (model: GitState) =
     model.PendingPostMergePush && model.ActiveConflict.IsNone
+
+/// The restage after a lock removal found every large object on disk, so Download now would have nothing to fetch.
+let private lockRemovalFoundNoMissingObject (success: WriteSuccess) =
+    match success with
+    | UnitSuccess { ObjectsMissing = Some false } -> true
+    | _ -> false
 
 let private updateCore
     (deps: GitDependencies)
@@ -6469,6 +6502,13 @@ let private updateCore
             match writeRequest with
             // A cleared lock revealed an open merge: the abandon path runs it.
             | ClearStaleLock when nextModel.ActiveConflict.IsSome -> Cmd.ofMsg (WriteRequested AbandonMerge)
+            // No download offer follows the lock removal, so the publish that waited for the download resumes here.
+            | ClearStaleLock when
+                model.RetryMaterializationAfterLockClear.IsSome
+                && lockRemovalFoundNoMissingObject success
+                && shouldRunPostMergePush nextModel
+                ->
+                Cmd.ofMsg (WriteRequested(Push GitUpdateAcceptance.RequirePreview))
             | FinalizeMerge when shouldRunPostMergePush nextModel ->
                 Cmd.ofMsg (WriteRequested(Push GitUpdateAcceptance.RequirePreview))
             | RetryMaterialization when shouldRunPostMergePush nextModel ->
@@ -6485,6 +6525,15 @@ let private updateCore
                 nextModel with
                     PendingPostMergePush = false
               }
+            | ClearStaleLock when
+                model.RetryMaterializationAfterLockClear.IsSome
+                && lockRemovalFoundNoMissingObject success
+                && shouldRunPostMergePush nextModel
+                  ->
+                  {
+                      nextModel with
+                          PendingPostMergePush = false
+                  }
             | AbandonMerge -> {
                 nextModel with
                     PendingPostMergePush = false
@@ -6527,14 +6576,15 @@ let private updateCore
         ]
 
 /// A removed index lock turns the stopped download into the download offer. Any other end of the
-/// lock removal drops it, because the next pull offers the download again.
+/// lock removal drops it, because the next pull offers the download again. The offer is dropped as well when
+/// the restage after the lock removal found no large object missing, because Download now would have nothing to fetch.
 let private offerDownloadAfterLockRemoval (msg: Msg) (model: GitState) (next: GitState) =
     match msg with
     | WriteCompleted(sessionId, writeRequestId, ClearStaleLock, result) when
         sessionId = model.ArcSessionId && writeRequestId = model.WriteRequestId
         ->
         match result, model.RetryMaterializationAfterLockClear with
-        | Ok(Completed _), Some message ->
+        | Ok(Completed success), Some message when not (lockRemovalFoundNoMissingObject success) ->
             let recovery = GitPendingRecovery.RetryMaterialization message
 
             {

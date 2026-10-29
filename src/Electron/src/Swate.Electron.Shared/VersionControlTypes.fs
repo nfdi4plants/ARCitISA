@@ -432,6 +432,11 @@ module VersionControlCodes =
     [<Literal>]
     let HydrationFailed = "hydration_failed"
 
+    /// The library refuses to download or free a large file that has local edits. A batch has this code when
+    /// every failed path is such a refusal.
+    [<Literal>]
+    let LocalChanges = "local_changes"
+
     [<Literal>]
     let InvalidLfsThreshold = "invalid_lfs_threshold"
 
