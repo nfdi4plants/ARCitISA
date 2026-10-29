@@ -54,7 +54,7 @@ let fileTypeDisplayName (file: ArcFiles) =
     | ArcFiles.Template _ -> "template"
     | ArcFiles.DataMap _ -> "DataMap"
 
-/// Applies the import to a copy. The current file is never changed.
+/// Applies the import to a copy and leaves the current file as it is.
 let applyImport
     (current: ArcFiles)
     (parsed: ParsedJsonFile)
