@@ -79,6 +79,43 @@ let unselectAllTemplateColumns
     setDeselectedTemplateColumns (fun deselected -> Set.union deselected allTemplateColumns)
     |> ignore
 
+let isTemplateRowSelected (templateId: System.Guid) (rowIndex: int) (deselectedTemplateRows: Set<System.Guid * int>) =
+    deselectedTemplateRows.Contains(templateId, rowIndex) |> not
+
+let toggleTemplateRowSelection
+    (templateId: System.Guid)
+    (rowIndex: int)
+    (setDeselectedTemplateRows: (Set<System.Guid * int> -> Set<System.Guid * int>) -> unit)
+    =
+    setDeselectedTemplateRows (fun deselected ->
+        if deselected.Contains(templateId, rowIndex) then
+            deselected.Remove(templateId, rowIndex)
+        else
+            deselected.Add(templateId, rowIndex)
+    )
+    |> ignore
+
+let selectAllTemplateRows
+    (templateId: System.Guid)
+    (setDeselectedTemplateRows: (Set<System.Guid * int> -> Set<System.Guid * int>) -> unit)
+    =
+    setDeselectedTemplateRows (fun deselected ->
+        deselected
+        |> Set.filter (fun (candidateTemplateId, _) -> candidateTemplateId <> templateId)
+    )
+    |> ignore
+
+let unselectAllTemplateRows
+    (template: Template)
+    (setDeselectedTemplateRows: (Set<System.Guid * int> -> Set<System.Guid * int>) -> unit)
+    =
+    let allTemplateRows =
+        Seq.init template.Table.RowCount (fun rowIndex -> template.Id, rowIndex)
+        |> Set.ofSeq
+
+    setDeselectedTemplateRows (fun deselected -> Set.union deselected allTemplateRows)
+    |> ignore
+
 let selectedTemplatesForImport
     (templates: Template[])
     (selectedTemplateIds: Set<System.Guid>)
@@ -137,6 +174,12 @@ let importIntoCopy (arcFile: ArcFiles) (activeTableIndex: int option) (payload: 
             payload.DeselectedTemplateColumns
             |> Seq.choose (fun (templateId, columnIndex) ->
                 indexById.TryFind templateId |> Option.map (fun index -> index, columnIndex)
+            )
+            |> Set.ofSeq
+        DeselectedRows =
+            payload.DeselectedTemplateRows
+            |> Seq.choose (fun (templateId, rowIndex) ->
+                indexById.TryFind templateId |> Option.map (fun index -> index, rowIndex)
             )
             |> Set.ofSeq
         EnteredNames =

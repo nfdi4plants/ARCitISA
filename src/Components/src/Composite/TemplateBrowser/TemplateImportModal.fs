@@ -151,6 +151,7 @@ type TemplateImportModal =
                 ImportType = importType
                 SelectedTemplatesForImport = selectedTemplatesForImport
                 DeselectedTemplateColumns = deselectedTemplateColumns
+                DeselectedTemplateRows = Set.empty
                 NewTableNames = newTableNames |> Map.map (fun _ newTableName -> newTableName.Name)
             }
 

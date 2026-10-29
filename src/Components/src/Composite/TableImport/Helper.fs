@@ -48,6 +48,50 @@ let columnValuePreview (table: ArcTable) (columnIndex: int) =
     |> String.concat " | "
     |> fun preview -> if preview = "" then "No values" else preview
 
+/// The text a grid cell shows: the value and unit of a unitized cell, the name of a term or data cell.
+let cellText (cell: CompositeCell) : string =
+    let text =
+        match cell with
+        | CompositeCell.FreeText text -> text
+        | CompositeCell.Term ontologyAnnotation -> ontologyAnnotation.NameText
+        | CompositeCell.Unitized(value, unit) ->
+            [| value; unit.NameText |] |> Array.choose tryTrimmed |> String.concat " "
+        | CompositeCell.Data data -> data.NameText
+
+    if isNull text then "" else text.Trim()
+
+/// Returns a new table with the name and headers of the given table and only the given rows, in the given order.
+let filterRows (table: ArcTable) (selectedRowIndices: int[]) : ArcTable =
+    // RemoveRows rebuilds every sparse column once per removed row in ARCtrl beta.12, which is quadratic
+    // for many rows. Building the result from the kept rows costs O(kept rows x columns).
+    let result = ArcTable.init table.Name
+
+    let columns =
+        table.Headers
+        |> Seq.mapi (fun columnIndex header ->
+            // GetCellAt infers the empty cell of a gap from the stored cells of the column. It is
+            // costly and returns the same value for every gap, so it runs once per column.
+            let gapCell: CompositeCell option ref = ref None
+
+            let cells =
+                selectedRowIndices
+                |> Array.map (fun rowIndex ->
+                    match table.TryGetCellAt(columnIndex, rowIndex) with
+                    | Some cell -> cell.Copy()
+                    | None ->
+                        if gapCell.Value.IsNone then
+                            gapCell.Value <- Some(table.GetCellAt(columnIndex, rowIndex))
+
+                        gapCell.Value.Value.Copy()
+                )
+
+            CompositeColumn.create (header.Copy(), ResizeArray cells)
+        )
+        |> ResizeArray
+
+    result.AddColumns columns
+    result
+
 [<RequireQualifiedAccess>]
 module ImportMode =
 
@@ -219,6 +263,9 @@ let actionOf (decisions: TableImportDecisions) (sourceIndex: int) =
 let isColumnSelected (decisions: TableImportDecisions) (sourceIndex: int) (columnIndex: int) =
     not (decisions.DeselectedColumns.Contains(sourceIndex, columnIndex))
 
+let isRowSelected (decisions: TableImportDecisions) (sourceIndex: int) (rowIndex: int) =
+    not (decisions.DeselectedRows.Contains(sourceIndex, rowIndex))
+
 let newTableNames
     (existingTableNames: string seq)
     (sources: ImportSource[])
@@ -245,6 +292,7 @@ let defaultJsonDecisions: TableImportDecisions = {
     DefaultAction = TableImportAction.ImportAsNewTable
     Actions = Map.empty
     DeselectedColumns = Set.empty
+    DeselectedRows = Set.empty
     EnteredNames = Map.empty
     ActiveTableIndex = None
 }
@@ -268,6 +316,20 @@ let validate (current: ArcFiles) (sources: ImportSource[]) (decisions: TableImpo
             )
         )
 
+    // Headers mode imports no values, so it has no row rule.
+    let tableWithoutRows =
+        if decisions.ImportType = TableJoinOptions.Headers then
+            None
+        else
+            selected
+            |> Array.tryFind (fun source ->
+                source.Table.RowCount > 0
+                && not (
+                    Seq.init source.Table.RowCount id
+                    |> Seq.exists (isRowSelected decisions source.Index)
+                )
+            )
+
     let names =
         newTableNames (current.ArcTables().TableNames) sources actionOf decisions.EnteredNames
 
@@ -283,6 +345,8 @@ let validate (current: ArcFiles) (sources: ImportSource[]) (decisions: TableImpo
         Some "Select at least one table to import."
     elif tableWithoutSelection.IsSome then
         Some $"Select at least one column of \"{tableWithoutSelection.Value.Name}\"."
+    elif tableWithoutRows.IsSome then
+        Some $"Select at least one row of \"{tableWithoutRows.Value.Name}\"."
     elif nameError.IsSome then
         nameError
     elif appends && (tryGetAppendTarget current decisions.ActiveTableIndex).IsNone then
@@ -346,11 +410,25 @@ let applyImport
                     |> Set.ofSeq
         }
 
+        // Deselected columns are column indices and stay valid after the rows are filtered.
+        let rowFilteredTable (source: ImportSource) =
+            if decisions.ImportType = TableJoinOptions.Headers then
+                source.Table
+            else
+                let selectedRows =
+                    Array.init source.Table.RowCount id
+                    |> Array.filter (isRowSelected decisions source.Index)
+
+                if selectedRows.Length = source.Table.RowCount then
+                    source.Table
+                else
+                    filterRows source.Table selectedRows
+
         try
             let next = ArcFiles.refreshRef current
 
             updateTables
-                (selected |> Array.map (fun source -> source.Table) |> ResizeArray)
+                (selected |> Array.map rowFilteredTable |> ResizeArray)
                 config
                 (if appends then appendTarget |> Option.map fst else None)
                 (Some next)

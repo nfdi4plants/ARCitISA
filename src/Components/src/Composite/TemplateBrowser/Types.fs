@@ -26,5 +26,6 @@ type ImportModalConfirmPayload = {
     ImportType: TableJoinOptions
     SelectedTemplatesForImport: (Template * TableImportAction)[]
     DeselectedTemplateColumns: Set<System.Guid * int>
+    DeselectedTemplateRows: Set<System.Guid * int>
     NewTableNames: Map<System.Guid, string>
 }

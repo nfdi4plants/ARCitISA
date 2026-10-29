@@ -58,6 +58,7 @@ let private appendAndImportAsNewTable (newTableName: string) =
             asNewTable imported
         |]
         DeselectedTemplateColumns = Set.empty
+        DeselectedTemplateRows = Set.empty
         NewTableNames = Map [ imported.Id, newTableName ]
     }
 
@@ -95,5 +96,37 @@ for fileType, createEmptyFile in tableFileTypes do
                         "A table named \"Sugar\" already exists."
 
                     Vitest.expect(tableSummary arcFile).toEqual [| "New Table 0", 1; "Sugar", 0 |]
+            )
+
+            Vitest.test (
+                "deselected template rows reach the template they are keyed to",
+                fun () ->
+                    let templateWithRows (name: string) =
+                        let template = Template.init name
+
+                        template.Table.AddColumn(
+                            CompositeHeader.Input IOType.Source,
+                            ResizeArray [ for i in 1..3 -> CompositeCell.FreeText $"{name}{i}" ]
+                        )
+
+                        template
+
+                    let first = templateWithRows "First"
+                    let second = templateWithRows "Second"
+
+                    let payload = {
+                        ImportType = TableJoinOptions.WithValues
+                        SelectedTemplatesForImport = [| asNewTable first; asNewTable second |]
+                        DeselectedTemplateColumns = Set.empty
+                        DeselectedTemplateRows = Set.ofList [ second.Id, 0; second.Id, 2 ]
+                        NewTableNames = Map.empty
+                    }
+
+                    let imported = importIntoCopy (createFile createEmptyFile) (Some 0) payload
+                    let tables = imported.Tables()
+
+                    Vitest.expect(tables.[2].RowCount).toBe 3
+                    Vitest.expect(tables.[3].RowCount).toBe 1
+                    Vitest.expect(tables.[3].GetCellAt(0, 0)).toEqual (CompositeCell.FreeText "Second2")
             )
     )

@@ -56,6 +56,8 @@ type TableImportDecisions = {
     Actions: Map<int, TableImportAction>
     /// (source index, column index)
     DeselectedColumns: Set<int * int>
+    /// (source index, row index)
+    DeselectedRows: Set<int * int>
     /// By source index, the raw text the user typed.
     EnteredNames: Map<int, string>
     /// Index of the table in the current file to append to.

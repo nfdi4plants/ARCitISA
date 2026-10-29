@@ -195,6 +195,7 @@ let private decisionsFor importType defaultAction = {
     DefaultAction = defaultAction
     Actions = Map.empty
     DeselectedColumns = Set.empty
+    DeselectedRows = Set.empty
     EnteredNames = Map.empty
     ActiveTableIndex = Some 0
 }
@@ -669,4 +670,235 @@ Vitest.test (
     fun () ->
         let table = columnTable (freeTexts [ ""; " " ])
         Vitest.expect(columnValuePreview table 0).toBe "No values"
+)
+
+let private createRowSource (rowCount: int) =
+    let table = ArcTable.init "Rows"
+
+    table.AddColumn(
+        CompositeHeader.Parameter(OntologyAnnotation "Temperature"),
+        ResizeArray [
+            for i in 1..rowCount -> CompositeCell.Unitized($"{i}", degreeCelsius)
+        ]
+    )
+
+    table.AddColumn(
+        CompositeHeader.Characteristic(OntologyAnnotation "Organism"),
+        ResizeArray [
+            for i in 1..rowCount -> CompositeCell.Term(OntologyAnnotation($"organism {i}"))
+        ]
+    )
+
+    table
+
+Vitest.test (
+    "filterRows keeps the name, the headers and every cell of the given rows in order and leaves the source",
+    fun () ->
+        let source = createMixedSource ()
+
+        source.AddColumn(CompositeHeader.Parameter(OntologyAnnotation "Sparse"))
+        let sparseColumn = source.ColumnCount - 1
+        source.SetCellAt(sparseColumn, 1, CompositeCell.Term(OntologyAnnotation "set"))
+
+        Vitest.expect((source.TryGetCellAt(sparseColumn, 0)).IsNone).toBe true
+
+        let before = source.Copy()
+        let filtered = filterRows source [| 2; 0; 1 |]
+
+        Vitest.expect(filtered.Name).toBe source.Name
+        Vitest.expect(filtered.Headers).toEqual source.Headers
+        Vitest.expect(filtered.RowCount).toBe 3
+
+        for columnIndex in 0 .. source.ColumnCount - 1 do
+            [| 2; 0; 1 |]
+            |> Array.iteri (fun position rowIndex ->
+                Vitest
+                    .expect(filtered.GetCellAt(columnIndex, position))
+                    .toEqual (source.GetCellAt(columnIndex, rowIndex))
+            )
+
+        expectSameTable source before
+        Vitest.expect((filterRows source [||]).RowCount).toBe 0
+        Vitest.expect((filterRows source [||]).Headers).toEqual source.Headers
+)
+
+Vitest.test (
+    "filterRows keeps 2500 of 5000 rows of a 20 column table",
+    fun () ->
+        let table = ArcTable.init "Big"
+
+        for columnIndex in 0..19 do
+            table.AddColumn(
+                CompositeHeader.FreeText $"Column {columnIndex}",
+                ResizeArray [
+                    for row in 1..5000 -> CompositeCell.FreeText $"{columnIndex}-{row}"
+                ]
+            )
+
+        let filtered = filterRows table [| for row in 0..2..4999 -> row |]
+
+        Vitest.expect(filtered.RowCount).toBe 2500
+        Vitest.expect(filtered.ColumnCount).toBe 20
+        Vitest.expect(filtered.GetCellAt(19, 2499)).toEqual (CompositeCell.FreeText "19-4999")
+)
+
+for importType in [ TableJoinOptions.WithValues; TableJoinOptions.WithUnit ] do
+    Vitest.test (
+        $"deselected rows are not imported into a new table ({importType})",
+        fun () ->
+            let sources = [| sourceOf 0 (createRowSource 5) |]
+
+            let decisions = {
+                jsonDefaults with
+                    ImportType = importType
+                    DeselectedRows = Set.ofList [ 0, 1; 0, 3 ]
+            }
+
+            let result = applyImport (createBasicAssay ()) sources decisions |> applied
+            let table = (importedTables result).[1]
+
+            Vitest.expect(table.RowCount).toBe 3
+
+            let units = [| for row in 0..2 -> cellText (table.GetCellAt(0, row)) |]
+
+            if importType = TableJoinOptions.WithUnit then
+                Vitest.expect(units).toEqual [| for _ in 1..3 -> "degree Celsius" |]
+            else
+                Vitest.expect(units).toEqual [|
+                    "1 degree Celsius"
+                    "3 degree Celsius"
+                    "5 degree Celsius"
+                |]
+
+            if importType = TableJoinOptions.WithValues then
+                let organisms = [| for row in 0..2 -> cellText (table.GetCellAt(1, row)) |]
+                Vitest.expect(organisms).toEqual [| "organism 1"; "organism 3"; "organism 5" |]
+    )
+
+Vitest.test (
+    "deselected rows land in the first rows of the active table when appending",
+    fun () ->
+        let current = createBasicAssay ()
+        let sources = [| sourceOf 0 (createRowSource 5) |]
+
+        let decisions = {
+            decisionsFor TableJoinOptions.WithValues TableImportAction.AppendToActiveTable with
+                DeselectedRows = Set.ofList [ 0, 1; 0, 3 ]
+        }
+
+        let result = applyImport current sources decisions |> applied
+        let table = (importedTables result).[0]
+
+        Vitest.expect(table.RowCount).toBe 3
+        Vitest.expect(table.GetCellAt(0, 0)).toEqual (CompositeCell.FreeText "source-1")
+
+        let organisms = [| for row in 0..2 -> cellText (table.GetCellAt(4, row)) |]
+        Vitest.expect(organisms).toEqual [| "organism 1"; "organism 3"; "organism 5" |]
+)
+
+Vitest.test (
+    "headers mode ignores deselected rows",
+    fun () ->
+        let sources = [| sourceOf 0 (createRowSource 3) |]
+        let current = createBasicAssay ()
+
+        let plain = {
+            jsonDefaults with
+                ImportType = TableJoinOptions.Headers
+        }
+
+        let deselected = {
+            plain with
+                DeselectedRows = Set.ofList [ for row in 0..2 -> 0, row ]
+        }
+
+        let expected = applyImport current sources plain |> applied
+        let actual = applyImport current sources deselected |> applied
+
+        expectSameTable (importedTables actual).[1] (importedTables expected).[1]
+)
+
+Vitest.test (
+    "validate asks for a row unless the table has no rows or only headers are imported",
+    fun () ->
+        let current = createBasicAssay ()
+        let sources = [| sourceOf 0 (createRowSource 2) |]
+        let noRows = Set.ofList [ 0, 0; 0, 1 ]
+
+        Vitest
+            .expect(
+                validate current sources {
+                    jsonDefaults with
+                        DeselectedRows = noRows
+                }
+            )
+            .toEqual (Some "Select at least one row of \"Rows\".")
+
+        Vitest
+            .expect(
+                validate current sources {
+                    jsonDefaults with
+                        DeselectedRows = noRows
+                        ImportType = TableJoinOptions.Headers
+                }
+            )
+            .toEqual
+            None
+
+        let empty = ArcTable.init "Empty"
+        empty.AddColumn(CompositeHeader.Parameter(OntologyAnnotation "Temperature"))
+
+        Vitest
+            .expect(
+                validate current [| sourceOf 0 empty |] {
+                    jsonDefaults with
+                        DeselectedRows = Set.singleton (0, 0)
+                }
+            )
+            .toEqual
+            None
+)
+
+Vitest.test (
+    "an import with deselected rows does not change the current file",
+    fun () ->
+        let current = createBasicAssay ()
+        let sources = [| sourceOf 0 (createRowSource 5) |]
+        let deselectedRows = Set.ofList [ 0, 1; 0, 3 ]
+
+        let summary () = [|
+            for table in current.Tables() -> table.Name, table.ColumnCount, table.RowCount
+        |]
+
+        let before = summary ()
+
+        let append = {
+            decisionsFor TableJoinOptions.WithValues TableImportAction.AppendToActiveTable with
+                DeselectedRows = deselectedRows
+        }
+
+        applyImport current sources append |> applied |> ignore
+
+        applyImport current sources {
+            jsonDefaults with
+                DeselectedRows = deselectedRows
+        }
+        |> applied
+        |> ignore
+
+        Vitest.expect(summary ()).toEqual before
+        Vitest.expect(sources.[0].Table.RowCount).toBe 5
+)
+
+Vitest.test (
+    "cellText shows the text of a cell and leaves out empty parts",
+    fun () ->
+        Vitest.expect(cellText (CompositeCell.FreeText " text ")).toBe "text"
+        Vitest.expect(cellText (CompositeCell.Term(OntologyAnnotation "term"))).toBe "term"
+        Vitest.expect(cellText (CompositeCell.Unitized("21", degreeCelsius))).toBe "21 degree Celsius"
+        Vitest.expect(cellText (CompositeCell.Unitized("", degreeCelsius))).toBe "degree Celsius"
+        Vitest.expect(cellText (CompositeCell.Unitized("21", OntologyAnnotation.empty ()))).toBe "21"
+        Vitest.expect(cellText (CompositeCell.Data(Data(name = "file.csv")))).toBe "file.csv"
+        Vitest.expect(cellText (CompositeCell.Term(OntologyAnnotation.empty ()))).toBe ""
+        Vitest.expect(cellText (CompositeCell.FreeText "")).toBe ""
 )
