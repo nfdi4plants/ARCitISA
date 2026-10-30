@@ -19,6 +19,13 @@ let electronMock: obj = import "__electronMock" "electron"
 [<Emit("require('node:child_process').execFileSync($0, $1, { cwd: $2, stdio: 'pipe' }).toString()")>]
 let execFile (_file: string) (_args: string[]) (_cwd: string) : string = jsNative
 
+[<Import("symlink", "fs/promises")>]
+let private symlink (_target: string) (_linkPath: string) (_linkType: string) : JS.Promise<unit> = jsNative
+
+/// Links `linkPath` to the folder `target`. Windows creates a junction, which needs no extra
+/// privileges. Other platforms ignore the type and create a folder symlink.
+let createFolderLinkAsync (target: string) (linkPath: string) = symlink target linkPath "junction"
+
 let writeText (filePath: string) (content: string) =
     Main.Bindings.Filesystem.writeFileSync filePath content Main.Bindings.Filesystem.TextEncoding.Utf8
 
@@ -117,6 +124,34 @@ let removeDirectoryAsync (path: string) : JS.Promise<unit> = promise {
 
     return ()
 }
+
+[<Import("tmpdir", "os")>]
+let private tmpdir () : string = jsNative
+
+[<Import("mkdtempSync", "fs")>]
+let private mkdtempSync (_prefix: string) : string = jsNative
+
+[<Import("symlinkSync", "fs")>]
+let private symlinkSync (_target: string) (_linkPath: string) (_linkType: string) : unit = jsNative
+
+[<Import("rmSync", "fs")>]
+let private rmSync (_path: string) (_options: Main.Bindings.Filesystem.RmOptions) : unit = jsNative
+
+let canCreateFileLinks () =
+    let probeDirectory = mkdtempSync (join [| tmpdir (); "swate-link-probe-" |])
+
+    try
+        try
+            let targetPath = join [| probeDirectory; "target.txt" |]
+            writeText targetPath ""
+            symlinkSync targetPath (join [| probeDirectory; "link.txt" |]) "file"
+            true
+        with _ ->
+            false
+    finally
+        rmSync probeDirectory (Main.Bindings.Filesystem.RmOptions(recursive = true, force = true))
+
+let createFileLinkAsync (target: string) (linkPath: string) = symlink target linkPath "file"
 
 let pathExistsAsync (path: string) : JS.Promise<bool> = promise {
     try

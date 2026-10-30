@@ -69,11 +69,20 @@ let private copyTextToClipboard (text: string) =
     }
     |> Promise.start
 
-let private importFilesContextMenuItem (config: PathActionConfig) (targetRelativePath: string) =
-    ContextMenuItem.create
-        "Import files"
-        "swt:fluent--arrow-import-24-regular swt:rotate-180"
-        (fun () -> runPathAction config "Import failed" config.importExternalFiles targetRelativePath)
+let private importContextMenuItems (config: PathActionConfig) (item: FileItem) (targetRelativePath: string) =
+    fileSystemCreateKinds
+    |> List.filter (fun kind -> canCreateFileSystemItemIn kind item)
+    |> List.map (fun kind ->
+        let label, icon =
+            match kind with
+            | FileSystemItemKind.File -> "Import files", "swt:fluent--arrow-import-24-regular swt:rotate-180"
+            | FileSystemItemKind.Folder -> "Import folders", "swt:fluent--folder-arrow-left-24-regular"
+
+        ContextMenuItem.create
+            label
+            icon
+            (fun () -> runPathAction config "Import failed" (config.importExternalPaths kind) targetRelativePath)
+    )
 
 let private pathActionContextMenuItemsForRelativePath
     (config: PathActionConfig)
@@ -88,7 +97,7 @@ let private pathActionContextMenuItemsForRelativePath
                 (fun () -> runPathAction config "Open file failed" config.openPathWithDefaultApplication relativePath)
 
         else
-            importFilesContextMenuItem config relativePath
+            yield! importContextMenuItems config item relativePath
 
         ContextMenuItem.create
             "Open Folder Location"
@@ -205,7 +214,7 @@ let fileSystemCreateContextMenuItems
 
 let rootContextMenuItems (config: ContextMenuConfig) (rootItem: FileItem) =
     withDividers [
-        [ importFilesContextMenuItem config.pathActionConfig "" ]
+        importContextMenuItems config.pathActionConfig rootItem ""
         fileSystemCreateContextMenuItems config.openFileSystemCreateModal rootItem
         arcCreateContextMenuItems config.openCreateModal config.openNoteDraft rootItem
     ]

@@ -144,6 +144,9 @@ let statAsync (path: string) : JS.Promise<Stats> = jsNative
 [<Import("lstat", "fs/promises")>]
 let lstatAsync (path: string) : JS.Promise<Stats> = jsNative
 
+[<Import("realpath", "fs/promises")>]
+let realpathAsync (path: string) : JS.Promise<string> = jsNative
+
 [<JS.PojoAttribute>]
 type LstatBigintOptions(bigint: bool) =
     member val bigint: bool = bigint with get, set

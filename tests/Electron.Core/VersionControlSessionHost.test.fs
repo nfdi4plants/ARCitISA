@@ -2665,46 +2665,50 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "a close timeout approves the close and restores the timeout setting",
-            fun () ->
-                withFixture (fun fixture -> promise {
-                    let vaults, vault, invokeClose, getCloseCount = captureCloseWindow 73
+            "a close timeout waits 30 seconds before approving the close",
+            fun () -> promise {
+                let runtime =
+                    createRuntime "" VersionControlService.LakeFs.LakeFsCredentials.unconfigured (memoryBindings ())
 
-                    let tracked =
-                        fixture.Host.BeginOperation(
-                            "close-mutation-timeout",
-                            Some fixture.RepoRoot,
-                            Some 73,
-                            true,
-                            ignore
-                        )
+                let host = WorkspaceSessionHost.WorkspaceSessionHost(runtime)
+                WorkspaceSessionHost.initialize host
 
-                    let dialogSpy = Vitest.vi.spyOn (electron?dialog, "showMessageBox")
-                    mockResolvedValue dialogSpy (createObj [ "response" ==> 0.0 ])
-                    let mutable preventedCloseCount = 0
+                let vaults, vault, invokeClose, getCloseCount = captureCloseWindow 73
 
-                    let closeEvent =
-                        createObj [
-                            "preventDefault" ==> (fun () -> preventedCloseCount <- preventedCloseCount + 1)
-                        ]
+                let tracked =
+                    host.BeginOperation("close-mutation-timeout", None, Some 73, true, ignore)
 
-                    closeWaitTimeoutMilliseconds <- 5
+                let dialogSpy = Vitest.vi.spyOn (electron?dialog, "showMessageBox")
+                mockResolvedValue dialogSpy (createObj [ "response" ==> 0.0 ])
+                let mutable preventedCloseCount = 0
 
-                    try
-                        invokeClose closeEvent
-                        do! Promise.sleep 20
+                let closeEvent =
+                    createObj [
+                        "preventDefault" ==> (fun () -> preventedCloseCount <- preventedCloseCount + 1)
+                    ]
 
-                        Vitest.expect(mockCallCount dialogSpy).toBe 1
-                        Vitest.expect(preventedCloseCount).toBe 1
-                        Vitest.expect(vault.isWaitingForOperationsOnClose).toBe false
-                        Vitest.expect(vault.isOperationCloseApproved).toBe false
-                        Vitest.expect(getCloseCount ()).toBe 1
-                    finally
-                        closeWaitTimeoutMilliseconds <- 30000
-                        tracked.Complete()
-                        vaults.Vaults.Clear()
-                        Vitest.vi.restoreAllMocks ()
-                })
+                Vitest.vi.useFakeTimers () |> ignore
+
+                try
+                    invokeClose closeEvent
+                    do! Vitest.vi.advanceTimersByTimeAsync 29999
+
+                    Vitest.expect(vault.isWaitingForOperationsOnClose).toBe true
+                    Vitest.expect(getCloseCount ()).toBe 0
+
+                    do! Vitest.vi.advanceTimersByTimeAsync 1
+
+                    Vitest.expect(mockCallCount dialogSpy).toBe 1
+                    Vitest.expect(preventedCloseCount).toBe 1
+                    Vitest.expect(vault.isWaitingForOperationsOnClose).toBe false
+                    Vitest.expect(vault.isOperationCloseApproved).toBe false
+                    Vitest.expect(getCloseCount ()).toBe 1
+                finally
+                    Vitest.vi.useRealTimers () |> ignore
+                    tracked.Complete()
+                    vaults.Vaults.Clear()
+                    Vitest.vi.restoreAllMocks ()
+            }
         )
 
         Vitest.test (

@@ -86,6 +86,18 @@ let private withLoadedArcVault<'T>
             | _ -> return Error(arcNotOpenError ())
     }
 
+/// Returns the refusal for an import while the window's vault is busy or its window is closing.
+/// A window without a loaded vault is not busy, so the callers keep their own handling for it.
+let private tryGetImportBusyError (event: IpcMainInvokeEvent) : exn option =
+    match ARC_VAULTS.TryGetVault(windowIdFromIpcEvent event) with
+    | Some vault when
+        vault.isBusyWriting
+        || vault.activeFileImport.IsSome
+        || vault.isWaitingForImportCleanup
+        ->
+        Some(exn "ARCitISA is still saving another change or importing. Try again when it is done.")
+    | _ -> None
+
 let private tryResolveExistingArcRelativePath
     (arcPath: string)
     (relativePath: string)
@@ -491,23 +503,31 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
                 return Error(exn $"Could not pick directory: {e.Message}")
         }
     pickAbsolutePaths =
-        fun () -> promise {
+        fun kind -> promise {
             try
-                let properties = [|
-                    Enums.Dialog.ShowOpenDialog.Options.Properties.OpenFile
-                    Enums.Dialog.ShowOpenDialog.Options.Properties.MultiSelections
-                |]
+                match tryGetImportBusyError event with
+                | Some busyError -> return Error busyError
+                | None ->
+                    let pickProperty =
+                        match kind with
+                        | FileSystemItemKind.File -> Enums.Dialog.ShowOpenDialog.Options.Properties.OpenFile
+                        | FileSystemItemKind.Folder -> Enums.Dialog.ShowOpenDialog.Options.Properties.OpenDirectory
 
-                let window = dialogParentFromIpcEvent event
-                let! result = dialog.showOpenDialog (?window = window, properties = properties)
+                    let properties = [|
+                        pickProperty
+                        Enums.Dialog.ShowOpenDialog.Options.Properties.MultiSelections
+                    |]
 
-                if result.canceled then
-                    issue (windowIdFromIpcEvent event) [||] |> ignore
-                    return Ok None
-                else
-                    return Ok(Some(issue (windowIdFromIpcEvent event) result.filePaths))
+                    let window = dialogParentFromIpcEvent event
+                    let! result = dialog.showOpenDialog (?window = window, properties = properties)
+
+                    if result.canceled then
+                        issue (windowIdFromIpcEvent event) [||] |> ignore
+                        return Ok None
+                    else
+                        return Ok(Some(issue (windowIdFromIpcEvent event) result.filePaths))
             with e ->
-                return Error(exn $"Could not pick files: {e.Message}")
+                return Error(exn $"Could not pick items to import: {e.Message}")
         }
     pickExternalTextFiles =
         fun _ -> promise {
@@ -551,37 +571,75 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
 
                 let windowId = windowIdFromIpcEvent event
 
+                // A refusal for being busy does not use up the authorization, so it stays valid until the next pick replaces it.
+                match tryGetImportBusyError event with
+                | Some busyError -> raise busyError
+                | None -> ()
+
                 let sourceAbsolutePaths =
                     match consume windowId request.authorizationId with
                     | Ok paths -> paths
                     | Error authorizationError -> raise authorizationError
 
                 if sourceAbsolutePaths.Length = 0 then
-                    raise (exn "No files were selected for import.")
+                    raise (exn "No items were selected for import.")
 
                 return!
                     withLoadedArcVault
                         event
                         (fun vault -> promise {
-                            // The watcher ignores temporary import directories, while final imported files and
-                            // unrelated external ARC changes remain eligible for normal watcher merges. Successful
-                            // imports also replay their own events synchronously before the refreshed tree is exposed.
+                            // The watcher ignores temporary import directories. While the import's marks last, creation
+                            // events of imported ARC structure files start no merge. Later edits and deletions do, and so
+                            // do unrelated external ARC changes. The import reconciles its target folder in the file tree
+                            // before the notice closes.
 
-                            let reportImportProgress progress =
-                                if progress <= 0.0 then
+                            let publishImportProgress (progress: FileImportProgress) =
+                                match progress.step with
+                                | FileImportStep.Scanning ->
                                     vault.window.setProgressBar (
                                         0.0,
                                         BrowserWindow.SetProgressBar.Options(
                                             Enums.BrowserWindow.SetProgressBar.Options.Mode.Indeterminate
                                         )
                                     )
-                                else
+                                | FileImportStep.Copying
+                                | FileImportStep.Publishing ->
                                     vault.window.setProgressBar (
-                                        progress,
+                                        FileImportProgress.overallFraction progress,
                                         BrowserWindow.SetProgressBar.Options(
                                             Enums.BrowserWindow.SetProgressBar.Options.Mode.Normal
                                         )
                                     )
+
+                                match vault.activeFileImport with
+                                | Some activeImport when
+                                    activeImport.State.requestId = request.requestId
+                                    && activeImport.State.phase = FileImportPhase.Copying
+                                    ->
+                                    FileImportCoordinator.publishState vault.window (Some activeImport)
+                                | _ -> ()
+
+                            let publisher =
+                                FileImportCoordinator.createThrottledProgressPublisher 100 publishImportProgress
+
+                            let reportImportProgress (progress: FileImportProgress) =
+                                match vault.activeFileImport with
+                                | Some activeImport when
+                                    activeImport.State.requestId = request.requestId
+                                    && activeImport.State.phase = FileImportPhase.Copying
+                                    ->
+                                    let updatedImport = {
+                                        activeImport with
+                                            State = {
+                                                activeImport.State with
+                                                    progress = progress
+                                            }
+                                    }
+
+                                    vault.activeFileImport <- Some updatedImport
+                                | _ -> ()
+
+                                publisher.Report progress
 
                             return!
                                 IPCHelper.withExclusiveBusyWriting
@@ -599,87 +657,81 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
                                             (fun () -> vault.activeFileImport)
                                             (fun value -> vault.activeFileImport <- value)
                                             (fun abortSignal -> promise {
-                                                let importedEvents =
-                                                    WatcherHelpers.createImportedFileWatcherEvents
-                                                        vault.path.Value
-                                                        request.targetRelativePath
-                                                        sourceAbsolutePaths
+                                                let importedEvents = ResizeArray()
+                                                let importToken = vault.StartImport()
 
-                                                // Chokidar's awaitWriteFinish can emit these well after the import
-                                                // releases the busy flag, so ownership must outlive the write itself.
-                                                importedEvents
-                                                |> Array.iter (fun event ->
-                                                    vault.importedFileWatcherPaths.Add(
-                                                        WatcherHelpers.importedFileWatcherPathKey event
-                                                    )
-                                                    |> ignore
-                                                )
-
-                                                let releaseImportEventOwnership () =
-                                                    importedEvents
-                                                    |> Array.iter (fun event ->
-                                                        vault.importedFileWatcherPaths.Remove(
-                                                            WatcherHelpers.importedFileWatcherPathKey event
-                                                        )
-                                                        |> ignore
+                                                let registerImportedPaths plannedPaths =
+                                                    importedEvents.AddRange(
+                                                        WatcherHelpers.createImportedWatcherEvents
+                                                            vault.path.Value
+                                                            request.targetRelativePath
+                                                            plannedPaths
                                                     )
 
-                                                let! result =
-                                                    ArcFileSystemHelper.importExternalFilesOnDisk
-                                                        vault.path.Value
-                                                        request.targetRelativePath
-                                                        sourceAbsolutePaths
-                                                        reportImportProgress
-                                                        (fun () -> abortSignal.aborted)
-                                                        (fun () ->
-                                                            match vault.activeFileImport with
-                                                            | Some activeImport when
-                                                                activeImport.State.requestId = request.requestId
-                                                                ->
-                                                                let finalizingImport = {
-                                                                    activeImport with
-                                                                        State = {
-                                                                            activeImport.State with
-                                                                                phase = FileImportPhase.Finalizing
-                                                                        }
-                                                                }
+                                                    // Chokidar's awaitWriteFinish can emit these well after the import
+                                                    // releases the busy flag, so ownership must outlive the write itself.
+                                                    vault.ClaimImportedFileEvents(importToken, importedEvents)
 
-                                                                vault.activeFileImport <- Some finalizingImport
+                                                try
+                                                    let! result =
+                                                        ArcFileSystemHelper.importExternalFilesOnDisk
+                                                            vault.path.Value
+                                                            request.targetRelativePath
+                                                            sourceAbsolutePaths
+                                                            reportImportProgress
+                                                            (fun () -> abortSignal.aborted)
+                                                            registerImportedPaths
+                                                            (fun () ->
+                                                                publisher.Stop()
 
-                                                                FileImportCoordinator.publishState
-                                                                    vault.window
-                                                                    (Some finalizingImport)
-                                                            | _ -> ()
-                                                        )
-                                                        (fun () ->
-                                                            vault.TryTriggerArcInMemoryMergeOnFileWatcherEvents(
-                                                                importedEvents |> Array.toList
+                                                                match vault.activeFileImport with
+                                                                | Some activeImport when
+                                                                    activeImport.State.requestId = request.requestId
+                                                                    ->
+                                                                    let finalizingImport = {
+                                                                        activeImport with
+                                                                            State = {
+                                                                                activeImport.State with
+                                                                                    phase =
+                                                                                        FileImportPhase.Finalizing
+                                                                            }
+                                                                    }
+
+                                                                    vault.activeFileImport <- Some finalizingImport
+
+                                                                    FileImportCoordinator.publishState
+                                                                        vault.window
+                                                                        (Some finalizingImport)
+                                                                | _ -> ()
                                                             )
-                                                        )
-                                                    |> Promise.catch Error
+                                                            (fun () ->
+                                                                vault.TryTriggerArcInMemoryMergeOnFileWatcherEvents(
+                                                                    importedEvents |> Seq.toList
+                                                                )
+                                                            )
+                                                        |> Promise.catch Error
 
-                                                match result with
-                                                | Ok ImportExternalFilesResult.Completed ->
-                                                    WatcherHelpers.releaseUnwatchedImportedPaths
-                                                        vault.path.Value
-                                                        (vault.fileWatcherState = FileWatcherState.Running)
-                                                        vault.importedFileWatcherPaths
-                                                        importedEvents
-                                                | _ -> releaseImportEventOwnership ()
+                                                    vault.ReleaseImportedFileEventsAfterImport(importToken, result)
 
-                                                // Partly copied files count too, so the tree is reconciled for every outcome.
-                                                do!
-                                                    importedEvents
-                                                    |> Seq.map _.AbsolutePath
-                                                    |> reconcileParentsOfAbsolutePaths vault
+                                                    // Partly copied items and a staging folder that could not be
+                                                    // removed count too, so the target folder is reconciled for every outcome.
+                                                    do!
+                                                        Main.Bindings.Path.join [|
+                                                            vault.path.Value
+                                                            request.targetRelativePath
+                                                        |]
+                                                        |> PathHelpers.normalizePathKeepingWhitespace
+                                                        |> vault.EnqueueFileTreeDirectoryReconcile
 
-                                                vault.window.setProgressBar -1.0
-                                                return result
+                                                    vault.window.setProgressBar -1.0
+                                                    return result
+                                                finally
+                                                    publisher.Stop()
                                             })
                                     )
                         })
             with e ->
-                return Error(exn $"Could not import files: {e.Message}")
+                return Error(exn $"Could not import items: {e.Message}")
         }
     cancelImportExternalFiles =
         fun requestId -> promise {

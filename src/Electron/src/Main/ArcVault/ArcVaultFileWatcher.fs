@@ -35,6 +35,13 @@ type WatcherMergeOutcome =
     /// Snapshot loading or merging failed, so the caller can publish the tree batch after logging the error.
     | Failed of exn
 
+/// A completed import keeps its marks until the watcher has reported none of its paths for the quiet time,
+/// and at most for the maximum time after the import completed. Polling reports a large import over many
+/// seconds, so a fixed time drops marks while events still arrive. A native watcher can miss events, so a
+/// mark must not wait for an event forever.
+let private importedPathQuietMilliseconds = 30000
+let private importedPathMaximumMilliseconds = 300000
+
 type ArcVault with
 
     member internal this.LoadWatcherSnapshot() : Fable.Core.JS.Promise<Result<ARC, exn>> = promise {
@@ -187,6 +194,157 @@ type ArcVault with
                             | Ok() -> return WatcherMergeOutcome.Applied
                             | Error mergeError -> return WatcherMergeOutcome.Failed mergeError
         })
+
+    member this.StartImport() : int =
+        this.nextImportToken <- this.nextImportToken + 1
+        this.nextImportToken
+
+    /// Marks the paths of the events as written by the import with this token. A later claim of the same path
+    /// takes the mark over from an earlier import.
+    member this.ClaimImportedFileEvents(token: int, events: ArcVaultFileSystemEvent seq) =
+        let keys =
+            events
+            |> Seq.map (fun event -> event.AbsolutePath.ToLowerInvariant())
+            |> Seq.toArray
+
+        for key in keys do
+            this.importedPathOwners.[key] <- token
+
+        match this.importedPathLeases.TryGetValue token with
+        | true, lease -> lease.Paths <- Array.append lease.Paths keys |> Array.distinct
+        | _ ->
+            this.importedPathLeases.[token] <- {
+                Paths = Array.distinct keys
+                CompletedAt = None
+                LastActivity = Main.Bindings.Node.performanceNow ()
+                Timer = None
+            }
+
+    member private this.ReleaseImport(token: int) =
+        match this.importedPathLeases.TryGetValue token with
+        | true, lease ->
+            lease.Timer |> Option.iter Fable.Core.JS.clearTimeout
+            lease.Timer <- None
+
+            for key in lease.Paths do
+                match this.importedPathOwners.TryGetValue key with
+                | true, owner when owner = token -> this.importedPathOwners.Remove key |> ignore
+                | _ -> ()
+
+            this.importedPathLeases.Remove token |> ignore
+        | _ -> ()
+
+    member private this.ImportedLeaseDeadline(lease: ImportedPathLease) : float =
+        match lease.CompletedAt with
+        | Some completedAt ->
+            min
+                (completedAt + float importedPathMaximumMilliseconds)
+                ((max completedAt lease.LastActivity) + float importedPathQuietMilliseconds)
+        | None -> infinity
+
+    member private this.ArmImportRelease(token: int) =
+        match this.importedPathLeases.TryGetValue token with
+        | true, lease when lease.CompletedAt.IsSome ->
+            lease.Timer |> Option.iter Fable.Core.JS.clearTimeout
+
+            let delay =
+                max 0.0 (this.ImportedLeaseDeadline lease - Main.Bindings.Node.performanceNow ())
+
+            lease.Timer <-
+                Some(
+                    Fable.Core.JS.setTimeout
+                        (fun () ->
+                            match this.importedPathLeases.TryGetValue token with
+                            | true, current ->
+                                current.Timer <- None
+
+                                if Main.Bindings.Node.performanceNow () >= this.ImportedLeaseDeadline current then
+                                    this.ReleaseImport token
+                                else
+                                    this.ArmImportRelease token
+                            | _ -> ()
+                        )
+                        (int delay)
+                )
+        | _ -> ()
+
+    /// Ends the marks of an import. A completed import keeps them until the watcher has reported none of its
+    /// paths for the quiet time, and for the maximum time at the latest. Without a running watcher no event
+    /// will come, because a restarted watcher skips files that already exist, so the marks end at once. A
+    /// cancelled or failed import removed what it wrote, so a later creation event for its paths does not
+    /// come from the import. If that cleanup failed, the leftover files stay unmarked.
+    member this.ReleaseImportedFileEventsAfterImport(token: int, result: Result<ImportExternalFilesResult, exn>) =
+        match result with
+        | Ok ImportExternalFilesResult.Completed when this.fileWatcherState = FileWatcherState.Running ->
+            match this.importedPathLeases.TryGetValue token with
+            | true, lease when lease.CompletedAt.IsNone ->
+                let now = Main.Bindings.Node.performanceNow ()
+                lease.CompletedAt <- Some now
+                lease.LastActivity <- now
+                this.ArmImportRelease token
+            | _ -> ()
+        | _ -> this.ReleaseImport token
+
+    /// Removes the mark of a path, and with includeDescendants the marks below it, from the owners and from
+    /// the paths of their leases. The lease and its timer stay, so the timer still ends an emptied lease.
+    member private this.ReleaseImportedPath(key: string, includeDescendants: bool) =
+        let prefix = key + "/"
+
+        let keys =
+            this.importedPathOwners.Keys
+            |> Seq.filter (fun candidate -> candidate = key || (includeDescendants && candidate.StartsWith prefix))
+            |> Seq.toArray
+
+        for removedKey in keys do
+            match this.importedPathOwners.TryGetValue removedKey with
+            | true, token ->
+                match this.importedPathLeases.TryGetValue token with
+                | true, lease -> lease.Paths <- lease.Paths |> Array.filter (fun path -> path <> removedKey)
+                | _ -> ()
+            | _ -> ()
+
+            this.importedPathOwners.Remove removedKey |> ignore
+
+    /// True for a creation event of a path that an import wrote. Only creation events count, so an external
+    /// edit or deletion of an imported path still merges. A creation event leaves the mark in place, because
+    /// an old event must not use up the mark of a newer import of the same path. A deletion event releases
+    /// the mark of its path, and for a folder the marks below it, so a recreated path merges again. A
+    /// matching call also restarts the quiet time of its import, so call it once per watcher event.
+    member this.IsImportedWatcherEvent(event: ArcVaultFileSystemEvent) : bool =
+        let isCreation =
+            WatcherHelpers.eventNameEquals Chokidar.Events.Add event.EventName
+            || WatcherHelpers.eventNameEquals Chokidar.Events.AddDir event.EventName
+
+        if not isCreation then
+            if WatcherHelpers.eventNameEquals Chokidar.Events.Unlink event.EventName then
+                this.ReleaseImportedPath(event.AbsolutePath.ToLowerInvariant(), false)
+            elif WatcherHelpers.eventNameEquals Chokidar.Events.UnlinkDir event.EventName then
+                this.ReleaseImportedPath(event.AbsolutePath.ToLowerInvariant(), true)
+
+            false
+        else
+            match this.importedPathOwners.TryGetValue(event.AbsolutePath.ToLowerInvariant()) with
+            | true, token ->
+                match this.importedPathLeases.TryGetValue token with
+                | true, lease ->
+                    let now = Main.Bindings.Node.performanceNow ()
+
+                    if lease.CompletedAt.IsSome && now >= this.ImportedLeaseDeadline lease then
+                        this.ReleaseImport token
+                        false
+                    else
+                        lease.LastActivity <- now
+                        true
+                | _ -> false
+            | _ -> false
+
+    /// Drops the marks of every import, together with their release timers.
+    member internal this.ClearImportedFileEvents() =
+        for lease in this.importedPathLeases.Values do
+            lease.Timer |> Option.iter Fable.Core.JS.clearTimeout
+
+        this.importedPathLeases.Clear()
+        this.importedPathOwners.Clear()
 
     member internal this._FileEventController(sendMsgApi: IArcFileWatcherApi) =
         // A long write retries every 500 ms, so only the first deferral and the limit crossing are logged.
@@ -363,10 +521,7 @@ type ArcVault with
 
             WatcherHelpers.queueFileWatcherEvent
                 (fun event ->
-                    let isImportedPath =
-                        this.importedFileWatcherPaths.Remove(WatcherHelpers.importedFileWatcherPathKey event)
-
-                    not isImportedPath
+                    not (this.IsImportedWatcherEvent event)
                     && (this.activeFileImport.IsSome || this.IsFileWatcherArcMergeEligible)
                 )
                 this.path
@@ -562,8 +717,8 @@ type ArcVault with
             swatelogfn this.window.id "Structural file watcher error: %s" error.Message
             this.FileWatcherToken <- token + 1
             this.CancelFileWatcherRestart()
-            // The restarted watcher skips files that already exist, so these keys could only swallow a later change.
-            this.importedFileWatcherPaths.Clear()
+            // The restarted watcher skips files that already exist, so these marks could only swallow a later change.
+            this.ClearImportedFileEvents()
             let failedWatcher = this.watcher
             this.watcher <- None
             this.fileWatcherState <- FileWatcherState.Degraded error.Message
@@ -733,7 +888,7 @@ type ArcVault with
         this.fileWatcherReloadArcTimeout <- None
         this.fileWatcherPendingEvents.Clear()
         this.fileWatcherPendingArcMergeEvents.Clear()
-        this.importedFileWatcherPaths.Clear()
+        this.ClearImportedFileEvents()
 
     member this.StopFileWatcher() = promise {
         // Retire the instance first, so events that arrive while it closes are dropped.

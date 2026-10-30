@@ -138,7 +138,7 @@ module ArcDeleteHelper =
                                                                           _) ->
             Error(exn "Deleting the investigation file is not supported.")
         | ArcEntityPathRules.DeletePathClassification.ProtectedTarget _ ->
-            Error(exn "Deleting protected files (for example .gitattributes, .gitkeep, or readme.md) is not allowed.")
+            Error(exn "Deleting ARC-managed folders (for example dataset or protocols) is not allowed.")
         | ArcEntityPathRules.DeletePathClassification.DisallowedTarget _ ->
             Error(exn "Deletion is not allowed for this path.")
 

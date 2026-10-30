@@ -505,53 +505,47 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "a completed import releases the paths that the structural watcher does not report",
+            "an import builds events only for the paths that the structural watcher reports",
             fun () ->
                 let events =
-                    WatcherHelpers.createImportedFileWatcherEvents "/arc" "assays/A1" [|
-                        "/src/isa.assay.xlsx"
-                        "/src/data.csv"
-                    |]
+                    WatcherHelpers.createImportedWatcherEvents "/arc" "assays/A1" {
+                        FolderPaths = [||]
+                        FilePaths = [| "isa.assay.xlsx"; "data.csv" |]
+                    }
 
-                let imported =
-                    HashSet<string>(events |> Array.map WatcherHelpers.importedFileWatcherPathKey)
-
-                WatcherHelpers.releaseUnwatchedImportedPaths "/arc" true imported events
-
-                Vitest.expect(imported |> Seq.toArray).toEqual [|
-                    WatcherHelpers.importedFileWatcherPathKey events.[0]
-                |]
+                Vitest.expect(events |> Array.map _.RelativePath).toEqual [| "assays/A1/isa.assay.xlsx" |]
         )
 
         Vitest.test (
-            "a file imported into a zone folder is released because it is a file",
+            "a file imported into a zone folder gets no event because it is a file",
             fun () ->
                 let events =
-                    WatcherHelpers.createImportedFileWatcherEvents "/arc" "assays" [| "/src/notes.txt" |]
+                    WatcherHelpers.createImportedWatcherEvents "/arc" "assays" {
+                        FolderPaths = [||]
+                        FilePaths = [| "notes.txt" |]
+                    }
 
-                let imported =
-                    HashSet<string>(events |> Array.map WatcherHelpers.importedFileWatcherPathKey)
-
-                WatcherHelpers.releaseUnwatchedImportedPaths "/arc" true imported events
-
-                Vitest.expect(imported.Count).toBe 0
+                Vitest.expect(events.Length).toBe 0
         )
 
         Vitest.test (
-            "a completed import releases every path when the watcher is not running",
+            "a completed import releases every mark when the watcher is not running",
             fun () ->
+                let vault = ArcVault(TestHelpers.testWindow ())
+
                 let events =
-                    WatcherHelpers.createImportedFileWatcherEvents "/arc" "assays/A1" [|
-                        "/src/isa.assay.xlsx"
-                        "/src/data.csv"
-                    |]
+                    WatcherHelpers.createImportedWatcherEvents "/arc" "assays/A1" {
+                        FolderPaths = [||]
+                        FilePaths = [| "isa.assay.xlsx" |]
+                    }
 
-                let imported =
-                    HashSet<string>(events |> Array.map WatcherHelpers.importedFileWatcherPathKey)
+                let token = vault.StartImport()
+                vault.ClaimImportedFileEvents(token, events)
+                vault.ReleaseImportedFileEventsAfterImport(token, Ok ImportExternalFilesResult.Completed)
 
-                WatcherHelpers.releaseUnwatchedImportedPaths "/arc" false imported events
-
-                Vitest.expect(imported.Count).toBe 0
+                Vitest.expect(vault.IsImportedWatcherEvent events.[0]).toBe false
+                Vitest.expect(vault.importedPathOwners.Count).toBe 0
+                Vitest.expect(vault.importedPathLeases.Count).toBe 0
         )
 
         Vitest.test (
@@ -679,10 +673,17 @@ Vitest.describe (
                         let! _ = vault.StartFileWatcherAsync()
 
                         try
-                            vault.importedFileWatcherPaths.Add "/arc/.gitattributes" |> ignore
+                            vault.ClaimImportedFileEvents(
+                                vault.StartImport(),
+                                [|
+                                    WatcherHelpers.buildWatcherEvent arcPath "add" ".gitattributes"
+                                |]
+                            )
+
                             emitError fake "watch failed" "EIO"
 
-                            Vitest.expect(vault.importedFileWatcherPaths.Count).toBe 0
+                            Vitest.expect(vault.importedPathOwners.Count).toBe 0
+                            Vitest.expect(vault.importedPathLeases.Count).toBe 0
                         finally
                             vault.CancelFileWatcherRestart()
                             vault.ClearPendingFileWatcherState()
@@ -961,6 +962,34 @@ Vitest.describe (
                 Vitest.expect(isStructuralFileWatcherPath root "assays/A1/dataset/data.txt" None).toBe false
                 Vitest.expect(isStructuralFileWatcherPath root "studies/S1/isa.study.xlsx" None).toBe true
                 Vitest.expect(isStructuralFileWatcherPath root "../outside/isa.assay.xlsx" None).toBe false
+        )
+
+        Vitest.test (
+            "a staging folder directly inside a zone folder does not look like an entity",
+            fun () ->
+                let staging = ".swate-import-0123456789abcdef0123456789abcdef"
+
+                Vitest.expect(isStructuralFileWatcherPath "/arc" "/arc/assays/A1/isa.assay.xlsx" None).toBe true
+
+                Vitest.expect(isStructuralFileWatcherPath "/arc" $"/arc/assays/{staging}/isa.assay.xlsx" None).toBe
+                    false
+        )
+
+        Vitest.test (
+            "an ARC folder named like a staging folder, or inside a staging folder or .git, is not hidden",
+            fun () ->
+                let staging = ".swate-import-0123456789abcdef0123456789abcdef"
+
+                for arcFolder in
+                    [
+                        $"/tmp/{staging}"
+                        $"/tmp/{staging}/arc"
+                        "/tmp/.git/arc"
+                    ] do
+                    let root = Main.FileTreeCreator.normalizeRootPath arcFolder
+
+                    Vitest.expect(isStructuralFileWatcherPath root (root + "/assays/A1/isa.assay.xlsx") None).toBe true
+                    Vitest.expect(isStructuralFileWatcherPath root "studies/S1/isa.study.xlsx" None).toBe true
         )
 
         Vitest.test (

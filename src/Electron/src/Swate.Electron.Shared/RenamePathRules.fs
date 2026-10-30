@@ -6,21 +6,57 @@ open Swate.Components.Shared
 let private normalizeRelativePath (path: string) =
     path |> PathHelpers.normalizeCanonicalRelativePath
 
+let private windowsForbiddenChars = [| '<'; '>'; ':'; '"'; '|'; '?'; '*' |]
+
+let private windowsReservedDeviceNames =
+    set [
+        "CON"
+        "PRN"
+        "AUX"
+        "NUL"
+        "CONIN$"
+        "CONOUT$"
+        for i in 1..9 do
+            $"COM{i}"
+            $"LPT{i}"
+        for c in [ '\u00B9'; '\u00B2'; '\u00B3' ] do
+            $"COM{c}"
+            $"LPT{c}"
+    ]
+
+/// Rejects names Windows or git for Windows cannot check out. A device name such as AUX is reserved with any extension, so the check uses the part before the first dot.
 let validateRenameName (newName: string) =
     let normalizedNewName = newName.Trim()
 
     if String.IsNullOrWhiteSpace normalizedNewName then
-        Error "A new name is required."
+        Error "A name is required."
     elif normalizedNewName = "." || normalizedNewName = ".." then
-        Error "The new name must not be '.' or '..'."
+        Error "The name must not be '.' or '..'."
     elif
         normalizedNewName.Contains("/")
         || normalizedNewName.Contains("\\")
         || normalizedNewName.Contains("\u0000")
     then
-        Error "The new name must not contain path separators or null characters."
+        Error "The name must not contain path separators or null characters."
+    elif
+        normalizedNewName.IndexOfAny windowsForbiddenChars >= 0
+        || normalizedNewName |> Seq.exists (fun c -> int c >= 1 && int c <= 31)
+    then
+        Error "The name must not contain < > : \" | ? * or control characters, because Windows does not allow them."
+    elif normalizedNewName.EndsWith "." then
+        Error "The name must not end with a dot, because Windows does not allow it."
     else
-        Ok normalizedNewName
+        let baseName =
+            match normalizedNewName.IndexOf '.' with
+            | -1 -> normalizedNewName
+            | index -> normalizedNewName.Substring(0, index)
+            |> fun name -> name.TrimEnd(' ')
+
+        if windowsReservedDeviceNames.Contains(baseName.ToUpperInvariant()) then
+            Error
+                $"The name must not be '{baseName}' or start with '{baseName}.', because Windows reserves it for a device."
+        else
+            Ok normalizedNewName
 
 let buildRenamedSiblingPath (sourcePath: string) (newName: string) =
     let normalizedSourcePath = normalizeRelativePath sourcePath
@@ -49,6 +85,12 @@ let tryBuildRenameTargetPath (sourcePath: string) (newName: string) =
 let private addZoneFileNameError =
     "Files directly inside an ARC collection folder need a file extension (for example 'notes.md'), so they cannot be mistaken for an ARC entity."
 
+let private validateNewItemName (targetPath: string) =
+    if ArcEntityPathRules.isNewGenericFileSystemNameAllowed targetPath |> not then
+        Error addZoneFileNameError
+    else
+        Ok targetPath
+
 let tryBuildGenericFileSystemChildPath (isFile: bool) (parentPath: string) (name: string) =
     let normalizedParentPath = normalizeRelativePath parentPath
 
@@ -68,20 +110,18 @@ let tryBuildGenericFileSystemChildPath (isFile: bool) (parentPath: string) (name
                 else
                     $"{normalizedParentPath}/{normalizedName}"
 
-            if
-                ArcEntityPathRules.isGenericFileSystemCreateTargetAllowed isFile targetPath
-                |> not
-            then
-                Error
-                    "Generic file and folder targets must stay inside the ARC and must not target canonical ARC files."
-            elif ArcEntityPathRules.isNewGenericFileSystemNameAllowed targetPath |> not then
-                Error addZoneFileNameError
-            else
-                Ok targetPath
+            match ArcEntityPathRules.describeBlockedGenericCreateTarget isFile targetPath with
+            | Some reason -> Error reason
+            | None -> validateNewItemName targetPath
 
-/// `isAddZoneRootFile` marks a file directly inside an add zone (for example `studies/notes.md` or
+/// `isFile` tells whether the source is a file or a folder. `isAddZoneRootFile` marks a file directly inside an add zone (for example `studies/notes.md` or
 /// `studies/.DS_Store`). Pass `false` for every other source.
-let tryBuildGenericFileSystemRenameTargetPath (isAddZoneRootFile: bool) (sourcePath: string) (newName: string) =
+let tryBuildGenericFileSystemRenameTargetPath
+    (isFile: bool)
+    (isAddZoneRootFile: bool)
+    (sourcePath: string)
+    (newName: string)
+    =
     let normalizedSourcePath = normalizeRelativePath sourcePath
 
     let isTargetAllowed =
@@ -97,9 +137,12 @@ let tryBuildGenericFileSystemRenameTargetPath (isAddZoneRootFile: bool) (sourceP
         | Error validationError -> Error validationError
         | Ok targetPath ->
             if isTargetAllowed targetPath |> not then
-                Error
-                    "Generic file and folder rename targets must stay inside the ARC and must not target canonical ARC files."
-            elif ArcEntityPathRules.isNewGenericFileSystemNameAllowed targetPath |> not then
-                Error addZoneFileNameError
+                match ArcEntityPathRules.describeBlockedGenericCreateTarget isFile targetPath with
+                | Some reason -> Error reason
+                | None ->
+                    // Creating a protected name such as README.md is allowed, renaming to it is not.
+                    let name = PathHelpers.getFileName targetPath
+
+                    Error $"ARCitISA protects the name '{name}', so it could not be renamed afterwards."
             else
-                Ok targetPath
+                validateNewItemName targetPath

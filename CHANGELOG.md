@@ -18,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### ✨ Added
 
+- Right-clicking a folder or the ARC name offers "Import folders", which copies the folders you pick, with everything inside them. It is available wherever "New Folder" is. #1429 (by @Etschbeijer)
+- Imported folders that would stay empty get an empty ".gitkeep" file, so they are kept when the ARC is uploaded. #1429 (by @Etschbeijer)
 - "Refresh folder" in the file tree's right-click menu reads a folder from disk again. (by @caroott)
 - The provenance graph has an up button that takes you one level back and names that level. (by @caroott)
 - An overview above the provenance graph shows where you are in the ARC and lets you jump to a neighboring dataset, process, group or node. (by @caroott)
@@ -26,6 +28,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### 🔄 Changed
 
+- New files and folders and renamed items can't use names that Windows does not allow, such as names with a colon or names like CON and AUX, so the ARC can also be downloaded and used on Windows. #1429 (by @Etschbeijer)
+- "Import files" and "Import folders" stop with a message if a name does not work on Windows, for example a name with a colon or a device name like CON or AUX, or if a name starts or ends with a space. This covers everything inside picked folders, too. #1429 (by @Etschbeijer)
+- "Import files" and "Import folders" treat upper and lower case as the same. They stop with a message if an item with the same name, ignoring case, already exists in the target folder, or if two imported items in the same folder differ only in case. The same holds for names that look alike but are stored differently, such as "Café" with a combined or a separate accent. #1429 (by @Etschbeijer)
+- "Import files" and "Import folders" stop with a message for an item named ".git", picked or inside a picked folder, because its files would not be uploaded with the ARC. #1429 (by @Etschbeijer)
+- "Import files" and "Import folders" do not open the picker while ARCitISA is saving or importing. #1429 (by @Etschbeijer)
+- While files or folders are imported, the notice shows the current step and how many items are done. The taskbar progress now covers the whole import, including adding the items to the ARC. #1429 (by @Etschbeijer)
+- Creating and renaming items says why a name can't be used, for example for a "dataset" folder inside an assay or an ARC metadata file name. #1429 (by @Etschbeijer)
 - Files above the preview size limit or with binary content open as a page that shows the file name and size, with a button to open the file in its default application. (by @caroott)
 - The Git LFS badge of a downloaded file no longer frees its local copy. Freeing is in the right-click menu and asks for confirmation first. (by @caroott)
 - Large ARCs open faster. The file tree shows the ARC structure first and reads other folders when you expand them. #1340 (by @caroott, @Etschbeijer)
@@ -36,6 +45,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### 🐛 Fixed
 
+- Files and folders named ".gitkeep", ".gitattributes" or "README.md" can be deleted from the file tree, including the ".gitkeep" files generated for empty imported folders. #1429 (by @Etschbeijer)
+- The file tree now hides Office lock files for additional document types, such as "~$Report.docx", and LibreOffice lock files such as ".~lock.notes.odt#". #1429 (by @Etschbeijer)
 - File names of Git LFS files stay visible in narrow file tree rows. The badge drops its text and size first. (by @caroott)
 - ARCitISA no longer keeps several CPU cores busy while a large ARC is open, because it watches only the ARC structure. #1340 (by @caroott, @Etschbeijer)
 - The file tree stays responsive in folders with thousands of files. #1340 (by @caroott, @Etschbeijer)

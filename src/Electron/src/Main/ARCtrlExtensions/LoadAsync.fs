@@ -109,24 +109,12 @@ module ArcLoadExtensions =
                             | _ -> return raise readError
                     }
 
-                    let allowedFileNames = [|
-                        ArcEntityPathRules.zoneEntityFileName entity.Zone
-                        ArcPathHelper.DatamapFileName
-                        LegacyDataMapFileName
-                        match entity.Zone with
-                        | ArcEntityPathRules.Workflows -> ArcPathHelper.WorkflowCWLFileName
-                        | ArcEntityPathRules.Runs ->
-                            ArcPathHelper.RunCWLFileName
-                            ArcPathHelper.RunYMLFileName
-                        | _ -> ()
-                    |]
-
                     return
                         metadataEntries
                         |> Array.choose (fun metadataEntry ->
                             if
                                 metadataEntry.isFile ()
-                                && allowedFileNames |> Array.exists (PathHelpers.pathsEqual metadataEntry.name)
+                                && ArcEntityPathRules.isEntityMetadataFileName entity.Zone metadataEntry.name
                             then
                                 Some $"{entity.ZoneName}/{entity.EntityName}/{metadataEntry.name}"
                             else

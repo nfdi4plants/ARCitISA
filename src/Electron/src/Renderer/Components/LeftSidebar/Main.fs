@@ -6,6 +6,7 @@ open Renderer.Types
 open Swate.Components.Primitive.ErrorModal.Context
 open Swate.Components.Primitive.ErrorModal.Types
 open Swate.Electron.Shared.FileIOTypes
+open Renderer.Components.LeftSidebar.FileImportStatus
 
 [<ReactComponent>]
 let private FileImportStatusNotice () =
@@ -31,22 +32,42 @@ let private FileImportStatusNotice () =
         Html.div [
             prop.className
                 "swt:fixed swt:inset-0 swt:z-50 swt:flex swt:items-center swt:justify-center swt:bg-base-100/20"
-            prop.role "status"
-            prop.custom ("aria-live", "polite")
             prop.children [
+                Html.span [
+                    prop.className "swt:sr-only"
+                    prop.role "status"
+                    prop.custom ("aria-live", "polite")
+                    prop.text (fileImportStepText activeImport fileStateCtx.isCancellingFileImport)
+                ]
                 Html.div [
                     prop.className
                         "swt:alert swt:alert-info swt:w-fit swt:max-w-md swt:shadow-lg swt:pointer-events-auto"
                     prop.children [
-                        Swate.Components.Primitive.LoadingSpinner.LoadingSpinner.LoadingSpinner(
-                            text =
-                                if fileStateCtx.isCancellingFileImport then
-                                    "Cancelling import..."
-                                elif activeImport.phase = FileImportPhase.Finalizing then
-                                    "Finalizing import..."
-                                else
-                                    "Importing files..."
-                        )
+                        let statusText =
+                            fileImportStatusText activeImport fileStateCtx.isCancellingFileImport
+
+                        if showsFileImportProgressBar activeImport fileStateCtx.isCancellingFileImport then
+                            Html.div [
+                                prop.className "swt:flex swt:flex-col swt:gap-2 swt:min-w-0 swt:grow"
+                                prop.children [
+                                    Html.span [
+                                        prop.custom ("aria-hidden", "true")
+                                        prop.text statusText
+                                    ]
+                                    FileImportProgressBar activeImport.progress
+                                ]
+                            ]
+                        else
+                            Html.div [
+                                prop.className "swt:contents"
+                                prop.custom ("aria-hidden", "true")
+                                prop.children [
+                                    Swate.Components.Primitive.LoadingSpinner.LoadingSpinner.LoadingSpinner(
+                                        text = statusText
+                                    )
+                                ]
+                            ]
+
                         if
                             not fileStateCtx.isCancellingFileImport
                             && activeImport.phase = FileImportPhase.Copying

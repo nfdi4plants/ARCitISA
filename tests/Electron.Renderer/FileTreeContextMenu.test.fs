@@ -12,7 +12,7 @@ open Renderer.Components.LeftSidebar.FileExplorer.Types
 let private createConfig () : PathActionConfig = {
     openPathInFileExplorer = fun _ -> promise { return Ok() }
     openPathWithDefaultApplication = fun _ -> promise { return Ok() }
-    importExternalFiles = fun _ -> promise { return Ok() }
+    importExternalPaths = fun _ _ -> promise { return Ok() }
     enqueueError = ignore
 }
 
@@ -106,12 +106,20 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "folder path actions import files into and reveal the folder",
+            "folder path actions import files and folders into and reveal the folder",
             fun () ->
                 let item = createFolderItem "AssayA" (Some "assays/AssayA")
                 let menuItems = pathActionContextMenuItems (createConfig ()) item
 
-                Vitest.expect(labels menuItems).toEqual ([| "Import files"; "Open Folder Location" |])
+                Vitest
+                    .expect(labels menuItems)
+                    .toEqual (
+                        [|
+                            "Import files"
+                            "Import folders"
+                            "Open Folder Location"
+                        |]
+                    )
         )
 
         Vitest.test (
@@ -122,9 +130,9 @@ Vitest.describe (
 
                 let config = {
                     createConfig () with
-                        importExternalFiles =
-                            fun path -> promise {
-                                importedInto <- Some path
+                        importExternalPaths =
+                            fun kind path -> promise {
+                                importedInto <- Some(kind, path)
                                 return Ok()
                             }
                 }
@@ -138,8 +146,56 @@ Vitest.describe (
                 importItem.OnClick()
                 do! Promise.sleep 0
 
-                Vitest.expect(importedInto).toEqual (Some "assays/AssayA")
+                Vitest.expect(importedInto).toEqual (Some(FileSystemItemKind.File, "assays/AssayA"))
             }
+        )
+
+        Vitest.test (
+            "import folders action targets the selected folder",
+            fun () -> promise {
+                let item = createFolderItem "AssayA" (Some "assays/AssayA")
+                let mutable importedInto = None
+
+                let config = {
+                    createConfig () with
+                        importExternalPaths =
+                            fun kind path -> promise {
+                                importedInto <- Some(kind, path)
+                                return Ok()
+                            }
+                }
+
+                let importItem =
+                    pathActionContextMenuItems config item
+                    |> List.find (fun menuItem -> menuItem.Label = "Import folders")
+
+                importItem.OnClick()
+                do! Promise.sleep 0
+
+                Vitest.expect(importedInto).toEqual (Some(FileSystemItemKind.Folder, "assays/AssayA"))
+            }
+        )
+
+        Vitest.test (
+            "import folders is only offered where new folders may be created",
+            fun () ->
+                let labelsFor path =
+                    pathActionContextMenuItems (createConfig ()) (createFolderItem "folder" (Some path))
+                    |> labels
+
+                // Folders directly inside a collection folder are ARC entities.
+                Vitest.expect(labelsFor "assays").toEqual ([| "Import files"; "Open Folder Location" |])
+                Vitest.expect(labelsFor "studies").toEqual ([| "Import files"; "Open Folder Location" |])
+
+                Vitest
+                    .expect(labelsFor "assays/AssayA/dataset")
+                    .toEqual (
+                        [|
+                            "Import files"
+                            "Import folders"
+                            "Open Folder Location"
+                        |]
+                    )
         )
 
         Vitest.test (
@@ -247,6 +303,7 @@ Vitest.describe (
                         [|
                             "Open"
                             "Import files"
+                            "Import folders"
                             "Open Folder Location"
                             "<divider>"
                             "Refresh folder"
@@ -304,6 +361,7 @@ Vitest.describe (
                     .toEqual (
                         [|
                             "Import files"
+                            "Import folders"
                             "<divider>"
                             "New File"
                             "New Folder"
@@ -327,9 +385,9 @@ Vitest.describe (
                     createContextMenuConfig () with
                         pathActionConfig = {
                             createConfig () with
-                                importExternalFiles =
-                                    fun path -> promise {
-                                        importedInto <- Some path
+                                importExternalPaths =
+                                    fun kind path -> promise {
+                                        importedInto <- Some(kind, path)
                                         return Ok()
                                     }
                         }
@@ -342,7 +400,7 @@ Vitest.describe (
                 importItem.OnClick()
                 do! Promise.sleep 0
 
-                Vitest.expect(importedInto).toEqual (Some "")
+                Vitest.expect(importedInto).toEqual (Some(FileSystemItemKind.File, ""))
             }
         )
 
@@ -540,7 +598,7 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "items directly inside ARC collection roots: generic files and entity folders get rename and delete, canonical and README files don't",
+            "collection-root files keep their action rules and README files offer delete",
             fun () ->
                 let labelsFor item = [|
                     yield! renameContextMenuItems [] ignore item |> List.map _.Label
@@ -554,12 +612,73 @@ Vitest.describe (
 
                     Vitest.expect(fileItem "overview.md" |> labelsFor).toEqual ([| "Rename"; "Delete" |])
                     Vitest.expect(fileItem canonicalFileName |> labelsFor).toEqual ([||])
-                    Vitest.expect(fileItem "README.md" |> labelsFor).toEqual ([||])
+                    Vitest.expect(fileItem "README.md" |> labelsFor).toEqual ([| "Delete" |])
 
                     Vitest
                         .expect(createFolderItem "Entity1" (Some $"{zone}/Entity1") |> labelsFor)
                         .toEqual ([| "Rename"; "Delete" |])
                 )
+        )
+
+        Vitest.test (
+            "reserved-name files and folders offer Delete and call the requested item",
+            fun () ->
+                for parent in [ ""; "assays"; "assays/AssayA/dataset/Run1/empty" ] do
+                    for name in [ ".gitkeep"; ".GITATTRIBUTES"; "ReadMe.md" ] do
+                        let path = if parent = "" then name else $"{parent}/{name}"
+
+                        for item in
+                            [
+                                createFileItem name (Some path)
+                                createFolderItem name (Some path)
+                            ] do
+                            let requested = ResizeArray<string>()
+
+                            let menuItems =
+                                deleteContextMenuItems [] (fun target -> requested.Add target.Id) item
+
+                            Vitest.expect(menuItems |> List.map _.Label |> List.toArray).toEqual [| "Delete" |]
+                            menuItems.Head.OnClick()
+                            Vitest.expect(requested.ToArray()).toEqual [| item.Id |]
+        )
+
+        Vitest.test (
+            "an import staging folder and the items inside it offer new items and rename",
+            fun () ->
+                let stagingFolder = $"data/.swate-import-{String.replicate 32 (string 'b')}"
+
+                let labelsFor (item: FileItem) =
+                    createComposedContextMenuItems (createContextMenuConfig ()) item
+                    |> groupedLabels
+
+                let stagingItem =
+                    createFolderItem (PathHelpers.getNameFromPath stagingFolder) (Some stagingFolder)
+
+                let nestedFolder = createFolderItem "inner" (Some $"{stagingFolder}/inner")
+
+                [ "New File"; "New Folder" ]
+                |> List.iter (fun label ->
+                    Vitest.expect(labelsFor stagingItem).toContain (label)
+                    Vitest.expect(labelsFor nestedFolder).toContain (label)
+                )
+
+                Vitest.expect(labelsFor stagingItem).toContain ("Rename")
+                Vitest.expect(labelsFor stagingItem).toContain ("Delete")
+                Vitest.expect(labelsFor nestedFolder).toContain ("Rename")
+        )
+
+        Vitest.test (
+            "an existing folder with the legacy DataMap name can be renamed, deleted and filled",
+            fun () ->
+                let item = createFolderItem "isa_datamap" (Some "backup/isa_datamap")
+
+                let labels = [|
+                    yield! fileSystemCreateContextMenuItems (fun _ _ -> ()) item |> List.map _.Label
+                    yield! renameContextMenuItems [] ignore item |> List.map _.Label
+                    yield! deleteContextMenuItems [] ignore item |> List.map _.Label
+                |]
+
+                Vitest.expect(labels).toEqual ([| "New File"; "New Folder"; "Rename"; "Delete" |])
         )
 
         Vitest.test (
