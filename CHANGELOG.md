@@ -45,6 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### 🐛 Fixed
 
+- Collapsing a parent folder in the file tree keeps the selected descendant and its path highlighted. #1469 (by @Gitarackur)
 - Files and folders named ".gitkeep", ".gitattributes" or "README.md" can be deleted from the file tree, including the ".gitkeep" files generated for empty imported folders. #1429 (by @Etschbeijer)
 - The file tree now hides Office lock files for additional document types, such as "~$Report.docx", and LibreOffice lock files such as ".~lock.notes.odt#". #1429 (by @Etschbeijer)
 - File names of Git LFS files stay visible in narrow file tree rows. The badge drops its text and size first. (by @caroott)
