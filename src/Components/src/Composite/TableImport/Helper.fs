@@ -279,9 +279,6 @@ let deselectedRowCount (decisions: TableImportDecisions) (sourceIndex: int) : in
     |> Seq.filter (fun (index, _) -> index = sourceIndex)
     |> Seq.length
 
-let isRowSelected (decisions: TableImportDecisions) (sourceIndex: int) (rowIndex: int) =
-    not (decisions.DeselectedRows.Contains(sourceIndex, rowIndex))
-
 let newTableNames
     (existingTableNames: string seq)
     (sources: ImportSource[])
@@ -326,12 +323,8 @@ let validate (current: ArcFiles) (sources: ImportSource[]) (decisions: TableImpo
         selected
         |> Array.tryFind (fun source ->
             source.Table.ColumnCount > 0
-            && not (
-                Seq.init source.Table.ColumnCount id
-                |> Seq.exists (fun columnIndex ->
-                    not (decisions.DeselectedColumns.Contains(source.Index, columnIndex))
-                )
-            )
+            && (Seq.init source.Table.ColumnCount id
+                |> Seq.forall (fun columnIndex -> decisions.DeselectedColumns.Contains(source.Index, columnIndex)))
         )
 
     // Headers mode imports no values, so it has no row rule.
@@ -342,10 +335,8 @@ let validate (current: ArcFiles) (sources: ImportSource[]) (decisions: TableImpo
             selected
             |> Array.tryFind (fun source ->
                 source.Table.RowCount > 0
-                && not (
-                    Seq.init source.Table.RowCount id
-                    |> Seq.exists (isRowSelected decisions source.Index)
-                )
+                && (Seq.init source.Table.RowCount id
+                    |> Seq.forall (fun rowIndex -> decisions.DeselectedRows.Contains(source.Index, rowIndex)))
             )
 
     let names =
@@ -436,7 +427,7 @@ let applyImport
             else
                 let selectedRows =
                     Array.init source.Table.RowCount id
-                    |> Array.filter (isRowSelected decisions source.Index)
+                    |> Array.filter (fun rowIndex -> not (decisions.DeselectedRows.Contains(source.Index, rowIndex)))
 
                 if selectedRows.Length = source.Table.RowCount then
                     source.Table

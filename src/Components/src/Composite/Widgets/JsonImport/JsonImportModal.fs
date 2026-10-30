@@ -85,7 +85,7 @@ type JsonImportModal =
                                     d.DeselectedColumns
                                     (Set.ofList [ for c in 0 .. columnCount - 1 -> index, c ])
                     })
-            IsRowSelected = TableHelper.isRowSelected decisions
+            IsRowSelected = fun index rowIndex -> not (decisions.DeselectedRows.Contains(index, rowIndex))
             DeselectedRowCount = TableHelper.deselectedRowCount decisions
             ToggleRowSelection =
                 fun index rowIndex ->
@@ -153,12 +153,8 @@ type JsonImportModal =
 
         let modeLabel =
             TableHelper.ImportMode.options
-            |> Array.tryPick (fun option ->
-                if option.Mode = decisions.ImportType then
-                    Some option.Label
-                else
-                    None
-            )
+            |> Array.tryFind (fun option -> option.Mode = decisions.ImportType)
+            |> Option.map _.Label
             |> Option.defaultValue ""
 
         Html.div [
@@ -205,7 +201,7 @@ type JsonImportModal =
                 Html.div [
                     prop.testId "json-import-replace-warning"
                     prop.role.alert
-                    prop.className ("swt:alert swt:alert-warning swt:text-sm")
+                    prop.className "swt:alert swt:alert-warning swt:text-sm"
                     prop.text
                         $"The current content of this {JsonHelper.fileTypeDisplayName currentArcFile} is replaced by the content of the file."
                 ]
@@ -348,7 +344,7 @@ type JsonImportModal =
                         Html.div [
                             prop.testId "json-import-error"
                             prop.role.alert
-                            prop.className ("swt:alert swt:alert-error swt:text-sm")
+                            prop.className "swt:alert swt:alert-error swt:text-sm"
                             prop.text $"Import failed: {message}"
                         ]
                         if canRetry then

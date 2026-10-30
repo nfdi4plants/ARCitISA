@@ -512,21 +512,11 @@ for activeTableIndex in [ None; Some 0 ] do
 
             Vitest.expect(harness.SetArcFileCalls.Count).toBe 1
 
-            Vitest
-                .expect(harness.SetArcFileCalls.[0].Tables() |> Seq.map _.Name |> Array.ofSeq)
-                .toEqual (expected.Tables() |> Seq.map _.Name |> Array.ofSeq)
+            let tableShape (file: ArcFiles) = [|
+                for table in file.Tables() -> table.Name, [| for header in table.Headers -> string header |]
+            |]
 
-            Vitest
-                .expect(
-                    harness.SetArcFileCalls.[0].Tables()
-                    |> Seq.map (fun table -> table.Headers |> Seq.map string |> Array.ofSeq)
-                    |> Array.ofSeq
-                )
-                .toEqual (
-                    expected.Tables()
-                    |> Seq.map (fun table -> table.Headers |> Seq.map string |> Array.ofSeq)
-                    |> Array.ofSeq
-                )
+            Vitest.expect(tableShape harness.SetArcFileCalls.[0]).toEqual (tableShape expected)
         }
     )
 

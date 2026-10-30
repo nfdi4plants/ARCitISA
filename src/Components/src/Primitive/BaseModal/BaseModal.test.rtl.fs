@@ -24,9 +24,6 @@ let private renderModal (dismissible: bool option) =
 
     calls
 
-let private pressEscape () =
-    RTL.fireEvent.custom ("keyDown", RTL.screen.getByTestId "modal_t", {| key = "Escape" |})
-
 Vitest.test (
     "the header close button calls setIsOpen false",
     fun () ->
@@ -40,7 +37,7 @@ Vitest.test (
     "Escape closes a dismissible modal",
     fun () ->
         let calls = renderModal None
-        pressEscape ()
+        RTL.fireEvent.custom ("keyDown", RTL.screen.getByTestId "modal_t", {| key = "Escape" |})
 
         Vitest.expect(calls.ToArray()).toEqual [| false |]
 )
@@ -52,7 +49,7 @@ Vitest.test (
 
         Vitest.expect(RTL.screen.queryByTestId("modal-close").IsNone).toBe true
 
-        pressEscape ()
+        RTL.fireEvent.custom ("keyDown", RTL.screen.getByTestId "modal_t", {| key = "Escape" |})
         RTL.fireEvent.custom ("mouseDown", document.body)
 
         Vitest.expect(calls.Count).toBe 0

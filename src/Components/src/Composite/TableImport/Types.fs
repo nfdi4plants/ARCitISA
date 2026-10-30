@@ -9,7 +9,7 @@ type TableImportAction =
     | AppendToActiveTable
     | NoImport
 
-/// One import mode choice as the dialogs show it. Key is used for test ids.
+/// One import mode choice as the dialogs show it. Key names the option in its React key and its test id.
 type ImportModeOption = {
     Mode: TableJoinOptions
     Key: string
