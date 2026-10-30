@@ -93,6 +93,10 @@ jobs:
       fail-fast: false
       matrix:
         target: [nuget, npm, docker, electron-web, storybook]
+        # NuGet packages omit the patched remoting dependencies. Re-enable after the
+        # compatibility workaround is removed; see src/Fable.SimpleJson.Compatibility/README.md.
+        exclude:
+          - target: nuget
     steps:
       # Checkout the repository
       - name: Checkout code

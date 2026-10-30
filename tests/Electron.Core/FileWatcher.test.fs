@@ -374,7 +374,10 @@ Vitest.describe (
                             waitUntil
                                 "the revalidated tree"
                                 10000
-                                (fun () -> (vault.FileTreeWriter.Tree.TryFind(root + "/missed")).IsSome)
+                                (fun () ->
+                                    vault.FileTreeWriter.TreeVersion > scanCountBefore
+                                    && (vault.FileTreeWriter.Tree.TryFind(root + "/missed")).IsSome
+                                )
 
                         Vitest.expect(vault.FileTreeWriter.TreeVersion).toBe (scanCountBefore + 1)
                         do! waitUntil "the reload to settle" 10000 (fun () -> isWatcherQuiet vault)
@@ -908,7 +911,10 @@ Vitest.describe (
                     "assays/A1/isa.datamap.xlsx"
                     "studies/S1/isa.study.xlsx"
                     "workflows/W1/isa.workflow.xlsx"
+                    "workflows/W1/workflow.cwl"
                     "runs/R1/isa.run.xlsx"
+                    "runs/R1/run.cwl"
+                    "runs/R1/run.yml"
                 ]
 
                 for structuralPath in structuralPaths do
@@ -921,6 +927,9 @@ Vitest.describe (
                     "assays/A1/dataset/data.txt"
                     "assays/A1/protocols/isa.assay.xlsx"
                     "studies/S1/resources/table.csv"
+                    "assays/A1/workflow.cwl"
+                    "workflows/W1/run.yml"
+                    "runs/R1/scripts/run.cwl"
                     "extra/deep/file.txt"
                     "assays/.hidden"
                 ]

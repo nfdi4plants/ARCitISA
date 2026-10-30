@@ -21,8 +21,8 @@ type DataMapContextMenu =
     [<ReactComponent>]
     static member ContextMenu
         (
-            dataMap: DataMap,
-            setDataMap: DataMap -> unit,
+            dataMap: Datamap,
+            setDataMap: Datamap -> unit,
             setModal: Modal option -> unit,
             tableRef: IRefValue<TableHandle>,
             containerRef,

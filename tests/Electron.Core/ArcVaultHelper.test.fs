@@ -1845,19 +1845,19 @@ let private arctrlDefaultGitignoreContent () =
 
 let private addDataMapToAllEntityTypes (arc: ARC) =
     let study = ArcStudy("Study With DataMap")
-    study.DataMap <- Some(DataMap.init ())
+    study.Datamap <- Some(Datamap.init ())
     arc.AddStudy(study)
 
     let assay = ArcAssay("Assay With DataMap")
-    assay.DataMap <- Some(DataMap.init ())
+    assay.Datamap <- Some(Datamap.init ())
     arc.AddAssay(assay)
 
     let workflow = ArcWorkflow("Workflow With DataMap")
-    workflow.DataMap <- Some(DataMap.init ())
+    workflow.Datamap <- Some(Datamap.init ())
     arc.AddWorkflow(workflow)
 
     let run = ArcRun("Run With DataMap")
-    run.DataMap <- Some(DataMap.init ())
+    run.Datamap <- Some(Datamap.init ())
     arc.AddRun(run)
 
 let private tryGetDirtyStateMessage (args: obj array) =
@@ -1900,17 +1900,17 @@ Vitest.describe (
             "DataMap add synchronization preserves the persisted static-hash baseline",
             fun () ->
                 let parentInfo = DatamapParentInfo.create "DataMapAssay" DataMapParent.Assay
-                let persistedDataMap = DataMap.init ()
+                let persistedDataMap = Datamap.init ()
                 persistedDataMap.StaticHash <- 123
                 let persistedAssay = ArcAssay("DataMapAssay")
-                persistedAssay.DataMap <- Some persistedDataMap
+                persistedAssay.Datamap <- Some persistedDataMap
                 let persistedArc = ARC("PersistedArc")
                 persistedArc.AddAssay persistedAssay
 
-                let localDataMap = DataMap.init ()
+                let localDataMap = Datamap.init ()
                 localDataMap.StaticHash <- 456
                 let localAssay = ArcAssay("DataMapAssay")
-                localAssay.DataMap <- Some localDataMap
+                localAssay.Datamap <- Some localDataMap
                 let localArc = ARC("LocalArc")
                 localArc.AddAssay localAssay
 
@@ -1920,8 +1920,8 @@ Vitest.describe (
                     (ArcFiles.DataMap(Some parentInfo, persistedDataMap))
 
                 Vitest.expect(persistedDataMap.StaticHash).toBe (123)
-                Vitest.expect(persistedArc.GetAssay("DataMapAssay").DataMap.Value.StaticHash).toBe (123)
-                Vitest.expect(localArc.GetAssay("DataMapAssay").DataMap.Value.StaticHash).toBe (123)
+                Vitest.expect(persistedArc.GetAssay("DataMapAssay").Datamap.Value.StaticHash).toBe (123)
+                Vitest.expect(localArc.GetAssay("DataMapAssay").Datamap.Value.StaticHash).toBe (123)
         )
 
         Vitest.test (
@@ -4412,17 +4412,24 @@ Vitest.describe (
                         ".gitignore"
                         "LICENSE"
                         "assays/.gitkeep"
+                        "assays/Assay With DataMap/README.md"
+                        "assays/Assay With DataMap/dataset/.gitkeep"
+                        "assays/Assay With DataMap/protocols/.gitkeep"
                         "assays/Assay With DataMap/isa.assay.xlsx"
                         "assays/Assay With DataMap/isa.datamap.xlsx"
                         "isa.investigation.xlsx"
-                        "notes/README.md"
                         "runs/.gitkeep"
+                        "runs/Run With DataMap/README.md"
                         "runs/Run With DataMap/isa.datamap.xlsx"
                         "runs/Run With DataMap/isa.run.xlsx"
                         "studies/.gitkeep"
+                        "studies/Study With DataMap/README.md"
+                        "studies/Study With DataMap/resources/.gitkeep"
+                        "studies/Study With DataMap/protocols/.gitkeep"
                         "studies/Study With DataMap/isa.datamap.xlsx"
                         "studies/Study With DataMap/isa.study.xlsx"
                         "workflows/.gitkeep"
+                        "workflows/Workflow With DataMap/README.md"
                         "workflows/Workflow With DataMap/isa.datamap.xlsx"
                         "workflows/Workflow With DataMap/isa.workflow.xlsx"
                     |]
@@ -4432,7 +4439,7 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "TryWriteAsyncSwate writes the default gitignore and notes README into an ARC root",
+            "TryWriteAsyncSwate writes default gitignore without creating notes scaffolding",
             fun () -> promise {
                 let! rootPath = TestHelpers.createTempDirectoryAsync "swate-default-gitignore-"
                 let arcPath = join [| rootPath; "arc" |]
@@ -4449,9 +4456,9 @@ Vitest.describe (
                     | Ok _ -> ()
 
                     let! gitignoreContent = readFileAsync gitignorePath TextEncoding.Utf8
-                    let! notesReadmeContent = readFileAsync notesReadmePath TextEncoding.Utf8
+                    let! notesReadmeExists = TestHelpers.pathExistsAsync notesReadmePath
                     Vitest.expect(gitignoreContent).toBe (arctrlDefaultGitignoreContent ())
-                    Vitest.expect(notesReadmeContent).toBe (NotesReadmeContent)
+                    Vitest.expect(notesReadmeExists).toBe (false)
                     do! TestHelpers.removeDirectoryAsync rootPath
                 with error ->
                     do! TestHelpers.removeDirectoryAsync rootPath
@@ -4863,14 +4870,14 @@ Vitest.describe (
                         Vitest.expect(vault.arc.Value.hasInMemoryChanges ()).toBe (false)
 
                         let loadedArc = vault.arc.Value
-                        Vitest.expect(loadedArc.GetAssay("Assay With DataMap").DataMap.Value.StaticHash).not.toBe (0)
-                        Vitest.expect(loadedArc.GetStudy("Study With DataMap").DataMap.Value.StaticHash).not.toBe (0)
+                        Vitest.expect(loadedArc.GetAssay("Assay With DataMap").Datamap.Value.StaticHash).not.toBe (0)
+                        Vitest.expect(loadedArc.GetStudy("Study With DataMap").Datamap.Value.StaticHash).not.toBe (0)
 
                         Vitest
-                            .expect(loadedArc.GetWorkflow("Workflow With DataMap").DataMap.Value.StaticHash)
+                            .expect(loadedArc.GetWorkflow("Workflow With DataMap").Datamap.Value.StaticHash)
                             .not.toBe (0)
 
-                        Vitest.expect(loadedArc.GetRun("Run With DataMap").DataMap.Value.StaticHash).not.toBe (0)
+                        Vitest.expect(loadedArc.GetRun("Run With DataMap").Datamap.Value.StaticHash).not.toBe (0)
                     })
         )
 

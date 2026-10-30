@@ -101,8 +101,8 @@ Vitest.describe (
             "datamap change then entity change for same assay keeps disc DataMap",
             fun () ->
                 let arcLocal, arcRemote = MockData.createTwoCleanCopies ()
-                arcLocal.Assays.[0].DataMap <- Some(DataMap.init ())
-                arcRemote.Assays.[0].DataMap <- None
+                arcLocal.Assays.[0].Datamap <- Some(Datamap.init ())
+                arcRemote.Assays.[0].Datamap <- None
                 arcRemote.Assays.[0].Title <- Some "Disc Assay Title"
 
                 let events = [
@@ -119,16 +119,16 @@ Vitest.describe (
                 let merged = ARC.merge arcLocal arcRemote events
 
                 Vitest.expect(merged.Assays.[0].Title).toEqual (Some "Disc Assay Title")
-                Vitest.expect(merged.Assays.[0].DataMap.IsNone).toBe (true)
-                Vitest.expect(arcLocal.Assays.[0].DataMap.IsSome).toBe (true)
+                Vitest.expect(merged.Assays.[0].Datamap.IsNone).toBe (true)
+                Vitest.expect(arcLocal.Assays.[0].Datamap.IsSome).toBe (true)
         )
 
         Vitest.test (
             "entity change then datamap change for same assay keeps disc DataMap",
             fun () ->
                 let arcLocal, arcRemote = MockData.createTwoCleanCopies ()
-                arcLocal.Assays.[0].DataMap <- Some(DataMap.init ())
-                arcRemote.Assays.[0].DataMap <- None
+                arcLocal.Assays.[0].Datamap <- Some(Datamap.init ())
+                arcRemote.Assays.[0].Datamap <- None
                 arcRemote.Assays.[0].Title <- Some "Disc Assay Title"
 
                 let events = [
@@ -145,8 +145,8 @@ Vitest.describe (
                 let merged = ARC.merge arcLocal arcRemote events
 
                 Vitest.expect(merged.Assays.[0].Title).toEqual (Some "Disc Assay Title")
-                Vitest.expect(merged.Assays.[0].DataMap.IsNone).toBe (true)
-                Vitest.expect(arcLocal.Assays.[0].DataMap.IsSome).toBe (true)
+                Vitest.expect(merged.Assays.[0].Datamap.IsNone).toBe (true)
+                Vitest.expect(arcLocal.Assays.[0].Datamap.IsSome).toBe (true)
         )
 
         Vitest.test (
@@ -173,7 +173,7 @@ Vitest.describe (
                 let arcLocal, arcRemote = MockData.createTwoCleanCopies ()
                 arcLocal.Title <- Some "User Title"
                 arcRemote.InitAssay("New Assay") |> ignore
-                arcRemote.Assays.[1].DataMap <- Some(DataMap.init ())
+                arcRemote.Assays.[1].Datamap <- Some(Datamap.init ())
 
                 let events = [
                     {
@@ -189,7 +189,7 @@ Vitest.describe (
                 let merged = ARC.merge arcLocal arcRemote events
 
                 Vitest.expect(merged.ContainsAssay("New Assay")).toBe (true)
-                Vitest.expect(merged.Assays.[1].DataMap.IsSome).toBe (true)
+                Vitest.expect(merged.Assays.[1].Datamap.IsSome).toBe (true)
         )
 
         Vitest.test (

@@ -316,7 +316,7 @@ module ArcEntityPathRules =
             | None -> None
             | Some zone when PathHelpers.pathsEqual fileName (zoneEntityFileName zone) ->
                 Some(CanonicalArcFileTarget.EntityFile(zone, identifier))
-            | Some zone when PathHelpers.pathsEqual fileName ARCtrl.ArcPathHelper.DataMapFileName ->
+            | Some zone when PathHelpers.pathsEqual fileName ARCtrl.ArcPathHelper.DatamapFileName ->
                 Some(CanonicalArcFileTarget.DataMapFile(zone, identifier))
             | Some _ -> None
         else
@@ -328,7 +328,7 @@ module ArcEntityPathRules =
         || PathHelpers.pathsEqual fileName ARCtrl.ArcPathHelper.AssayFileName
         || PathHelpers.pathsEqual fileName ARCtrl.ArcPathHelper.WorkflowFileName
         || PathHelpers.pathsEqual fileName ARCtrl.ArcPathHelper.RunFileName
-        || PathHelpers.pathsEqual fileName ARCtrl.ArcPathHelper.DataMapFileName
+        || PathHelpers.pathsEqual fileName ARCtrl.ArcPathHelper.DatamapFileName
 
     /// The outdated DataMap file name. Loading an ARC renames such a file to `isa.datamap.xlsx`.
     let legacyDataMapFileName = "isa_datamap"
@@ -336,8 +336,14 @@ module ArcEntityPathRules =
     /// Metadata files that ARC loading reads directly inside an entity folder.
     let isEntityMetadataFileName zone fileName =
         PathHelpers.pathsEqual fileName (zoneEntityFileName zone)
-        || PathHelpers.pathsEqual fileName ARCtrl.ArcPathHelper.DataMapFileName
+        || PathHelpers.pathsEqual fileName ARCtrl.ArcPathHelper.DatamapFileName
         || PathHelpers.pathsEqual fileName legacyDataMapFileName
+        || match zone with
+           | Workflows -> PathHelpers.pathsEqual fileName ARCtrl.ArcPathHelper.WorkflowCWLFileName
+           | Runs ->
+               PathHelpers.pathsEqual fileName ARCtrl.ArcPathHelper.RunCWLFileName
+               || PathHelpers.pathsEqual fileName ARCtrl.ArcPathHelper.RunYMLFileName
+           | _ -> false
 
     /// True for a path segment named ".git", ignoring case.
     let isDisallowedGenericPathSegment (segment: string) =
@@ -358,7 +364,7 @@ module ArcEntityPathRules =
         || List.contains (name.ToLowerInvariant()) platformJunkFileNames
 
     /// True for the paths the permanent watcher observes: the ARC root, root metadata files and `.gitattributes`,
-    /// zone folders, entity folders, and the canonical entity file and datamap of each entity. Nothing deeper is
+    /// zone folders, entity folders, canonical workbooks, datamaps, and workflow payloads. Nothing deeper is
     /// structural, so payload folders are never descended into. A missing directory hint keeps the paths whose
     /// shape allows either kind, because chokidar asks before it has stat data.
     let isStructuralWatcherPath (relativePath: string) (isDirectory: bool option) =
@@ -386,7 +392,16 @@ module ArcEntityPathRules =
                 | Some zone ->
                     mayBeFile
                     && (PathHelpers.pathsEqual fileName (zoneEntityFileName zone)
-                        || PathHelpers.pathsEqual fileName ARCtrl.ArcPathHelper.DataMapFileName)
+                        || PathHelpers.pathsEqual fileName ARCtrl.ArcPathHelper.DatamapFileName
+                        || (zone = Workflows
+                            && PathHelpers.pathsEqual fileName ARCtrl.ArcPathHelper.WorkflowCWLFileName)
+                        || (zone = Runs
+                            && PathHelpers.pathMatchesAny
+                                [
+                                    ARCtrl.ArcPathHelper.RunCWLFileName
+                                    ARCtrl.ArcPathHelper.RunYMLFileName
+                                ]
+                                fileName))
                 | None -> false
             | _ -> false
 
@@ -429,7 +444,7 @@ module ArcEntityPathRules =
                         CanonicalArcFileTarget.EntityFile(zone, identifier),
                         normalizedRelativePath
                     )
-                | Some zone when PathHelpers.pathsEqual fileName ARCtrl.ArcPathHelper.DataMapFileName ->
+                | Some zone when PathHelpers.pathsEqual fileName ARCtrl.ArcPathHelper.DatamapFileName ->
                     DeletePathClassification.CanonicalFileTarget(
                         CanonicalArcFileTarget.DataMapFile(zone, identifier),
                         normalizedRelativePath
@@ -588,7 +603,7 @@ module ArcEntityPathRules =
 
     let private canonicalDataMapFilePath zone identifier =
         let zoneFolder = zoneFolderName zone
-        $"{zoneFolder}/{identifier}/{ARCtrl.ArcPathHelper.DataMapFileName}"
+        $"{zoneFolder}/{identifier}/{ARCtrl.ArcPathHelper.DatamapFileName}"
 
     let private canonicalEntityFolderPath zone identifier =
         let zoneFolder = zoneFolderName zone
@@ -643,7 +658,7 @@ module ArcEntityPathRules =
                     match tryParseZone zoneSegment with
                     | Some zone when PathHelpers.pathsEqual fileName (zoneEntityFileName zone) ->
                         RenamePathClassification.CanonicalEntityFileTarget(zone, identifier, normalizedRelativePath)
-                    | Some zone when PathHelpers.pathsEqual fileName ARCtrl.ArcPathHelper.DataMapFileName ->
+                    | Some zone when PathHelpers.pathsEqual fileName ARCtrl.ArcPathHelper.DatamapFileName ->
                         RenamePathClassification.CanonicalDataMapFileTarget(zone, identifier, normalizedRelativePath)
                     | _ -> RenamePathClassification.GenericTarget normalizedRelativePath
                 | _ ->

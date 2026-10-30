@@ -125,7 +125,6 @@
     <PackageReference Include="Fable.Elmish.Browser" />
     <PackageReference Include="Fable.Elmish.Debugger" />
     <PackageReference Include="Fable.Fetch" />
-    <PackageReference Include="Fable.SimpleJson" />
     <PackageReference Include="ExcelJS.Fable" />
   </ItemGroup>
   <ItemGroup>

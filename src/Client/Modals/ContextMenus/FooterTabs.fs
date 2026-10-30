@@ -32,7 +32,7 @@ type FooterTabs =
 
         // let addDataMap =
         //     fun _ ->
-        //         SpreadsheetInterface.UpdateDatamap(DataMap.init () |> Some)
+        //         SpreadsheetInterface.UpdateDatamap(Datamap.init () |> Some)
         //         |> Messages.InterfaceMsg
         //         |> dispatch
 

@@ -49,7 +49,7 @@ type private LazyComponents =
         )
 
     [<ReactLazyComponent>]
-    static member LazyDataMapMetadata(datamap: DataMap) =
+    static member LazyDataMapMetadata(datamap: Datamap) =
         DataMapMetadata.DataMapMetadata(datamap = datamap)
 
     [<ReactLazyComponent>]

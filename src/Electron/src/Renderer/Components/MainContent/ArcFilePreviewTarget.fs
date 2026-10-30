@@ -50,7 +50,7 @@ let ArcFilePreviewTarget (arcFile: ArcFiles, requestedView: ActiveView option) =
         | None -> ()
         | Some parentInfo ->
             ArcFileApiHelper.withArcFileRequest
-                (ArcFiles.DataMap(Some parentInfo, ARCtrl.DataMap.init ()))
+                (ArcFiles.DataMap(Some parentInfo, ARCtrl.Datamap.init ()))
                 Api.ipcArcVaultApi.addArcFile
             |> runDataMapMutation "DataMap could not be added"
 

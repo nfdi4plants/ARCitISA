@@ -18,7 +18,7 @@ type Msg =
     | Initialize of Swatehost
     | CreateAnnotationTable of tryUsePrevOutput: bool
     | RemoveBuildingBlock of index: CellCoordinateRange option
-    | UpdateDatamap of DataMap option
+    | UpdateDatamap of Datamap option
     | UpdateDataMapDataContextAt of index: int * DataContext
     | AddTable of ArcTable
     | ValidateBuildingBlock

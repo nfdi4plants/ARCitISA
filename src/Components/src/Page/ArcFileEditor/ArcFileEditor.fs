@@ -20,7 +20,7 @@ open Swate.Components.Page.ArcFileEditor.EmptyTableView.Types
 type private LazyComponents =
 
     [<ReactLazyComponent>]
-    static member LazyDataMap(datamap: DataMap, setDatamap: DataMap -> unit) =
+    static member LazyDataMap(datamap: Datamap, setDatamap: Datamap -> unit) =
         DataMapTable.DataMapTable(datamap = datamap, setDatamap = setDatamap)
 
     [<ReactLazyComponent>]
@@ -191,44 +191,44 @@ type Main =
                 ]
         | ActiveView.DataMap ->
             match arcFileState with
-            | ArcFiles.Assay assay when assay.DataMap.IsSome ->
-                let setDatamap (nextDatamap: DataMap) =
-                    assay.DataMap <- Some nextDatamap
+            | ArcFiles.Assay assay when assay.Datamap.IsSome ->
+                let setDatamap (nextDatamap: Datamap) =
+                    assay.Datamap <- Some nextDatamap
                     setArcFileState (ArcFiles.refreshRef arcFileState)
 
                 Main.LazyLoaderWithMessage(
-                    LazyComponents.LazyDataMap(assay.DataMap.Value, setDatamap),
+                    LazyComponents.LazyDataMap(assay.Datamap.Value, setDatamap),
                     "Loading DataMap..."
                 )
-            | ArcFiles.Study(study, assays) when study.DataMap.IsSome ->
-                let setDatamap (nextDatamap: DataMap) =
-                    study.DataMap <- Some nextDatamap
+            | ArcFiles.Study(study, assays) when study.Datamap.IsSome ->
+                let setDatamap (nextDatamap: Datamap) =
+                    study.Datamap <- Some nextDatamap
                     setArcFileState (ArcFiles.refreshRef (ArcFiles.Study(study, assays)))
 
                 Main.LazyLoaderWithMessage(
-                    LazyComponents.LazyDataMap(study.DataMap.Value, setDatamap),
+                    LazyComponents.LazyDataMap(study.Datamap.Value, setDatamap),
                     "Loading DataMap..."
                 )
-            | ArcFiles.Run run when run.DataMap.IsSome ->
-                let setDatamap (nextDatamap: DataMap) =
-                    run.DataMap <- Some nextDatamap
+            | ArcFiles.Run run when run.Datamap.IsSome ->
+                let setDatamap (nextDatamap: Datamap) =
+                    run.Datamap <- Some nextDatamap
                     setArcFileState (ArcFiles.refreshRef arcFileState)
 
                 Main.LazyLoaderWithMessage(
-                    LazyComponents.LazyDataMap(run.DataMap.Value, setDatamap),
+                    LazyComponents.LazyDataMap(run.Datamap.Value, setDatamap),
                     "Loading DataMap..."
                 )
-            | ArcFiles.Workflow workflow when workflow.DataMap.IsSome ->
-                let setDatamap (nextDatamap: DataMap) =
-                    workflow.DataMap <- Some nextDatamap
+            | ArcFiles.Workflow workflow when workflow.Datamap.IsSome ->
+                let setDatamap (nextDatamap: Datamap) =
+                    workflow.Datamap <- Some nextDatamap
                     setArcFileState (ArcFiles.refreshRef arcFileState)
 
                 Main.LazyLoaderWithMessage(
-                    LazyComponents.LazyDataMap(workflow.DataMap.Value, setDatamap),
+                    LazyComponents.LazyDataMap(workflow.Datamap.Value, setDatamap),
                     "Loading DataMap..."
                 )
             | ArcFiles.DataMap(parent, datamap) ->
-                let setDatamap (nextDatamap: DataMap) =
+                let setDatamap (nextDatamap: Datamap) =
                     setArcFileState (ArcFiles.DataMap(parent, nextDatamap))
 
                 Main.LazyLoaderWithMessage(LazyComponents.LazyDataMap(datamap, setDatamap), "Loading DataMap...")
@@ -483,7 +483,7 @@ type Main =
                     else
                         startAssay.AddTable(ArcTable.init (sprintf "Table %i" i))
 
-                startAssay.DataMap <- Some(ARCtrl.DataMap.init ())
+                startAssay.Datamap <- Some(ARCtrl.Datamap.init ())
 
                 startAssay
             )

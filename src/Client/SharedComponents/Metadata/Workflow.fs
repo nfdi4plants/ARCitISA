@@ -101,7 +101,7 @@ let Main (workflow: ArcWorkflow, setArcWorkflow: ArcWorkflow -> unit, model: Mod
                 //     ),
                 //     "SubWorkflow Identifiers"
                 // )
-                FormComponents.ParametersInput(
+                FormComponents.OntologyAnnotationsInput(
                     workflow.Parameters,
                     (fun parameter ->
                         workflow.Parameters <- parameter

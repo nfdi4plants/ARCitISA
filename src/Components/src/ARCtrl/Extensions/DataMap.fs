@@ -30,7 +30,7 @@ module DataMapIndices =
     [<Literal>]
     let ObjectType = 6
 
-type DataMap with
+type Datamap with
 
     member this.GetCell(columnIndex: int, rowIndex: int) =
         let r = this.DataContexts.[rowIndex]
@@ -95,8 +95,8 @@ type DataMap with
         | DataMapIndices.ObjectType -> r.ObjectType <- None
         | i -> failwithf "Invalid column index for DataMap: %i" i
 
-    member this.GetHeader(columnIndex: int) = DataMap.getHeader (columnIndex)
+    member this.GetHeader(columnIndex: int) = Datamap.getHeader (columnIndex)
 
     static member ColumnCount = 7
-    member this.ColumnCount = DataMap.ColumnCount
+    member this.ColumnCount = Datamap.ColumnCount
     member this.RowCount = this.DataContexts.Count

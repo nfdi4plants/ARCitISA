@@ -23,7 +23,7 @@ let private pathDynamic: obj = importAll "path"
 
 /// This function mutably sets the datamap on the correct parent based on the datamap parent info included in the file content DTO.
 /// It also ensures that the static hash is preserved to avoid unnecessary changes to the ARC when saving a datamap.
-let private setDataMapByParentInfo (arc: ARC) (dmpi: DatamapParentInfo) (dm: DataMap) : Result<unit, exn> =
+let private setDataMapByParentInfo (arc: ARC) (dmpi: DatamapParentInfo) (dm: Datamap) : Result<unit, exn> =
     try
         arc.TryGetDataMap dmpi
         |> Option.iter (fun currentDataMap -> dm.StaticHash <- currentDataMap.StaticHash)
@@ -116,7 +116,10 @@ let updateARCByFileContentDTO (oldArc: ARC) (dto: FileContentDTO) : Result<ARC, 
 
             match oldWorkflowOpt with
             | Some oldWorkflow ->
+                // The metadata DTO's ARCtrl JSON does not carry CWL sidecar content.
+                newWorkflow.CWLDescription <- oldWorkflow.CWLDescription
                 newWorkflow.StaticHash <- oldWorkflow.StaticHash
+                WorkflowPayloads.syncWorkflowPayloadBaseline oldWorkflow newWorkflow
                 oldArc.SetWorkflow(newWorkflow.Identifier, newWorkflow)
                 Ok oldArc
             | None ->
@@ -127,7 +130,11 @@ let updateARCByFileContentDTO (oldArc: ARC) (dto: FileContentDTO) : Result<ARC, 
 
             match oldRunOpt with
             | Some oldRun ->
+                // Metadata edits must retain the independently persisted CWL and YAML payloads.
+                newRun.CWLDescription <- oldRun.CWLDescription
+                newRun.CWLInput <- oldRun.CWLInput
                 newRun.StaticHash <- oldRun.StaticHash
+                WorkflowPayloads.syncRunPayloadBaseline oldRun newRun
                 oldArc.SetRun(newRun.Identifier, newRun)
                 Ok oldArc
             | None ->

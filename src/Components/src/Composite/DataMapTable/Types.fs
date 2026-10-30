@@ -14,7 +14,7 @@ module ARCtrlExtensions =
     open Helper
     open ArcTableAux
 
-    type DataMap with
+    type Datamap with
 
         member this.ClearCells(coordinates: seq<CellCoordinate>) =
             coordinates

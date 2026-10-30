@@ -14,7 +14,7 @@ import {
   FileTree_createFile,
   FileTree_createFolder,
 } from "./Types.fs.js";
-import { ofArray } from "../../fable_modules/fable-library-ts.5.0.0-alpha.21/List.ts";
+import { listOfArray as ofArray } from "../../Util/Interop.fs.js";
 
 const arcCreateItems = [
   { label: "Add Study", path: "studies/NewStudy/isa.study.xlsx" },

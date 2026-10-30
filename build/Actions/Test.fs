@@ -229,6 +229,37 @@ module Run =
                 | _, Error e -> return Error e
     }
 
+    // Isolated suites for the patched Fable.SimpleJson and Fable.Remoting.Client sources.
+    // Remove them with the compatibility projects, see src/Fable.SimpleJson.Compatibility/README.md.
+    // Both suites always execute so CI reports both results.
+    let compatibility = async {
+        let runSuite prefix path =
+            cleanGeneratedOutput path
+
+            runAsync
+                prefix
+                "dotnet"
+                [
+                    "fable"
+                    "-o"
+                    "output"
+                    "-s"
+                    "--run"
+                    "npx"
+                    "vitest"
+                    "run"
+                ]
+                path
+
+        let! simpleJsonResult = runSuite "simplejson" ProjectPaths.simpleJsonCompatibilityTestsPath
+        let! remotingResult = runSuite "remoting" ProjectPaths.remotingCompatibilityTestsPath
+
+        match simpleJsonResult, remotingResult with
+        | Ok(), Ok() -> return Ok()
+        | Error e, _
+        | _, Error e -> return Error e
+    }
+
     let All () =
         async {
             printGreenfn "Running all tests..."
@@ -242,9 +273,18 @@ module Run =
             let! electronRendererResult = electronRenderer
             printGreenfn "Running component tests..."
             let! componentsResult = components
+            printGreenfn "Running compatibility tests..."
+            let! compatibilityResult = compatibility
 
-            match serverResult, clientResult, electronCoreResult, electronRendererResult, componentsResult with
-            | Ok(), Ok(), Ok(), Ok(), Ok() ->
+            match
+                serverResult,
+                clientResult,
+                electronCoreResult,
+                electronRendererResult,
+                componentsResult,
+                compatibilityResult
+            with
+            | Ok(), Ok(), Ok(), Ok(), Ok(), Ok() ->
                 printGreenfn "All tests passed!"
                 exit 0
             | _ ->
@@ -262,6 +302,9 @@ module Run =
 
                 if componentsResult.IsError then
                     printRedfn "Component tests failed."
+
+                if compatibilityResult.IsError then
+                    printRedfn "Compatibility tests failed."
 
                 exit 1
 
