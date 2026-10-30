@@ -28,7 +28,8 @@
   "dependencies": {
     "chokidar": "^5.0.0",
     "electron-squirrel-startup": "^1.0.1",
-    "simple-git": "^3.32.3"
+    "simple-git": "^3.32.3",
+    "sharp": "^0.34.5"
   },
   "devDependencies": {
     "@electron-forge/cli": "^7.10.2",

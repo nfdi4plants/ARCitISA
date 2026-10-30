@@ -3,6 +3,7 @@ module Renderer.Components.MainContent.Main
 open Feliz
 open Renderer.Types
 open Swate.Electron.Shared
+open Swate.Electron.Shared.FileIOTypes
 open Renderer.Components.MainContent.ArcFilePreviewTarget
 open Renderer.Components.MainContent.DataHubBrowserTarget
 open Renderer.Components.MainContent.EmptySelectionTarget
@@ -123,11 +124,22 @@ let Main (appRootPath: ArcRootPath, pageState: PageState option) =
                             [ LazyComponents.LazyMarkdownEditorTarget(content) ],
                             fallback = LazyComponents.FullPageLoadingSpinner("Loading markdown editor...")
                         )
-                    | Some _, Some(PageState.PDFPage content) ->
+                    | Some _, Some(PageState.PDFPage(content, path)) ->
                         React.Suspense(
-                            [ PDFViewer.DisplayPDF.Main(content) ],
+                            [ PDFViewer.DisplayPDF.Main(content, path) ],
                             fallback = LazyComponents.FullPageLoadingSpinner("Loading pdf...")
                         )
+                    | Some _, Some(PageState.ImagePage(fileType, content, path)) ->
+                        let mimeType =
+                            match fileType with
+                            | FileContentType.PNG -> "image/png"
+                            | FileContentType.JPG -> "image/jpeg"
+                            | FileContentType.SVG -> "image/svg+xml"
+                            | FileContentType.GIF -> "image/gif"
+                            | _ -> "application/octet-stream"
+
+                        ImageViewer.Main(mimeType, content, path)
+                    | Some _, Some(PageState.HtmlPage(content, path)) -> HtmlViewer.Main(content, path)
                     | Some _, Some(PageState.TextPage content) -> TextPreviewTarget content
                     | Some _, Some PageState.UnknownPage -> UnknownPreviewTarget()
                     | Some _, Some(PageState.LargeFilePage(path, sizeBytes, reason)) ->
