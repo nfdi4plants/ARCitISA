@@ -114,6 +114,7 @@ let ArcFilePreviewTarget (arcFile: ArcFiles, requestedView: ActiveView option) =
                 deleteDataMap,
                 startingActiveView = (requestedView |> Option.defaultValue ActiveView.Metadata),
                 onImportJson = importJson,
+                onJsonImportError = (fun error -> errorModal.enqueue (jsonImportErrorModalRequest error)),
                 onImportPersons = importPersons,
                 fetchArcNodes = fetchArcNodes,
                 onError =

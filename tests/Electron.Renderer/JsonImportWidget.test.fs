@@ -51,7 +51,7 @@ let private jsonImportWidget
     setArcFile
     (pickJsonFile: (unit -> JS.Promise<Result<JsonImportFile option, exn>>) option)
     (onImportJson: (JsonImportRequest -> JS.Promise<Result<unit, exn>>) option)
-    onError
+    (onError: JsonImportError -> unit)
     =
     Swate.Components.Composite.Widgets.JsonImport.JsonImport.JsonImport(
         arcFile,
@@ -133,6 +133,17 @@ Vitest.describe (
                         container.querySelector ("[data-testid='json-import-picker-button']") :?> HTMLButtonElement
 
                     button.click ()
+
+                    do!
+                        waitUntil (
+                            (fun () -> not (isNull (document.querySelector "[data-testid='json-import-confirm']"))),
+                            100
+                        )
+
+                    let confirm =
+                        document.querySelector "[data-testid='json-import-confirm']" :?> HTMLButtonElement
+
+                    confirm.click ()
                     do! waitUntil ((fun () -> receivedRequest.IsSome), 100)
 
                     match receivedRequest with
@@ -193,7 +204,7 @@ Vitest.describe (
             "calls onError for parse failures from an injected picker",
             fun () -> promise {
                 let assay = ArcAssay.init "CurrentAssay"
-                let mutable observedError: exn option = None
+                let mutable observedError: JsonImportError option = None
 
                 let pickJsonFile () = promise {
                     return
@@ -211,7 +222,7 @@ Vitest.describe (
                         ignore
                         (Some pickJsonFile)
                         None
-                        (fun exn -> observedError <- Some exn)
+                        (fun error -> observedError <- Some error)
                     |> renderToBody
 
                 try
@@ -222,6 +233,249 @@ Vitest.describe (
                     do! waitUntil ((fun () -> observedError.IsSome), 100)
 
                     Vitest.expect(observedError.IsSome).toBe (true)
+                finally
+                    cleanup ()
+            }
+        )
+
+        Vitest.test (
+            "picking a file opens the review modal without calling the import callback",
+            fun () -> promise {
+                let mutable importCalled = false
+
+                let pickJsonFile () = promise {
+                    return
+                        Ok(
+                            Some {
+                                FileName = Some "assay.json"
+                                Content = createAssayJson ()
+                            }
+                        )
+                }
+
+                let onImportJson _ = promise {
+                    importCalled <- true
+                    return Ok()
+                }
+
+                let! container, cleanup =
+                    jsonImportWidget
+                        (ArcFiles.Assay(ArcAssay.init "CurrentAssay"))
+                        ignore
+                        (Some pickJsonFile)
+                        (Some onImportJson)
+                        ignore
+                    |> renderToBody
+
+                try
+                    (container.querySelector ("[data-testid='json-import-picker-button']") :?> HTMLButtonElement)
+                        .click ()
+
+                    do!
+                        waitUntil (
+                            (fun () -> not (isNull (document.querySelector "[data-testid='modal_json-import']"))),
+                            100
+                        )
+
+                    Vitest.expect(importCalled).toBe (false)
+                finally
+                    cleanup ()
+            }
+        )
+
+        Vitest.test (
+            "shows the success view only after the import callback resolves",
+            fun () -> promise {
+                let mutable receivedRequest: JsonImportRequest option = None
+                let mutable resolve: Result<unit, exn> -> unit = ignore
+
+                let pickJsonFile () = promise {
+                    return
+                        Ok(
+                            Some {
+                                FileName = Some "assay.json"
+                                Content = createAssayJson ()
+                            }
+                        )
+                }
+
+                let onImportJson request =
+                    receivedRequest <- Some request
+                    Promise.create (fun res _ -> resolve <- res)
+
+                let! container, cleanup =
+                    jsonImportWidget
+                        (ArcFiles.Assay(ArcAssay.init "CurrentAssay"))
+                        ignore
+                        (Some pickJsonFile)
+                        (Some onImportJson)
+                        ignore
+                    |> renderToBody
+
+                let exists testId =
+                    not (isNull (document.querySelector $"[data-testid='{testId}']"))
+
+                try
+                    (container.querySelector ("[data-testid='json-import-picker-button']") :?> HTMLButtonElement)
+                        .click ()
+
+                    do! waitUntil ((fun () -> exists "json-import-confirm"), 100)
+                    (document.querySelector "[data-testid='json-import-confirm']" :?> HTMLButtonElement).click ()
+                    do! waitUntil ((fun () -> receivedRequest.IsSome), 100)
+                    do! Promise.sleep 10
+
+                    Vitest.expect(exists "json-import-success").toBe (false)
+                    Vitest.expect(exists "json-import-progress").toBe (true)
+
+                    match receivedRequest.Value.NextArcFile with
+                    | ArcFiles.Assay next ->
+                        Vitest.expect(next.Tables |> Seq.map _.Name |> Seq.toArray).toEqual ([| "measurement" |])
+                    | _ -> failwith "Expected NextArcFile to be an Assay."
+
+                    resolve (Ok())
+                    do! waitUntil ((fun () -> exists "json-import-success"), 100)
+                finally
+                    cleanup ()
+            }
+        )
+
+        Vitest.test (
+            "a failing import callback shows the error and no success view",
+            fun () -> promise {
+                let pickJsonFile () = promise {
+                    return
+                        Ok(
+                            Some {
+                                FileName = Some "assay.json"
+                                Content = createAssayJson ()
+                            }
+                        )
+                }
+
+                let onImportJson _ = promise { return Error(exn "Callback failed") }
+
+                let! container, cleanup =
+                    jsonImportWidget
+                        (ArcFiles.Assay(ArcAssay.init "CurrentAssay"))
+                        ignore
+                        (Some pickJsonFile)
+                        (Some onImportJson)
+                        ignore
+                    |> renderToBody
+
+                let exists testId =
+                    not (isNull (document.querySelector $"[data-testid='{testId}']"))
+
+                try
+                    (container.querySelector ("[data-testid='json-import-picker-button']") :?> HTMLButtonElement)
+                        .click ()
+
+                    do! waitUntil ((fun () -> exists "json-import-confirm"), 100)
+                    (document.querySelector "[data-testid='json-import-confirm']" :?> HTMLButtonElement).click ()
+                    do! waitUntil ((fun () -> exists "json-import-error"), 100)
+
+                    Vitest.expect(exists "json-import-success").toBe (false)
+                    Vitest.expect(exists "json-import-close").toBe (true)
+                    Vitest.expect(exists "json-import-confirm").toBe (false)
+                finally
+                    cleanup ()
+            }
+        )
+
+        Vitest.test (
+            "a parse error reaches onError with the parser message and opens no modal",
+            fun () -> promise {
+                let content = "not json"
+                let mutable observedError: JsonImportError option = None
+
+                let pickJsonFile () = promise {
+                    return
+                        Ok(
+                            Some {
+                                FileName = Some "broken.json"
+                                Content = content
+                            }
+                        )
+                }
+
+                let expectedDetails =
+                    match
+                        Json.Import.tryParseFromJsonString (
+                            content,
+                            Some JsonExportFormat.ROCrate,
+                            Some ArcFilesDiscriminate.Assay,
+                            Some "broken.json"
+                        )
+                    with
+                    | Error exn -> exn.Message
+                    | Ok _ -> failwith "Expected the test input to fail parsing."
+
+                let! container, cleanup =
+                    jsonImportWidget
+                        (ArcFiles.Assay(ArcAssay.init "CurrentAssay"))
+                        ignore
+                        (Some pickJsonFile)
+                        None
+                        (fun error -> observedError <- Some error)
+                    |> renderToBody
+
+                try
+                    (container.querySelector ("[data-testid='json-import-picker-button']") :?> HTMLButtonElement)
+                        .click ()
+
+                    do! waitUntil ((fun () -> observedError.IsSome), 100)
+
+                    Vitest.expect(observedError.Value.Title).toBe ("Could not import JSON")
+                    Vitest.expect(observedError.Value.Details).toEqual (Some expectedDetails)
+                    Vitest.expect(isNull (document.querySelector "[data-testid='modal_json-import']")).toBe (true)
+                finally
+                    cleanup ()
+            }
+        )
+
+        Vitest.test (
+            "a file without tables reaches onError and opens no modal",
+            fun () -> promise {
+                let emptyAssayJson =
+                    match
+                        Json.Export.tryParseToJsonString (
+                            ArcFiles.Assay(ArcAssay.init "EmptyAssay"),
+                            JsonExportFormat.ROCrate
+                        )
+                    with
+                    | Ok(_, content) -> content
+                    | Error exn -> failwith exn.Message
+
+                let mutable observedError: JsonImportError option = None
+
+                let pickJsonFile () = promise {
+                    return
+                        Ok(
+                            Some {
+                                FileName = Some "empty.json"
+                                Content = emptyAssayJson
+                            }
+                        )
+                }
+
+                let! container, cleanup =
+                    jsonImportWidget
+                        (ArcFiles.Assay(ArcAssay.init "CurrentAssay"))
+                        ignore
+                        (Some pickJsonFile)
+                        None
+                        (fun error -> observedError <- Some error)
+                    |> renderToBody
+
+                try
+                    (container.querySelector ("[data-testid='json-import-picker-button']") :?> HTMLButtonElement)
+                        .click ()
+
+                    do! waitUntil ((fun () -> observedError.IsSome), 100)
+
+                    Vitest.expect(observedError.Value.Message).toBe ("\"empty.json\" contains no tables to import.")
+                    Vitest.expect(observedError.Value.Details).toEqual (None)
+                    Vitest.expect(isNull (document.querySelector "[data-testid='modal_json-import']")).toBe (true)
                 finally
                     cleanup ()
             }

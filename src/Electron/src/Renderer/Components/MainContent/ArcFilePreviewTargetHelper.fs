@@ -3,6 +3,7 @@ module Renderer.Components.MainContent.ArcFilePreviewTargetHelper
 open Fable.Core
 open Swate.Components.Page.ArcFileEditor.Types
 open Swate.Components.Composite.Widgets.JsonImport.Types
+open Swate.Components.Primitive.ErrorModal.Types
 open Swate.Components.Shared
 open ARCtrl
 
@@ -28,7 +29,14 @@ let importJsonRequestIntoCurrentTarget
     (setArcFileInMemory: ArcFiles -> JS.Promise<Result<unit, exn>>)
     =
     promise {
-        match Json.Import.applyToCurrentArcFile (currentArcFile, request.ImportedFile) with
-        | Error exn -> return Error exn
-        | Ok nextArcFile -> return! publishAndPersistArcFile nextArcFile setArcFilePageState setArcFileInMemory
+        let currentType = currentArcFile.RelatedArcFilesDiscriminate
+        let nextType = request.NextArcFile.RelatedArcFilesDiscriminate
+
+        if nextType <> currentType then
+            return Error(exn $"Cannot import {nextType} JSON into the current {currentType} editor.")
+        else
+            return! publishAndPersistArcFile request.NextArcFile setArcFilePageState setArcFileInMemory
     }
+
+let jsonImportErrorModalRequest (error: JsonImportError) : ErrorModalRequest =
+    ErrorModalRequest.create (error.Message, title = error.Title, ?details = error.Details)

@@ -5,6 +5,7 @@ open Fable.Core
 open ARCtrl
 open Renderer.Components.MainContent.ArcFilePreviewTargetHelper
 open Swate.Components.Composite.Widgets.JsonImport.Types
+open Swate.Components.Primitive.ErrorModal.Types
 open Swate.Components.Page.ArcFileEditor.Types
 open Swate.Components.Shared
 
@@ -17,8 +18,9 @@ let private createAssayArcFile (tableNames: string[]) =
 
     ArcFiles.Assay assay, assay
 
-let private jsonImportRequest importedFile = {
+let private jsonImportRequest importedFile nextArcFile = {
     ImportedFile = importedFile
+    NextArcFile = nextArcFile
     SourceFileName = Some "import.json"
     JsonFormat = JsonExportFormat.ARCtrl
 }
@@ -91,7 +93,7 @@ Vitest.describe (
                 let! result =
                     importJsonRequestIntoCurrentTarget
                         currentArcFile
-                        (jsonImportRequest importedStudy)
+                        (jsonImportRequest importedStudy importedStudy)
                         (fun nextArcFile -> publishedArcFile <- Some nextArcFile)
                         (fun _ -> promise {
                             inMemoryUpdated <- true
@@ -130,6 +132,33 @@ Vitest.describe (
         )
 
         Vitest.test (
+            "replacing a workflow keeps the current identifier and takes the imported content",
+            fun () ->
+                let currentWorkflow = ArcWorkflow.init "current-workflow"
+                let importedWorkflow = ArcWorkflow.init "other-workflow"
+                importedWorkflow.Title <- Some "Imported title"
+                importedWorkflow.Description <- Some "Imported description"
+                let importedDataMap = DataMap.init ()
+                importedDataMap.DataContexts.Add(DataContext(name = "input.csv", label = "kept label"))
+                importedWorkflow.DataMap <- Some importedDataMap
+
+                let current = ArcFiles.Workflow currentWorkflow
+
+                match Json.Import.applyToCurrentArcFile (current, ArcFiles.Workflow importedWorkflow) with
+                | Error exn -> failwith $"Expected workflow import preparation to succeed: {exn.Message}"
+                | Ok(ArcFiles.Workflow replaced as next) ->
+                    Vitest.expect(replaced.Identifier).toBe ("current-workflow")
+                    Vitest.expect(replaced.Title).toEqual (Some "Imported title")
+                    Vitest.expect(replaced.Description).toEqual (Some "Imported description")
+                    Vitest.expect(importedWorkflow.Identifier).toBe ("other-workflow")
+
+                    Vitest.expect(replaced.DataMap.Value.DataContexts.[0].Label).toEqual (Some "kept label")
+
+                    Vitest.expect(editorKey next None).toEqual (editorKey current None)
+                | Ok _ -> failwith "Expected prepared import to remain a Workflow."
+        )
+
+        Vitest.test (
             "successful table import appends tables with unique names and invokes in-memory ARC update",
             fun () -> promise {
                 let currentArcFile, currentAssay =
@@ -142,10 +171,15 @@ Vitest.describe (
                 let publishedArcFiles = ResizeArray<ArcFiles>()
                 let inMemoryUpdates = ResizeArray<ArcFiles>()
 
+                let nextArcFile =
+                    match Json.Import.applyToCurrentArcFile (currentArcFile, importedFile) with
+                    | Ok next -> next
+                    | Error exn -> failwith $"Expected import preparation to succeed: {exn.Message}"
+
                 let! result =
                     importJsonRequestIntoCurrentTarget
                         currentArcFile
-                        (jsonImportRequest importedFile)
+                        (jsonImportRequest importedFile nextArcFile)
                         (fun nextArcFile -> publishedArcFiles.Add nextArcFile)
                         (fun nextArcFile -> promise {
                             inMemoryUpdates.Add nextArcFile
@@ -180,5 +214,69 @@ Vitest.describe (
                         .toEqual ([| "Existing"; "Duplicate"; "Duplicate 1" |])
                 | _ -> failwith "Expected imported Assay to be published and sent to in-memory update."
             }
+        )
+
+        Vitest.test (
+            "returns the IPC error after publishing the page state once",
+            fun () -> promise {
+                let currentArcFile, _ = createAssayArcFile [| "Existing" |]
+                let importedAssay = ArcAssay.init "ImportedAssay"
+                importedAssay.AddTable(ArcTable.init "Fresh")
+                let importedFile = ArcFiles.Assay importedAssay
+
+                let nextArcFile =
+                    match Json.Import.applyToCurrentArcFile (currentArcFile, importedFile) with
+                    | Ok next -> next
+                    | Error exn -> failwith $"Expected import preparation to succeed: {exn.Message}"
+
+                let publishedArcFiles = ResizeArray<ArcFiles>()
+                let mutable inMemoryCalls = 0
+
+                let! result =
+                    importJsonRequestIntoCurrentTarget
+                        currentArcFile
+                        (jsonImportRequest importedFile nextArcFile)
+                        (fun arcFile -> publishedArcFiles.Add arcFile)
+                        (fun _ -> promise {
+                            inMemoryCalls <- inMemoryCalls + 1
+                            return Error(exn "IPC failed")
+                        })
+
+                match result with
+                | Ok() -> failwith "Expected the IPC failure to be returned."
+                | Error exn -> Vitest.expect(exn.Message).toBe ("IPC failed")
+
+                Vitest.expect(publishedArcFiles.Count).toBe (1)
+                Vitest.expect(inMemoryCalls).toBe (1)
+            }
+        )
+
+        Vitest.test (
+            "maps a JSON import error with details to an error modal request",
+            fun () ->
+                let request =
+                    jsonImportErrorModalRequest {
+                        Title = "Could not import JSON"
+                        Message = "Could not read \"a.json\"."
+                        Details = Some "Unexpected token"
+                    }
+
+                Vitest.expect(request.Title).toBe ("Could not import JSON")
+                Vitest.expect(request.Message).toBe ("Could not read \"a.json\".")
+                Vitest.expect(request.Details).toEqual (Some "Unexpected token")
+        )
+
+        Vitest.test (
+            "maps a JSON import error without details to an error modal request",
+            fun () ->
+                let request =
+                    jsonImportErrorModalRequest {
+                        Title = "Could not import JSON"
+                        Message = "Could not open the selected file."
+                        Details = None
+                    }
+
+                Vitest.expect(request.Message).toBe ("Could not open the selected file.")
+                Vitest.expect(request.Details).toEqual (None)
         )
 )
