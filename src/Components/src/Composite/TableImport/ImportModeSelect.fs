@@ -25,34 +25,34 @@ type ImportModeSelect =
                 Html.div [
                     prop.className "swt:flex swt:flex-col swt:gap-1"
                     prop.children [
-                        for importMode, key, label, description in ModeHelper.ImportMode.options do
-                            let isChecked = (importType = importMode)
+                        for option in ModeHelper.ImportMode.options do
+                            let isChecked = (importType = option.Mode)
 
                             Html.div [
-                                prop.key key
+                                prop.key option.Key
                                 prop.className "swt:flex swt:flex-col"
                                 prop.children [
                                     Html.label [
                                         prop.className "swt:inline-flex swt:items-center swt:gap-2 swt:cursor-pointer"
                                         prop.children [
                                             Html.input [
-                                                prop.testId $"table-import-mode-{key}"
+                                                prop.testId $"table-import-mode-{option.Key}"
                                                 prop.type'.radio
                                                 prop.name "table-import-mode"
                                                 prop.className "swt:radio swt:radio-sm"
                                                 prop.isChecked isChecked
                                                 prop.disabled disabled
-                                                prop.onChange (fun (_: bool) -> setImportType importMode)
+                                                prop.onChange (fun (_: bool) -> setImportType option.Mode)
                                             ]
                                             Html.span [
                                                 prop.className "swt:text-sm swt:text-base-content"
-                                                prop.text label
+                                                prop.text option.Label
                                             ]
                                         ]
                                     ]
                                     Html.span [
                                         prop.className "swt:text-xs swt:opacity-70 swt:ml-6"
-                                        prop.text description
+                                        prop.text option.Description
                                     ]
                                 ]
                             ]

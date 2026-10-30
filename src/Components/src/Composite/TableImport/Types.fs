@@ -9,6 +9,14 @@ type TableImportAction =
     | AppendToActiveTable
     | NoImport
 
+/// One import mode choice as the dialogs show it. Key is used for test ids.
+type ImportModeOption = {
+    Mode: TableJoinOptions
+    Key: string
+    Label: string
+    Description: string
+}
+
 /// A table offered for import. Index is the position among the offered tables and is the key everywhere.
 /// Name is the label shown to the user. A new table is named after Table.Name.
 type ImportSource = {

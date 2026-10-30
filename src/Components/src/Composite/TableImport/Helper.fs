@@ -103,20 +103,25 @@ let clearRows (table: ArcTable) (deselectedRowIndices: Set<int>) : ArcTable =
 [<RequireQualifiedAccess>]
 module ImportMode =
 
-    /// Each entry is (mode, key, label, description).
-    let options: (ARCtrl.TableJoinOptions * string * string * string)[] = [|
-        ARCtrl.TableJoinOptions.Headers,
-        "Headers",
-        "Headers only",
-        "Adds the column headers only. The cells stay empty."
-        ARCtrl.TableJoinOptions.WithUnit,
-        "WithUnit",
-        "With units",
-        "Adds the column headers and the units of cells that have one. Other values are left out."
-        ARCtrl.TableJoinOptions.WithValues,
-        "WithValues",
-        "With values",
-        "Adds the column headers with all values, including terms, units and data files."
+    let options: ImportModeOption[] = [|
+        {
+            Mode = ARCtrl.TableJoinOptions.Headers
+            Key = "Headers"
+            Label = "Headers only"
+            Description = "Adds the column headers only. The cells stay empty."
+        }
+        {
+            Mode = ARCtrl.TableJoinOptions.WithUnit
+            Key = "WithUnit"
+            Label = "With units"
+            Description = "Adds the column headers and the units of cells that have one. Other values are left out."
+        }
+        {
+            Mode = ARCtrl.TableJoinOptions.WithValues
+            Key = "WithValues"
+            Label = "With values"
+            Description = "Adds the column headers with all values, including terms, units and data files."
+        }
     |]
 
 let private getDeselectedTableColumnIndices (deselectedColumns: Set<int * int>) (tableIndex: int) =

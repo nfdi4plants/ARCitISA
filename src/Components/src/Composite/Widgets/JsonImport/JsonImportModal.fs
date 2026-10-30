@@ -21,7 +21,7 @@ module private JsonImportModalHelper =
 
     let modeLabel (importType: TableJoinOptions) =
         TableHelper.ImportMode.options
-        |> Array.tryPick (fun (mode, _, label, _) -> if mode = importType then Some label else None)
+        |> Array.tryPick (fun option -> if option.Mode = importType then Some option.Label else None)
         |> Option.defaultValue ""
 
     let description (parsed: ParsedJsonFile) =
