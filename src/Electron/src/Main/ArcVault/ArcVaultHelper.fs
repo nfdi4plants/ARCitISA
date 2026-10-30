@@ -505,7 +505,7 @@ let private readFirstBytesAsync (path: string) (maxBytes: int) : JS.Promise<byte
 /// Reads a file of an ARC for the preview. Files above the size limit and files without text content come
 /// back as a NoPreview DTO. Their content is not read.
 let readFileForPreviewAsync (absolutePath: string) (relativePath: string) : JS.Promise<FileContentDTO> = promise {
-    let fileType = FileContentDTO.inferTextFileTypeFromPath relativePath
+    let fileType = FileContentDTO.inferFileTypeFromPath relativePath
     let isPdf = fileType = FileContentType.PDF
     let! stats = Filesystem.statAsync absolutePath
     let limit = if isPdf then maxPdfPreviewBytes else maxTextPreviewBytes

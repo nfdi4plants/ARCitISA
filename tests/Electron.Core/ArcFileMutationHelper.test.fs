@@ -37,87 +37,87 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "inferTextFileTypeFromPath detects markdown by .md extension",
+            "inferFileTypeFromPath detects markdown by .md extension",
             fun () ->
                 Vitest
-                    .expect(FileContentDTO.inferTextFileTypeFromPath "notes/readme.md")
+                    .expect(FileContentDTO.inferFileTypeFromPath "notes/readme.md")
                     .toEqual (FileContentType.Markdown)
 
                 Vitest
-                    .expect(FileContentDTO.inferTextFileTypeFromPath "notes/README.MD")
+                    .expect(FileContentDTO.inferFileTypeFromPath "notes/README.MD")
                     .toEqual (FileContentType.Markdown)
 
                 Vitest
-                    .expect(FileContentDTO.inferTextFileTypeFromPath "assays/assay_1/notes.txt")
+                    .expect(FileContentDTO.inferFileTypeFromPath "assays/assay_1/notes.txt")
                     .toEqual (FileContentType.PlainText)
 
         )
 
         Vitest.test (
-            "inferTextFileTypeFromPath detects PDF by .pdf extension",
+            "inferFileTypeFromPath detects PDF by .pdf extension",
             fun () ->
-                Vitest.expect(FileContentDTO.inferTextFileTypeFromPath "docs/manual.pdf").toEqual (FileContentType.PDF)
+                Vitest.expect(FileContentDTO.inferFileTypeFromPath "docs/manual.pdf").toEqual (FileContentType.PDF)
 
-                Vitest.expect(FileContentDTO.inferTextFileTypeFromPath "docs/MANUAL.PDF").toEqual (FileContentType.PDF)
+                Vitest.expect(FileContentDTO.inferFileTypeFromPath "docs/MANUAL.PDF").toEqual (FileContentType.PDF)
         )
 
         Vitest.test (
-            "inferTextFileTypeFromPath detects HTML by .html extension",
+            "inferFileTypeFromPath detects HTML by .html extension",
             fun () ->
-                Vitest.expect(FileContentDTO.inferTextFileTypeFromPath "web/index.html").toEqual (FileContentType.Html)
+                Vitest.expect(FileContentDTO.inferFileTypeFromPath "web/index.html").toEqual (FileContentType.Html)
 
-                Vitest.expect(FileContentDTO.inferTextFileTypeFromPath "web/INDEX.HTML").toEqual (FileContentType.Html)
+                Vitest.expect(FileContentDTO.inferFileTypeFromPath "web/INDEX.HTML").toEqual (FileContentType.Html)
         )
 
         Vitest.test (
-            "inferTextFileTypeFromPath detects GIF by .gif extension",
+            "inferFileTypeFromPath detects GIF by .gif extension",
             fun () ->
                 Vitest
-                    .expect(FileContentDTO.inferTextFileTypeFromPath "images/animation.gif")
+                    .expect(FileContentDTO.inferFileTypeFromPath "images/animation.gif")
                     .toEqual (FileContentType.GIF)
 
                 Vitest
-                    .expect(FileContentDTO.inferTextFileTypeFromPath "images/ANIMATION.GIF")
+                    .expect(FileContentDTO.inferFileTypeFromPath "images/ANIMATION.GIF")
                     .toEqual (FileContentType.GIF)
         )
 
         Vitest.test (
-            "inferTextFileTypeFromPath detects PNG by .png extension",
+            "inferFileTypeFromPath detects PNG by .png extension",
             fun () ->
                 Vitest
-                    .expect(FileContentDTO.inferTextFileTypeFromPath "images/picture.png")
+                    .expect(FileContentDTO.inferFileTypeFromPath "images/picture.png")
                     .toEqual (FileContentType.PNG)
 
                 Vitest
-                    .expect(FileContentDTO.inferTextFileTypeFromPath "images/PICTURE.PNG")
+                    .expect(FileContentDTO.inferFileTypeFromPath "images/PICTURE.PNG")
                     .toEqual (FileContentType.PNG)
         )
 
         Vitest.test (
-            "inferTextFileTypeFromPath detects JPG by .jpg extension",
+            "inferFileTypeFromPath detects JPG by .jpg extension",
             fun () ->
-                Vitest.expect(FileContentDTO.inferTextFileTypeFromPath "images/photo.jpg").toEqual (FileContentType.JPG)
+                Vitest.expect(FileContentDTO.inferFileTypeFromPath "images/photo.jpg").toEqual (FileContentType.JPG)
 
                 Vitest
-                    .expect(FileContentDTO.inferTextFileTypeFromPath "images/photo.jpeg")
+                    .expect(FileContentDTO.inferFileTypeFromPath "images/photo.jpeg")
                     .toEqual (FileContentType.JPG)
 
                 Vitest
-                    .expect(FileContentDTO.inferTextFileTypeFromPath "images/PHOTO.JPEG")
+                    .expect(FileContentDTO.inferFileTypeFromPath "images/PHOTO.JPEG")
                     .toEqual (FileContentType.JPG)
 
-                Vitest.expect(FileContentDTO.inferTextFileTypeFromPath "images/PHOTO.JPG").toEqual (FileContentType.JPG)
+                Vitest.expect(FileContentDTO.inferFileTypeFromPath "images/PHOTO.JPG").toEqual (FileContentType.JPG)
         )
 
         Vitest.test (
-            "inferTextFileTypeFromPath detects SVG by .svg extension",
+            "inferFileTypeFromPath detects SVG by .svg extension",
             fun () ->
                 Vitest
-                    .expect(FileContentDTO.inferTextFileTypeFromPath "images/vector.svg")
+                    .expect(FileContentDTO.inferFileTypeFromPath "images/vector.svg")
                     .toEqual (FileContentType.SVG)
 
                 Vitest
-                    .expect(FileContentDTO.inferTextFileTypeFromPath "images/VECTOR.SVG")
+                    .expect(FileContentDTO.inferFileTypeFromPath "images/VECTOR.SVG")
                     .toEqual (FileContentType.SVG)
         )
 

@@ -268,7 +268,7 @@ module FileContentDTO =
             |}
     |}
 
-    let inferTextFileTypeFromPath (path: string) : FileContentType =
+    let inferFileTypeFromPath (path: string) : FileContentType =
         let normalizedPath = PathHelpers.normalizePath path
 
         let ending =

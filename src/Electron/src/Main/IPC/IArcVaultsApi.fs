@@ -1195,7 +1195,7 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
                             match absolutePath with
                             | Error pathError -> return Error pathError
                             | Ok path ->
-                                let fileType = FileContentDTO.inferTextFileTypeFromPath relativePath
+                                let fileType = FileContentDTO.inferFileTypeFromPath relativePath
 
                                 let! content =
                                     match fileType with

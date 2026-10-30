@@ -127,7 +127,7 @@ let NotesDraftTarget () =
 
             let request: FileContentDTO =
                 FileContentDTO.create
-                    (FileContentDTO.inferTextFileTypeFromPath targetPath)
+                    (FileContentDTO.inferFileTypeFromPath targetPath)
                     payload.Intent.Content
                     targetPath
 
