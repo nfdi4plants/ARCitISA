@@ -436,7 +436,9 @@ let applyImport
                     source.Table
                 elif actionOf source.Index = TableImportAction.AppendToActiveTable then
                     let deselectedRows =
-                        Set.difference (Set.ofSeq (seq { 0 .. source.Table.RowCount - 1 })) (Set.ofArray selectedRows)
+                        decisions.DeselectedRows
+                        |> Set.filter (fun (sourceIndex, _) -> sourceIndex = source.Index)
+                        |> Set.map snd
 
                     clearRows source.Table deselectedRows
                 else
