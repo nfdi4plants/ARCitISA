@@ -51,74 +51,6 @@ type JsonImportModal =
         let appendTarget =
             TableHelper.tryGetAppendTarget currentArcFile decisions.ActiveTableIndex
 
-        let callbacks: TableImportPreviewCallbacks = {
-            GetImportAction = actionOf
-            SetImportAction =
-                fun index action ->
-                    setDecisions (fun d -> {
-                        d with
-                            Actions = d.Actions.Add(index, action)
-                    })
-            IsColumnSelected = fun index columnIndex -> not (decisions.DeselectedColumns.Contains(index, columnIndex))
-            ToggleColumnSelection =
-                fun index columnIndex ->
-                    setDecisions (fun d -> {
-                        d with
-                            DeselectedColumns =
-                                if d.DeselectedColumns.Contains(index, columnIndex) then
-                                    d.DeselectedColumns.Remove(index, columnIndex)
-                                else
-                                    d.DeselectedColumns.Add(index, columnIndex)
-                    })
-            SelectAllColumns =
-                fun index ->
-                    setDecisions (fun d -> {
-                        d with
-                            DeselectedColumns = d.DeselectedColumns |> Set.filter (fun (i, _) -> i <> index)
-                    })
-            UnselectAllColumns =
-                fun index columnCount ->
-                    setDecisions (fun d -> {
-                        d with
-                            DeselectedColumns =
-                                Set.union
-                                    d.DeselectedColumns
-                                    (Set.ofList [ for c in 0 .. columnCount - 1 -> index, c ])
-                    })
-            IsRowSelected = fun index rowIndex -> not (decisions.DeselectedRows.Contains(index, rowIndex))
-            DeselectedRowCount = TableHelper.deselectedRowCount decisions
-            ToggleRowSelection =
-                fun index rowIndex ->
-                    setDecisions (fun d -> {
-                        d with
-                            DeselectedRows =
-                                if d.DeselectedRows.Contains(index, rowIndex) then
-                                    d.DeselectedRows.Remove(index, rowIndex)
-                                else
-                                    d.DeselectedRows.Add(index, rowIndex)
-                    })
-            SelectAllRows =
-                fun index ->
-                    setDecisions (fun d -> {
-                        d with
-                            DeselectedRows = d.DeselectedRows |> Set.filter (fun (i, _) -> i <> index)
-                    })
-            UnselectAllRows =
-                fun index rowCount ->
-                    setDecisions (fun d -> {
-                        d with
-                            DeselectedRows =
-                                Set.union d.DeselectedRows (Set.ofList [ for r in 0 .. rowCount - 1 -> index, r ])
-                    })
-            GetNewTableName = fun index -> names.TryFind index
-            SetNewTableName =
-                fun index name ->
-                    setDecisions (fun d -> {
-                        d with
-                            EnteredNames = d.EnteredNames.Add(index, name)
-                    })
-        }
-
         let showRowSelection = decisions.ImportType <> TableJoinOptions.Headers
 
         // Names the kept rows when the user left out rows and the mode imports values.
@@ -160,17 +92,14 @@ type JsonImportModal =
         Html.div [
             prop.className "swt:flex swt:flex-col swt:gap-2"
             prop.children [
-                ImportModeSelect.ImportModeSelect(
-                    decisions.ImportType,
-                    (fun importType -> setDecisions (fun d -> { d with ImportType = importType })),
-                    disabled = importing
-                )
-                TableImportPreview.TableImportPreview(
+                TableImportForm.TableImportForm(
                     sources,
-                    callbacks,
+                    decisions,
+                    setDecisions,
+                    names,
                     canAppend = appendTarget.IsSome,
                     appendDisabledNote = "Select a table in the editor first to append columns to it.",
-                    showRowSelection = showRowSelection
+                    disabled = importing
                 )
                 Html.div [
                     prop.testId "json-import-summary"

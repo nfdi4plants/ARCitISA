@@ -250,6 +250,7 @@
     <Compile Include="Composite\TableImport\TableImportPreview.fs" />
     <Compile Include="Composite\TableImport\TableImportPreview.sample.fs" />
     <Compile Include="Composite\TableImport\TableImportPreview.test.rtl.fs" />
+    <Compile Include="Composite\TableImport\TableImportForm.fs" />
     <Compile Include="Composite\TemplateBrowser\TemplateImportModal.fs" />
     <Compile Include="Composite\TemplateBrowser\TemplateImportModal.test.rtl.fs" />
     <Compile Include="Composite\TemplateBrowser\TemplatesDisplay.fs" />

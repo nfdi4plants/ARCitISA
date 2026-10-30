@@ -299,6 +299,78 @@ let newTableNames
     |> Array.map (fun (source, newTableName) -> source.Index, newTableName)
     |> Map.ofArray
 
+/// The preview callbacks for the given decisions. Every setter updates the decisions through setDecisions.
+let previewCallbacks
+    (decisions: TableImportDecisions)
+    (setDecisions: (TableImportDecisions -> TableImportDecisions) -> unit)
+    (names: Map<int, NewTableName>)
+    : TableImportPreviewCallbacks =
+    {
+        GetImportAction = actionOf decisions
+        SetImportAction =
+            fun index action ->
+                setDecisions (fun d -> {
+                    d with
+                        Actions = d.Actions.Add(index, action)
+                })
+        IsColumnSelected = fun index columnIndex -> not (decisions.DeselectedColumns.Contains(index, columnIndex))
+        ToggleColumnSelection =
+            fun index columnIndex ->
+                setDecisions (fun d -> {
+                    d with
+                        DeselectedColumns =
+                            if d.DeselectedColumns.Contains(index, columnIndex) then
+                                d.DeselectedColumns.Remove(index, columnIndex)
+                            else
+                                d.DeselectedColumns.Add(index, columnIndex)
+                })
+        SelectAllColumns =
+            fun index ->
+                setDecisions (fun d -> {
+                    d with
+                        DeselectedColumns = d.DeselectedColumns |> Set.filter (fun (i, _) -> i <> index)
+                })
+        UnselectAllColumns =
+            fun index columnCount ->
+                setDecisions (fun d -> {
+                    d with
+                        DeselectedColumns =
+                            Set.union d.DeselectedColumns (Set.ofList [ for c in 0 .. columnCount - 1 -> index, c ])
+                })
+        IsRowSelected = fun index rowIndex -> not (decisions.DeselectedRows.Contains(index, rowIndex))
+        DeselectedRowCount = deselectedRowCount decisions
+        ToggleRowSelection =
+            fun index rowIndex ->
+                setDecisions (fun d -> {
+                    d with
+                        DeselectedRows =
+                            if d.DeselectedRows.Contains(index, rowIndex) then
+                                d.DeselectedRows.Remove(index, rowIndex)
+                            else
+                                d.DeselectedRows.Add(index, rowIndex)
+                })
+        SelectAllRows =
+            fun index ->
+                setDecisions (fun d -> {
+                    d with
+                        DeselectedRows = d.DeselectedRows |> Set.filter (fun (i, _) -> i <> index)
+                })
+        UnselectAllRows =
+            fun index rowCount ->
+                setDecisions (fun d -> {
+                    d with
+                        DeselectedRows =
+                            Set.union d.DeselectedRows (Set.ofList [ for r in 0 .. rowCount - 1 -> index, r ])
+                })
+        GetNewTableName = fun index -> names.TryFind index
+        SetNewTableName =
+            fun index name ->
+                setDecisions (fun d -> {
+                    d with
+                        EnteredNames = d.EnteredNames.Add(index, name)
+                })
+    }
+
 let tryGetAppendTarget (arcFile: ArcFiles) (activeTableIndex: int option) : (int * ArcTable) option =
     arcFile.TryGetActiveTable(activeTableIndex)
 

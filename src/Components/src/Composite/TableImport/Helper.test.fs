@@ -983,3 +983,64 @@ Vitest.test (
         Vitest.expect(organisms).toEqual [| "organism 1"; "organism 3"; "organism 4"; "organism 5" |]
         verifyReadableAndSerializable result.ArcFile
 )
+
+Vitest.test (
+    "previewCallbacks reads the decisions and writes every change through setDecisions",
+    fun () ->
+        let mutable decisions = jsonDefaults
+        let setDecisions (update: TableImportDecisions -> TableImportDecisions) = decisions <- update decisions
+
+        let names =
+            newTableNames
+                []
+                [| sourceOf 0 (createRowSource 3) |]
+                (fun _ -> TableImportAction.ImportAsNewTable)
+                Map.empty
+
+        let callbacks () =
+            previewCallbacks decisions setDecisions names
+
+        callbacks().ToggleColumnSelection 0 1
+        Vitest.expect(callbacks().IsColumnSelected 0 1).toBe false
+        callbacks().ToggleColumnSelection 0 1
+        Vitest.expect(callbacks().IsColumnSelected 0 1).toBe true
+
+        callbacks().UnselectAllColumns 0 3
+        Vitest.expect(Set.toList decisions.DeselectedColumns).toEqual (Set.toList (Set.ofList [ 0, 0; 0, 1; 0, 2 ]))
+        Vitest.expect(callbacks().IsColumnSelected 1 0).toBe true
+
+        decisions <- {
+            decisions with
+                DeselectedColumns = decisions.DeselectedColumns.Add(1, 0)
+        }
+
+        callbacks().SelectAllColumns 0
+        Vitest.expect(Set.toList decisions.DeselectedColumns).toEqual (Set.toList (Set.singleton (1, 0)))
+
+        callbacks().ToggleRowSelection 0 1
+        Vitest.expect(callbacks().IsRowSelected 0 1).toBe false
+        callbacks().ToggleRowSelection 0 1
+        Vitest.expect(callbacks().IsRowSelected 0 1).toBe true
+
+        callbacks().UnselectAllRows 0 3
+        Vitest.expect(Set.toList decisions.DeselectedRows).toEqual (Set.toList (Set.ofList [ 0, 0; 0, 1; 0, 2 ]))
+        Vitest.expect(callbacks().DeselectedRowCount 0).toBe 3
+
+        decisions <- {
+            decisions with
+                DeselectedRows = decisions.DeselectedRows.Add(1, 0)
+        }
+
+        callbacks().SelectAllRows 0
+        Vitest.expect(Set.toList decisions.DeselectedRows).toEqual (Set.toList (Set.singleton (1, 0)))
+
+        callbacks().SetImportAction 1 TableImportAction.NoImport
+        Vitest.expect(Map.toList decisions.Actions).toEqual [ 1, TableImportAction.NoImport ]
+        Vitest.expect(callbacks().GetImportAction 1).toEqual TableImportAction.NoImport
+        Vitest.expect(callbacks().GetImportAction 0).toEqual TableImportAction.ImportAsNewTable
+
+        callbacks().SetNewTableName 0 "Renamed"
+        Vitest.expect(Map.toList decisions.EnteredNames).toEqual [ 0, "Renamed" ]
+        Vitest.expect((callbacks().GetNewTableName 0).IsSome).toBe true
+        Vitest.expect((callbacks().GetNewTableName 1).IsNone).toBe true
+)
