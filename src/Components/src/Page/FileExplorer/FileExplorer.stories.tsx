@@ -842,7 +842,7 @@ export const ControlledSelectionFollowsTheParent: StoryObj<typeof ControlledSele
 
     await waitFor(() => expect(canvas.getByText("first.txt")).toHaveClass(/swt:text-primary/));
 
-    // Keep the original controlled-selection cases.
+    // A click the parent ignores leaves the highlight where it is.
     await userEvent.click(canvas.getByText("locked.txt"));
     await expect(canvas.getByText("locked.txt")).not.toHaveClass(/swt:text-primary/);
     await expect(canvas.getByText("first.txt")).toHaveClass(/swt:text-primary/);

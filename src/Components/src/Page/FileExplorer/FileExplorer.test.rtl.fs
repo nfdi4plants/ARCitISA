@@ -269,6 +269,7 @@ Vitest.describe (
                     "batch-02"
                 ]
 
+                // Before collapse, only the complete path to the deeply selected file is highlighted.
                 expectVisibleState
                     (Some "selected-report.txt")
                     (set [
@@ -285,6 +286,7 @@ Vitest.describe (
                 RTL.fireEvent.click (RTL.screen.getByText "batch-01")
                 do! flushRender ()
 
+                // During collapse, descendants are hidden while the path to the collapsed folder stays highlighted.
                 Vitest.expect((RTL.screen.queryByText "selected-report.txt").IsNone).toBe true
                 Vitest.expect((RTL.screen.queryByText "replicate-01").IsNone).toBe true
 
@@ -314,6 +316,7 @@ Vitest.describe (
                 RTL.fireEvent.click (RTL.screen.getByText "batch-01")
                 do! flushRender ()
 
+                // After reopening, the selected descendant and its exact path are restored.
                 Vitest.expect((treeItem "batch-01").getAttribute "aria-expanded").toBe "true"
                 Vitest.expect((RTL.screen.queryByText "selected-report.txt").IsSome).toBe true
 
@@ -333,6 +336,7 @@ Vitest.describe (
                 RTL.fireEvent.click (RTL.screen.getByText "isa.study.xlsx")
                 do! flushRender ()
 
+                // Selecting a neighboring ISA file replaces the old branch highlight completely.
                 expectVisibleState
                     (Some "isa.study.xlsx")
                     (set [ "studies"; "selected-study"; "isa.study.xlsx" ])
@@ -341,6 +345,7 @@ Vitest.describe (
                 RTL.fireEvent.click (RTL.screen.getByText "selected-report.txt")
                 do! flushRender ()
 
+                // Moving back to the nested report restores only its ancestor path.
                 expectVisibleState
                     (Some "selected-report.txt")
                     (set [
@@ -357,6 +362,7 @@ Vitest.describe (
                 RTL.fireEvent.click (RTL.screen.getByText "studies")
                 do! flushRender ()
 
+                // Collapsing the top-level entity hides every descendant and selects only that entity.
                 Vitest.expect((RTL.screen.queryByText "selected-report.txt").IsNone).toBe true
                 Vitest.expect((RTL.screen.queryByText "selected-study").IsNone).toBe true
 
@@ -371,6 +377,7 @@ Vitest.describe (
                 RTL.fireEvent.click (RTL.screen.getByText "studies")
                 do! flushRender ()
 
+                // Reopening the entity does not select or highlight everything below it.
                 expectVisibleState (Some "studies") (set [ "studies" ]) visibleSelectedBranch
             }
         )
@@ -383,6 +390,7 @@ Vitest.describe (
                 RTL.fireEvent.click (RTL.screen.getByText "isa.study.xlsx")
                 do! flushRender ()
 
+                // The ISA file is selected independently from its sibling folders and their descendants.
                 expectVisibleState (Some "isa.study.xlsx") (set [ "studies"; "selected-study"; "isa.study.xlsx" ]) [
                     "studies"
                     "selected-study"
