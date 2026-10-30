@@ -66,20 +66,16 @@ type TemplateWidget =
             )
 
         let confirmImport (decisions: TableImportDecisions) =
+            match TemplateActions.importIntoCopy arcFile selectedTemplates decisions with
+            | Error error -> setImportError (Some error.Message)
+            | Ok nextArcFile ->
+                setArcFile nextArcFile
+                setSelectedTemplateIds (fun _ -> Set.empty<System.Guid>)
+                setShowImportDialog false
 
-            match tryGetActiveTableIndex arcFile with
-            | Some _ when selectedTemplates.Length > 0 ->
-                match TemplateActions.importIntoCopy arcFile selectedTemplates decisions with
-                | Error error -> setImportError (Some error.Message)
-                | Ok nextArcFile ->
-                    setArcFile nextArcFile
-                    setSelectedTemplateIds (fun _ -> Set.empty<System.Guid>)
-                    setShowImportDialog false
-
-                    match onImportCompleted with
-                    | Some onCompleted -> onCompleted ()
-                    | None -> widgetCtx.closeWidget WidgetType.Template
-            | _ -> setShowImportDialog false
+                match onImportCompleted with
+                | Some onCompleted -> onCompleted ()
+                | None -> widgetCtx.closeWidget WidgetType.Template
 
         React.Fragment [
             TemplateImportModal.TemplateImportModal(

@@ -50,27 +50,17 @@ let remapDecisions
     (nextIds: System.Guid[])
     (decisions: TableImportDecisions)
     : TableImportDecisions =
-    let newIndex (index: int) =
-        if index < 0 || index >= previousIds.Length then
-            None
-        else
-            nextIds |> Array.tryFindIndex ((=) previousIds.[index])
-
-    let remapPair (index: int, value: int) =
-        newIndex index |> Option.map (fun next -> next, value)
-
-    let remapMap (map: Map<int, 'a>) =
-        map
-        |> Map.toSeq
-        |> Seq.choose (fun (index, value) -> newIndex index |> Option.map (fun next -> next, value))
-        |> Map.ofSeq
+    let remapPair (index: int, value: 'a) =
+        Array.tryItem index previousIds
+        |> Option.bind (fun id -> Array.tryFindIndex ((=) id) nextIds)
+        |> Option.map (fun next -> next, value)
 
     {
         decisions with
-            Actions = remapMap decisions.Actions
+            Actions = decisions.Actions |> Map.toSeq |> Seq.choose remapPair |> Map.ofSeq
             DeselectedColumns = decisions.DeselectedColumns |> Seq.choose remapPair |> Set.ofSeq
             DeselectedRows = decisions.DeselectedRows |> Seq.choose remapPair |> Set.ofSeq
-            EnteredNames = remapMap decisions.EnteredNames
+            EnteredNames = decisions.EnteredNames |> Map.toSeq |> Seq.choose remapPair |> Map.ofSeq
     }
 
 let importIntoCopy
