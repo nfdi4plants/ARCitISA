@@ -24,6 +24,7 @@ type DisplayPDF =
     static member Main(filehtml, path: string) =
 
         let pdfUrl, setPdfUrl = React.useState<string option> (None)
+        let failedPdfUrl, setFailedPdfUrl = React.useState<string option> (None)
         let metadata, setMetadata = React.useState<string option> (None)
 
         React.useEffect (
@@ -54,9 +55,21 @@ type DisplayPDF =
             prop.className "swt:w-full"
             prop.children [
                 match pdfUrl with
-                | Some url -> Html.iframe [ prop.src url; prop.className "swt:w-full swt:h-full" ]
+                | Some url ->
+                    Html.iframe [
+                        prop.src url
+                        prop.className "swt:w-full swt:h-full"
+                        prop.onError (fun (_: Browser.Types.Event) -> setFailedPdfUrl (Some url))
+                    ]
 
                 | None -> LoadingSpinner.LoadingSpinner("Loading PDF", size = DaisyuiSize.XL)
+
+                if pdfUrl |> Option.exists (fun url -> failedPdfUrl = Some url) then
+                    Html.div [
+                        prop.role.alert
+                        prop.className "swt:badge swt:badge-error swt:text-error-content"
+                        prop.text "This file is broken or corrupted."
+                    ]
 
                 Html.pre [
                     prop.className "swt:max-h-64 swt:overflow-auto swt:whitespace-pre-wrap"

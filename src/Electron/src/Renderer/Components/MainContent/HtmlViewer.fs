@@ -7,6 +7,7 @@ open Renderer.Components.Helper.MetadataFormatting
 [<ReactComponent>]
 let Main (base64Content: string, path: string) =
     let htmlContent = "data:text/html;base64," + base64Content
+    let failedHtmlUrl, setFailedHtmlUrl = React.useState<string option> (None)
     let metadata, setMetadata = React.useState<string option> (None)
 
     React.useEffect (
@@ -28,7 +29,15 @@ let Main (base64Content: string, path: string) =
                 prop.src htmlContent
                 prop.title "HTML preview"
                 prop.className "swt:block swt:w-full swt:h-full swt:border-none"
+                prop.onError (fun (_: Browser.Types.Event) -> setFailedHtmlUrl (Some htmlContent))
             ]
+
+            if failedHtmlUrl = Some htmlContent then
+                Html.div [
+                    prop.role.alert
+                    prop.className "swt:badge swt:badge-error swt:text-error-content"
+                    prop.text "This file is broken or corrupted."
+                ]
 
             Html.div [
                 prop.className "swt:w-full swt:max-w-2xl swt:rounded swt:bg-base-200 swt:p-3"
