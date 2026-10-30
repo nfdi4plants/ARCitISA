@@ -19,6 +19,8 @@ module InMemoryChangesExtensions =
 
     /// Sets the current loaded ARC state as the clean in-memory baseline.
     let baselineArcStaticHashes (arc: ARC) : unit =
+        WorkflowPayloads.baselineWorkflowPayloads arc
+
         arc.License
         |> Option.iter (fun license -> license.StaticHash <- license.GetHashCode())
 
@@ -113,6 +115,7 @@ module InMemoryChangesExtensions =
     /// This keeps ARCtrl update contract generation scoped to actual changes.
     let syncArcStaticHashes (source: ARC) (target: ARC) : unit =
         target.StaticHash <- source.StaticHash
+        WorkflowPayloads.syncWorkflowPayloadBaselines source target
 
         match source.License, target.License with
         | Some sourceLicense, Some targetLicense -> targetLicense.StaticHash <- sourceLicense.StaticHash
@@ -157,6 +160,12 @@ module InMemoryChangesExtensions =
     /// Copies ARC and preserves static hashes so unchanged entities are not treated as newly created.
     let copyArcPreservingStaticHashes (arc: ARC) : ARC =
         let copiedArc = arc.Copy()
+
+        // License.Copy currently resets a configured path to LICENSE.
+        copiedArc.License <-
+            arc.License
+            |> Option.map (fun license -> License.initFulltext (license.Content, path = license.Path))
+
         preserveArcDataMapLabels arc copiedArc
         syncArcStaticHashes arc copiedArc
         copiedArc
@@ -172,10 +181,12 @@ module InMemoryChangesExtensions =
     type ArcRun with
         member this.hasInMemoryChanges() =
             hasStaticHashOrDataMapChanges this.StaticHash (this.GetLightHashCode()) this.Datamap
+            || WorkflowPayloads.runHasPayloadChanges this
 
     type ArcWorkflow with
         member this.hasInMemoryChanges() =
             hasStaticHashOrDataMapChanges this.StaticHash (this.GetLightHashCode()) this.Datamap
+            || WorkflowPayloads.workflowHasPayloadChanges this
 
     type ARC with
         member this.hasInMemoryChanges() =

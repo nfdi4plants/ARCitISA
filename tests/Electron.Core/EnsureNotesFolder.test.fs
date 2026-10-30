@@ -1,50 +1,23 @@
 module ElectronCore.EnsureNotesFolderTests
 
 open Fable.Core
-open Fable.Core.JsInterop
+open Main.Bindings.Filesystem
+open Main.Bindings.Path
+open Main.Notes.NoteConstants
 open Main.Notes.NoteScaffolding
 open Vitest
 
-let private fsPromisesDynamic: obj = importAll "fs/promises"
-let private osDynamic: obj = importAll "os"
-let private pathDynamic: obj = importAll "path"
+let private withTempArcPath (testBody: string -> JS.Promise<unit>) = promise {
+    let! rootPath = TestHelpers.createTempDirectoryAsync "swate-notes-folder-"
 
-let private createTempArcPathAsync () : JS.Promise<string * string> = promise {
-    let tmpDir = osDynamic?tmpdir () |> unbox<string>
-    let prefix = pathDynamic?join (tmpDir, "swate-notes-folder-") |> unbox<string>
-    let! rootPath = fsPromisesDynamic?mkdtemp (prefix) |> unbox<JS.Promise<string>>
-    let arcPath = pathDynamic?join (rootPath, "arc") |> unbox<string>
-
-    let! _ =
-        fsPromisesDynamic?mkdir (arcPath, createObj [ "recursive" ==> true ])
-        |> unbox<JS.Promise<obj>>
-
-    return rootPath, arcPath
-}
-
-let private removePathAsync (path: string) : JS.Promise<unit> = promise {
-    let! _ =
-        fsPromisesDynamic?rm (path, createObj [ "recursive" ==> true; "force" ==> true ])
-        |> unbox<JS.Promise<obj>>
-
-    return ()
-}
-
-let private pathExistsAsync (path: string) : JS.Promise<bool> = promise {
     try
-        let! _ = fsPromisesDynamic?stat (path) |> unbox<JS.Promise<obj>>
-        return true
-    with _ ->
-        return false
-}
-
-let private readUtf8FileAsync (path: string) : JS.Promise<string> =
-    fsPromisesDynamic?readFile (path, "utf8") |> unbox<JS.Promise<string>>
-
-let private writeUtf8FileAsync (path: string) (content: string) : JS.Promise<unit> = promise {
-    let! _ = fsPromisesDynamic?writeFile (path, content, "utf8") |> unbox<JS.Promise<obj>>
-
-    return ()
+        let arcPath = join [| rootPath; "arc" |]
+        let! _ = mkdirAsync arcPath (MkdirOptions(recursive = true))
+        do! testBody arcPath
+        do! TestHelpers.removeDirectoryAsync rootPath
+    with error ->
+        do! TestHelpers.removeDirectoryAsync rootPath
+        return raise error
 }
 
 let private assertEnsureSucceeded (result: Result<unit, exn>) =
@@ -56,88 +29,98 @@ Vitest.describe (
     "ensureNotesFolderAtArcPath",
     fun () ->
         Vitest.test (
-            "creates notes folder and README on first call",
-            fun () -> promise {
-                let! rootPath, arcPath = createTempArcPathAsync ()
+            "does no filesystem work when disabled",
+            fun () ->
+                withTempArcPath (fun arcPath -> promise {
+                    let missingArcPath = join [| arcPath; "missing-arc" |]
+                    let! result = ensureNotesFolderAtArcPath missingArcPath false
+                    assertEnsureSucceeded result
+                    let! exists = TestHelpers.pathExistsAsync missingArcPath
+                    Vitest.expect(exists).toBe false
 
-                try
-                    let notesFolderPath = pathDynamic?join (arcPath, "notes") |> unbox<string>
+                    // Disabled scaffolding also ignores paths that cannot be directories.
+                    let filePath = join [| arcPath; "file.txt" |]
+                    do! writeFileAsync filePath "existing" TextEncoding.Utf8
+                    let! fileResult = ensureNotesFolderAtArcPath filePath false
+                    assertEnsureSucceeded fileResult
+                    let! content = readFileAsync filePath TextEncoding.Utf8
+                    Vitest.expect(content).toBe "existing"
 
-                    let notesReadmePath =
-                        pathDynamic?join (notesFolderPath, "README.md") |> unbox<string>
-
-                    let! ensureResult = ensureNotesFolderAtArcPath arcPath
-                    assertEnsureSucceeded ensureResult
-
-                    let! hasNotesFolder = pathExistsAsync notesFolderPath
-                    let! hasNotesReadme = pathExistsAsync notesReadmePath
-                    let! readmeContent = readUtf8FileAsync notesReadmePath
-
-                    Vitest.expect(hasNotesFolder).toBe (true)
-                    Vitest.expect(hasNotesReadme).toBe (true)
-                    Vitest.expect(readmeContent.Contains("Automatically create notes folder")).toBe (true)
-                    Vitest.expect(readmeContent.Contains("ARCitISA Settings")).toBe (true)
-                    do! removePathAsync rootPath
-                with error ->
-                    do! removePathAsync rootPath
-                    return raise error
-            }
+                    let! emptyPathResult = ensureNotesFolderAtArcPath "" false
+                    assertEnsureSucceeded emptyPathResult
+                })
         )
 
         Vitest.test (
-            "does not create README if notes folder already existed",
-            fun () -> promise {
-                let! rootPath, arcPath = createTempArcPathAsync ()
+            "creates notes folder and README when enabled",
+            fun () ->
+                withTempArcPath (fun arcPath -> promise {
+                    let notesFolderPath = join [| arcPath; NotesRootFolderName |]
+                    let notesReadmePath = join [| notesFolderPath; NotesReadmeFileName |]
+                    let! result = ensureNotesFolderAtArcPath arcPath true
+                    assertEnsureSucceeded result
 
-                try
-                    let notesFolderPath = pathDynamic?join (arcPath, "notes") |> unbox<string>
-
-                    let notesReadmePath =
-                        pathDynamic?join (notesFolderPath, "README.md") |> unbox<string>
-
-                    let! _ =
-                        fsPromisesDynamic?mkdir (notesFolderPath, createObj [ "recursive" ==> true ])
-                        |> unbox<JS.Promise<obj>>
-
-                    let! ensureResult = ensureNotesFolderAtArcPath arcPath
-                    assertEnsureSucceeded ensureResult
-
-                    let! hasNotesReadme = pathExistsAsync notesReadmePath
-                    Vitest.expect(hasNotesReadme).toBe (false)
-                    do! removePathAsync rootPath
-                with error ->
-                    do! removePathAsync rootPath
-                    return raise error
-            }
+                    let! notesFolder = statAsync notesFolderPath
+                    let! readmeContent = readFileAsync notesReadmePath TextEncoding.Utf8
+                    Vitest.expect(notesFolder.isDirectory ()).toBe true
+                    Vitest.expect(readmeContent).toBe NotesReadmeContent
+                })
         )
 
         Vitest.test (
-            "does not overwrite README when called repeatedly",
-            fun () -> promise {
-                let! rootPath, arcPath = createTempArcPathAsync ()
+            "fills the missing README in an existing notes folder",
+            fun () ->
+                withTempArcPath (fun arcPath -> promise {
+                    let notesFolderPath = join [| arcPath; NotesRootFolderName |]
+                    let notesReadmePath = join [| notesFolderPath; NotesReadmeFileName |]
+                    let! _ = mkdirAsync notesFolderPath (MkdirOptions(recursive = true))
 
-                try
-                    let notesFolderPath = pathDynamic?join (arcPath, "notes") |> unbox<string>
+                    let! result = ensureNotesFolderAtArcPath arcPath true
+                    assertEnsureSucceeded result
+                    let! readmeContent = readFileAsync notesReadmePath TextEncoding.Utf8
+                    Vitest.expect(readmeContent).toBe NotesReadmeContent
+                })
+        )
 
-                    let notesReadmePath =
-                        pathDynamic?join (notesFolderPath, "README.md") |> unbox<string>
-
+        Vitest.test (
+            "preserves an existing README on repeated and concurrent calls",
+            fun () ->
+                withTempArcPath (fun arcPath -> promise {
+                    let notesFolderPath = join [| arcPath; NotesRootFolderName |]
+                    let notesReadmePath = join [| notesFolderPath; NotesReadmeFileName |]
+                    let! _ = mkdirAsync notesFolderPath (MkdirOptions(recursive = true))
                     let customContent = "custom readme content"
+                    do! writeFileAsync notesReadmePath customContent TextEncoding.Utf8
 
-                    let! firstEnsureResult = ensureNotesFolderAtArcPath arcPath
-                    assertEnsureSucceeded firstEnsureResult
+                    let! firstResult = ensureNotesFolderAtArcPath arcPath true
+                    assertEnsureSucceeded firstResult
 
-                    do! writeUtf8FileAsync notesReadmePath customContent
+                    let! concurrentResults =
+                        [|
+                            ensureNotesFolderAtArcPath arcPath true
+                            ensureNotesFolderAtArcPath arcPath true
+                        |]
+                        |> Promise.all
 
-                    let! secondEnsureResult = ensureNotesFolderAtArcPath arcPath
-                    assertEnsureSucceeded secondEnsureResult
+                    concurrentResults |> Array.iter assertEnsureSucceeded
+                    let! finalContent = readFileAsync notesReadmePath TextEncoding.Utf8
+                    Vitest.expect(finalContent).toBe customContent
+                })
+        )
 
-                    let! finalContent = readUtf8FileAsync notesReadmePath
-                    Vitest.expect(finalContent).toBe (customContent)
-                    do! removePathAsync rootPath
-                with error ->
-                    do! removePathAsync rootPath
-                    return raise error
-            }
+        Vitest.test (
+            "returns filesystem failures when enabled",
+            fun () ->
+                withTempArcPath (fun arcPath -> promise {
+                    let filePath = join [| arcPath; "file.txt" |]
+                    do! writeFileAsync filePath "existing" TextEncoding.Utf8
+
+                    match! ensureNotesFolderAtArcPath filePath true with
+                    | Ok() -> failwith "Expected notes creation beneath a file to fail."
+                    | Error error -> Vitest.expect(error.Message.Length > 0).toBe true
+
+                    let! content = readFileAsync filePath TextEncoding.Utf8
+                    Vitest.expect(content).toBe "existing"
+                })
         )
 )

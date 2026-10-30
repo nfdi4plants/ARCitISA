@@ -25,7 +25,7 @@ module DataMapExtensions =
             let persistedArc = ARC.fromFilePaths [| parentFilePath |]
             let contracts = persistedArc.GetReadContracts()
 
-            match! fullFillContractBatchAsync true arcPath contracts with
+            match! ContractExecutor.fulfillReadContractsSwateAsync arcPath contracts with
             | Error errors -> return Error errors
             | Ok fulfilledContracts ->
                 persistedArc.SetISAFromContracts fulfilledContracts
@@ -105,7 +105,7 @@ module DataMapExtensions =
                                     $"The DataMap could not be deleted because parent '{parentPath}' was not found on disk. Refresh the File Explorer and try again."
                             )
                     | Some parentUpdateContract ->
-                        match! fullFillContractBatchAsync true arcPath [| parentUpdateContract |] with
+                        match! ContractExecutor.fulfillContractsSwateAsync arcPath [| parentUpdateContract |] with
                         | Error errors ->
                             return
                                 Error(
@@ -115,7 +115,7 @@ module DataMapExtensions =
                         | Ok _ ->
                             let deleteContract = dataMap.ToDeleteContract(parentInfo)
 
-                            match! fullFillContractBatchAsync true arcPath [| deleteContract |] with
+                            match! ContractExecutor.fulfillContractsSwateAsync arcPath [| deleteContract |] with
                             | Error errors ->
                                 return
                                     Error(

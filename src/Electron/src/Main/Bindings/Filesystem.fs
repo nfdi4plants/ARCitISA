@@ -20,6 +20,14 @@ type ReaddirOptions(?withFileTypes: bool) =
 [<StringEnum(CaseRules.LowerFirst)>]
 type TextEncoding = | Utf8
 
+[<StringEnum>]
+type WriteFileFlag = | [<CompiledName("wx")>] ExclusiveCreate
+
+[<JS.PojoAttribute>]
+type WriteFileOptions(?encoding: TextEncoding, ?flag: WriteFileFlag) =
+    member val encoding: TextEncoding option = encoding with get, set
+    member val flag: WriteFileFlag option = flag with get, set
+
 type Stats =
     abstract member isDirectory: unit -> bool
     abstract member isFile: unit -> bool
@@ -79,6 +87,39 @@ let readFileBase64Async (path: string) : JS.Promise<string> =
 
 [<Import("writeFile", "fs/promises")>]
 let writeFileAsync (path: string) (content: string) (encoding: TextEncoding) : JS.Promise<unit> = jsNative
+
+[<Import("writeFile", "fs/promises")>]
+let writeTextFileWithOptionsAsync (path: string) (content: string) (options: WriteFileOptions) : JS.Promise<unit> =
+    jsNative
+
+[<Import("writeFile", "fs/promises")>]
+let writeBinaryFileWithOptionsAsync (path: string) (content: byte[]) (options: WriteFileOptions) : JS.Promise<unit> =
+    jsNative
+
+let private createFileExclusiveAsync (writeFile: unit -> JS.Promise<unit>) : JS.Promise<bool> = promise {
+    try
+        do! writeFile ()
+        return true
+    with error ->
+        match tryGetNodeErrorCode error with
+        | Some "EEXIST" -> return false
+        | _ -> return raise error
+}
+
+/// Creates a UTF-8 file atomically, returning false when another file already owns the path.
+let createTextFileExclusiveAsync (path: string) (content: string) : JS.Promise<bool> =
+    createFileExclusiveAsync (fun () ->
+        writeTextFileWithOptionsAsync
+            path
+            content
+            (WriteFileOptions(encoding = TextEncoding.Utf8, flag = WriteFileFlag.ExclusiveCreate))
+    )
+
+/// Creates a binary file atomically, returning false when another file already owns the path.
+let createBinaryFileExclusiveAsync (path: string) (content: byte[]) : JS.Promise<bool> =
+    createFileExclusiveAsync (fun () ->
+        writeBinaryFileWithOptionsAsync path content (WriteFileOptions(flag = WriteFileFlag.ExclusiveCreate))
+    )
 
 [<Import("rename", "fs/promises")>]
 let renameAsync (oldPath: string) (newPath: string) : JS.Promise<unit> = jsNative

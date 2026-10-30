@@ -25,8 +25,11 @@
     <Compile Include="Services\Settings\RecentArcStore.fs" />
     <Compile Include="ArcMerge\Types.fs" />
     <Compile Include="ArcMerge\ArcEntityRefHelper.fs" />
+    <Compile Include="ARCtrlExtensions\WorkflowPayloads.fs" />
     <Compile Include="ARCtrlExtensions\InMemoryChanges.fs" />
+    <Compile Include="ARCtrlExtensions\ContractExecutor.fs" />
     <Compile Include="ARCtrlExtensions\DataMapContract.fs" />
+    <Compile Include="ARCtrlExtensions\ContractPolicy.fs" />
     <Compile Include="ARCtrlExtensions\ArcFileCreateContracts.fs" />
     <Compile Include="ARCtrlExtensions\WriteAsync.fs" />
     <Compile Include="ARCtrlExtensions\LoadAsync.fs" />

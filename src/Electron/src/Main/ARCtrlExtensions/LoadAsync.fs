@@ -113,6 +113,12 @@ module ArcLoadExtensions =
                         ArcEntityPathRules.zoneEntityFileName entity.Zone
                         ArcPathHelper.DatamapFileName
                         LegacyDataMapFileName
+                        match entity.Zone with
+                        | ArcEntityPathRules.Workflows -> ArcPathHelper.WorkflowCWLFileName
+                        | ArcEntityPathRules.Runs ->
+                            ArcPathHelper.RunCWLFileName
+                            ArcPathHelper.RunYMLFileName
+                        | _ -> ()
                     |]
 
                     return
@@ -245,7 +251,14 @@ module ArcLoadExtensions =
 
             match fileSize with
             | Some size when size = 0.0 ->
-                match! fullFillContractBatchAsync true arcPath (spec.CreateContracts identifier) with
+                let repairs =
+                    spec.CreateContracts identifier
+                    |> Array.map (fun contract -> {
+                        contract with
+                            Operation = Operation.UPDATE
+                    })
+
+                match! ContractExecutor.fulfillContractsSwateAsync arcPath repairs with
                 | Ok _ -> return true
                 | Error _ -> return false
             | _ -> return false
@@ -265,6 +278,28 @@ module ArcLoadExtensions =
         return repairedAny
     }
 
+    /// Separate datamap workbooks take precedence over legacy copies embedded in parent workbooks.
+    let internal applySeparateDatamaps (arc: ARC) (fulfilled: Contract[]) : unit =
+        for assay in arc.Assays do
+            fulfilled
+            |> Array.tryPick (Datamap.tryFromReadContractForAssay assay.Identifier)
+            |> Option.iter (fun dm -> assay.Datamap <- Some dm)
+
+        for study in arc.Studies do
+            fulfilled
+            |> Array.tryPick (Datamap.tryFromReadContractForStudy study.Identifier)
+            |> Option.iter (fun dm -> study.Datamap <- Some dm)
+
+        for workflow in arc.Workflows do
+            fulfilled
+            |> Array.tryPick (Datamap.tryFromReadContractForWorkflow workflow.Identifier)
+            |> Option.iter (fun dm -> workflow.Datamap <- Some dm)
+
+        for run in arc.Runs do
+            fulfilled
+            |> Array.tryPick (Datamap.tryFromReadContractForRun run.Identifier)
+            |> Option.iter (fun dm -> run.Datamap <- Some dm)
+
     type ARC with
 
         /// Loads ARC metadata without traversing payload folders and migrates legacy `isa_datamap` paths.
@@ -274,9 +309,10 @@ module ArcLoadExtensions =
             let arc = ARC.fromFilePaths paths
             let contracts = arc.GetReadContracts()
 
-            match! fullFillContractBatchAsync true arcPath contracts with
+            match! ContractExecutor.fulfillReadContractsSwateAsync arcPath contracts with
             | Ok fulfilledContracts ->
                 arc.SetISAFromContracts fulfilledContracts
+                applySeparateDatamaps arc fulfilledContracts
                 return Ok arc
             | Error errors -> return Error errors
         }

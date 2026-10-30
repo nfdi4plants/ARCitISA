@@ -20,21 +20,17 @@ module ArcAddExtensions =
         (exists: bool)
         (addToArc: ARC -> unit)
         (arcFileContracts: unit -> Contract[])
-        (includeUpdateContractsFlag: bool option)
         =
         failIfEntityExists entityKind identifier exists
         let workingArc = copyArcPreservingStaticHashes sourceArc
         addToArc workingArc
         workingArc.UpdateFileSystem()
 
-        let contracts =
-            match includeUpdateContractsFlag with
-            | Some true -> workingArc.GetUpdateContracts(skipUpdateFS = true)
-            | _ -> arcFileContracts ()
+        let contracts = arcFileContracts ()
 
         workingArc, contracts
 
-    let private prepareAddContracts (sourceArc: ARC) (arcFile: ArcFiles) (includeUpdateContractsFlag: bool option) =
+    let private prepareAddContracts (sourceArc: ARC) (arcFile: ArcFiles) =
         match arcFile with
         | ArcFiles.Assay assay ->
             let assayCopy = assay.Copy()
@@ -46,7 +42,6 @@ module ArcAddExtensions =
                 (sourceArc.ContainsAssay assay.Identifier)
                 (fun arc -> arc.AddAssay assayCopy)
                 (fun () -> ArcFileCreateContracts.createContracts true (ArcFiles.Assay assayCopy))
-                includeUpdateContractsFlag
         | ArcFiles.Study(study, _) ->
             let studyCopy = study.Copy()
 
@@ -57,7 +52,6 @@ module ArcAddExtensions =
                 (sourceArc.ContainsStudy study.Identifier)
                 (fun arc -> arc.AddStudy studyCopy)
                 (fun () -> ArcFileCreateContracts.createContracts true (ArcFiles.Study(studyCopy, [])))
-                includeUpdateContractsFlag
         | ArcFiles.Run run ->
             let runCopy = run.Copy()
 
@@ -68,7 +62,6 @@ module ArcAddExtensions =
                 (sourceArc.ContainsRun run.Identifier)
                 (fun arc -> arc.AddRun runCopy)
                 (fun () -> ArcFileCreateContracts.createContracts true (ArcFiles.Run runCopy))
-                includeUpdateContractsFlag
         | ArcFiles.Workflow workflow ->
             let workflowCopy = workflow.Copy()
 
@@ -79,7 +72,6 @@ module ArcAddExtensions =
                 (sourceArc.ContainsWorkflow workflow.Identifier)
                 (fun arc -> arc.AddWorkflow workflowCopy)
                 (fun () -> ArcFileCreateContracts.createContracts true (ArcFiles.Workflow workflowCopy))
-                includeUpdateContractsFlag
         | ArcFiles.Investigation _ -> failwith "Adding investigation files is not supported."
         | ArcFiles.DataMap(None, _) ->
             failwith "ARCitISA could not determine which assay, study, run, or workflow this DataMap belongs to."
@@ -127,40 +119,35 @@ module ArcAddExtensions =
 
     type ARC with
 
-        member this.GetAssayAddContracts(assay: ArcAssay, ?includeUpdateContractsFlag: bool) =
-            let _, contracts =
-                prepareAddContracts this (ArcFiles.Assay assay) includeUpdateContractsFlag
+        member this.GetAssayAddContracts(assay: ArcAssay) =
+            let _, contracts = prepareAddContracts this (ArcFiles.Assay assay)
 
             contracts
 
-        member this.GetStudyAddContracts(study: ArcStudy, ?includeUpdateContractsFlag: bool) =
-            let _, contracts =
-                prepareAddContracts this (ArcFiles.Study(study, [])) includeUpdateContractsFlag
+        member this.GetStudyAddContracts(study: ArcStudy) =
+            let _, contracts = prepareAddContracts this (ArcFiles.Study(study, []))
 
             contracts
 
-        member this.GetRunAddContracts(run: ArcRun, ?includeUpdateContractsFlag: bool) =
-            let _, contracts =
-                prepareAddContracts this (ArcFiles.Run run) includeUpdateContractsFlag
+        member this.GetRunAddContracts(run: ArcRun) =
+            let _, contracts = prepareAddContracts this (ArcFiles.Run run)
 
             contracts
 
-        member this.GetWorkflowAddContracts(workflow: ArcWorkflow, ?includeUpdateContractsFlag: bool) =
-            let _, contracts =
-                prepareAddContracts this (ArcFiles.Workflow workflow) includeUpdateContractsFlag
+        member this.GetWorkflowAddContracts(workflow: ArcWorkflow) =
+            let _, contracts = prepareAddContracts this (ArcFiles.Workflow workflow)
 
             contracts
 
-        member this.GetAddContracts(arcFile: ArcFiles, ?includeUpdateContractsFlag: bool) =
-            let _, contracts = prepareAddContracts this arcFile includeUpdateContractsFlag
+        member this.GetAddContracts(arcFile: ArcFiles) =
+            let _, contracts = prepareAddContracts this arcFile
             contracts
 
-        member this.TryAddArcFileAsync(arcPath: string, arcFile: ArcFiles, ?includeUpdateContractsFlag: bool) = crossAsync {
+        member this.TryAddArcFileAsync(arcPath: string, arcFile: ArcFiles) = crossAsync {
             try
-                let workingArc, contracts =
-                    prepareAddContracts this arcFile includeUpdateContractsFlag
+                let workingArc, contracts = prepareAddContracts this arcFile
 
-                let! result = fullFillContractBatchAsync true arcPath contracts
+                let! result = ContractExecutor.fulfillContractsSwateAsync arcPath contracts
 
                 match result with
                 | Ok _ -> commitAddedArcFile this workingArc arcFile

@@ -15,6 +15,9 @@ open Main.ARCtrlExtensions
 open Swate.Components.Shared
 open Swate.Electron.Shared.FileIOTypes
 open ARCtrl
+open ARCtrl.Contract
+open ARCtrl.Helper
+open ARCtrl.Spreadsheet
 open Vitest
 
 let private loadArcAsync = TestHelpers.loadArcAsync
@@ -23,6 +26,36 @@ let private testWindow = TestHelpers.testWindow
 
 let private withTempArc =
     TestHelpers.withTempArcWith "swate-ipc-rename-sync-" "RenameSyncArc"
+
+let private loadSwateArcAsync arcPath = promise {
+    let! result = ARC.LoadAsyncSwate arcPath
+    return TestHelpers.expectLoadedArc result
+}
+
+let private dataMap filePath =
+    let dataMap = Datamap.init ()
+    dataMap.DataContexts.Add(DataContext(name = filePath))
+    dataMap
+
+let private executeOrFail arcPath contracts = promise {
+    match! ContractExecutor.fulfillContractsSwateAsync arcPath contracts with
+    | Ok _ -> return ()
+    | Error errors -> return failwith (PathHelpers.formatContractErrors errors)
+}
+
+let private assertAssayHasNoEmbeddedDatamap arcPath identifier = promise {
+    let parentPath = Identifier.Assay.fileNameFromIdentifier identifier
+
+    match!
+        ContractExecutor.fulfillReadContractsSwateAsync arcPath [|
+            Contract.createRead (parentPath, DTOType.ISA_Assay)
+        |]
+    with
+    | Ok [| { DTO = Some(DTO.Spreadsheet workbook) } |] ->
+        Vitest.expect((ArcAssay.fromFsWorkbook workbook).Datamap.IsNone).toBe true
+    | Ok _ -> return failwith "Expected the persisted assay workbook."
+    | Error errors -> return failwith (PathHelpers.formatContractErrors errors)
+}
 
 let private watcherEvent arcPath eventName relativePath : ArcVaultFileSystemEvent = {
     EventName = eventName
@@ -483,4 +516,192 @@ Vitest.describe (
             }
         )
 
+)
+
+Vitest.describe (
+    "ARC rename datamap contracts",
+    fun () ->
+        Vitest.test (
+            "exports a legacy embedded-only assay datamap before rewriting its renamed parent",
+            fun () ->
+                withTempArc
+                    (fun arc -> arc.AddAssay(ArcAssay("OldAssay")))
+                    (fun arcPath -> promise {
+                        let legacy = ArcAssay("OldAssay", datamap = dataMap "dataset/legacy-rename.csv")
+
+                        do!
+                            executeOrFail arcPath [|
+                                Contract.createUpdate (
+                                    Identifier.Assay.fileNameFromIdentifier legacy.Identifier,
+                                    DTOType.ISA_Assay,
+                                    DTO.Spreadsheet(ArcAssay.toFsWorkbook legacy)
+                                )
+                            |]
+
+                        let! oldSeparateExists =
+                            pathExistsAsync (
+                                join [|
+                                    arcPath
+                                    Identifier.Assay.datamapFileNameFromIdentifier "OldAssay"
+                                |]
+                            )
+
+                        Vitest.expect(oldSeparateExists).toBe false
+                        let! arc = loadSwateArcAsync arcPath
+
+                        match!
+                            ArcRenameHelper.renameArcEntityAsync
+                                arcPath
+                                (renameRequest "assays/OldAssay" "NewAssay")
+                                arc
+                        with
+                        | Error error -> return failwith error.Message
+                        | Ok renamedArc ->
+                            Vitest.expect(renamedArc.ContainsAssay "NewAssay").toBe true
+                            let! oldFolderExists = pathExistsAsync (join [| arcPath; "assays/OldAssay" |])
+                            Vitest.expect(oldFolderExists).toBe false
+
+                            let! newSeparateExists =
+                                pathExistsAsync (
+                                    join [|
+                                        arcPath
+                                        Identifier.Assay.datamapFileNameFromIdentifier "NewAssay"
+                                    |]
+                                )
+
+                            Vitest.expect(newSeparateExists).toBe true
+                            do! assertAssayHasNoEmbeddedDatamap arcPath "NewAssay"
+                            let! reloaded = loadSwateArcAsync arcPath
+
+                            Vitest
+                                .expect(reloaded.GetAssay("NewAssay").Datamap.Value.GetDataContext(0).Name)
+                                .toEqual (Some "dataset/legacy-rename.csv")
+                    })
+        )
+
+        Vitest.test (
+            "renames an assay with only a separate datamap without exporting or rewriting that datamap",
+            fun () ->
+                withTempArc
+                    (fun arc -> arc.AddAssay(ArcAssay("OldAssay")))
+                    (fun arcPath -> promise {
+                        let parentInfo = DatamapParentInfo.create "OldAssay" DataMapParent.Assay
+
+                        do!
+                            executeOrFail arcPath [|
+                                DataMapContract.update parentInfo (dataMap "dataset/separate-rename.csv")
+                            |]
+
+                        let! before =
+                            readFileBase64Async (
+                                join [|
+                                    arcPath
+                                    Identifier.Assay.datamapFileNameFromIdentifier "OldAssay"
+                                |]
+                            )
+
+                        let! contractArc = loadSwateArcAsync arcPath
+                        baselineArcStaticHashes contractArc
+                        let dirtyBefore = ContractPolicy.captureDirtyDatamapKeys contractArc
+                        let raw = contractArc.GetAssayRenameContracts("OldAssay", "NewAssay")
+                        let dirty = ContractPolicy.remapKeys "assays/OldAssay" "assays/NewAssay" dirtyBefore
+
+                        let diskPathBefore path =
+                            PathHelpers.tryRemapPathPrefix "assays/NewAssay" "assays/OldAssay" path
+                            |> Option.defaultValue path
+
+                        match!
+                            ContractPolicy.prepareAsync {
+                                ArcPath = arcPath
+                                Snapshot = contractArc
+                                RawContracts = raw
+                                DirtyDatamapKeys = dirty
+                                IsFullWrite = false
+                                DiskPathBeforeExecution = diskPathBefore
+                            }
+                        with
+                        | Error error -> return failwith error
+                        | Ok contracts ->
+                            Vitest
+                                .expect(
+                                    contracts
+                                    |> Array.exists (fun contract -> contract.DTOType = Some DTOType.ISA_Datamap)
+                                )
+                                .toBe
+                                false
+
+                        let! arc = loadSwateArcAsync arcPath
+
+                        match!
+                            ArcRenameHelper.renameArcEntityAsync
+                                arcPath
+                                (renameRequest "assays/OldAssay" "NewAssay")
+                                arc
+                        with
+                        | Error error -> return failwith error.Message
+                        | Ok _ ->
+                            let! after =
+                                readFileBase64Async (
+                                    join [|
+                                        arcPath
+                                        Identifier.Assay.datamapFileNameFromIdentifier "NewAssay"
+                                    |]
+                                )
+
+                            Vitest.expect(after).toBe before
+                            let! oldFolderExists = pathExistsAsync (join [| arcPath; "assays/OldAssay" |])
+                            Vitest.expect(oldFolderExists).toBe false
+                            let! reloaded = loadSwateArcAsync arcPath
+
+                            Vitest
+                                .expect(reloaded.GetAssay("NewAssay").Datamap.Value.GetDataContext(0).Name)
+                                .toEqual (Some "dataset/separate-rename.csv")
+                    })
+        )
+
+        Vitest.test (
+            "renames an assay while other assays have empty separate datamaps without touching their bytes",
+            fun () ->
+                withTempArc
+                    (fun arc ->
+                        arc.AddAssay(ArcAssay("OldAssay"))
+                        arc.AddAssay(ArcAssay("EmptyAssay"))
+                    )
+                    (fun arcPath -> promise {
+                        let parentInfo = DatamapParentInfo.create "EmptyAssay" DataMapParent.Assay
+                        do! executeOrFail arcPath [| DataMapContract.update parentInfo (Datamap.init ()) |]
+
+                        let dataMapPath =
+                            join [|
+                                arcPath
+                                Identifier.Assay.datamapFileNameFromIdentifier "EmptyAssay"
+                            |]
+
+                        let parentPath =
+                            join [|
+                                arcPath
+                                Identifier.Assay.fileNameFromIdentifier "EmptyAssay"
+                            |]
+
+                        let! beforeDataMap = readFileBase64Async dataMapPath
+                        let! beforeParent = readFileBase64Async parentPath
+                        let! arc = loadSwateArcAsync arcPath
+
+                        match!
+                            ArcRenameHelper.renameArcEntityAsync
+                                arcPath
+                                (renameRequest "assays/OldAssay" "NewAssay")
+                                arc
+                        with
+                        | Error error -> return failwith error.Message
+                        | Ok renamedArc ->
+                            Vitest.expect(renamedArc.ContainsAssay "NewAssay").toBe true
+                            let! afterDataMap = readFileBase64Async dataMapPath
+                            let! afterParent = readFileBase64Async parentPath
+                            Vitest.expect(afterDataMap).toBe beforeDataMap
+                            Vitest.expect(afterParent).toBe beforeParent
+                            let! reloaded = loadSwateArcAsync arcPath
+                            Vitest.expect(reloaded.GetAssay("EmptyAssay").Datamap.Value.DataContexts.Count).toBe 0
+                    })
+        )
 )

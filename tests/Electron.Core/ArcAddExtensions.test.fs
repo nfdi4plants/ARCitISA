@@ -201,7 +201,7 @@ Vitest.describe (
 
                         Vitest.expect(requestedDataMap.DataContexts.Count).toBe (0)
 
-                        match! arc.TryAddArcFileAsync(arcPath, requestedArcFile, false) with
+                        match! arc.TryAddArcFileAsync(arcPath, requestedArcFile) with
                         | Error errors -> failwith (PathHelpers.formatContractErrors errors)
                         | Ok _ -> ()
 

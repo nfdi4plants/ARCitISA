@@ -86,8 +86,7 @@ module ArcVaultExtensions =
                     Ok()
 
         /// Writes the active in-memory ARC scaffold to disk without touching unmanaged files such as notes.
-        /// Returns the ARC-relative paths the save wrote. GetUpdateContracts updates the stored static hashes,
-        /// so the contracts are read once and both written and listed from that one array.
+        /// Returns the paths actually written. Save baselines are committed only after persistence succeeds.
         member this.WriteArc() : Fable.Core.JS.Promise<Result<string[], exn>> = promise {
             match this.isBusyWriting, this.path, this.arc with
             | true, _, _ ->
@@ -96,14 +95,11 @@ module ArcVaultExtensions =
                 return!
                     this.WithBusyWritingScope(fun () -> promise {
                         try
-                            let contracts = arc.GetUpdateContractsSwate()
-                            let writtenPaths = contractWrittenPaths contracts
-
-                            match! ARCtrl.Contract.fullFillContractBatchAsync true arcPath contracts with
+                            match! arc.TryUpdateAsyncSwate arcPath with
                             | Error errors -> return Error(exn (PathHelpers.formatContractErrors errors))
-                            | Ok _ ->
+                            | Ok writtenContracts ->
                                 this.RefreshHasUnsavedArcChangesFlag()
-                                return Ok writtenPaths
+                                return Ok(contractWrittenPaths writtenContracts)
                         with e ->
                             return Error(exn $"Failed to persist ARC to disk: {e.Message}")
                     })
@@ -125,7 +121,7 @@ module ArcVaultExtensions =
                 | Some arcFile ->
                     return!
                         this.WithBusyWritingScope(fun () -> promise {
-                            match! arcLocal.TryAddArcFileAsync(arcPath, arcFile, false) with
+                            match! arcLocal.TryAddArcFileAsync(arcPath, arcFile) with
                             | Error errors -> return Error(exn (PathHelpers.formatContractErrors errors))
                             | Ok _ ->
                                 match! ARC.LoadAsyncSwate arcPath with
@@ -320,7 +316,15 @@ module ArcVaultExtensions =
                     do!
                         this.WithBusyWritingScope(fun () -> promise {
                             match! arc.TryWriteAsyncSwate(normalizedPath) with
-                            | Ok _ -> ()
+                            | Ok _ ->
+                                // Creation can belong to another renderer, so scaffold the actual new ARC here.
+                                let enabled = UserDefaults.production.Effective().AutoCreateNotesFolder
+
+                                match!
+                                    Main.Notes.NoteScaffolding.ensureNotesFolderAtArcPath normalizedPath enabled
+                                with
+                                | Ok() -> ()
+                                | Error error -> return raise error
                             | Error errors ->
                                 failwithf
                                     "Could not write ARC, failed with the following errors %s"

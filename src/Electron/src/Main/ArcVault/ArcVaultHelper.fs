@@ -116,7 +116,10 @@ let updateARCByFileContentDTO (oldArc: ARC) (dto: FileContentDTO) : Result<ARC, 
 
             match oldWorkflowOpt with
             | Some oldWorkflow ->
+                // The metadata DTO's ARCtrl JSON does not carry CWL sidecar content.
+                newWorkflow.CWLDescription <- oldWorkflow.CWLDescription
                 newWorkflow.StaticHash <- oldWorkflow.StaticHash
+                WorkflowPayloads.syncWorkflowPayloadBaseline oldWorkflow newWorkflow
                 oldArc.SetWorkflow(newWorkflow.Identifier, newWorkflow)
                 Ok oldArc
             | None ->
@@ -127,7 +130,11 @@ let updateARCByFileContentDTO (oldArc: ARC) (dto: FileContentDTO) : Result<ARC, 
 
             match oldRunOpt with
             | Some oldRun ->
+                // Metadata edits must retain the independently persisted CWL and YAML payloads.
+                newRun.CWLDescription <- oldRun.CWLDescription
+                newRun.CWLInput <- oldRun.CWLInput
                 newRun.StaticHash <- oldRun.StaticHash
+                WorkflowPayloads.syncRunPayloadBaseline oldRun newRun
                 oldArc.SetRun(newRun.Identifier, newRun)
                 Ok oldArc
             | None ->

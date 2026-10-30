@@ -4120,17 +4120,24 @@ Vitest.describe (
                         ".gitignore"
                         "LICENSE"
                         "assays/.gitkeep"
+                        "assays/Assay With DataMap/README.md"
+                        "assays/Assay With DataMap/dataset/.gitkeep"
+                        "assays/Assay With DataMap/protocols/.gitkeep"
                         "assays/Assay With DataMap/isa.assay.xlsx"
                         "assays/Assay With DataMap/isa.datamap.xlsx"
                         "isa.investigation.xlsx"
-                        "notes/README.md"
                         "runs/.gitkeep"
+                        "runs/Run With DataMap/README.md"
                         "runs/Run With DataMap/isa.datamap.xlsx"
                         "runs/Run With DataMap/isa.run.xlsx"
                         "studies/.gitkeep"
+                        "studies/Study With DataMap/README.md"
+                        "studies/Study With DataMap/resources/.gitkeep"
+                        "studies/Study With DataMap/protocols/.gitkeep"
                         "studies/Study With DataMap/isa.datamap.xlsx"
                         "studies/Study With DataMap/isa.study.xlsx"
                         "workflows/.gitkeep"
+                        "workflows/Workflow With DataMap/README.md"
                         "workflows/Workflow With DataMap/isa.datamap.xlsx"
                         "workflows/Workflow With DataMap/isa.workflow.xlsx"
                     |]
@@ -4140,7 +4147,7 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "TryWriteAsyncSwate writes the default gitignore and notes README into an ARC root",
+            "TryWriteAsyncSwate writes default gitignore without creating notes scaffolding",
             fun () -> promise {
                 let! rootPath = TestHelpers.createTempDirectoryAsync "swate-default-gitignore-"
                 let arcPath = join [| rootPath; "arc" |]
@@ -4157,9 +4164,9 @@ Vitest.describe (
                     | Ok _ -> ()
 
                     let! gitignoreContent = readFileAsync gitignorePath TextEncoding.Utf8
-                    let! notesReadmeContent = readFileAsync notesReadmePath TextEncoding.Utf8
+                    let! notesReadmeExists = TestHelpers.pathExistsAsync notesReadmePath
                     Vitest.expect(gitignoreContent).toBe (arctrlDefaultGitignoreContent ())
-                    Vitest.expect(notesReadmeContent).toBe (NotesReadmeContent)
+                    Vitest.expect(notesReadmeExists).toBe (false)
                     do! TestHelpers.removeDirectoryAsync rootPath
                 with error ->
                     do! TestHelpers.removeDirectoryAsync rootPath

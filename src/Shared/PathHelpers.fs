@@ -346,7 +346,7 @@ module ArcEntityPathRules =
         || List.contains (name.ToLowerInvariant()) platformJunkFileNames
 
     /// True for the paths the permanent watcher observes: the ARC root, root metadata files and `.gitattributes`,
-    /// zone folders, entity folders, and the canonical entity file and datamap of each entity. Nothing deeper is
+    /// zone folders, entity folders, canonical workbooks, datamaps, and workflow payloads. Nothing deeper is
     /// structural, so payload folders are never descended into. A missing directory hint keeps the paths whose
     /// shape allows either kind, because chokidar asks before it has stat data.
     let isStructuralWatcherPath (relativePath: string) (isDirectory: bool option) =
@@ -374,7 +374,16 @@ module ArcEntityPathRules =
                 | Some zone ->
                     mayBeFile
                     && (PathHelpers.pathsEqual fileName (zoneEntityFileName zone)
-                        || PathHelpers.pathsEqual fileName ARCtrl.ArcPathHelper.DatamapFileName)
+                        || PathHelpers.pathsEqual fileName ARCtrl.ArcPathHelper.DatamapFileName
+                        || (zone = Workflows
+                            && PathHelpers.pathsEqual fileName ARCtrl.ArcPathHelper.WorkflowCWLFileName)
+                        || (zone = Runs
+                            && PathHelpers.pathMatchesAny
+                                [
+                                    ARCtrl.ArcPathHelper.RunCWLFileName
+                                    ARCtrl.ArcPathHelper.RunYMLFileName
+                                ]
+                                fileName))
                 | None -> false
             | _ -> false
 

@@ -1,6 +1,7 @@
 module ElectronCore.ArcLoadExtensionsTests
 
 open ARCtrl
+open ARCtrl.Spreadsheet
 open System
 open Fable.Core
 open Fable.Core.JsInterop
@@ -25,6 +26,48 @@ let private file name = dirent name false true
 Vitest.describe (
     "bounded ARC structural discovery",
     fun () ->
+        Vitest.test (
+            "discovers canonical workflow sidecars only in their matching entity zones",
+            fun () -> promise {
+                let readDirectory path _ =
+                    let entries =
+                        match PathHelpers.normalizePath path with
+                        | "C:/arc" -> [|
+                            file "isa.investigation.xlsx"
+                            directory "workflows"
+                            directory "runs"
+                            directory "assays"
+                          |]
+                        | "C:/arc/workflows"
+                        | "C:/arc/runs"
+                        | "C:/arc/assays" -> [| directory "Entity" |]
+                        | _ -> [|
+                            file "isa.workflow.xlsx"
+                            file "isa.run.xlsx"
+                            file "isa.assay.xlsx"
+                            file "workflow.cwl"
+                            file "run.cwl"
+                            file "run.yml"
+                            file "workflow.yml"
+                            directory "payload"
+                          |]
+
+                    JS.Constructors.Promise.resolve entries
+
+                let! paths = discoverStructuralArcFilePathsWithAsync readDirectory "C:/arc"
+
+                Vitest.expect(paths).toEqual [|
+                    "isa.investigation.xlsx"
+                    "assays/Entity/isa.assay.xlsx"
+                    "workflows/Entity/isa.workflow.xlsx"
+                    "workflows/Entity/workflow.cwl"
+                    "runs/Entity/isa.run.xlsx"
+                    "runs/Entity/run.cwl"
+                    "runs/Entity/run.yml"
+                |]
+            }
+        )
+
         Vitest.test (
             "discovers many immediate entities deterministically without descending into payload",
             fun () -> promise {
@@ -272,3 +315,141 @@ Vitest.describe (
                     })
         )
 )
+
+let private loadDataMap filePath =
+    let dataMap = Datamap.init ()
+    dataMap.DataContexts.Add(DataContext(name = filePath))
+    dataMap
+
+let private loadParentPath (parentInfo: DatamapParentInfo) =
+    match parentInfo.Parent with
+    | DataMapParent.Assay -> ARCtrl.Helper.Identifier.Assay.fileNameFromIdentifier parentInfo.ParentId
+    | DataMapParent.Study -> ARCtrl.Helper.Identifier.Study.fileNameFromIdentifier parentInfo.ParentId
+    | DataMapParent.Run -> ARCtrl.Helper.Identifier.Run.fileNameFromIdentifier parentInfo.ParentId
+    | DataMapParent.Workflow -> ARCtrl.Helper.Identifier.Workflow.fileNameFromIdentifier parentInfo.ParentId
+
+let private loadParentDataMap (arc: ARC) (parentInfo: DatamapParentInfo) =
+    match parentInfo.Parent with
+    | DataMapParent.Assay -> arc.GetAssay(parentInfo.ParentId).Datamap.Value
+    | DataMapParent.Study -> arc.GetStudy(parentInfo.ParentId).Datamap.Value
+    | DataMapParent.Run -> arc.GetRun(parentInfo.ParentId).Datamap.Value
+    | DataMapParent.Workflow -> arc.GetWorkflow(parentInfo.ParentId).Datamap.Value
+
+/// Run and workflow writers need an explicit worksheet to reproduce legacy embedded datamaps.
+let private loadLegacyParent (arc: ARC) (parentInfo: DatamapParentInfo) =
+    let dtoType, workbook =
+        match parentInfo.Parent with
+        | DataMapParent.Assay ->
+            ARCtrl.Contract.DTOType.ISA_Assay, ArcAssay.toFsWorkbook (arc.GetAssay parentInfo.ParentId)
+        | DataMapParent.Study ->
+            ARCtrl.Contract.DTOType.ISA_Study, ArcStudy.toFsWorkbook (arc.GetStudy parentInfo.ParentId)
+        | DataMapParent.Run ->
+            let workbook = ArcRun.toFsWorkbook (arc.GetRun parentInfo.ParentId)
+            workbook.AddWorksheet(ARCtrl.Spreadsheet.DatamapTable.toFsWorksheet (loadParentDataMap arc parentInfo))
+            ARCtrl.Contract.DTOType.ISA_Run, workbook
+        | DataMapParent.Workflow ->
+            let workbook = ArcWorkflow.toFsWorkbook (arc.GetWorkflow parentInfo.ParentId)
+            workbook.AddWorksheet(ARCtrl.Spreadsheet.DatamapTable.toFsWorksheet (loadParentDataMap arc parentInfo))
+            ARCtrl.Contract.DTOType.ISA_Workflow, workbook
+
+    ARCtrl.Contract.Contract.createUpdate (loadParentPath parentInfo, dtoType, ARCtrl.Contract.DTO.Spreadsheet workbook)
+
+let private withLegacyLoadParent parent body =
+    let parentInfo = DatamapParentInfo.create "Legacy" parent
+
+    TestHelpers.withTempArcWith
+        "swate-separate-datamap-load-"
+        "SeparateDataMapLoad"
+        ignore
+        (fun arcPath -> promise {
+            let! loaded = ARC.LoadAsyncSwate arcPath
+            let arc = TestHelpers.expectLoadedArc loaded
+            let dm = loadDataMap $"dataset/embedded-{parent}.csv"
+
+            match parent with
+            | DataMapParent.Assay -> arc.AddAssay(ArcAssay(parentInfo.ParentId, datamap = dm))
+            | DataMapParent.Study -> arc.AddStudy(ArcStudy(parentInfo.ParentId, datamap = dm))
+            | DataMapParent.Run -> arc.AddRun(ArcRun(parentInfo.ParentId, datamap = dm))
+            | DataMapParent.Workflow -> arc.AddWorkflow(ArcWorkflow(parentInfo.ParentId, datamap = dm))
+
+            let! saved = arc.TryUpdateAsyncSwate arcPath
+
+            match saved with
+            | Error errors -> failwith (String.concat "\n" errors)
+            | Ok _ -> ()
+
+            let separatePath = (DataMapContract.create parentInfo dm).Path
+            do! rmAsync (join [| arcPath; separatePath |]) (RmOptions(force = true))
+            let! written = ContractExecutor.fulfillContractsSwateAsync arcPath [| loadLegacyParent arc parentInfo |]
+
+            match written with
+            | Error errors -> failwith (String.concat "\n" errors)
+            | Ok _ -> ()
+
+            do! body arcPath parentInfo dm
+        })
+
+for parent in
+    [
+        DataMapParent.Assay
+        DataMapParent.Study
+        DataMapParent.Run
+        DataMapParent.Workflow
+    ] do
+    Vitest.test (
+        $"{parent} separate datamap wins over a conflicting embedded copy",
+        fun () ->
+            withLegacyLoadParent
+                parent
+                (fun arcPath parentInfo _ -> promise {
+                    let separate = loadDataMap $"dataset/separate-{parent}.csv"
+
+                    let! written =
+                        ContractExecutor.fulfillContractsSwateAsync arcPath [|
+                            DataMapContract.update parentInfo separate
+                        |]
+
+                    match written with
+                    | Error errors -> failwith (String.concat "\n" errors)
+                    | Ok _ -> ()
+
+                    let! loaded = ARC.LoadAsyncSwate arcPath
+                    let actual = loadParentDataMap (TestHelpers.expectLoadedArc loaded) parentInfo
+                    Vitest.expect(actual.DataContexts.Count).toBe 1
+                    Vitest.expect(actual.DataContexts.[0].Name).toEqual (Some $"dataset/separate-{parent}.csv")
+                })
+    )
+
+    Vitest.test (
+        $"{parent} empty separate datamap wins over a populated embedded copy",
+        fun () ->
+            withLegacyLoadParent
+                parent
+                (fun arcPath parentInfo _ -> promise {
+                    let! written =
+                        ContractExecutor.fulfillContractsSwateAsync arcPath [|
+                            DataMapContract.update parentInfo (Datamap.init ())
+                        |]
+
+                    match written with
+                    | Error errors -> failwith (String.concat "\n" errors)
+                    | Ok _ -> ()
+
+                    let! loaded = ARC.LoadAsyncSwate arcPath
+                    let actual = loadParentDataMap (TestHelpers.expectLoadedArc loaded) parentInfo
+                    Vitest.expect(actual.DataContexts.Count).toBe 0
+                })
+    )
+
+    Vitest.test (
+        $"{parent} uses its embedded datamap when no separate file exists",
+        fun () ->
+            withLegacyLoadParent
+                parent
+                (fun arcPath parentInfo embedded -> promise {
+                    let! loaded = ARC.LoadAsyncSwate arcPath
+                    let actual = loadParentDataMap (TestHelpers.expectLoadedArc loaded) parentInfo
+                    Vitest.expect(actual.DataContexts.Count).toBe 1
+                    Vitest.expect(actual.DataContexts.[0].Name).toEqual embedded.DataContexts.[0].Name
+                })
+    )

@@ -219,7 +219,11 @@ module ArcMergeHelper =
                 (fun idx -> arcLocal.Runs.[idx])
                 (fun idx run -> arcLocal.Runs.[idx] <- run)
                 (fun run -> arcLocal.AddRun(run))
-                (fun (run: ArcRun) -> run.Copy())
+                (fun (run: ArcRun) ->
+                    let copiedRun = run.Copy()
+                    WorkflowPayloads.syncRunPayloadBaseline run copiedRun
+                    copiedRun
+                )
                 (fun (run: ArcRun) -> run.Datamap)
                 (fun (run: ArcRun) dataMap -> run.Datamap <- dataMap)
         | ArcEntityRef.Run id, EventName.Unlink ->
@@ -248,7 +252,11 @@ module ArcMergeHelper =
                 (fun idx -> arcLocal.Workflows.[idx])
                 (fun idx workflow -> arcLocal.Workflows.[idx] <- workflow)
                 (fun workflow -> arcLocal.AddWorkflow(workflow))
-                (fun (workflow: ArcWorkflow) -> workflow.Copy())
+                (fun (workflow: ArcWorkflow) ->
+                    let copiedWorkflow = workflow.Copy()
+                    WorkflowPayloads.syncWorkflowPayloadBaseline workflow copiedWorkflow
+                    copiedWorkflow
+                )
                 (fun (workflow: ArcWorkflow) -> workflow.Datamap)
                 (fun (workflow: ArcWorkflow) dataMap -> workflow.Datamap <- dataMap)
         | ArcEntityRef.Workflow id, EventName.Unlink ->
@@ -274,8 +282,6 @@ module ArcMergeLibraryExtensions =
         static member merge (arcLocal: ARC) (arcRemote: ARC) (events: FileEvent list) : ARC =
             if not (arcLocal.hasInMemoryChanges ()) then
                 copyArcPreservingStaticHashes arcRemote
-            elif events.IsEmpty then
-                copyArcPreservingStaticHashes arcLocal
             else
                 let mergedArc = copyArcPreservingStaticHashes arcLocal
                 let parsedEvents = ArcMergeHelper.parseFileEvents events
@@ -284,4 +290,5 @@ module ArcMergeLibraryExtensions =
                 for event in parsedEvents do
                     ArcMergeHelper.applyEntityEvent mergedArc arcRemote dataMapEvents event.EntityRef event.EventName
 
+                WorkflowPayloads.mergeWorkflowPayloadsFromDisk arcLocal arcRemote mergedArc
                 mergedArc

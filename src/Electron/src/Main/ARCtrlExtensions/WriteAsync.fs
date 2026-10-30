@@ -2,14 +2,12 @@ namespace Main.ARCtrlExtensions
 
 open ARCtrl
 open ARCtrl.Contract
-open ARCtrl.Helper
-open ARCtrl.Spreadsheet
-open Main.Notes.NoteConstants
+open Fable.Core
 
 [<AutoOpen>]
 module ArcWriteExtensions =
 
-    /// The distinct ARC-relative paths a contract batch touches. A rename contract also touches its target.
+    /// The distinct ARC-relative paths a contract batch touches. A rename also touches its target.
     let contractWrittenPaths (contracts: Contract[]) : string[] =
         contracts
         |> Array.collect (fun contract ->
@@ -19,159 +17,92 @@ module ArcWriteExtensions =
         )
         |> Array.distinct
 
-    let private notesReadmeContract =
-        let path = ArcPathHelper.combine NotesRootFolderName NotesReadmeFileName
-        Contract.createCreate (path, DTOType.PlainText, DTO.Text NotesReadmeContent)
-
-    let private swateScaffoldContracts = [|
-        ARCtrl.Contract.Git.gitignoreContract
-        notesReadmeContract
-    |]
-
-    let private collectionGitKeepContracts =
+    let private writeContracts (skipUpdateFS: bool option) (snapshot: ARC) =
         [|
-            ArcPathHelper.AssaysFolderName
-            ArcPathHelper.StudiesFolderName
-            ArcPathHelper.WorkflowsFolderName
-            ArcPathHelper.RunsFolderName
+            yield ARCtrl.Contract.Git.gitignoreContract
+            yield! snapshot.GetWriteContracts(?skipUpdateFS = skipUpdateFS)
+            yield! WorkflowPayloads.workflowPayloadContracts snapshot Operation.CREATE
         |]
-        |> Array.map (fun collectionFolder ->
-            let path = ArcPathHelper.combine collectionFolder ArcPathHelper.GitKeepFileName
+        |> ContractPolicy.distinctContracts
+        |> ContractPolicy.regenerateParentPayloads snapshot
+        |> function
+            | Ok contracts -> ContractPolicy.orderContracts contracts
+            | Error message -> failwith message
 
-            Contract.createCreate (path, DTOType.PlainText)
-        )
+    let private prepareSave (skipUpdateFS: bool option) (arc: ARC) =
+        let snapshot = copyArcPreservingStaticHashes arc
+        let changedPayloads = WorkflowPayloads.changedWorkflowPayloadContracts snapshot
+        let isFullWrite = snapshot.StaticHash = 0
+        let dirty = ContractPolicy.captureDirtyDatamapKeys snapshot
 
-    let private isUnmanagedPlainTextCreateContract (contract: Contract) =
-        contract.Operation = Operation.CREATE
-        && contract.DTOType = Some DTOType.PlainText
-        && contract.DTO.IsNone
+        let raw =
+            Array.append (snapshot.GetUpdateContracts(?skipUpdateFS = skipUpdateFS)) changedPayloads
+
+        // Freeze the content being saved before I/O. Later edits must remain dirty when this is committed.
+        baselineArcStaticHashes snapshot
+        snapshot, raw, dirty, isFullWrite
+
+    /// The injectable executor lets callers verify failure and in-flight edits without changing save policy.
+    let internal persistArcSaveWithAsync
+        (execute: string -> Contract[] -> JS.Promise<Result<Contract[], string[]>>)
+        (arcPath: string)
+        (arc: ARC)
+        =
+        promise {
+            let snapshot, raw, dirty, isFullWrite = prepareSave None arc
+
+            match!
+                ContractPolicy.prepareAsync {
+                    ArcPath = arcPath
+                    Snapshot = snapshot
+                    RawContracts = raw
+                    DirtyDatamapKeys = dirty
+                    IsFullWrite = isFullWrite
+                    DiskPathBeforeExecution = id
+                }
+            with
+            | Error message -> return Error [| message |]
+            | Ok contracts ->
+                match! execute arcPath contracts with
+                | Error errors -> return Error errors
+                | Ok executed ->
+                    syncArcStaticHashes snapshot arc
+                    return Ok executed
+        }
 
     type ARC with
 
-        /// Keeps the managed-payload workaround for #618.
-        /// Mirrors ARCtrl.GetWriteContracts except that it emits only managed ARC payload contracts instead of
-        /// iterating the complete filesystem model, where stale or Git metadata paths could be recreated.
+        /// Generates targeted ARC files and create-only defaults without changing the live saved baseline.
         member this.GetWriteContractsSwate(?skipUpdateFS: bool) =
-            if not (defaultArg skipUpdateFS false) then
-                this.UpdateFileSystem()
-            //let datamapFile = defaultArg datamapFile false
-            /// Map containing the fileName and the types for DTOTypes and objects.
-            let filemap = System.Collections.Generic.Dictionary<string, DTOType * DTO>()
+            copyArcPreservingStaticHashes this |> writeContracts skipUpdateFS
 
-            let investigationConverter = ArcInvestigation.toFsWorkbook
+        /// Existing destinations are skipped. The creation lifecycle reloads disk as its clean baseline.
+        member this.TryWriteAsyncSwate(arcPath: string) = promise {
+            try
+                return!
+                    this.GetWriteContractsSwate()
+                    |> ContractExecutor.fulfillContractsSwateAsync arcPath
+            with error ->
+                return Error [| error.Message |]
+        }
 
-            filemap.Add(
-                ARCtrl.ArcPathHelper.InvestigationFileName,
-                (DTOType.ISA_Investigation, investigationConverter this |> DTO.Spreadsheet)
-            )
+        /// Model payloads are upserts; default scaffold files remain create-only.
+        member this.PrepareUpdateContractsSwateAsync(arcPath: string) : JS.Promise<Result<Contract[], string[]>> = promise {
+            let snapshot, raw, dirty, isFullWrite = prepareSave None this
 
-            this.StaticHash <- this.GetLightHashCode()
+            let! prepared =
+                ContractPolicy.prepareAsync {
+                    ArcPath = arcPath
+                    Snapshot = snapshot
+                    RawContracts = raw
+                    DirtyDatamapKeys = dirty
+                    IsFullWrite = isFullWrite
+                    DiskPathBeforeExecution = id
+                }
 
-            this.Studies
-            |> Seq.iter (fun s ->
-                s.StaticHash <- s.GetLightHashCode()
+            return prepared |> Result.mapError Array.singleton
+        }
 
-                filemap.Add(
-                    Identifier.Study.fileNameFromIdentifier s.Identifier,
-                    (DTOType.ISA_Study, ArcStudy.toFsWorkbook s |> DTO.Spreadsheet)
-                )
-
-                if s.Datamap.IsSome (*&& datamapFile*) then
-                    let dm = s.Datamap.Value
-                    dm.StaticHash <- dm.GetHashCode()
-
-                    filemap.Add(
-                        Identifier.Study.datamapFileNameFromIdentifier s.Identifier,
-                        (DTOType.ISA_Datamap, Spreadsheet.Datamap.toFsWorkbook dm |> DTO.Spreadsheet)
-                    )
-
-            )
-
-            this.Assays
-            |> Seq.iter (fun a ->
-                a.StaticHash <- a.GetLightHashCode()
-
-                filemap.Add(
-                    Identifier.Assay.fileNameFromIdentifier a.Identifier,
-                    (DTOType.ISA_Assay, ArcAssay.toFsWorkbook a |> DTO.Spreadsheet)
-                )
-
-                if a.Datamap.IsSome (*&& datamapFile*) then
-                    let dm = a.Datamap.Value
-                    dm.StaticHash <- dm.GetHashCode()
-
-                    filemap.Add(
-                        Identifier.Assay.datamapFileNameFromIdentifier a.Identifier,
-                        (DTOType.ISA_Datamap, Spreadsheet.Datamap.toFsWorkbook dm |> DTO.Spreadsheet)
-                    )
-            )
-
-            this.Workflows
-            |> Seq.iter (fun w ->
-                w.StaticHash <- w.GetLightHashCode()
-
-                filemap.Add(
-                    Identifier.Workflow.fileNameFromIdentifier w.Identifier,
-                    (DTOType.ISA_Workflow, ArcWorkflow.toFsWorkbook w |> DTO.Spreadsheet)
-                )
-                //if w.CWLDescription.IsSome then
-                //    failwith "Not implemented yet: CWL description in ARC.GetWriteContracts"
-                if w.Datamap.IsSome (*&& datamapFile*) then
-                    let dm = w.Datamap.Value
-                    dm.StaticHash <- dm.GetHashCode()
-
-                    filemap.Add(
-                        Identifier.Workflow.datamapFileNameFromIdentifier w.Identifier,
-                        (DTOType.ISA_Datamap, Spreadsheet.Datamap.toFsWorkbook dm |> DTO.Spreadsheet)
-                    )
-            )
-
-            this.Runs
-            |> Seq.iter (fun r ->
-                r.StaticHash <- r.GetLightHashCode()
-
-                filemap.Add(
-                    Identifier.Run.fileNameFromIdentifier r.Identifier,
-                    (DTOType.ISA_Run, ArcRun.toFsWorkbook r |> DTO.Spreadsheet)
-                )
-                //if r.CWLDescription.IsSome then
-                //    failwith "Not implemented yet: CWL description in ARC.GetWriteContracts"
-                //if r.CWLInput.Count > 0 then
-                //    failwith "Not implemented yet: CWL YAML input in ARC.GetWriteContracts"
-                if r.Datamap.IsSome (*&& datamapFile*) then
-                    let dm = r.Datamap.Value
-                    dm.StaticHash <- dm.GetHashCode()
-
-                    filemap.Add(
-                        Identifier.Run.datamapFileNameFromIdentifier r.Identifier,
-                        (DTOType.ISA_Datamap, Spreadsheet.Datamap.toFsWorkbook dm |> DTO.Spreadsheet)
-                    )
-            )
-
-            match this.License with
-            | Some l ->
-                match l.Type with
-                | LicenseContentType.Fulltext ->
-                    l.StaticHash <- l.GetHashCode()
-                    filemap.Add(l.Path, (DTOType.PlainText, DTO.Text l.Content))
-            | None -> ()
-
-            [|
-                yield! swateScaffoldContracts
-                yield! collectionGitKeepContracts
-
-                for entry in filemap do
-                    let dtoType, dto = entry.Value
-                    yield Contract.createCreate (entry.Key, dtoType, dto)
-            |]
-
-        /// Hotfix for #618. Writes only contracts selected by GetWriteContractsSwate.
-        member this.TryWriteAsyncSwate(arcPath: string) =
-            // CREATE contracts overwrote existing managed payloads before ARCtrl added this flag.
-            this.GetWriteContractsSwate() |> fullFillContractBatchAsync true arcPath
-
-        /// Writes only managed update contracts. This prevents ARC save from overwriting unmanaged text files
-        /// such as notes with empty content when ARCtrl falls back to full write contracts.
-        member this.GetUpdateContractsSwate(?skipUpdateFS: bool) =
-            this.GetUpdateContracts(?skipUpdateFS = skipUpdateFS)
-            |> Array.filter (isUnmanagedPlainTextCreateContract >> not)
+        /// Commits captured saved baselines only after the complete batch succeeds.
+        member this.TryUpdateAsyncSwate(arcPath: string) =
+            persistArcSaveWithAsync ContractExecutor.fulfillContractsSwateAsync arcPath this
