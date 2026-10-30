@@ -6,10 +6,10 @@ open Feliz
 open Swate.Components
 open Swate.Components.Shared
 open Swate.Components.Composite.Template
+open Swate.Components.Composite.TableImport.Types
 open Swate.Components.Composite.Widgets.Context
 open Swate.Components.Composite.Widgets.Types
 
-module TemplateTypes = Swate.Components.Composite.Template.Types
 module TemplateActions = Swate.Components.Composite.Template.TemplateActions
 module TemplateCacheContext = Swate.Components.Composite.Template.TemplateCacheContext
 
@@ -24,8 +24,6 @@ type TemplateWidget =
         let templateCacheCtx = TemplateCacheContext.useTemplateCacheCtx ()
         let templates = templateCacheCtx.Templates
         let isLoading = templateCacheCtx.IsLoading
-
-        let importType, setImportType = React.useState TableJoinOptions.Headers
 
         let selectedTemplateIds, setSelectedTemplateIds =
             React.useStateWithUpdater (Set.empty<System.Guid>)
@@ -58,18 +56,21 @@ type TemplateWidget =
                 setImportError None
                 setShowImportDialog true
 
-        let confirmImport (payload: TemplateTypes.ImportModalConfirmPayload) =
+        let selectedTemplates =
+            React.useMemo (
+                (fun () ->
+                    templates
+                    |> Array.filter (fun template -> selectedTemplateIds.Contains template.Id)
+                ),
+                [| box templates; box selectedTemplateIds |]
+            )
+
+        let confirmImport (decisions: TableImportDecisions) =
 
             match tryGetActiveTableIndex arcFile with
-            | Some tableIndex when payload.SelectedTemplatesForImport.Length > 0 ->
-                let importResult =
-                    try
-                        Ok(TemplateActions.importIntoCopy arcFile (Some tableIndex) payload)
-                    with error ->
-                        Error error.Message
-
-                match importResult with
-                | Error message -> setImportError (Some message)
+            | Some _ when selectedTemplates.Length > 0 ->
+                match TemplateActions.importIntoCopy arcFile selectedTemplates decisions with
+                | Error error -> setImportError (Some error.Message)
                 | Ok nextArcFile ->
                     setArcFile nextArcFile
                     setSelectedTemplateIds (fun _ -> Set.empty<System.Guid>)
@@ -80,25 +81,13 @@ type TemplateWidget =
                     | None -> widgetCtx.closeWidget WidgetType.Template
             | _ -> setShowImportDialog false
 
-        let existingTableNames = arcFile.Tables() |> Seq.map _.Name |> Array.ofSeq
-
-        let selectedTemplates =
-            React.useMemo (
-                (fun () ->
-                    templates
-                    |> Array.filter (fun template -> selectedTemplateIds.Contains template.Id)
-                ),
-                [| box templates; box selectedTemplateIds |]
-            )
-
         React.Fragment [
             TemplateImportModal.TemplateImportModal(
                 isOpen = showImportDialog,
-                importType = importType,
                 selectedTemplates = selectedTemplates,
-                existingTableNames = existingTableNames,
+                currentArcFile = arcFile,
+                activeTableIndex = tryGetActiveTableIndex arcFile,
                 setIsOpen = setShowImportDialog,
-                setImportType = setImportType,
                 submitImport = confirmImport,
                 ?importError = importError
             )

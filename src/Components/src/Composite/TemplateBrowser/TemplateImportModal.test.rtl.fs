@@ -1,28 +1,41 @@
 module internal Swate.Components.Composite.Template.TemplateImportModalTests
 
 open ARCtrl
+open Swate.Components.Shared
 open Browser.Types
 open Fable.Core
 open Vitest
+open Swate.Components.Tests.TableFiles
 open Swate.Components.Composite.Template
-open Swate.Components.Composite.Template.Types
+open Swate.Components.Composite.TableImport.Types
 
 Vitest.afterEach (fun () -> RTL.cleanup ())
 
-let private modal
+/// A file whose active table is the first one, next to one table per given name.
+let private currentFile (existingTableNames: string[]) =
+    withTables (fun () -> ArcFiles.Assay(ArcAssay.init "Assay")) [
+        ArcTable.init "Active"
+        yield! existingTableNames |> Array.map ArcTable.init
+    ]
+
+let private modalFor
     (selectedTemplates: Template[])
     (existingTableNames: string[])
-    (submitImport: ImportModalConfirmPayload -> unit)
+    (submitImport: TableImportDecisions -> unit)
+    (importError: string option)
     =
     TemplateImportModal.TemplateImportModal(
         isOpen = true,
-        importType = TableJoinOptions.Headers,
         selectedTemplates = selectedTemplates,
-        existingTableNames = existingTableNames,
+        currentArcFile = currentFile existingTableNames,
+        activeTableIndex = Some 0,
         setIsOpen = ignore,
-        setImportType = ignore,
-        submitImport = submitImport
+        submitImport = submitImport,
+        ?importError = importError
     )
+
+let private modal selectedTemplates existingTableNames submitImport =
+    modalFor selectedTemplates existingTableNames submitImport None
 
 let private renderModal (template: Template) (existingTableNames: string[]) submitImport =
     RTL.render (modal [| template |] existingTableNames submitImport) |> ignore
@@ -37,7 +50,7 @@ Vitest.test (
     "a template imported as a new table is renamed with a notice and cannot be imported under a taken name",
     fun () ->
         let template = Template.init "SugarExtraction"
-        let mutable submitted: ImportModalConfirmPayload option = None
+        let mutable submitted: TableImportDecisions option = None
         renderModal template [| "SugarExtraction" |] (fun payload -> submitted <- Some payload)
 
         RTL.fireEvent.click (RTL.screen.getByLabelText "Create new table")
@@ -59,7 +72,7 @@ Vitest.test (
         Vitest.expect((importButton () :?> HTMLButtonElement).disabled).toBe false
         RTL.fireEvent.click (importButton ())
 
-        Vitest.expect(Map.toArray submitted.Value.NewTableNames).toEqual [| template.Id, "Sugar extraction day 2" |]
+        Vitest.expect(Map.toArray submitted.Value.EnteredNames).toEqual [| 0, "Sugar extraction day 2" |]
 )
 
 Vitest.test (
@@ -68,16 +81,7 @@ Vitest.test (
         let template = Template.init "SugarExtraction"
 
         let modalWithError importError =
-            TemplateImportModal.TemplateImportModal(
-                isOpen = true,
-                importType = TableJoinOptions.Headers,
-                selectedTemplates = [| template |],
-                existingTableNames = [||],
-                setIsOpen = ignore,
-                setImportType = ignore,
-                submitImport = ignore,
-                ?importError = importError
-            )
+            modalFor [| template |] [||] ignore importError
 
         let rendered = RTL.render (modalWithError None)
         let error = "Import failed: table names must be unique"
@@ -163,7 +167,7 @@ Vitest.test (
 )
 
 Vitest.test (
-    "a deselected template row reaches the import payload",
+    "a deselected template row reaches the import decisions",
     fun () ->
         let template = Template.init "SugarExtraction"
 
@@ -172,26 +176,16 @@ Vitest.test (
             ResizeArray [ for i in 1..3 -> CompositeCell.FreeText $"Sample {i}" ]
         )
 
-        let mutable submitted: ImportModalConfirmPayload option = None
+        let mutable submitted: TableImportDecisions option = None
 
-        RTL.render (
-            TemplateImportModal.TemplateImportModal(
-                isOpen = true,
-                importType = TableJoinOptions.WithValues,
-                selectedTemplates = [| template |],
-                setIsOpen = ignore,
-                setImportType = ignore,
-                submitImport = (fun payload -> submitted <- Some payload)
-            )
-        )
-        |> ignore
-
+        renderModal template [||] (fun decisions -> submitted <- Some decisions)
+        RTL.fireEvent.click (RTL.screen.getByTestId "table-import-mode-WithValues")
         RTL.fireEvent.click (RTL.screen.getByLabelText "Create new table")
         openColumns 0
         RTL.fireEvent.click (RTL.screen.getByTestId "table-import-row-0-1")
         RTL.fireEvent.click (importButton ())
 
-        Vitest.expect(Set.toArray submitted.Value.DeselectedTemplateRows).toEqual [| template.Id, 1 |]
+        Vitest.expect(Set.toArray submitted.Value.DeselectedRows).toEqual [| 0, 1 |]
 )
 
 Vitest.test (
@@ -204,17 +198,8 @@ Vitest.test (
             ResizeArray [ for i in 1..3 -> CompositeCell.FreeText $"Sample {i}" ]
         )
 
-        let modalWith importType =
-            TemplateImportModal.TemplateImportModal(
-                isOpen = true,
-                importType = importType,
-                selectedTemplates = [| template |],
-                setIsOpen = ignore,
-                setImportType = ignore,
-                submitImport = ignore
-            )
-
-        let rendered = RTL.render (modalWith TableJoinOptions.WithValues)
+        RTL.render (modal [| template |] [||] ignore) |> ignore
+        RTL.fireEvent.click (RTL.screen.getByTestId "table-import-mode-WithValues")
         RTL.fireEvent.click (RTL.screen.getByLabelText "Create new table")
         Vitest.expect(isImportDisabled ()).toBe false
         openColumns 0
@@ -223,7 +208,23 @@ Vitest.test (
         RTL.fireEvent.click (RTL.screen.getByText "Unselect all rows")
         Vitest.expect(isImportDisabled ()).toBe true
 
-        rendered.rerender (modalWith TableJoinOptions.Headers)
+        RTL.fireEvent.click (RTL.screen.getByTestId "table-import-mode-Headers")
         Vitest.expect(isImportDisabled ()).toBe false
         Vitest.expect(RTL.screen.queryByTestId("table-import-row-0-0").IsNone).toBe true
+)
+
+Vitest.test (
+    "a deselected column stays deselected when another template leaves the selection",
+    fun () ->
+        let first = withColumns (Template.init "First")
+        let second = withColumns (Template.init "Second")
+        let rendered = RTL.render (modal [| first; second |] [||] ignore)
+
+        openColumns 1
+        RTL.fireEvent.click (RTL.screen.getByTestId "table-import-column-1-1")
+        Vitest.expect((RTL.screen.getByTestId "table-import-column-1-1" :?> HTMLInputElement).``checked``).toBe false
+
+        rendered.rerender (modal [| second |] [||] ignore)
+        openColumns 0
+        Vitest.expect((RTL.screen.getByTestId "table-import-column-0-1" :?> HTMLInputElement).``checked``).toBe false
 )

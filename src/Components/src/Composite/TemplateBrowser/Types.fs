@@ -1,9 +1,6 @@
 module Swate.Components.Composite.Template.Types
 
 open Fable.Core
-open ARCtrl
-open Swate.Components.Shared
-open Swate.Components.Composite.TableImport.Types
 
 /// This is a fable StringEnum and can be replaced by any `unbox` string
 [<StringEnum>]
@@ -20,12 +17,3 @@ type FilterToken = {|
     Id: string
     Payload: obj option
 |}
-
-
-type ImportModalConfirmPayload = {
-    ImportType: TableJoinOptions
-    SelectedTemplatesForImport: (Template * TableImportAction)[]
-    DeselectedTemplateColumns: Set<System.Guid * int>
-    DeselectedTemplateRows: Set<System.Guid * int>
-    NewTableNames: Map<System.Guid, string>
-}
