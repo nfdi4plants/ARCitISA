@@ -186,6 +186,43 @@ const ControlledSelectionFileExplorer = () => {
         createStableFolder("Entity Folder", "arc/entity", "entity-folder", [
           createStableFile("entity-child.txt", "arc/entity/entity-child.txt", "entity-child"),
         ]),
+        createStableFolder("studies", "studies", "studies", [
+          createStableFolder("selected-study", "studies/selected-study", "selected-study", [
+            createStableFile("isa.study.xlsx", "studies/selected-study/isa.study.xlsx", "isa-study"),
+            createStableFolder("resources", "studies/selected-study/resources", "resources", [
+              createStableFolder("raw-data", "studies/selected-study/resources/raw-data", "raw-data", [
+                createStableFolder("batch-01", "studies/selected-study/resources/raw-data/batch-01", "batch-01", [
+                  createStableFolder(
+                    "replicate-01",
+                    "studies/selected-study/resources/raw-data/batch-01/replicate-01",
+                    "replicate-01",
+                    [
+                      createStableFile(
+                        "selected-report.txt",
+                        "studies/selected-study/resources/raw-data/batch-01/replicate-01/selected-report.txt",
+                        "selected-report",
+                      ),
+                      createStableFile(
+                        "sibling-report.txt",
+                        "studies/selected-study/resources/raw-data/batch-01/replicate-01/sibling-report.txt",
+                        "sibling-report",
+                      ),
+                    ],
+                  ),
+                ]),
+              ]),
+            ]),
+          ]),
+          createStableFolder("neighbor-study", "studies/neighbor-study", "neighbor-study", [
+            createStableFile("neighbor-isa.study.xlsx", "studies/neighbor-study/isa.study.xlsx", "neighbor-isa-study"),
+          ]),
+        ]),
+        createStableFolder("assays", "assays", "assays", [
+          createStableFolder("selected-assay", "assays/selected-assay", "selected-assay", [
+            createStableFile("isa.assay.xlsx", "assays/selected-assay/isa.assay.xlsx", "isa-assay"),
+          ]),
+        ]),
+        createStableFile("README.md", "README.md", "readme"),
       ]),
     [],
   );
@@ -193,7 +230,7 @@ const ControlledSelectionFileExplorer = () => {
   const [selectedId, setSelectedId] = React.useState("first-file");
 
   return (
-    <div className="swt:p-4">
+    <div className="swt:h-[34rem] swt:p-4">
       <FileExplorer
         initialItems={items}
         selectedItemId={selectedId}
@@ -204,6 +241,7 @@ const ControlledSelectionFileExplorer = () => {
           }
         }}
       />
+      <output data-testid="controlled-selected-id">{selectedId}</output>
     </div>
   );
 };
@@ -790,26 +828,91 @@ export const ControlledSelectionFollowsTheParent: StoryObj<typeof ControlledSele
 
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
+    const selectedId = () => canvas.getByTestId("controlled-selected-id");
+    const row = (name: string) => canvas.getByRole("treeitem", { name });
+    const rowContent = (name: string) => row(name).querySelector("[data-file-item-id]");
+    const expectPath = async (highlighted: string[], unhighlighted: string[]) => {
+      for (const name of highlighted) {
+        await expect(rowContent(name)).toHaveClass(/swt:bg-base-300/);
+      }
+      for (const name of unhighlighted) {
+        await expect(rowContent(name)).not.toHaveClass(/swt:bg-base-300/);
+      }
+    };
 
     await waitFor(() => expect(canvas.getByText("first.txt")).toHaveClass(/swt:text-primary/));
 
-    // A click the parent ignores leaves the highlight where it is.
+    // Keep the original controlled-selection cases.
     await userEvent.click(canvas.getByText("locked.txt"));
     await expect(canvas.getByText("locked.txt")).not.toHaveClass(/swt:text-primary/);
     await expect(canvas.getByText("first.txt")).toHaveClass(/swt:text-primary/);
 
-    // A selection the parent passes back moves it.
     await userEvent.click(canvas.getByText("second.txt"));
     await waitFor(() => expect(canvas.getByText("second.txt")).toHaveClass(/swt:text-primary/));
     await expect(canvas.getByText("first.txt")).not.toHaveClass(/swt:text-primary/);
 
-    // Collapsing a parent leaves the selected descendant and its path unchanged.
     await userEvent.click(canvas.getByText("Entity Folder"));
     await waitFor(() => expect(canvas.getByText("entity-child.txt")).toBeInTheDocument());
     await userEvent.click(canvas.getByText("entity-child.txt"));
     await userEvent.click(canvas.getByText("Entity Folder"));
     await waitFor(() => expect(canvas.queryByText("entity-child.txt")).toBeNull());
-    await expect(canvas.getByText("Entity Folder").closest("[data-file-item-id]")).toHaveClass(/swt:bg-base-300/);
+    await expect(selectedId()).toHaveTextContent("entity-folder");
+    await userEvent.click(canvas.getByText("Entity Folder"));
+    await waitFor(() => expect(canvas.getByText("entity-child.txt")).toBeInTheDocument());
+    await expect(row("Entity Folder")).toHaveAttribute("aria-selected", "true");
+    await expect(row("entity-child.txt")).toHaveAttribute("aria-selected", "false");
+
+    // The added fixture continues with a deeper ARC hierarchy.
+    await userEvent.click(within(row("studies")).getByText("studies"));
+    await userEvent.click(within(row("selected-study")).getByText("selected-study"));
+    await userEvent.click(within(row("resources")).getByText("resources"));
+    await userEvent.click(within(row("raw-data")).getByText("raw-data"));
+    await userEvent.click(within(row("batch-01")).getByText("batch-01"));
+    await userEvent.click(within(row("replicate-01")).getByText("replicate-01"));
+    await userEvent.click(canvas.getByText("selected-report.txt"));
+    await waitFor(() => expect(selectedId()).toHaveTextContent("selected-report"));
+
+    const selectedPath = [
+      "studies",
+      "selected-study",
+      "resources",
+      "raw-data",
+      "batch-01",
+      "replicate-01",
+      "selected-report.txt",
+    ];
+
+    await expect(selectedId()).toHaveTextContent("selected-report");
+    await expect(row("selected-report.txt")).toHaveAttribute("aria-selected", "true");
+    await expectPath(selectedPath, ["isa.study.xlsx", "sibling-report.txt", "neighbor-study", "assays"]);
+
+    // Collapse a folder several levels above the selected file.
+    await userEvent.click(within(row("batch-01")).getByText("batch-01"));
+    await waitFor(() => expect(canvas.queryByText("selected-report.txt")).toBeNull());
+    await expect(row("batch-01")).toHaveAttribute("aria-expanded", "false");
+    await expect(selectedId()).toHaveTextContent("batch-01");
+    await expectPath(["studies", "selected-study", "resources", "raw-data", "batch-01"], ["isa.study.xlsx", "neighbor-study", "assays"]);
+
+    // Reopening selects the folder, not every descendant below it.
+    await userEvent.click(within(row("batch-01")).getByText("batch-01"));
+    await waitFor(() => expect(canvas.getByText("selected-report.txt")).toBeInTheDocument());
+    await expect(row("batch-01")).toHaveAttribute("aria-selected", "true");
+    await expect(row("selected-report.txt")).toHaveAttribute("aria-selected", "false");
+    await expectPath(["studies", "selected-study", "resources", "raw-data", "batch-01"], ["replicate-01", "selected-report.txt", "sibling-report.txt", "neighbor-study", "assays"]);
+
+    // Selecting the ISA study file moves the path without highlighting its neighbors.
+    await userEvent.click(canvas.getByText("isa.study.xlsx"));
+    await waitFor(() => expect(selectedId()).toHaveTextContent("isa-study"));
+    await expect(row("isa.study.xlsx")).toHaveAttribute("aria-selected", "true");
+    await expectPath(["studies", "selected-study", "isa.study.xlsx"], ["resources", "raw-data", "batch-01", "neighbor-study", "assays"]);
+
+    // Selecting an entity on another branch clears every highlight from the old branch.
+    await userEvent.click(within(row("assays")).getByText("assays"));
+    await waitFor(() => expect(row("selected-assay")).toBeInTheDocument());
+    await userEvent.click(within(row("selected-assay")).getByText("selected-assay"));
+    await waitFor(() => expect(selectedId()).toHaveTextContent("selected-assay"));
+    await expect(row("selected-assay")).toHaveAttribute("aria-selected", "true");
+    await expectPath(["assays", "selected-assay"], ["studies", "selected-study", "isa.study.xlsx", "resources", "neighbor-study", "isa.assay.xlsx"]);
   },
 };
 

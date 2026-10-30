@@ -149,6 +149,13 @@ type FileTree =
 
         let rootEntry = Renderer.Context.FileTreeStore.tryFind snapshot ""
 
+        let materializedIds =
+            fileStateCtx.state.Selection.TreePath
+            |> Option.map Renderer.Context.FileTreeExpansionContext.ancestorPaths
+            |> Option.defaultValue []
+            |> Set.ofList
+            |> Set.union expansionCtx.expandedIds
+
         let fileItem =
             React.useMemo (
                 (fun () ->
@@ -161,13 +168,13 @@ type FileTree =
                                         createFileItem
                                         withBusy
                                         snapshot
-                                        expansionCtx.expandedIds
+                                        materializedIds
                                 )
                     })
                 ),
                 [|
                     box snapshot
-                    box expansionCtx.expandedIds
+                    box materializedIds
                     box tryFindLfs
                     box lfsActivityByPath
                 |]

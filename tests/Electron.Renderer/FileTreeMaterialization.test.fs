@@ -235,4 +235,101 @@ Vitest.describe (
                 let rows = build withSibling []
                 Vitest.expect(rows |> List.map (fun row -> row.Path.Value)).toEqual [ "A"; "B" ]
         )
+
+        Vitest.test (
+            "keeps the selected branch materialized below collapsed directories",
+            fun () ->
+                let snapshot =
+                    snapshotOf [
+                        dir "studies"
+                        dir "studies/selected-study"
+                        file "studies/selected-study/isa.study.xlsx"
+                        dir "studies/selected-study/resources"
+                        dir "studies/selected-study/resources/raw-data"
+                        dir "studies/selected-study/resources/raw-data/batch-01"
+                        dir "studies/selected-study/resources/raw-data/batch-01/replicate-01"
+                        file "studies/selected-study/resources/raw-data/batch-01/replicate-01/selected-report.txt"
+                        file "studies/selected-study/resources/raw-data/batch-01/replicate-01/sibling-report.txt"
+                        dir "studies/selected-study/resources/raw-data/batch-02"
+                        file "studies/selected-study/resources/raw-data/batch-02/other-report.txt"
+                        dir "studies/selected-study/study-assays"
+                        dir "studies/selected-study/study-assays/rna-seq"
+                        file "studies/selected-study/study-assays/rna-seq/isa.assay.xlsx"
+                        dir "studies/neighbor-study"
+                        file "studies/neighbor-study/isa.study.xlsx"
+                        dir "assays"
+                        dir "assays/neighbor-assay"
+                    ] [
+                        "studies"
+                        "studies/selected-study"
+                        "studies/selected-study/resources"
+                        "studies/selected-study/resources/raw-data"
+                        "studies/selected-study/resources/raw-data/batch-01"
+                        "studies/selected-study/resources/raw-data/batch-01/replicate-01"
+                        "studies/selected-study/resources/raw-data/batch-02"
+                        "studies/selected-study/study-assays"
+                        "studies/selected-study/study-assays/rna-seq"
+                        "studies/neighbor-study"
+                        "assays"
+                    ]
+
+                let items =
+                    let selectedPath =
+                        "studies/selected-study/resources/raw-data/batch-01/replicate-01/selected-report.txt"
+
+                    build snapshot (Renderer.Context.FileTreeExpansionContext.ancestorPaths selectedPath)
+
+                let selectedPath =
+                    FileTree.getPath
+                        "studies/selected-study/resources/raw-data/batch-01/replicate-01/selected-report.txt"
+                        items
+                        []
+                    |> Option.map (List.map _.Id)
+
+                Vitest
+                    .expect(selectedPath)
+                    .toEqual (
+                        Some [
+                            "studies"
+                            "studies/selected-study"
+                            "studies/selected-study/resources"
+                            "studies/selected-study/resources/raw-data"
+                            "studies/selected-study/resources/raw-data/batch-01"
+                            "studies/selected-study/resources/raw-data/batch-01/replicate-01"
+                            "studies/selected-study/resources/raw-data/batch-01/replicate-01/selected-report.txt"
+                        ]
+                    )
+
+                let visible = FileExplorerLogic.flattenVisibleRows Set.empty items |> Array.map _.Id
+                Vitest.expect(visible).toEqual [| "studies"; "assays" |]
+
+                let studies = items |> List.find (fun item -> item.Id = "studies")
+
+                Vitest.expect(studies.Children.Value |> List.map _.Id).toEqual [
+                    "studies/neighbor-study"
+                    "studies/selected-study"
+                ]
+
+                let neighbor =
+                    studies.Children.Value
+                    |> List.find (fun item -> item.Id = "studies/neighbor-study")
+
+                Vitest.expect(neighbor.Children.IsNone).toBe true
+
+                let study =
+                    studies.Children.Value
+                    |> List.find (fun item -> item.Id = "studies/selected-study")
+
+                let isaStudy =
+                    study.Children.Value
+                    |> List.find (fun item -> item.Id.EndsWith "isa.study.xlsx")
+
+                Vitest.expect(isaStudy.Children.IsNone).toBe true
+
+                let studyAssays =
+                    study.Children.Value
+                    |> List.find (fun item -> item.Id = "studies/selected-study/study-assays")
+
+                Vitest.expect(studyAssays.Children.IsNone).toBe true
+        )
 )

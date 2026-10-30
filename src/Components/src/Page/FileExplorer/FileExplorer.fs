@@ -224,37 +224,15 @@ type FileExplorer =
                 [| box initialItems; box expandedIds |]
             )
 
-        let selectedPathRef = React.useRef ([]: FileItem list)
-        let selectedIdRef = React.useRef selectedId
-
-        if selectedIdRef.current <> selectedId then
-            selectedIdRef.current <- selectedId
-            selectedPathRef.current <- []
-
-        let resolvedSelectedPath =
+        let selectedPath =
             React.useMemo (
                 (fun () ->
-                    match selectedId with
-                    | Some id -> FileTree.getPath id items []
-                    | None -> None
+                    selectedId
+                    |> Option.bind (fun id -> FileTree.getPath id items [])
+                    |> Option.defaultValue []
                 ),
                 [| box initialItems; box selectedId |]
             )
-
-        let selectedPath =
-            match selectedId, resolvedSelectedPath with
-            | _, Some path -> path
-            | Some id, None when
-                selectedPathRef.current
-                |> List.tryLast
-                |> Option.exists (fun item -> item.Id = id)
-                ->
-                selectedPathRef.current
-            | _ -> []
-
-        match resolvedSelectedPath with
-        | Some path -> selectedPathRef.current <- path
-        | None -> ()
 
         let highlightedIds =
             React.useMemo ((fun () -> selectedPath |> List.map _.Id |> Set.ofList), [| box selectedPath |])
@@ -353,8 +331,7 @@ type FileExplorer =
                         if FileExplorerLogic.canExpandDirectory item then
                             setExpandedById itemId willExpand
 
-                        if not item.IsDirectory || willExpand then
-                            selectItemById itemId
+                        selectItemById itemId
                     | None -> ()
                 ),
                 [||]

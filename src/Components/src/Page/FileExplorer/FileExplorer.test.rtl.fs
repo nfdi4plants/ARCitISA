@@ -32,9 +32,45 @@ let private realisticTree = [
                 "selected-study"
                 (Some [
                     file "isa.study.xlsx"
-                    folder "resources" (Some [ file "selected-report.txt"; file "sibling-report.txt" ])
+                    folder
+                        "protocols"
+                        (Some [
+                            folder
+                                "sample-preparation"
+                                (Some [
+                                    file "sample-preparation.md"
+                                    file "sample-preparation.cwl"
+                                ])
+                        ])
+                    folder
+                        "resources"
+                        (Some [
+                            folder
+                                "raw-data"
+                                (Some [
+                                    folder
+                                        "batch-01"
+                                        (Some [
+                                            folder
+                                                "replicate-01"
+                                                (Some [ file "selected-report.txt"; file "sibling-report.txt" ])
+                                        ])
+                                    folder "batch-02" (Some [ file "other-report.txt" ])
+                                ])
+                            folder "derived-data" (Some [ file "summary.csv" ])
+                        ])
+                    folder
+                        "study-assays"
+                        (Some [
+                            folder "rna-seq" (Some [ file "isa.assay.xlsx"; file "reads.fastq.gz" ])
+                        ])
                 ])
-            folder "neighbor-study" (Some [ file "neighbor-study.xlsx" ])
+            folder
+                "neighbor-study"
+                (Some [
+                    file "isa.study.xlsx - neighbor"
+                    file "neighbor-study.xlsx"
+                ])
         ])
     folder
         "assays"
@@ -50,6 +86,9 @@ let private treeItem (id: string) =
 
 Vitest.afterEach (fun () -> RTL.cleanup ())
 
+let private flushRender () =
+    RTL.act (fun () -> promise { return () })
+
 [<ReactComponent>]
 let private ItemsHarness (initial: FileItem list, expose: (FileItem list -> unit) -> unit) =
     let items, setItems = React.useState initial
@@ -61,9 +100,31 @@ let private ControlledTreeHarness () =
     let items = realisticTree
 
     let expandedIds, setExpandedIds =
-        React.useState (set [ "studies"; "selected-study"; "resources"; "assays" ])
+        React.useState (
+            set [
+                "studies"
+                "selected-study"
+                "protocols"
+                "resources"
+                "raw-data"
+                "batch-01"
+                "replicate-01"
+                "study-assays"
+                "rna-seq"
+                "assays"
+            ]
+        )
 
     let selectedId, setSelectedId = React.useState (Some "selected-report.txt")
+
+    let materializedIds =
+        selectedId
+        |> Option.bind (fun id -> FileTree.getPath id items [])
+        |> Option.defaultValue []
+        |> List.filter _.IsDirectory
+        |> List.map _.Id
+        |> Set.ofList
+        |> Set.union expandedIds
 
     let materializedItems =
         React.useMemo (
@@ -72,7 +133,7 @@ let private ControlledTreeHarness () =
                     treeItems
                     |> List.map (fun item ->
                         match item.Children with
-                        | Some children when expandedIds.Contains item.Id -> {
+                        | Some children when materializedIds.Contains item.Id -> {
                             item with
                                 Children = Some(materialize children)
                           }
@@ -83,7 +144,7 @@ let private ControlledTreeHarness () =
 
                 materialize items
             ),
-            [| box items; box expandedIds |]
+            [| box items; box materializedIds |]
         )
 
     FileExplorer.FileExplorer(
@@ -93,10 +154,27 @@ let private ControlledTreeHarness () =
         onExpandedIdsChange = setExpandedIds,
         onItemClick =
             (fun item ->
-                if not item.IsDirectory || item.Id = "selected-assay" then
+                if
+                    not item.IsDirectory
+                    || item.Id = "studies"
+                    || item.Id = "selected-assay"
+                    || item.Id = "neighbor-study"
+                then
                     setSelectedId (Some item.Id)
             )
     )
+
+let private isHighlighted (id: string) =
+    let row = treeItem id
+
+    match row.querySelector ("[data-file-item-id]") with
+    | null -> false
+    | element -> element.classList.contains "swt:bg-base-300"
+
+let private expectVisibleState (selectedId: string option) (highlightedIds: Set<string>) (visibleIds: string list) =
+    for id in visibleIds do
+        Vitest.expect((treeItem id).getAttribute "aria-selected").toBe (string (selectedId = Some id))
+        Vitest.expect(isHighlighted id).toBe (highlightedIds.Contains id)
 
 Vitest.describe (
     "FileExplorer",
@@ -149,45 +227,178 @@ Vitest.describe (
         )
 
         Vitest.test (
+            "routes directory clicks while expanding and collapsing",
+            fun () -> promise {
+                let clicked = ResizeArray<string>()
+
+                RTL.render (
+                    FileExplorer.FileExplorer(initialItems = tree, onItemClick = (fun item -> clicked.Add item.Id))
+                )
+                |> ignore
+
+                RTL.fireEvent.click (RTL.screen.getByText "src")
+                do! flushRender ()
+                Vitest.expect((treeItem "src").getAttribute "aria-selected").toBe "true"
+                Vitest.expect((treeItem "src").getAttribute "aria-expanded").toBe "true"
+
+                RTL.fireEvent.click (RTL.screen.getByText "src")
+                do! flushRender ()
+                Vitest.expect((treeItem "src").getAttribute "aria-selected").toBe "true"
+                Vitest.expect((treeItem "src").getAttribute "aria-expanded").toBe "false"
+                Vitest.expect(clicked.ToArray()).toEqual [| "src"; "src" |]
+            }
+        )
+
+        Vitest.test (
             "keeps only the selected branch highlighted through collapse, expansion, and reselection",
-            fun () ->
+            fun () -> promise {
                 RTL.render (ControlledTreeHarness()) |> ignore
 
-                let isHighlighted (id: string) =
-                    let row = treeItem id
+                let visibleSelectedBranch = [
+                    "studies"
+                    "selected-study"
+                    "isa.study.xlsx"
+                    "protocols"
+                    "sample-preparation"
+                    "resources"
+                    "raw-data"
+                    "batch-01"
+                    "replicate-01"
+                    "selected-report.txt"
+                    "sibling-report.txt"
+                    "batch-02"
+                ]
 
-                    match row.querySelector ("[data-file-item-id]") with
-                    | null -> false
-                    | element -> element.classList.contains "swt:bg-base-300"
+                expectVisibleState
+                    (Some "selected-report.txt")
+                    (set [
+                        "studies"
+                        "selected-study"
+                        "resources"
+                        "raw-data"
+                        "batch-01"
+                        "replicate-01"
+                        "selected-report.txt"
+                    ])
+                    visibleSelectedBranch
 
-                Vitest.expect(isHighlighted "studies").toBe true
-                Vitest.expect(isHighlighted "selected-study").toBe true
-                Vitest.expect(isHighlighted "resources").toBe true
-                Vitest.expect(isHighlighted "selected-report.txt").toBe true
-                Vitest.expect(isHighlighted "neighbor-study").toBe false
-                Vitest.expect(isHighlighted "assays").toBe false
-
-                RTL.fireEvent.click (RTL.screen.getByText "studies")
+                RTL.fireEvent.click (RTL.screen.getByText "batch-01")
+                do! flushRender ()
 
                 Vitest.expect((RTL.screen.queryByText "selected-report.txt").IsNone).toBe true
-                Vitest.expect(isHighlighted "studies").toBe true
-                Vitest.expect(isHighlighted "assays").toBe false
+                Vitest.expect((RTL.screen.queryByText "replicate-01").IsNone).toBe true
+
+                Vitest.expect((treeItem "batch-01").getAttribute "aria-expanded").toBe "false"
+
+                expectVisibleState
+                    None
+                    (set [
+                        "studies"
+                        "selected-study"
+                        "resources"
+                        "raw-data"
+                        "batch-01"
+                    ])
+                    [
+                        "studies"
+                        "selected-study"
+                        "isa.study.xlsx"
+                        "protocols"
+                        "sample-preparation"
+                        "resources"
+                        "raw-data"
+                        "batch-01"
+                        "batch-02"
+                    ]
+
+                RTL.fireEvent.click (RTL.screen.getByText "batch-01")
+                do! flushRender ()
+
+                Vitest.expect((treeItem "batch-01").getAttribute "aria-expanded").toBe "true"
+                Vitest.expect((RTL.screen.queryByText "selected-report.txt").IsSome).toBe true
+
+                expectVisibleState
+                    (Some "selected-report.txt")
+                    (set [
+                        "studies"
+                        "selected-study"
+                        "resources"
+                        "raw-data"
+                        "batch-01"
+                        "replicate-01"
+                        "selected-report.txt"
+                    ])
+                    visibleSelectedBranch
+
+                RTL.fireEvent.click (RTL.screen.getByText "isa.study.xlsx")
+                do! flushRender ()
+
+                expectVisibleState
+                    (Some "isa.study.xlsx")
+                    (set [ "studies"; "selected-study"; "isa.study.xlsx" ])
+                    visibleSelectedBranch
+
+                RTL.fireEvent.click (RTL.screen.getByText "selected-report.txt")
+                do! flushRender ()
+
+                expectVisibleState
+                    (Some "selected-report.txt")
+                    (set [
+                        "studies"
+                        "selected-study"
+                        "resources"
+                        "raw-data"
+                        "batch-01"
+                        "replicate-01"
+                        "selected-report.txt"
+                    ])
+                    visibleSelectedBranch
 
                 RTL.fireEvent.click (RTL.screen.getByText "studies")
+                do! flushRender ()
 
-                Vitest.expect((treeItem "selected-report.txt").getAttribute "aria-selected").toBe "true"
-                Vitest.expect(isHighlighted "selected-study").toBe true
-                Vitest.expect(isHighlighted "resources").toBe true
-                Vitest.expect(isHighlighted "neighbor-study").toBe false
+                Vitest.expect((RTL.screen.queryByText "selected-report.txt").IsNone).toBe true
+                Vitest.expect((RTL.screen.queryByText "selected-study").IsNone).toBe true
 
-                RTL.fireEvent.click (RTL.screen.getByText "selected-assay")
+                expectVisibleState (Some "studies") (set [ "studies" ]) [
+                    "studies"
+                    "assays"
+                    "selected-assay"
+                    "neighbor-assay"
+                    "README.md"
+                ]
 
-                Vitest.expect(isHighlighted "assays").toBe true
-                Vitest.expect(isHighlighted "selected-assay").toBe true
-                Vitest.expect((treeItem "selected-assay").getAttribute "aria-selected").toBe "true"
-                Vitest.expect(isHighlighted "isa.assay.xlsx").toBe false
-                Vitest.expect(isHighlighted "studies").toBe false
-                Vitest.expect(isHighlighted "neighbor-assay").toBe false
+                RTL.fireEvent.click (RTL.screen.getByText "studies")
+                do! flushRender ()
+
+                expectVisibleState (Some "studies") (set [ "studies" ]) visibleSelectedBranch
+            }
+        )
+
+        Vitest.test (
+            "selects a deeply nested ISA study file on its own path",
+            fun () -> promise {
+                RTL.render (ControlledTreeHarness()) |> ignore
+
+                RTL.fireEvent.click (RTL.screen.getByText "isa.study.xlsx")
+                do! flushRender ()
+
+                expectVisibleState (Some "isa.study.xlsx") (set [ "studies"; "selected-study"; "isa.study.xlsx" ]) [
+                    "studies"
+                    "selected-study"
+                    "isa.study.xlsx"
+                    "protocols"
+                    "sample-preparation"
+                    "resources"
+                    "raw-data"
+                    "batch-01"
+                    "replicate-01"
+                    "selected-report.txt"
+                    "sibling-report.txt"
+                    "batch-02"
+                ]
+
+            }
         )
 
         Vitest.test (
