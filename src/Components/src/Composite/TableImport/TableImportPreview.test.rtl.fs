@@ -39,6 +39,7 @@ let private callbacks
         ToggleRowSelection = fun _ _ -> ()
         SelectAllRows = ignore
         UnselectAllRows = fun _ _ -> ()
+        DeselectedRowCount = fun _ -> 0
         GetNewTableName = fun _ -> None
         SetNewTableName = fun _ _ -> ()
     }
@@ -142,6 +143,14 @@ let private rowCheckboxes () =
     |> Seq.filter (fun el -> el.getAttribute("data-testid").StartsWith "table-import-row-")
     |> Seq.length
 
+/// jsdom does not fire "toggle" for a changed open attribute, so the helper dispatches it.
+let private openColumns (index: int) =
+    let details =
+        Browser.Dom.document.querySelectorAll("details").[index] :?> HTMLElement
+
+    details.setAttribute ("open", "")
+    RTL.act (fun () -> details.dispatchEvent (Browser.Event.Event.Create "toggle") |> ignore)
+
 Vitest.test (
     "a large table renders only the visible rows with their cell texts",
     fun () ->
@@ -155,6 +164,7 @@ Vitest.test (
         )
         |> ignore
 
+        openColumns 0
         Vitest.expect(rowCheckboxes () < 100).toBe true
         Vitest.expect(rowCheckboxes () > 0).toBe true
         // Row 21 is past the fallback of 13 rows, so the virtualizer measured the 600px grid.
@@ -182,6 +192,7 @@ Vitest.test (
         RTL.render (TableImportPreview.TableImportPreview([| sourceWithRows 5000 |], rowCallbacks))
         |> ignore
 
+        openColumns 0
         RTL.fireEvent.click (RTL.screen.getByTestId "table-import-row-0-2")
         RTL.fireEvent.click (RTL.screen.getByTestId "table-import-select-all-rows-0")
         RTL.fireEvent.click (RTL.screen.getByTestId "table-import-unselect-all-rows-0")
@@ -205,6 +216,7 @@ Vitest.test (
         )
         |> ignore
 
+        openColumns 0
         Vitest.expect(rowCheckboxes ()).toBe 0
         Vitest.expect(RTL.screen.queryByTestId("table-import-select-all-rows-0").IsNone).toBe true
         Vitest.expect(RTL.screen.queryByTestId("table-import-unselect-all-rows-0").IsNone).toBe true
@@ -220,6 +232,7 @@ Vitest.test (
         )
         |> ignore
 
+        openColumns 0
         RTL.screen.getByText "This table has no rows." |> ignore
         Vitest.expect(rowCheckboxes ()).toBe 0
 )
@@ -238,6 +251,7 @@ Vitest.test (
         RTL.render (TableImportPreview.TableImportPreview([| sourceWithRows 5000 |], rowCallbacks))
         |> ignore
 
+        openColumns 0
         Vitest.expect(RTL.screen.queryByTestId("table-import-row-0-3000").IsNone).toBe true
 
         let grid = RTL.screen.getByTestId "table-import-grid-0"
@@ -248,4 +262,21 @@ Vitest.test (
         RTL.fireEvent.click row
         Vitest.expect(List.ofSeq toggled).toEqual [ 0, 3000 ]
     }
+)
+
+Vitest.test (
+    "a collapsed table renders no grid until its columns are opened",
+    fun () ->
+        RTL.render (
+            TableImportPreview.TableImportPreview([| sourceWithRows 5 |], callbacks (fun _ _ -> ()) (fun _ _ -> true))
+        )
+        |> ignore
+
+        Vitest.expect(RTL.screen.queryByTestId("table-import-grid-0").IsNone).toBe true
+        Vitest.expect(RTL.screen.queryByTestId("table-import-row-0-0").IsNone).toBe true
+
+        openColumns 0
+
+        RTL.screen.getByTestId "table-import-grid-0" |> ignore
+        RTL.screen.getByTestId "table-import-row-0-0" |> ignore
 )

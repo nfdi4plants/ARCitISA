@@ -103,6 +103,7 @@ type TableImportPreviewSample =
                     setDeselectedRows (
                         Set.union deselectedRows (Set.ofList [ for row in 0 .. count - 1 -> index, row ])
                     )
+            DeselectedRowCount = fun index -> deselectedRows |> Seq.filter (fun (i, _) -> i = index) |> Seq.length
             GetNewTableName = fun index -> names.TryFind index
             SetNewTableName = fun index name -> setEntered (entered.Add(index, name))
         }

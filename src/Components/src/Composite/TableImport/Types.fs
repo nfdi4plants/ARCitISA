@@ -32,6 +32,8 @@ type TableImportPreviewCallbacks = {
     SelectAllRows: int -> unit
     /// sourceIndex -> rowCount
     UnselectAllRows: int -> int -> unit
+    /// sourceIndex -> number of deselected rows of that source
+    DeselectedRowCount: int -> int
     GetNewTableName: int -> NewTableName option
     SetNewTableName: int -> string -> unit
 }

@@ -260,14 +260,14 @@ type TableImportPreview =
         let rowCount = table.RowCount
 
         let importAction = callbacks.GetImportAction index
+        let isOpen, setIsOpen = React.useState false
 
         let selectedColumnsCount =
             Seq.init columnCount id
             |> Seq.filter (callbacks.IsColumnSelected index)
             |> Seq.length
 
-        let selectedRowsCount =
-            Seq.init rowCount id |> Seq.filter (callbacks.IsRowSelected index) |> Seq.length
+        let selectedRowsCount = max 0 (rowCount - callbacks.DeselectedRowCount index)
 
         let canEdit = importAction <> TableImportAction.NoImport
         let hasRowSelection = showRowSelection && rowCount > 0
@@ -370,6 +370,11 @@ type TableImportPreview =
                 | None -> Html.none
                 Html.details [
                     prop.className "swt:border swt:border-base-300 swt:rounded-box swt:px-2 swt:py-1"
+                    prop.custom (
+                        "onToggle",
+                        fun (e: Browser.Types.Event) ->
+                            setIsOpen ((e.currentTarget :?> Browser.Types.HTMLElement).hasAttribute "open")
+                    )
                     prop.children [
                         Html.summary [
                             prop.className "swt:cursor-pointer swt:text-xs swt:font-medium"
@@ -417,7 +422,9 @@ type TableImportPreview =
                                         ]
                                     ]
 
-                                    TableImportPreview.RowGrid(source, callbacks, canEdit, showRowSelection)
+                                    // The grid builds a virtualizer and fallback rows, so a closed table skips it.
+                                    if isOpen then
+                                        TableImportPreview.RowGrid(source, callbacks, canEdit, showRowSelection)
                             ]
                         ]
                     ]

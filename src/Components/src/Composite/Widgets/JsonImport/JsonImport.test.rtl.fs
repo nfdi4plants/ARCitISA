@@ -121,6 +121,14 @@ let private checkboxes () =
     |> Seq.filter (fun el -> el.getAttribute("data-testid").StartsWith "table-import-column-")
     |> Array.ofSeq
 
+/// jsdom does not fire "toggle" for a changed open attribute, so the helper dispatches it.
+let private openColumns (index: int) =
+    let details =
+        Browser.Dom.document.querySelectorAll("details").[index] :?> HTMLElement
+
+    details.setAttribute ("open", "")
+    RTL.act (fun () -> details.dispatchEvent (Browser.Event.Event.Create "toggle") |> ignore)
+
 let private eventually (check: unit -> unit) : JS.Promise<unit> =
     RTL.waitFor ((fun () -> check ()), RTLWaitForOptions(timeout = 3000))
 
@@ -243,6 +251,8 @@ Vitest.test (
 
         Vitest.expect((radio 0 "ImportAsNewTable").``checked``).toBe true
         Vitest.expect((radio 1 "ImportAsNewTable").``checked``).toBe true
+        openColumns 0
+        openColumns 1
         Vitest.expect(checkboxes () |> Array.forall (fun box -> box.``checked``)).toBe true
         Vitest.expect(checkboxes().Length).toBe 4
 
@@ -270,6 +280,8 @@ Vitest.test (
         RTL.fireEvent.click (radio 0 "NoImport")
         Vitest.expect((radio 0 "NoImport").``checked``).toBe true
         Vitest.expect((radio 1 "ImportAsNewTable").``checked``).toBe true
+        openColumns 0
+        openColumns 1
         Vitest.expect((checkboxes ()).[0].disabled).toBe true
         Vitest.expect((checkboxes ()).[2].disabled).toBe false
 
@@ -559,6 +571,7 @@ Vitest.test (
         RTL.fireEvent.change (RTL.screen.getByTestId "json-import-format-select", {| target = {| value = "ARCtrl" |} |})
 
         do! openReview ()
+        openColumns 0
         // Deselecting "Other" leaves the plain copy path, so the duplicate header is rejected.
         RTL.fireEvent.click ((checkboxes ()).[2])
         RTL.fireEvent.click (button "json-import-confirm")
@@ -652,6 +665,7 @@ Vitest.test (
             None
 
         do! openReview ()
+        openColumns 0
         RTL.fireEvent.click (RTL.screen.getByTestId "table-import-row-0-2")
         RTL.fireEvent.click (button "json-import-confirm")
         let! _ = RTL.screen.findByTestId "json-import-success"
@@ -676,6 +690,7 @@ Vitest.test (
             None
 
         do! openReview ()
+        openColumns 0
         Vitest.expect(exists "table-import-row-0-0").toBe true
         RTL.fireEvent.click (RTL.screen.getByTestId "table-import-mode-Headers")
         Vitest.expect(exists "table-import-row-0-0").toBe false
@@ -721,6 +736,7 @@ Vitest.test (
 
         Vitest.expect(summary().Contains "rows)").toBe false
 
+        openColumns 0
         RTL.fireEvent.click (RTL.screen.getByTestId "table-import-row-0-1")
         Vitest.expect(summary().Contains "(2 of 3 rows)").toBe true
 

@@ -115,6 +115,14 @@ let private withColumns (template: Template) =
     template.Table.AddColumn(CompositeHeader.Output IOType.Sample)
     template
 
+/// jsdom does not fire "toggle" for a changed open attribute, so the helper dispatches it.
+let private openColumns (index: int) =
+    let details =
+        Browser.Dom.document.querySelectorAll("details").[index] :?> HTMLElement
+
+    details.setAttribute ("open", "")
+    RTL.act (fun () -> details.dispatchEvent (Browser.Event.Event.Create "toggle") |> ignore)
+
 let private isImportDisabled () =
     (importButton () :?> HTMLButtonElement).disabled
 
@@ -131,6 +139,7 @@ Vitest.test (
         Vitest.expect(isImportDisabled ()).toBe true
         RTL.screen.getByTestId "table-import-no-columns-0" |> ignore
 
+        openColumns 0
         RTL.fireEvent.click (RTL.screen.getAllByRole("checkbox").[0])
         Vitest.expect(isImportDisabled ()).toBe false
         Vitest.expect(RTL.screen.queryByTestId("table-import-no-columns-0").IsNone).toBe true
@@ -178,6 +187,7 @@ Vitest.test (
         |> ignore
 
         RTL.fireEvent.click (RTL.screen.getByLabelText "Create new table")
+        openColumns 0
         RTL.fireEvent.click (RTL.screen.getByTestId "table-import-row-0-1")
         RTL.fireEvent.click (importButton ())
 
