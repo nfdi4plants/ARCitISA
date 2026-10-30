@@ -33,11 +33,7 @@ let importJsonRequestIntoCurrentTarget
         let nextType = request.NextArcFile.RelatedArcFilesDiscriminate
 
         if nextType <> currentType then
-            return
-                Error(
-                    exn
-                        $"Cannot import {Json.Import.arcFileTypeLabel nextType} JSON into the current {Json.Import.arcFileTypeLabel currentType} editor."
-                )
+            return Error(exn $"Cannot import {nextType} JSON into the current {currentType} editor.")
         else
             return! publishAndPersistArcFile request.NextArcFile setArcFilePageState setArcFileInMemory
     }

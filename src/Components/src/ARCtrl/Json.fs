@@ -123,17 +123,12 @@ module Generic =
 
 module Import =
 
-    let arcFileTypeLabel (fileType: ArcFilesDiscriminate) = fileType |> unbox<string>
-
     let applyToCurrentArcFile (currentArcFile: ArcFiles, importedArcFile: ArcFiles) =
         let currentFileType = currentArcFile.RelatedArcFilesDiscriminate
         let importedFileType = importedArcFile.RelatedArcFilesDiscriminate
 
         if currentFileType <> importedFileType then
-            Error(
-                exn
-                    $"Cannot import {arcFileTypeLabel importedFileType} JSON into the current {arcFileTypeLabel currentFileType} editor."
-            )
+            Error(exn $"Cannot import {importedFileType} JSON into the current {currentFileType} editor.")
         else
             match currentArcFile, importedArcFile with
             | ArcFiles.DataMap(currentParentInfo, _), ArcFiles.DataMap(_, importedDataMap) ->
@@ -142,7 +137,7 @@ module Import =
                 let importedTables = importedArcFile.Tables() |> Array.ofSeq
 
                 if importedTables.Length = 0 then
-                    Error(exn $"Imported {arcFileTypeLabel importedFileType} JSON does not contain tables to append.")
+                    Error(exn $"Imported {importedFileType} JSON does not contain tables to append.")
                 else
                     let sources =
                         importedTables
@@ -194,7 +189,7 @@ module Import =
         match resolved with
         | Error e -> Error e
         | Ok(jsonFormat, arcfileType) ->
-            let label = arcFileTypeLabel arcfileType
+            let label = string arcfileType
 
             match Generic.readFromJsonMap.TryFind(arcfileType, jsonFormat) with
             | None -> Error(exn $"{jsonFormat.AsStringRdbl} JSON is not supported for {article label} {label}.")
