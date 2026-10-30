@@ -214,24 +214,27 @@ let updateTables
 
             for table in selectedColumnTables do
                 if table.RowCount = 0 then
-                    let cells =
-                        table.Columns
-                        |> Array.ofSeq
-                        |> Array.map (fun column ->
-                            match column.Header with
-                            | CompositeHeader.Factor _
-                            | CompositeHeader.Component _
-                            | CompositeHeader.Parameter _
-                            | CompositeHeader.Characteristic _
-                            | CompositeHeader.ProtocolType ->
-                                match importConfig.ImportType with
-                                | TableJoinOptions.WithUnit -> CompositeCell.Unitized("", OntologyAnnotation.empty ())
-                                | _ -> CompositeCell.Term(OntologyAnnotation.empty ())
-                            | _ -> CompositeCell.FreeText ""
-                        )
-                        |> ResizeArray
+                    let rows =
+                        Array.init
+                            tempTable.RowCount
+                            (fun _ ->
+                                table.Headers
+                                |> Seq.map (fun header ->
+                                    match header with
+                                    | CompositeHeader.Factor _
+                                    | CompositeHeader.Component _
+                                    | CompositeHeader.Parameter _
+                                    | CompositeHeader.Characteristic _
+                                    | CompositeHeader.ProtocolType ->
+                                        match importConfig.ImportType with
+                                        | TableJoinOptions.WithUnit ->
+                                            CompositeCell.Unitized("", OntologyAnnotation.empty ())
+                                        | _ -> CompositeCell.Term(OntologyAnnotation.empty ())
+                                    | _ -> CompositeCell.FreeText ""
+                                )
+                                |> ResizeArray
+                            )
 
-                    let rows = Array.create tempTable.RowCount cells
                     table.AddRows(ResizeArray rows)
                 elif table.RowCount < tempTable.RowCount then
                     table.AddRowsEmpty(tempTable.RowCount - table.RowCount)
