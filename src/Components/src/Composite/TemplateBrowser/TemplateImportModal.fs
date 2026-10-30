@@ -74,36 +74,6 @@ type TemplateImportModal =
             [| box selectedTemplateIds |]
         )
 
-        let isTemplateColumnSelected (templateId: System.Guid) (columnIndex: int) =
-            TemplateActions.isTemplateColumnSelected templateId columnIndex deselectedTemplateColumns
-
-        let isTemplateRowSelected (templateId: System.Guid) (rowIndex: int) =
-            TemplateActions.isTemplateRowSelected templateId rowIndex deselectedTemplateRows
-
-        let getTemplateImportAction (templateId: System.Guid) =
-            TemplateActions.getTemplateImportAction templateId templateImportDecisions
-
-        let setTemplateImportAction (templateId: System.Guid) (importAction: TableImportAction) =
-            TemplateActions.setTemplateImportAction templateId importAction setTemplateImportDecisions
-
-        let toggleTemplateColumnSelection (templateId: System.Guid) (columnIndex: int) =
-            TemplateActions.toggleTemplateColumnSelection templateId columnIndex setDeselectedTemplateColumns
-
-        let selectAllTemplateColumns (templateId: System.Guid) =
-            TemplateActions.selectAllTemplateColumns templateId setDeselectedTemplateColumns
-
-        let unselectAllTemplateColumns (template: Template) =
-            TemplateActions.unselectAllTemplateColumns template setDeselectedTemplateColumns
-
-        let toggleTemplateRowSelection (templateId: System.Guid) (rowIndex: int) =
-            TemplateActions.toggleTemplateRowSelection templateId rowIndex setDeselectedTemplateRows
-
-        let selectAllTemplateRows (templateId: System.Guid) =
-            TemplateActions.selectAllTemplateRows templateId setDeselectedTemplateRows
-
-        let unselectAllTemplateRows (template: Template) =
-            TemplateActions.unselectAllTemplateRows template setDeselectedTemplateRows
-
         let selectedTemplatesForImport =
             TemplateActions.selectedTemplatesForImport selectedTemplates selectedTemplateIds templateImportDecisions
 
@@ -133,7 +103,9 @@ type TemplateImportModal =
 
                    columnCount = 0
                    || Seq.init columnCount id
-                      |> Seq.exists (fun columnIndex -> isTemplateColumnSelected template.Id columnIndex)
+                      |> Seq.exists (fun columnIndex ->
+                          TemplateActions.isTemplateColumnSelected template.Id columnIndex deselectedTemplateColumns
+                      )
                )
             && selectedTemplatesForImport
                |> Array.forall (fun (template, _) ->
@@ -142,7 +114,7 @@ type TemplateImportModal =
                    importType = TableJoinOptions.Headers
                    || rowCount = 0
                    || Seq.init rowCount id
-                      |> Seq.exists (fun rowIndex -> isTemplateRowSelected template.Id rowIndex)
+                      |> Seq.exists (fun rowIndex -> not (deselectedTemplateRows.Contains(template.Id, rowIndex)))
                )
 
         let sources =
@@ -161,17 +133,33 @@ type TemplateImportModal =
         let templateAt (index: int) = selectedTemplates.[index]
 
         let previewCallbacks: TableImportPreviewCallbacks = {
-            GetImportAction = fun index -> getTemplateImportAction (templateAt index).Id
-            SetImportAction = fun index action -> setTemplateImportAction (templateAt index).Id action
-            IsColumnSelected = fun index columnIndex -> isTemplateColumnSelected (templateAt index).Id columnIndex
+            GetImportAction =
+                fun index -> TemplateActions.getTemplateImportAction (templateAt index).Id templateImportDecisions
+            SetImportAction =
+                fun index action ->
+                    TemplateActions.setTemplateImportAction (templateAt index).Id action setTemplateImportDecisions
+            IsColumnSelected =
+                fun index columnIndex ->
+                    TemplateActions.isTemplateColumnSelected (templateAt index).Id columnIndex deselectedTemplateColumns
             ToggleColumnSelection =
-                fun index columnIndex -> toggleTemplateColumnSelection (templateAt index).Id columnIndex
-            SelectAllColumns = fun index -> selectAllTemplateColumns (templateAt index).Id
-            UnselectAllColumns = fun index _ -> unselectAllTemplateColumns (templateAt index)
-            IsRowSelected = fun index rowIndex -> isTemplateRowSelected (templateAt index).Id rowIndex
-            ToggleRowSelection = fun index rowIndex -> toggleTemplateRowSelection (templateAt index).Id rowIndex
-            SelectAllRows = fun index -> selectAllTemplateRows (templateAt index).Id
-            UnselectAllRows = fun index _ -> unselectAllTemplateRows (templateAt index)
+                fun index columnIndex ->
+                    TemplateActions.toggleTemplateColumnSelection
+                        (templateAt index).Id
+                        columnIndex
+                        setDeselectedTemplateColumns
+            SelectAllColumns =
+                fun index -> TemplateActions.selectAllTemplateColumns (templateAt index).Id setDeselectedTemplateColumns
+            UnselectAllColumns =
+                fun index _ ->
+                    TemplateActions.unselectAllTemplateColumns (templateAt index) setDeselectedTemplateColumns
+            IsRowSelected = fun index rowIndex -> not (deselectedTemplateRows.Contains((templateAt index).Id, rowIndex))
+            ToggleRowSelection =
+                fun index rowIndex ->
+                    TemplateActions.toggleTemplateRowSelection (templateAt index).Id rowIndex setDeselectedTemplateRows
+            SelectAllRows =
+                fun index -> TemplateActions.selectAllTemplateRows (templateAt index).Id setDeselectedTemplateRows
+            UnselectAllRows =
+                fun index _ -> TemplateActions.unselectAllTemplateRows (templateAt index) setDeselectedTemplateRows
             DeselectedRowCount =
                 fun index -> TemplateActions.deselectedTemplateRowCount (templateAt index).Id deselectedTemplateRows
             GetNewTableName = fun index -> newTableNames.TryFind (templateAt index).Id

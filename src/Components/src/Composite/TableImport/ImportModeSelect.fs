@@ -4,8 +4,6 @@ open ARCtrl
 open Fable.Core
 open Feliz
 
-module ModeHelper = Swate.Components.Composite.TableImport.Helper
-
 [<Erase; Mangle(false)>]
 type ImportModeSelect =
 
@@ -25,7 +23,7 @@ type ImportModeSelect =
                 Html.div [
                     prop.className "swt:flex swt:flex-col swt:gap-1"
                     prop.children [
-                        for option in ModeHelper.ImportMode.options do
+                        for option in Helper.ImportMode.options do
                             let isChecked = (importType = option.Mode)
 
                             Html.div [

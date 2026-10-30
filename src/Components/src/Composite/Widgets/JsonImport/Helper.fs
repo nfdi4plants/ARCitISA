@@ -5,8 +5,6 @@ open Swate.Components.Shared
 open Swate.Components.Composite.TableImport.Types
 open Swate.Components.Composite.Widgets.JsonImport.Types
 
-module TableHelper = Swate.Components.Composite.TableImport.Helper
-
 let formatDescription (format: JsonExportFormat) =
     match format with
     | JsonExportFormat.ARCtrl -> "The ARCtrl JSON format, as written by ARCtrl."
@@ -61,7 +59,7 @@ let applyImport
     (decisions: TableImportDecisions)
     : Result<ArcFiles * JsonImportSummary, exn> =
     if isTableImport current then
-        TableHelper.applyImport current (sourcesOf parsed.File) decisions
+        Swate.Components.Composite.TableImport.Helper.applyImport current (sourcesOf parsed.File) decisions
         |> Result.map (fun result ->
             result.ArcFile,
             {
@@ -100,4 +98,4 @@ let canImport
     elif not (isTableImport current) then
         true
     else
-        (TableHelper.validate current (sourcesOf parsed.File) decisions).IsNone
+        (Swate.Components.Composite.TableImport.Helper.validate current (sourcesOf parsed.File) decisions).IsNone

@@ -16,24 +16,6 @@ module JsonHelper = Swate.Components.Composite.Widgets.JsonImport.Helper
 
 module private JsonImportModalHelper =
 
-    let fileName (parsed: ParsedJsonFile) =
-        parsed.FileName |> Option.defaultValue "the file"
-
-    let modeLabel (importType: TableJoinOptions) =
-        TableHelper.ImportMode.options
-        |> Array.tryPick (fun option -> if option.Mode = importType then Some option.Label else None)
-        |> Option.defaultValue ""
-
-    let description (parsed: ParsedJsonFile) =
-        match parsed.FileName with
-        | Some name -> $"{name}, {parsed.Format.AsStringRdbl}"
-        | None -> parsed.Format.AsStringRdbl
-
-    let isImporting (phase: JsonImportModalPhase) =
-        match phase with
-        | JsonImportModalPhase.Importing -> true
-        | _ -> false
-
     let namesList (testId: string) (names: string list) =
         Html.ul [
             prop.testId testId
@@ -43,9 +25,6 @@ module private JsonImportModalHelper =
                     Html.li [ prop.key name; prop.text name ]
             ]
         ]
-
-    let alertClass (kind: string) =
-        $"swt:alert swt:alert-{kind} swt:text-sm"
 
 open JsonImportModalHelper
 
@@ -80,7 +59,7 @@ type JsonImportModal =
                         d with
                             Actions = d.Actions.Add(index, action)
                     })
-            IsColumnSelected = TableHelper.isColumnSelected decisions
+            IsColumnSelected = fun index columnIndex -> not (decisions.DeselectedColumns.Contains(index, columnIndex))
             ToggleColumnSelection =
                 fun index columnIndex ->
                     setDecisions (fun d -> {
@@ -172,6 +151,16 @@ type JsonImportModal =
                     )
             )
 
+        let modeLabel =
+            TableHelper.ImportMode.options
+            |> Array.tryPick (fun option ->
+                if option.Mode = decisions.ImportType then
+                    Some option.Label
+                else
+                    None
+            )
+            |> Option.defaultValue ""
+
         Html.div [
             prop.className "swt:flex swt:flex-col swt:gap-2"
             prop.children [
@@ -193,7 +182,7 @@ type JsonImportModal =
                     prop.children [
                         for (index, text) in summaryLines do
                             Html.div [ prop.key index; prop.text text ]
-                        Html.div [ prop.text $"Content: {modeLabel decisions.ImportType}" ]
+                        Html.div [ prop.text $"Content: {modeLabel}" ]
                     ]
                 ]
             ]
@@ -207,14 +196,16 @@ type JsonImportModal =
                 Html.div [
                     prop.className "swt:text-sm"
                     prop.children [
-                        Html.div [ prop.text $"File: {fileName parsed}" ]
+                        Html.div [
+                            prop.text ("File: " + (parsed.FileName |> Option.defaultValue "the file"))
+                        ]
                         Html.div [ prop.text $"Format: {parsed.Format.AsStringRdbl}" ]
                     ]
                 ]
                 Html.div [
                     prop.testId "json-import-replace-warning"
                     prop.role.alert
-                    prop.className (alertClass "warning")
+                    prop.className ("swt:alert swt:alert-warning swt:text-sm")
                     prop.text
                         $"The current content of this {JsonHelper.fileTypeDisplayName currentArcFile} is replaced by the content of the file."
                 ]
@@ -227,7 +218,9 @@ type JsonImportModal =
             prop.testId "json-import-success"
             prop.className "swt:flex swt:flex-col swt:gap-2 swt:text-sm"
             prop.children [
-                Html.div [ prop.text $"Imported {fileName parsed}." ]
+                Html.div [
+                    prop.text ("Imported " + (parsed.FileName |> Option.defaultValue "the file") + ".")
+                ]
                 if summary.ReplacedFile then
                     Html.div [
                         prop.text $"The {JsonHelper.fileTypeDisplayName currentArcFile} was replaced."
@@ -276,7 +269,11 @@ type JsonImportModal =
         let submitting = React.useRef false
 
         let tableImport = JsonHelper.isTableImport currentArcFile
-        let importing = isImporting phase
+
+        let importing =
+            match phase with
+            | JsonImportModalPhase.Importing -> true
+            | _ -> false
 
         let confirm () =
             if not submitting.current then
@@ -351,7 +348,7 @@ type JsonImportModal =
                         Html.div [
                             prop.testId "json-import-error"
                             prop.role.alert
-                            prop.className (alertClass "error")
+                            prop.className ("swt:alert swt:alert-error swt:text-sm")
                             prop.text $"Import failed: {message}"
                         ]
                         if canRetry then
@@ -413,7 +410,12 @@ type JsonImportModal =
             dismissible = not importing,
             setIsOpen = setIsOpen,
             header = Html.text "Import JSON",
-            description = Html.text (description parsed),
+            description =
+                Html.text (
+                    match parsed.FileName with
+                    | Some name -> $"{name}, {parsed.Format.AsStringRdbl}"
+                    | None -> parsed.Format.AsStringRdbl
+                ),
             children = body,
             footer = footer
         )

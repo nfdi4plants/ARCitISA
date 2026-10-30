@@ -123,8 +123,6 @@ module Generic =
 
 module Import =
 
-    module TableImportHelper = Swate.Components.Composite.TableImport.Helper
-
     let arcFileTypeLabel (fileType: ArcFilesDiscriminate) = fileType |> unbox<string>
 
     let applyToCurrentArcFile (currentArcFile: ArcFiles, importedArcFile: ArcFiles) =
@@ -154,7 +152,10 @@ module Import =
                             Table = table
                         })
 
-                    TableImportHelper.applyImport currentArcFile sources TableImportHelper.defaultJsonDecisions
+                    Swate.Components.Composite.TableImport.Helper.applyImport
+                        currentArcFile
+                        sources
+                        Swate.Components.Composite.TableImport.Helper.defaultJsonDecisions
                     |> Result.map (fun result -> result.ArcFile)
             // The file keeps its identifier so its path stays the same.
             | ArcFiles.Workflow currentWorkflow, ArcFiles.Workflow importedWorkflow ->

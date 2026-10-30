@@ -6,8 +6,6 @@ open Feliz
 open Swate.Components
 open Swate.Components.Composite.TableImport.Types
 
-module PreviewHelper = Swate.Components.Composite.TableImport.Helper
-
 [<Erase; Mangle(false)>]
 type TableImportPreview =
 
@@ -223,7 +221,7 @@ type TableImportPreview =
                                                 for columnIndex in 0 .. columnCount - 1 do
                                                     let text =
                                                         match table.TryGetCellAt(columnIndex, row) with
-                                                        | Some cell -> PreviewHelper.cellText cell
+                                                        | Some cell -> Helper.cellText cell
                                                         | None -> ""
 
                                                     Html.div [

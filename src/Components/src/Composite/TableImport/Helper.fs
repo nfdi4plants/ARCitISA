@@ -273,9 +273,6 @@ let actionOf (decisions: TableImportDecisions) (sourceIndex: int) =
     decisions.Actions.TryFind sourceIndex
     |> Option.defaultValue decisions.DefaultAction
 
-let isColumnSelected (decisions: TableImportDecisions) (sourceIndex: int) (columnIndex: int) =
-    not (decisions.DeselectedColumns.Contains(sourceIndex, columnIndex))
-
 /// The number of rows of one source that the user left out.
 let deselectedRowCount (decisions: TableImportDecisions) (sourceIndex: int) : int =
     decisions.DeselectedRows
@@ -331,7 +328,9 @@ let validate (current: ArcFiles) (sources: ImportSource[]) (decisions: TableImpo
             source.Table.ColumnCount > 0
             && not (
                 Seq.init source.Table.ColumnCount id
-                |> Seq.exists (isColumnSelected decisions source.Index)
+                |> Seq.exists (fun columnIndex ->
+                    not (decisions.DeselectedColumns.Contains(source.Index, columnIndex))
+                )
             )
         )
 

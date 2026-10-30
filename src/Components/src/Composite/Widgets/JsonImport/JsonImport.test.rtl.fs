@@ -33,14 +33,6 @@ let private currentAssay () =
     assay.AddTable(measurement "Existing")
     ArcFiles.Assay assay
 
-let private namesOf (file: ArcFiles) =
-    file.Tables() |> Seq.map _.Name |> Array.ofSeq
-
-let private headersOf (file: ArcFiles) =
-    file.Tables()
-    |> Seq.map (fun table -> table.Headers |> Seq.map string |> Array.ofSeq)
-    |> Array.ofSeq
-
 type private Harness = {
     SetArcFileCalls: ResizeArray<ArcFiles>
     Requests: ResizeArray<JsonImportRequest>
@@ -519,8 +511,22 @@ for activeTableIndex in [ None; Some 0 ] do
             Vitest.expect(exists "json-import-modified-tables").toBe false
 
             Vitest.expect(harness.SetArcFileCalls.Count).toBe 1
-            Vitest.expect(namesOf harness.SetArcFileCalls.[0]).toEqual (namesOf expected)
-            Vitest.expect(headersOf harness.SetArcFileCalls.[0]).toEqual (headersOf expected)
+
+            Vitest
+                .expect(harness.SetArcFileCalls.[0].Tables() |> Seq.map _.Name |> Array.ofSeq)
+                .toEqual (expected.Tables() |> Seq.map _.Name |> Array.ofSeq)
+
+            Vitest
+                .expect(
+                    harness.SetArcFileCalls.[0].Tables()
+                    |> Seq.map (fun table -> table.Headers |> Seq.map string |> Array.ofSeq)
+                    |> Array.ofSeq
+                )
+                .toEqual (
+                    expected.Tables()
+                    |> Seq.map (fun table -> table.Headers |> Seq.map string |> Array.ofSeq)
+                    |> Array.ofSeq
+                )
         }
     )
 
