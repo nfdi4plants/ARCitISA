@@ -28,6 +28,8 @@ open IPCTypesHelper
 [<Literal>]
 let swateReleaseRepository = "nfdi4plants/ARCitISA"
 
+type ImageMetadataDto = string
+
 type AppVersionState = {
     CurrentVersion: string
     UpdateVersion: string option
@@ -183,6 +185,7 @@ type IArcVaultsApi = {
     getLargeObjectIndex: unit -> JS.Promise<Result<LargeObjectIndexSnapshot, exn>>
     pathExists: string -> JS.Promise<Result<bool, exn>>
     openFile: string -> JS.Promise<Result<FileContentDTO, exn>>
+    readFileMetadata: string -> JS.Promise<Result<ImageMetadataDto, exn>>
     openArcFolderInFileExplorer: unit -> JS.Promise<Result<unit, exn>>
     showPathInFileExplorer: string -> JS.Promise<Result<unit, exn>>
     openPathWithDefaultApplication: string -> JS.Promise<Result<unit, exn>>

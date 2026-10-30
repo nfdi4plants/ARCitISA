@@ -33,6 +33,7 @@
     <Compile Include="Components\Helper\FileTargetConflictModal.fs" />
     <Compile Include="Components\Helper\GitMergeAbandonConfirmation.fs" />
     <Compile Include="Components\Helper\FileExplorerStateReconciliation.fs" />
+    <Compile Include="Components\Helper\MetadataFormatting.fs" />
     <Compile Include="Components\InitState.fs" />
     <Compile Include="Components\FileExplorerLfs.fs" />
     <Compile Include="Components\LeftSidebar\FileExplorer\Types.fs" />

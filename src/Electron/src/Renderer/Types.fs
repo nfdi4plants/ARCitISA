@@ -218,9 +218,9 @@ type GitDiffPageData = {
 type PageState =
     | ArcFilePage of arcFile: ArcFiles * requestedView: ActiveView option
     | MarkdownPage of string
-    | PDFPage of string
-    | ImagePage of FileContentType * string
-    | HtmlPage of string
+    | PDFPage of string * string
+    | ImagePage of FileContentType * string * string
+    | HtmlPage of string * string
     | TextPage of string
     | UnknownPage
     | LargeFilePage of path: string * sizeBytes: float * reason: NoPreviewReason
@@ -242,12 +242,12 @@ type PageState =
     static member fromFileContentDTO(dto: FileContentDTO) : PageState =
         match dto.fileType with
         | FileContentType.Markdown -> PageState.MarkdownPage dto.content
-        | FileContentType.PDF -> PageState.PDFPage dto.content
+        | FileContentType.PDF -> PageState.PDFPage(dto.content, dto.path)
         | FileContentType.PNG
         | FileContentType.JPG
         | FileContentType.SVG
-        | FileContentType.GIF -> PageState.ImagePage(dto.fileType, dto.content)
-        | FileContentType.Html -> PageState.HtmlPage dto.content
+        | FileContentType.GIF -> PageState.ImagePage(dto.fileType, dto.content, dto.path)
+        | FileContentType.Html -> PageState.HtmlPage(dto.content, dto.path)
         | FileContentType.FileContentTypeIsPlainTextVariant -> PageState.TextPage dto.content
         | FileContentType.FileContentTypeIsISAFileVariant ->
             let arcfile = FileContentDTO.toArcFile dto
