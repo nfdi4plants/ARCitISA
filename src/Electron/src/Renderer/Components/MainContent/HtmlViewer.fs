@@ -7,16 +7,17 @@ open Renderer.Components.Helper.MetadataFormatting
 [<ReactComponent>]
 let Main (base64Content: string, path: string) =
     let htmlContent = "data:text/html;base64," + base64Content
-    let metadata, setMetadata = React.useState<string option>(None)
+    let metadata, setMetadata = React.useState<string option> (None)
 
     React.useEffect (
         (fun () ->
             promise {
                 match! Api.ipcArcVaultApi.readFileMetadata path with
                 | Ok metadataText -> setMetadata (Some metadataText)
-                | Error ex -> setMetadata (Some ("Metadata unavailable: " + ex.Message))
+                | Error ex -> setMetadata (Some("Metadata unavailable: " + ex.Message))
             }
-            |> Promise.start),
+            |> Promise.start
+        ),
         [| box path |]
     )
 

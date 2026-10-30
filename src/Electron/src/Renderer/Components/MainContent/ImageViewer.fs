@@ -6,8 +6,8 @@ open Renderer.Components.Helper.MetadataFormatting
 [<ReactComponent>]
 let Main (filetype: string, base64Content: string, path: string) =
     let imageUrl = "data:" + filetype + ";base64," + base64Content
-    let failedImageUrl, setFailedImageUrl = React.useState<string option>(None)
-    let metadata, setMetadata = React.useState<string option>(None)
+    let failedImageUrl, setFailedImageUrl = React.useState<string option> (None)
+    let metadata, setMetadata = React.useState<string option> (None)
 
     React.useEffect (
         (fun () ->
@@ -15,11 +15,12 @@ let Main (filetype: string, base64Content: string, path: string) =
                 try
                     match! Api.ipcArcVaultApi.readFileMetadata path with
                     | Ok metadataText -> setMetadata (Some metadataText)
-                    | Error ex -> setMetadata (Some ("Metadata unavailable: " + ex.Message))
+                    | Error ex -> setMetadata (Some("Metadata unavailable: " + ex.Message))
                 with ex ->
-                    setMetadata (Some ("Metadata unavailable: " + ex.Message))
+                    setMetadata (Some("Metadata unavailable: " + ex.Message))
             }
-            |> Promise.start),
+            |> Promise.start
+        ),
         [| box imageUrl |]
     )
 

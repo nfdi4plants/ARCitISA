@@ -24,16 +24,17 @@ type DisplayPDF =
     static member Main(filehtml, path: string) =
 
         let pdfUrl, setPdfUrl = React.useState<string option> (None)
-        let metadata, setMetadata = React.useState<string option>(None)
+        let metadata, setMetadata = React.useState<string option> (None)
 
         React.useEffect (
             (fun () ->
                 promise {
                     match! Api.ipcArcVaultApi.readFileMetadata path with
                     | Ok metadataText -> setMetadata (Some metadataText)
-                    | Error ex -> setMetadata (Some ("Metadata unavailable: " + ex.Message))
+                    | Error ex -> setMetadata (Some("Metadata unavailable: " + ex.Message))
                 }
-                |> Promise.start),
+                |> Promise.start
+            ),
             [| box path |]
         )
 
