@@ -951,6 +951,18 @@ Vitest.test (
 )
 
 Vitest.test (
+    "deselectedRowCount counts the deselected rows per source",
+    fun () ->
+        let decisions = {
+            jsonDefaults with
+                DeselectedRows = Set.ofList [ 0, 1; 0, 3; 0, 4 ]
+        }
+
+        Vitest.expect(deselectedRowCount decisions 0).toBe 3
+        Vitest.expect(deselectedRowCount decisions 1).toBe 0
+)
+
+Vitest.test (
     "a deselected row and a deselected column of the same source are both left out of the result",
     fun () ->
         let sources = [| sourceOf 0 (createRowSource 5) |]

@@ -173,12 +173,7 @@ type TemplateImportModal =
             SelectAllRows = fun index -> selectAllTemplateRows (templateAt index).Id
             UnselectAllRows = fun index _ -> unselectAllTemplateRows (templateAt index)
             DeselectedRowCount =
-                fun index ->
-                    let id = (templateAt index).Id
-
-                    deselectedTemplateRows
-                    |> Seq.filter (fun (templateId, _) -> templateId = id)
-                    |> Seq.length
+                fun index -> TemplateActions.deselectedTemplateRowCount (templateAt index).Id deselectedTemplateRows
             GetNewTableName = fun index -> newTableNames.TryFind (templateAt index).Id
             SetNewTableName =
                 fun index name ->

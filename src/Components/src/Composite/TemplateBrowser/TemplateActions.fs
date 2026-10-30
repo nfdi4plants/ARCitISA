@@ -82,6 +82,11 @@ let unselectAllTemplateColumns
 let isTemplateRowSelected (templateId: System.Guid) (rowIndex: int) (deselectedTemplateRows: Set<System.Guid * int>) =
     deselectedTemplateRows.Contains(templateId, rowIndex) |> not
 
+let deselectedTemplateRowCount (templateId: System.Guid) (deselectedTemplateRows: Set<System.Guid * int>) : int =
+    deselectedTemplateRows
+    |> Seq.filter (fun (id, _) -> id = templateId)
+    |> Seq.length
+
 let toggleTemplateRowSelection
     (templateId: System.Guid)
     (rowIndex: int)

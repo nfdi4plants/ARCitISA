@@ -72,9 +72,6 @@ type JsonImportModal =
         let appendTarget =
             TableHelper.tryGetAppendTarget currentArcFile decisions.ActiveTableIndex
 
-        let deselectedRowCount (index: int) =
-            decisions.DeselectedRows |> Seq.filter (fun (i, _) -> i = index) |> Seq.length
-
         let callbacks: TableImportPreviewCallbacks = {
             GetImportAction = actionOf
             SetImportAction =
@@ -110,7 +107,7 @@ type JsonImportModal =
                                     (Set.ofList [ for c in 0 .. columnCount - 1 -> index, c ])
                     })
             IsRowSelected = TableHelper.isRowSelected decisions
-            DeselectedRowCount = deselectedRowCount
+            DeselectedRowCount = TableHelper.deselectedRowCount decisions
             ToggleRowSelection =
                 fun index rowIndex ->
                     setDecisions (fun d -> {
@@ -149,7 +146,7 @@ type JsonImportModal =
         let rowsText (source: ImportSource) =
             let total = source.Table.RowCount
 
-            let kept = total - deselectedRowCount source.Index
+            let kept = max 0 (total - TableHelper.deselectedRowCount decisions source.Index)
 
             if showRowSelection && kept < total then
                 $" ({kept} of {total} rows)"

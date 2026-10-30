@@ -121,7 +121,7 @@ let private checkboxes () =
     |> Seq.filter (fun el -> el.getAttribute("data-testid").StartsWith "table-import-column-")
     |> Array.ofSeq
 
-/// jsdom does not fire "toggle" for a changed open attribute, so the helper dispatches it.
+/// jsdom fires "toggle" itself from a later timer, so the helper dispatches it inside act to render the grid before the next query.
 let private openColumns (index: int) =
     let details =
         Browser.Dom.document.querySelectorAll("details").[index] :?> HTMLElement

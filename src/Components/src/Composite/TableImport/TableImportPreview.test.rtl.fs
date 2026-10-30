@@ -143,7 +143,7 @@ let private rowCheckboxes () =
     |> Seq.filter (fun el -> el.getAttribute("data-testid").StartsWith "table-import-row-")
     |> Seq.length
 
-/// jsdom does not fire "toggle" for a changed open attribute, so the helper dispatches it.
+/// jsdom fires "toggle" itself from a later timer, so the helper dispatches it inside act to render the grid before the next query.
 let private openColumns (index: int) =
     let details =
         Browser.Dom.document.querySelectorAll("details").[index] :?> HTMLElement
@@ -265,7 +265,7 @@ Vitest.test (
 )
 
 Vitest.test (
-    "a collapsed table renders no grid until its columns are opened",
+    "a collapsed table renders no grid until its columns are opened, and keeps it after closing",
     fun () ->
         RTL.render (
             TableImportPreview.TableImportPreview([| sourceWithRows 5 |], callbacks (fun _ _ -> ()) (fun _ _ -> true))
@@ -279,4 +279,11 @@ Vitest.test (
 
         RTL.screen.getByTestId "table-import-grid-0" |> ignore
         RTL.screen.getByTestId "table-import-row-0-0" |> ignore
+
+        // Closing the details again keeps the grid mounted so it keeps its scroll position.
+        let details = Browser.Dom.document.querySelectorAll("details").[0] :?> HTMLElement
+        details.removeAttribute "open"
+        RTL.act (fun () -> details.dispatchEvent (Event.Create "toggle") |> ignore)
+
+        RTL.screen.getByTestId "table-import-grid-0" |> ignore
 )

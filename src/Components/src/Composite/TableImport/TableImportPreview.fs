@@ -260,7 +260,7 @@ type TableImportPreview =
         let rowCount = table.RowCount
 
         let importAction = callbacks.GetImportAction index
-        let isOpen, setIsOpen = React.useState false
+        let hasBeenOpened, setHasBeenOpened = React.useState false
 
         let selectedColumnsCount =
             Seq.init columnCount id
@@ -370,10 +370,9 @@ type TableImportPreview =
                 | None -> Html.none
                 Html.details [
                     prop.className "swt:border swt:border-base-300 swt:rounded-box swt:px-2 swt:py-1"
-                    prop.custom (
-                        "onToggle",
-                        fun (e: Browser.Types.Event) ->
-                            setIsOpen ((e.currentTarget :?> Browser.Types.HTMLElement).hasAttribute "open")
+                    prop.onToggle (fun e ->
+                        if (e.currentTarget :?> Browser.Types.HTMLElement).hasAttribute "open" then
+                            setHasBeenOpened true
                     )
                     prop.children [
                         Html.summary [
@@ -422,8 +421,8 @@ type TableImportPreview =
                                         ]
                                     ]
 
-                                    // The grid builds a virtualizer and fallback rows, so a closed table skips it.
-                                    if isOpen then
+                                    // Tables that were never opened skip the grid and its virtualizer. An opened grid stays mounted so it keeps its scroll position.
+                                    if hasBeenOpened then
                                         TableImportPreview.RowGrid(source, callbacks, canEdit, showRowSelection)
                             ]
                         ]

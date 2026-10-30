@@ -19,7 +19,7 @@ export const Default: Story = {
     expect(canvas.getAllByText('Columns: 5/5 selected, rows: 20/20 selected')).toHaveLength(3);
 
     await userEvent.click(canvasElement.querySelectorAll('details > summary')[0]);
-    await userEvent.click(canvas.getAllByRole('checkbox')[0]);
+    await userEvent.click((await canvas.findAllByRole('checkbox'))[0]);
     expect(canvas.getAllByText('Columns: 5/5 selected, rows: 20/20 selected')).toHaveLength(2);
     expect(canvas.getByText('Columns: 4/5 selected, rows: 20/20 selected')).toBeInTheDocument();
 

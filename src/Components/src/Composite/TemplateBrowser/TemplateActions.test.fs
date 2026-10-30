@@ -130,3 +130,14 @@ for fileType, createEmptyFile in tableFileTypes do
                     Vitest.expect(tables.[3].GetCellAt(0, 0)).toEqual (CompositeCell.FreeText "Second2")
             )
     )
+
+Vitest.test (
+    "deselectedTemplateRowCount counts the deselected rows per template",
+    fun () ->
+        let first = System.Guid.NewGuid()
+        let second = System.Guid.NewGuid()
+        let deselected = Set.ofList [ first, 0; first, 2 ]
+
+        Vitest.expect(deselectedTemplateRowCount first deselected).toBe 2
+        Vitest.expect(deselectedTemplateRowCount second deselected).toBe 0
+)

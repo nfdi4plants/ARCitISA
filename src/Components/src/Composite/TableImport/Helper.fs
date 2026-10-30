@@ -271,6 +271,12 @@ let actionOf (decisions: TableImportDecisions) (sourceIndex: int) =
 let isColumnSelected (decisions: TableImportDecisions) (sourceIndex: int) (columnIndex: int) =
     not (decisions.DeselectedColumns.Contains(sourceIndex, columnIndex))
 
+/// The number of rows of one source that the user left out.
+let deselectedRowCount (decisions: TableImportDecisions) (sourceIndex: int) : int =
+    decisions.DeselectedRows
+    |> Seq.filter (fun (index, _) -> index = sourceIndex)
+    |> Seq.length
+
 let isRowSelected (decisions: TableImportDecisions) (sourceIndex: int) (rowIndex: int) =
     not (decisions.DeselectedRows.Contains(sourceIndex, rowIndex))
 

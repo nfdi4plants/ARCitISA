@@ -115,7 +115,7 @@ let private withColumns (template: Template) =
     template.Table.AddColumn(CompositeHeader.Output IOType.Sample)
     template
 
-/// jsdom does not fire "toggle" for a changed open attribute, so the helper dispatches it.
+/// jsdom fires "toggle" itself from a later timer, so the helper dispatches it inside act to render the grid before the next query.
 let private openColumns (index: int) =
     let details =
         Browser.Dom.document.querySelectorAll("details").[index] :?> HTMLElement
@@ -217,6 +217,8 @@ Vitest.test (
         let rendered = RTL.render (modalWith TableJoinOptions.WithValues)
         RTL.fireEvent.click (RTL.screen.getByLabelText "Create new table")
         Vitest.expect(isImportDisabled ()).toBe false
+        openColumns 0
+        RTL.screen.getByTestId "table-import-row-0-0" |> ignore
 
         RTL.fireEvent.click (RTL.screen.getByText "Unselect all rows")
         Vitest.expect(isImportDisabled ()).toBe true
