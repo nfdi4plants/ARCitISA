@@ -1299,7 +1299,7 @@ type GitSidebar =
                         props.SubmitPush,
                         testId = "GitSidebarPushButton",
                         tooltipText =
-                            "Upload Changes:\n- git fetch origin\n- git merge-tree (conflict preflight)\n- git merge origin/<branch> (when the online copy is ahead)\n- git push origin"
+                            "Upload Changes:\n- git fetch origin\n- git merge-tree (conflict preflight)\n- git merge origin/<branch> (when the online copy is ahead)\n- git lfs fetch origin <branch> and git lfs checkout (after a merge, when Download Large Files is on)\n- git lfs push --object-id origin --stdin (when there are new large files)\n- git push origin"
                     )
                 ]
             ]
