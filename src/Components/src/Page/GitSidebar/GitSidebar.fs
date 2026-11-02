@@ -157,6 +157,27 @@ module private GitSidebarInternal =
         Log: GitSidebarLog
     }
 
+    /// The label state of a copy button.
+    type LogCopyState =
+        | Idle
+        | Copied
+        | Failed
+
+    /// The text that the copy button puts on the clipboard. It holds the lines of every section, in the order of
+    /// the panel.
+    let logCopyText (sections: LogSection[]) : string =
+        sections
+        |> Array.map (fun section ->
+            [
+                yield! section.Title |> Option.toList
+                if section.Log.Omitted > 0 then
+                    omittedLinesText section.Log.Omitted
+                yield! section.Log.Lines |> Array.map logLineText
+            ]
+            |> String.concat "\n"
+        )
+        |> String.concat "\n\n"
+
     // The elements below are built outside of the component functions with flat lists. The React Compiler is slow
     // on the nested closures that Fable emits for Feliz lists with conditional items.
 
@@ -461,6 +482,7 @@ type private LogViewerProps = {
     ShowTestId: string
     PanelTestId: string
     PanelLabel: string
+    CopyTestId: string
 }
 
 [<Erase; Mangle(false)>]
@@ -489,6 +511,40 @@ type GitSidebar =
             | Some panel when followsEnd.current -> panel.scrollTop <- panel.scrollHeight
             | _ -> ()
         )
+
+        let copyState, setCopyState = React.useState GitSidebarInternal.LogCopyState.Idle
+
+        // Two seconds after a copy attempt the label goes back to Copy.
+        React.useEffect (
+            (fun () ->
+                match copyState with
+                | GitSidebarInternal.LogCopyState.Idle -> FsReact.createDisposable (fun () -> ())
+                | _ ->
+                    let timer =
+                        Browser.Dom.window.setTimeout (
+                            (fun () -> setCopyState GitSidebarInternal.LogCopyState.Idle),
+                            2000
+                        )
+
+                    FsReact.createDisposable (fun () -> Browser.Dom.window.clearTimeout timer)
+            ),
+            [| box copyState |]
+        )
+
+        // The text is built at click time, so it holds every line that arrived so far.
+        let copyLogs () =
+            promise {
+                try
+                    do!
+                        Swate.Components.GlobalBindings.navigator.clipboard.writeText (
+                            GitSidebarInternal.logCopyText props.Sections
+                        )
+
+                    setCopyState GitSidebarInternal.LogCopyState.Copied
+                with _ ->
+                    setCopyState GitSidebarInternal.LogCopyState.Failed
+            }
+            |> Promise.start
 
         let toggle =
             Html.button [
@@ -538,9 +594,53 @@ type GitSidebar =
             else
                 Html.none
 
+        let copyButton =
+            if isOpen then
+                let icon, label =
+                    match copyState with
+                    | GitSidebarInternal.LogCopyState.Idle -> "swt:fluent--copy-24-regular", "Copy logs"
+                    | GitSidebarInternal.LogCopyState.Copied -> "swt:fluent--checkmark-24-regular", "Logs copied"
+                    | GitSidebarInternal.LogCopyState.Failed -> "swt:fluent--warning-24-regular", "Copy failed"
+
+                Html.button [
+                    prop.type'.button
+                    prop.testId props.CopyTestId
+                    prop.className "swt:btn swt:btn-ghost swt:btn-xs swt:btn-square"
+                    prop.title label
+                    prop.ariaLabel label
+                    prop.onClick (fun _ -> copyLogs ())
+                    prop.children [
+                        Html.span [ prop.className $"swt:iconify swt:size-4 {icon}" ]
+                    ]
+                ]
+            else
+                Html.none
+
+        // The live region exists before the click, so a screen reader announces the change of its text.
+        let copyAnnouncement =
+            if isOpen then
+                Html.span [
+                    prop.className "swt:sr-only"
+                    prop.custom ("aria-live", "polite")
+                    prop.text (
+                        match copyState with
+                        | GitSidebarInternal.LogCopyState.Idle -> ""
+                        | GitSidebarInternal.LogCopyState.Copied -> "Copied"
+                        | GitSidebarInternal.LogCopyState.Failed -> "Copy failed"
+                    )
+                ]
+            else
+                Html.none
+
+        let header =
+            Html.div [
+                prop.className "swt:flex swt:min-w-0 swt:flex-wrap swt:items-center swt:gap-1"
+                prop.children [ toggle; copyButton; copyAnnouncement ]
+            ]
+
         Html.div [
             prop.className "swt:flex swt:min-w-0 swt:flex-col swt:gap-1"
-            prop.children [ toggle; panel ]
+            prop.children [ header; panel ]
         ]
 
     [<ReactComponent>]
@@ -577,6 +677,7 @@ type GitSidebar =
                         ShowTestId = "GitSidebarShowLogs"
                         PanelTestId = "GitSidebarLogPanel"
                         PanelLabel = "Operation logs"
+                        CopyTestId = "GitSidebarCopyLogs"
                     }
                 )
             | _ -> Html.none
@@ -607,6 +708,7 @@ type GitSidebar =
                         ShowTestId = "GitSidebarBackgroundShowLogs"
                         PanelTestId = "GitSidebarBackgroundLogPanel"
                         PanelLabel = "Background activity logs"
+                        CopyTestId = "GitSidebarBackgroundCopyLogs"
                     }
                 )
 
@@ -640,22 +742,29 @@ type GitSidebar =
                             if busyTestId.IsSome then
                                 prop.testId busyTestId.Value
                             prop.className
-                                "swt:alert swt:alert-info swt:min-w-0 swt:px-3 swt:py-2 swt:text-sm swt:@max-xs:px-2"
+                                "swt:alert swt:alert-info swt:min-w-0 swt:items-start swt:px-3 swt:py-2 swt:text-sm swt:@max-xs:px-2"
                             prop.children [
                                 Html.span [
-                                    prop.className "swt:loading swt:loading-spinner swt:loading-xs swt:shrink-0"
+                                    prop.className
+                                        "swt:loading swt:loading-spinner swt:loading-xs swt:mt-0.5 swt:shrink-0"
                                 ]
                                 Html.div [
                                     prop.className "swt:flex swt:w-full swt:min-w-0 swt:flex-1 swt:flex-col swt:gap-2"
                                     prop.children [
-                                        Html.span [
-                                            prop.className "swt:min-w-0 swt:wrap-anywhere"
-                                            prop.text (
-                                                GitSidebarInternal.progressText progress
-                                                |> function
-                                                    | "" -> "Git operation in progress"
-                                                    | text -> text
-                                            )
+                                        Html.div [
+                                            prop.className "swt:flex swt:min-w-0 swt:items-start swt:gap-2"
+                                            prop.children [
+                                                Html.span [
+                                                    prop.className "swt:min-w-0 swt:flex-1 swt:wrap-anywhere"
+                                                    prop.text (
+                                                        GitSidebarInternal.progressText progress
+                                                        |> function
+                                                            | "" -> "Git operation in progress"
+                                                            | text -> text
+                                                    )
+                                                ]
+                                                cancelButton |> Option.defaultValue Html.none
+                                            ]
                                         ]
 
                                         match progressValue with
@@ -688,9 +797,6 @@ type GitSidebar =
                                         logView
                                     ]
                                 ]
-                                match cancelButton with
-                                | Some button -> button
-                                | None -> Html.none
                             ]
                         ]
                     ]
@@ -705,18 +811,25 @@ type GitSidebar =
                             if busyTestId.IsSome then
                                 prop.testId busyTestId.Value
                             prop.className
-                                "swt:alert swt:alert-info swt:min-w-0 swt:px-3 swt:py-2 swt:text-sm swt:@max-xs:px-2"
+                                "swt:alert swt:alert-info swt:min-w-0 swt:items-start swt:px-3 swt:py-2 swt:text-sm swt:@max-xs:px-2"
                             prop.children [
                                 Html.span [
-                                    prop.className "swt:loading swt:loading-spinner swt:loading-xs swt:shrink-0"
+                                    prop.className
+                                        "swt:loading swt:loading-spinner swt:loading-xs swt:mt-0.5 swt:shrink-0"
                                 ]
                                 Html.div [
                                     prop.className "swt:flex swt:w-full swt:min-w-0 swt:flex-1 swt:flex-col swt:gap-2"
                                     prop.children [
-                                        Html.span [
-                                            prop.testId "GitSidebarBusyHeadline"
-                                            prop.className "swt:min-w-0 swt:wrap-anywhere"
-                                            prop.text (defaultArg busyHeadlineOverride notice)
+                                        Html.div [
+                                            prop.className "swt:flex swt:min-w-0 swt:items-start swt:gap-2"
+                                            prop.children [
+                                                Html.span [
+                                                    prop.testId "GitSidebarBusyHeadline"
+                                                    prop.className "swt:min-w-0 swt:flex-1 swt:wrap-anywhere"
+                                                    prop.text (defaultArg busyHeadlineOverride notice)
+                                                ]
+                                                cancelButton |> Option.defaultValue Html.none
+                                            ]
                                         ]
 
                                         Html.none
@@ -725,9 +838,6 @@ type GitSidebar =
                                         logView
                                     ]
                                 ]
-                                match cancelButton with
-                                | Some button -> button
-                                | None -> Html.none
                             ]
                         ]
                     ]

@@ -119,7 +119,30 @@ let private logSectionChildren (panel: HTMLElement) : HTMLElement[] = jsNative
 let private logLineNode (panel: HTMLElement) (text: string) : HTMLElement =
     logSectionChildren panel |> Array.find (fun line -> line.textContent = text)
 
-Vitest.afterEach (fun () -> RTL.cleanup ())
+/// The clipboard that the copy button writes to. jsdom has none. The copy tests install a stub and afterEach
+/// removes it after every test.
+type private ClipboardStub =
+    abstract writeText: text: string -> JS.Promise<unit>
+
+[<Emit("Object.defineProperty(navigator, 'clipboard', { value: $0, configurable: true })")>]
+let private installClipboard (clipboard: ClipboardStub) : unit = jsNative
+
+[<Emit("delete navigator.clipboard")>]
+let private removeClipboard () : unit = jsNative
+
+/// A clipboard that stores the written text and resolves.
+let private recordingClipboard (written: string option ref) =
+    installClipboard
+        { new ClipboardStub with
+            member _.writeText text =
+                written.Value <- Some text
+                promise { return () }
+        }
+
+Vitest.afterEach (fun () ->
+    RTL.cleanup ()
+    removeClipboard ()
+)
 
 Vitest.test (
     "the background activity notice lists each activity with its detail and percent",
@@ -474,4 +497,119 @@ Vitest.test (
         RTL.fireEvent.click (RTL.screen.getByTestId "GitSidebarBackgroundShowLogs")
 
         expectPanelScrollsInsideNotice "GitSidebarBackgroundActivity" "GitSidebarBackgroundLogPanel" ("$ " + longLine)
+)
+
+Vitest.test (
+    "the copy button writes the whole operation log to the clipboard",
+    fun () -> promise {
+        let written = ref None
+        recordingClipboard written
+
+        renderOperation
+            (GitSidebarRunStatus.Busy "Pulling")
+            None
+            (Some(
+                logOf 3 [
+                    "command", "git fetch origin"
+                    "stdout", "Receiving objects: 100%"
+                ]
+            ))
+
+        Vitest.expect(RTL.screen.queryByTestId "GitSidebarCopyLogs" |> Option.isNone).toBe true
+
+        RTL.fireEvent.click (RTL.screen.getByTestId "GitSidebarShowLogs")
+        RTL.fireEvent.click (RTL.screen.getByTestId "GitSidebarCopyLogs")
+
+        let! _ = RTL.screen.findByText "Copied"
+
+        Vitest.expect((RTL.screen.getByTestId "GitSidebarCopyLogs").getAttribute "aria-label").toBe "Logs copied"
+
+        Vitest
+            .expect(written.Value)
+            .toEqual (Some "3 earlier lines were left out\n$ git fetch origin\nReceiving objects: 100%")
+    }
+)
+
+Vitest.test (
+    "the copy button reports a clipboard that rejects the text",
+    fun () -> promise {
+        installClipboard
+            { new ClipboardStub with
+                member _.writeText _ = Promise.reject (exn "denied")
+            }
+
+        renderOperation (GitSidebarRunStatus.Busy "Pulling") None (Some(logOf 0 [ "stdout", "done" ]))
+        RTL.fireEvent.click (RTL.screen.getByTestId "GitSidebarShowLogs")
+        RTL.fireEvent.click (RTL.screen.getByTestId "GitSidebarCopyLogs")
+
+        let! _ = RTL.screen.findByText "Copy failed"
+        ()
+    }
+)
+
+Vitest.test (
+    "the background copy button writes each activity label above its lines with a blank line between activities",
+    fun () -> promise {
+        let written = ref None
+        recordingClipboard written
+
+        let withLog label lines = {
+            activity label None None with
+                Log = Some(logOf 0 lines)
+        }
+
+        render
+            GitSidebarRunStatus.Idle
+            [|
+                withLog "Downloading raw-data" [ "command", "git lfs pull"; "stdout", "done" ]
+                withLog "Freeing notes.bin" [ "stdout", "freed" ]
+            |]
+            None
+
+        RTL.fireEvent.click (RTL.screen.getByTestId "GitSidebarBackgroundShowLogs")
+        RTL.fireEvent.click (RTL.screen.getByTestId "GitSidebarBackgroundCopyLogs")
+
+        let! _ = RTL.screen.findByText "Copied"
+
+        Vitest
+            .expect(written.Value)
+            .toEqual (Some "Downloading raw-data\n$ git lfs pull\ndone\n\nFreeing notes.bin\nfreed")
+    }
+)
+
+Vitest.test (
+    "the copy button reports a missing clipboard",
+    fun () -> promise {
+        removeClipboard ()
+
+        renderOperation (GitSidebarRunStatus.Busy "Pulling") None (Some(logOf 0 [ "stdout", "done" ]))
+        RTL.fireEvent.click (RTL.screen.getByTestId "GitSidebarShowLogs")
+        RTL.fireEvent.click (RTL.screen.getByTestId "GitSidebarCopyLogs")
+
+        let! _ = RTL.screen.findByText "Copy failed"
+        ()
+    }
+)
+
+Vitest.test (
+    "the copy button goes back to Copy two seconds after the attempt",
+    fun () -> promise {
+        // Fake timers stall the polling of findByText, so this test waits for the real two seconds.
+        recordingClipboard (ref None)
+
+        renderOperation (GitSidebarRunStatus.Busy "Pulling") None (Some(logOf 0 [ "stdout", "done" ]))
+        RTL.fireEvent.click (RTL.screen.getByTestId "GitSidebarShowLogs")
+        RTL.fireEvent.click (RTL.screen.getByTestId "GitSidebarCopyLogs")
+
+        let! _ = RTL.screen.findByText "Copied"
+
+        do!
+            RTL.waitFor (
+                (fun () ->
+                    Vitest.expect((RTL.screen.getByTestId "GitSidebarCopyLogs").getAttribute "aria-label").toBe
+                        "Copy logs"
+                ),
+                RTLWaitForOptions(timeout = 3000)
+            )
+    }
 )

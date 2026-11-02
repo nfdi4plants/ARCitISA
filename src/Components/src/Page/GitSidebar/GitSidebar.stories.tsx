@@ -801,7 +801,9 @@ export const PullWithStepsAndLogs: Story = {
     );
 
     await expect(canvas.queryByTestId("GitSidebarLogPanel")).not.toBeInTheDocument();
+    await expect(canvas.queryByTestId("GitSidebarCopyLogs")).not.toBeInTheDocument();
     await userEvent.click(canvas.getByTestId("GitSidebarShowLogs"));
+    await expect(canvas.getByTestId("GitSidebarCopyLogs")).toBeInTheDocument();
 
     const panel = canvas.getByTestId("GitSidebarLogPanel");
     await expect(panel).toHaveTextContent("$ git fetch origin");
@@ -872,6 +874,58 @@ export const LongLogLinesScrollInsideTheNotice: Story = {
       );
       await expect(panel.scrollWidth).toBeGreaterThan(panel.clientWidth);
       await expect(getComputedStyle(panel).overflowX).toBe("auto");
+    }
+  },
+};
+
+export const ProgressNoticeFollowsSidebarSize: Story = {
+  args: {
+    ...LongLogLinesScrollInsideTheNotice.args,
+    backgroundActivities: undefined,
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const wrapper = canvasElement.firstElementChild as HTMLElement;
+    const root = canvasElement.querySelector('[class*="@container/gitSidebar"]') as HTMLElement;
+    const settle = async () => {
+      await new Promise(requestAnimationFrame);
+      await new Promise(requestAnimationFrame);
+    };
+
+    try {
+      for (const width of [240, 340, 520]) {
+        wrapper.style.width = `${width}px`;
+        await settle();
+
+        const notice = canvas.getByTestId("GitSidebarProgressNotice");
+        const noticeRect = notice.getBoundingClientRect();
+        const rootRect = root.getBoundingClientRect();
+        const foldedHeight = noticeRect.height;
+
+        await expect(noticeRect.right).toBeLessThanOrEqual(rootRect.right + 1);
+        await expect(noticeRect.width).toBeGreaterThanOrEqual(root.clientWidth - 40);
+        await expect(root.scrollWidth).toBeLessThanOrEqual(root.clientWidth + 1);
+
+        await expect(canvas.queryByTestId("GitSidebarCopyLogs")).not.toBeInTheDocument();
+        await userEvent.click(canvas.getByTestId("GitSidebarShowLogs"));
+        await settle();
+        await expect(canvas.getByTestId("GitSidebarCopyLogs")).toBeInTheDocument();
+
+        const openRect = notice.getBoundingClientRect();
+        const panelRect = canvas.getByTestId("GitSidebarLogPanel").getBoundingClientRect();
+        await expect(openRect.height).toBeGreaterThan(foldedHeight);
+        await expect(Math.abs(openRect.width - noticeRect.width)).toBeLessThanOrEqual(1);
+        await expect(panelRect.right).toBeLessThanOrEqual(openRect.right + 1);
+
+        await userEvent.click(canvas.getByTestId("GitSidebarShowLogs"));
+        await settle();
+        await expect(canvas.queryByTestId("GitSidebarCopyLogs")).not.toBeInTheDocument();
+        await expect(
+          Math.abs(notice.getBoundingClientRect().height - foldedHeight),
+        ).toBeLessThanOrEqual(1);
+      }
+    } finally {
+      wrapper.style.width = "";
     }
   },
 };
