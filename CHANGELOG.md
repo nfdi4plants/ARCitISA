@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 3.2.0 - 2026-11-02
+
 ### ✨ Added
 
 - Right-clicking a folder or the ARC name offers "Import folders", which copies the folders you pick, with everything inside them. It is available wherever "New Folder" is. #1429 (by @Etschbeijer)
@@ -28,7 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Right-clicking a folder in the file tree offers "Download all LFS files" and "Free all local LFS copies", which act on every Git LFS file in the folder and its subfolders. (by @caroott)
 - While a folder downloads or frees its Git LFS files, its row in the file tree shows how many files are done, such as "3/40", and during a download the progress of the current step. (by @caroott)
 - The Git sidebar lists the steps of Download Changes and Upload Changes as they run, for example "Fetching online changes" and "Merging online changes", with live progress for the current step. A Save lists its steps in the same way. (by @caroott)
-- "Show logs" in the Git sidebar unfolds the output of the Git commands that the running operation sends. (by @caroott)
+- "Show logs" in the Git sidebar unfolds the output of the Git commands that the running operation sends. A copy button next to it puts the log on the clipboard. (by @caroott)
 - The Git sidebar shows the Git LFS downloads and frees that run from the file tree. When a Save waits for such an action, or another change to the repository does, such as Download Changes or switching a branch, the sidebar names the action it waits for. (by @caroott)
 
 ### 🔄 Changed
