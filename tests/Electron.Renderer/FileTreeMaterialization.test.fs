@@ -235,4 +235,33 @@ Vitest.describe (
                 let rows = build withSibling []
                 Vitest.expect(rows |> List.map (fun row -> row.Path.Value)).toEqual [ "A"; "B" ]
         )
+
+        Vitest.test (
+            "the busy detail goes on the row of the running action and not on the busy files below it",
+            fun () ->
+                let snapshot =
+                    snapshotOf [ dir "runs"; file "runs/a.bin"; dir "other" ] [ "runs"; "other" ]
+
+                let busyPaths = set [ "runs"; "runs/a.bin" ]
+
+                let createBusyItem (entry: FileEntry) =
+                    let item = createItem (ResizeArray()) entry
+
+                    if busyPaths.Contains entry.path then
+                        {
+                            item with
+                                LfsActivity = Some "Downloading"
+                        }
+                    else
+                        item
+
+                let items = buildVisibleItems createBusyItem noBusy snapshot (Set.ofList [ "runs" ])
+                let overlaid = overlayBusyDetails (Map.ofList [ ("runs", "3/40 45%") ]) items
+
+                let runs = overlaid |> List.find (fun item -> item.Name = "runs")
+                Vitest.expect(runs.LfsActivityDetail).toEqual (Some "3/40 45%")
+                Vitest.expect(runs.Children.Value |> List.map _.LfsActivityDetail).toEqual [ None ]
+                Vitest.expect((overlaid |> List.find (fun item -> item.Name = "other")).LfsActivityDetail).toEqual None
+                Vitest.expect(obj.ReferenceEquals(overlayBusyDetails Map.empty items, items)).toBe true
+        )
 )

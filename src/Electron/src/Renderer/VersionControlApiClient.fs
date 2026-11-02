@@ -73,6 +73,12 @@ let materializeObject (dto: ObjectPathRequestDto) =
 let dematerializeObject (dto: ObjectPathRequestDto) =
     call (fun () -> api.dematerializeObject dto)
 
+let materializeObjects (dto: ObjectPathsRequestDto) =
+    call (fun () -> api.materializeObjects dto)
+
+let dematerializeObjects (dto: ObjectPathsRequestDto) =
+    call (fun () -> api.dematerializeObjects dto)
+
 let getStoragePolicySettings (dto: OperationRequestDto) =
     call (fun () -> api.getStoragePolicySettings dto)
 

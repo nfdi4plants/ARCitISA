@@ -371,6 +371,7 @@
     <Compile Include="Page\Landing\Landing.fs" />
     <Compile Include="Page\GitSidebar\Types.fs" />
     <Compile Include="Page\GitSidebar\GitSidebar.fs" />
+    <Compile Include="Page\GitSidebar\GitSidebar.test.rtl.fs" />
     <Compile Include="Page\GitComparison\GitTextComparison.Core.fs" />
     <Compile Include="Page\GitComparison\GitPagedDiff.Types.fs" />
     <Compile Include="Page\GitComparison\GitTextComparison.fs" />

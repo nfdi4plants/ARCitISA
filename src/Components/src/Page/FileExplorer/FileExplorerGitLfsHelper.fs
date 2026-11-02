@@ -10,6 +10,8 @@ let private downloadLabel = "Download LFS file"
 let private downloadIcon = "swt:fluent--cloud-arrow-down-24-regular"
 let private freeCopyLabel = "Free local LFS copy"
 let private freeCopyIcon = "swt:fluent--document-arrow-up-20-regular"
+let private downloadFolderLabel = "Download all LFS files"
+let private freeFolderLabel = "Free all local LFS copies"
 
 let toggleLfsMark
     (setError: string option -> unit)
@@ -89,6 +91,33 @@ let private lfsAction label icon item enabled action =
         else
             ContextMenuItem.disabled label icon
     )
+
+/// The folder entries that download or free every Git LFS file below a folder. The counts come from the caller.
+/// A folder without an LFS file below it gets no entries. The function disables both entries while an action runs
+/// on the folder, and while the caller reports the folder as busy (for example when an action runs on a path below
+/// it).
+let folderContextMenuItems
+    (item: FileItem)
+    (isBusy: bool)
+    (pendingDownloads: int)
+    (localCopies: int)
+    (onDownloadFolder: FileItem -> unit)
+    (onFreeFolder: FileItem -> unit)
+    : ContextMenuItem list =
+    if not item.IsDirectory || pendingDownloads + localCopies = 0 then
+        []
+    else
+        let isIdle = item.LfsActivity.IsNone && not isBusy
+
+        [
+            yield!
+                lfsAction downloadFolderLabel downloadIcon item (pendingDownloads > 0 && isIdle) (Some onDownloadFolder)
+                |> Option.toList
+
+            yield!
+                lfsAction freeFolderLabel freeCopyIcon item (localCopies > 0 && isIdle) (Some onFreeFolder)
+                |> Option.toList
+        ]
 
 let lfsPillAction (item: FileItem) onDownloadLfsFile =
     let withFallback label icon enabled action =

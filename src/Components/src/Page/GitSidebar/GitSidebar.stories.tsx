@@ -59,7 +59,6 @@ const buildProgressRunStatus = (progress: {
   Method?: string;
   Stage?: string;
   ProgressPercent?: number;
-  Output?: string;
 }) => ({
   // Fable DU: GitSidebarRunStatus.Progress
   tag: 2,
@@ -623,7 +622,6 @@ export const BusyProgressState: Story = {
       Method: "pull",
       Stage: "Receiving objects",
       ProgressPercent: 54,
-      Output: "remote: Enumerating objects: 18, done.\nremote: Counting objects: 100% (18/18), done.\n",
     }),
     callbacks: buildCallbacks(),
     downloadLargeFiles: true,
@@ -638,15 +636,6 @@ export const BusyProgressState: Story = {
     await expect(canvas.getByTestId("GitSidebarProgressBar")).toBeInTheDocument();
     const fillBar = canvas.getByTestId("GitSidebarProgressBar").firstElementChild;
     await expect(fillBar).toHaveAttribute("style", expect.stringContaining("width: 54%"));
-    const outputDetails = canvas.getByTestId("GitSidebarProgressOutput");
-    await expect(outputDetails).not.toHaveAttribute("open");
-    await expect(outputDetails).toHaveTextContent(
-      "remote: Enumerating objects: 18, done.",
-    );
-    const outputConsole = within(outputDetails).getByText(/remote: Enumerating objects/);
-    await expect(outputConsole).toHaveClass("swt:bg-base-content");
-    await expect(outputConsole).toHaveClass("swt:text-base-100");
-
     const sourceControlTitle = canvas.getByTestId("GitSidebarTitle");
     const trackingInfo = canvas.getByText("Tracking origin/feature/git-sidebar");
     expect(
@@ -668,7 +657,6 @@ export const CancelableUploadProgressState: Story = {
     runStatus: buildProgressRunStatus({
       Method: "lfs",
       Stage: "Uploading Git LFS objects",
-      Output: "Uploading LFS objects: 0% (0/6), 524 KB | 121 KB/s\n",
     }),
     callbacks: buildCallbacks({
       OnCancelOperation: cancelOperationSpy,
@@ -728,6 +716,217 @@ export const BusyNoticeState: Story = {
     await expect(canvas.getByTestId("GitSidebarProgressNotice")).toHaveTextContent(
       "Pulling from origin/main",
     );
+  },
+};
+
+const waitingHeadline = "Waits for downloading raw-data to finish";
+const backgroundActivities = [
+  { Label: "Downloading raw-data", Detail: "5/12 45%", ProgressPercent: 41.7, Log: undefined },
+  { Label: "Freeing notes.bin", Detail: undefined, ProgressPercent: undefined, Log: undefined },
+];
+
+export const WaitingForBackgroundActivity: Story = {
+  args: {
+    status: baseStatus,
+    changedFiles: changedFiles.slice(),
+    branchOptions: branchOptions.slice(),
+    runStatus: buildBusyRunStatus("Committing all changes"),
+    backgroundActivities,
+    busyHeadlineOverride: waitingHeadline,
+    callbacks: buildCallbacks(),
+    downloadLargeFiles: true,
+    lfsAutoTrackThresholdMb: 1,
+    diffIndexingLimitMb: 1024,
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByTestId("GitSidebarBusyHeadline")).toHaveTextContent(
+      waitingHeadline,
+    );
+    const background = canvas.getByTestId("GitSidebarBackgroundActivity");
+    await expect(background).toHaveTextContent("Downloading raw-data | 5/12 45%");
+    await expect(background).toHaveTextContent("Freeing notes.bin");
+    await expect(canvas.getByTestId("GitSidebarBackgroundActivityBar-0")).toBeInTheDocument();
+    await expect(canvas.queryByTestId("GitSidebarBackgroundActivityBar-1")).not.toBeInTheDocument();
+  },
+};
+
+const pullSteps = [
+  { Label: "Fetching online changes", Detail: undefined, Percent: undefined, IsCurrent: false },
+  { Label: "Merging online changes", Detail: undefined, Percent: undefined, IsCurrent: false },
+  {
+    Label: "Downloading large files",
+    Detail: "Downloading LFS objects (2/6), 524 KB",
+    Percent: 33,
+    IsCurrent: true,
+  },
+];
+
+const pullLogLines = [
+  { Kind: "command", Text: "git fetch origin" },
+  { Kind: "stderr", Text: "From https://datahub.example.org/arc" },
+  { Kind: "stderr", Text: "Receiving objects: 100% (18/18), done." },
+  { Kind: "command", Text: "git merge origin/main" },
+  { Kind: "notice", Text: "Already up to date with the tracked branch." },
+  { Kind: "command", Text: "git lfs fetch origin main" },
+  { Kind: "stdout", Text: "Downloading LFS objects: 33% (2/6), 524 KB | 121 KB/s" },
+];
+
+const buildPullProgress = () =>
+  buildProgressRunStatus({
+    Method: "pull",
+    Stage: "Downloading LFS objects (2/6), 524 KB",
+    ProgressPercent: 33,
+  });
+
+export const PullWithStepsAndLogs: Story = {
+  args: {
+    status: baseStatus,
+    changedFiles: changedFiles.slice(),
+    branchOptions: branchOptions.slice(),
+    runStatus: buildPullProgress(),
+    operationSteps: pullSteps,
+    operationLog: { Lines: pullLogLines, Omitted: 0 },
+    callbacks: buildCallbacks(),
+    downloadLargeFiles: true,
+    lfsAutoTrackThresholdMb: 1,
+    diffIndexingLimitMb: 1024,
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    await expect(canvas.getAllByTestId(/^GitSidebarStep-/)).toHaveLength(3);
+    await expect(canvas.getByTestId("GitSidebarStepDetail-2")).toHaveTextContent(
+      "Downloading LFS objects (2/6), 524 KB",
+    );
+
+    await expect(canvas.queryByTestId("GitSidebarLogPanel")).not.toBeInTheDocument();
+    await expect(canvas.queryByTestId("GitSidebarCopyLogs")).not.toBeInTheDocument();
+    await userEvent.click(canvas.getByTestId("GitSidebarShowLogs"));
+    await expect(canvas.getByTestId("GitSidebarCopyLogs")).toBeInTheDocument();
+
+    const panel = canvas.getByTestId("GitSidebarLogPanel");
+    await expect(panel).toHaveTextContent("$ git fetch origin");
+    await expect(panel).toHaveTextContent("Receiving objects: 100% (18/18), done.");
+    await expect(canvas.queryByTestId("GitSidebarLogPanelOmitted-0")).not.toBeInTheDocument();
+
+    await userEvent.click(canvas.getByTestId("GitSidebarShowLogs"));
+    await expect(canvas.queryByTestId("GitSidebarLogPanel")).not.toBeInTheDocument();
+  },
+};
+
+export const PullWithOmittedLogLines: Story = {
+  args: {
+    ...PullWithStepsAndLogs.args,
+    operationLog: { Lines: pullLogLines, Omitted: 1342 },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    await userEvent.click(canvas.getByTestId("GitSidebarShowLogs"));
+
+    const panel = canvas.getByTestId("GitSidebarLogPanel");
+    await expect(canvas.getByTestId("GitSidebarLogPanelOmitted-0")).toHaveTextContent("1342");
+    await expect(panel.firstElementChild?.firstElementChild).toBe(
+      canvas.getByTestId("GitSidebarLogPanelOmitted-0"),
+    );
+  },
+};
+
+const longFetchLine =
+  "git lfs fetch --include=" +
+  Array.from({ length: 40 }, (_, index) => `/assays/assayA/dataset/big${index}.bin`).join(",") +
+  " origin HEAD";
+
+export const LongLogLinesScrollInsideTheNotice: Story = {
+  args: {
+    ...PullWithStepsAndLogs.args,
+    operationLog: {
+      Lines: [...pullLogLines, { Kind: "command", Text: longFetchLine }],
+      Omitted: 0,
+    },
+    backgroundActivities: [
+      {
+        Label: "Downloading raw-data",
+        Detail: "5/12 45%",
+        ProgressPercent: 41.7,
+        Log: { Lines: [{ Kind: "command", Text: longFetchLine }], Omitted: 0 },
+      },
+    ],
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    await userEvent.click(canvas.getByTestId("GitSidebarShowLogs"));
+    await userEvent.click(canvas.getByTestId("GitSidebarBackgroundShowLogs"));
+
+    const cases = [
+      ["GitSidebarProgressNotice", "GitSidebarLogPanel"],
+      ["GitSidebarBackgroundActivity", "GitSidebarBackgroundLogPanel"],
+    ];
+
+    for (const [noticeId, panelId] of cases) {
+      const notice = canvas.getByTestId(noticeId);
+      const panel = canvas.getByTestId(panelId);
+      // The panel keeps the width of the notice and scrolls sideways for the long line.
+      await expect(panel.getBoundingClientRect().right).toBeLessThanOrEqual(
+        notice.getBoundingClientRect().right + 1,
+      );
+      await expect(panel.scrollWidth).toBeGreaterThan(panel.clientWidth);
+      await expect(getComputedStyle(panel).overflowX).toBe("auto");
+    }
+  },
+};
+
+export const ProgressNoticeFollowsSidebarSize: Story = {
+  args: {
+    ...LongLogLinesScrollInsideTheNotice.args,
+    backgroundActivities: undefined,
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const wrapper = canvasElement.firstElementChild as HTMLElement;
+    const root = canvasElement.querySelector('[class*="@container/gitSidebar"]') as HTMLElement;
+    const settle = async () => {
+      await new Promise(requestAnimationFrame);
+      await new Promise(requestAnimationFrame);
+    };
+
+    try {
+      for (const width of [240, 340, 520]) {
+        wrapper.style.width = `${width}px`;
+        await settle();
+
+        const notice = canvas.getByTestId("GitSidebarProgressNotice");
+        const noticeRect = notice.getBoundingClientRect();
+        const rootRect = root.getBoundingClientRect();
+        const foldedHeight = noticeRect.height;
+
+        await expect(noticeRect.right).toBeLessThanOrEqual(rootRect.right + 1);
+        await expect(noticeRect.width).toBeGreaterThanOrEqual(root.clientWidth - 40);
+        await expect(root.scrollWidth).toBeLessThanOrEqual(root.clientWidth + 1);
+
+        await expect(canvas.queryByTestId("GitSidebarCopyLogs")).not.toBeInTheDocument();
+        await userEvent.click(canvas.getByTestId("GitSidebarShowLogs"));
+        await settle();
+        await expect(canvas.getByTestId("GitSidebarCopyLogs")).toBeInTheDocument();
+
+        const openRect = notice.getBoundingClientRect();
+        const panelRect = canvas.getByTestId("GitSidebarLogPanel").getBoundingClientRect();
+        await expect(openRect.height).toBeGreaterThan(foldedHeight);
+        await expect(Math.abs(openRect.width - noticeRect.width)).toBeLessThanOrEqual(1);
+        await expect(panelRect.right).toBeLessThanOrEqual(openRect.right + 1);
+
+        await userEvent.click(canvas.getByTestId("GitSidebarShowLogs"));
+        await settle();
+        await expect(canvas.queryByTestId("GitSidebarCopyLogs")).not.toBeInTheDocument();
+        await expect(
+          Math.abs(notice.getBoundingClientRect().height - foldedHeight),
+        ).toBeLessThanOrEqual(1);
+      }
+    } finally {
+      wrapper.style.width = "";
+    }
   },
 };
 
