@@ -101,6 +101,25 @@ let progress (operationId: string) (progress: OperationProgress) : VersionContro
     DisplayMessage = progress.DisplayMessage
 }
 
+let outputKind (kind: OperationOutputKind) : string =
+    match kind with
+    | OperationOutputKind.Command -> "command"
+    | OperationOutputKind.StdOut -> "stdout"
+    | OperationOutputKind.StdErr -> "stderr"
+    | OperationOutputKind.Notice -> "notice"
+
+let output (operationId: string) (entries: OperationOutput[]) : VersionControlOutputDto = {
+    OperationId = operationId
+    Entries =
+        entries
+        |> Array.map (fun entry -> {
+            CommandId = entry.CommandId
+            Kind = outputKind entry.Kind
+            Text = entry.Text
+            IsPartial = entry.IsPartial
+        })
+}
+
 let logicalRef (reference: LogicalRef) : LogicalRefDto = {
     Name = reference.Name
     ProviderRef = ProviderRef.value reference.ProviderRef
@@ -227,6 +246,7 @@ let serviceAvailability (session: WorkspaceSession) : ServiceAvailabilityDto = {
     TextDiff = session.TextDiff.IsSome
     ConflictResolution = session.ConflictResolution.IsSome
     ObjectMaterialization = session.ObjectMaterialization.IsSome
+    ObjectBatchMaterialization = session.ObjectBatchMaterialization.IsSome
     StoragePolicy = session.StoragePolicy.IsSome
     Maintenance = session.Maintenance.IsSome
     RepositoryBrowser = session.RepositoryBrowser.IsSome
@@ -261,17 +281,20 @@ let tryRepositoryPath (path: string) : Result<RepositoryPath, OperationFailure> 
 
 /// Converts every path or fails on the first invalid one without touching the provider.
 let tryRepositoryPaths (paths: string[]) : Result<RepositoryPath[], OperationFailure> =
-    paths
-    |> Array.fold
-        (fun state path ->
-            match state with
-            | Error error -> Error error
-            | Ok converted ->
-                match tryRepositoryPath path with
-                | Ok repositoryPath -> Ok(Array.append converted [| repositoryPath |])
-                | Error error -> Error error
-        )
-        (Ok [||])
+    let converted = ResizeArray<RepositoryPath>()
+    let mutable failure = None
+    let mutable index = 0
+
+    while failure.IsNone && index < paths.Length do
+        match tryRepositoryPath paths.[index] with
+        | Ok repositoryPath -> converted.Add repositoryPath
+        | Error error -> failure <- Some error
+
+        index <- index + 1
+
+    match failure with
+    | Some error -> Error error
+    | None -> Ok(converted.ToArray())
 
 let tryProviderRef (value: string) : Result<ProviderRef, OperationFailure> =
     ProviderRef.tryCreate value

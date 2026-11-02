@@ -105,6 +105,62 @@ Vitest.describe (
         )
 
         Vitest.test (
+            "shows the busy indicator on a folder row while an LFS action runs below it",
+            fun () ->
+                let busy = {
+                    folder "Busy Folder" (Some []) with
+                        LfsActivity = Some "Downloading"
+                }
+
+                RTL.render (FileExplorer.FileExplorer(initialItems = [ busy; folder "Idle Folder" (Some []) ]))
+                |> ignore
+
+                let indicators = RTL.screen.getAllByTestId "lfs-busy-indicator"
+                Vitest.expect(indicators.Count).toBe 1
+
+                let busyRow = (RTL.screen.getByText "Busy Folder").closest "[data-file-item-id]"
+                Vitest.expect(busyRow.IsSome && busyRow.Value.contains indicators.[0]).toBe true
+        )
+
+        Vitest.test (
+            "shows the busy detail next to the busy pill of the row that has one and on no other row",
+            fun () ->
+                let withDetail = {
+                    folder "Detail Folder" (Some []) with
+                        LfsActivity = Some "Downloading"
+                        LfsActivityDetail = Some "3/40 45%"
+                }
+
+                let withoutDetail = {
+                    folder "Plain Folder" (Some []) with
+                        LfsActivity = Some "Downloading"
+                }
+
+                RTL.render (
+                    FileExplorer.FileExplorer(
+                        initialItems = [
+                            withDetail
+                            withoutDetail
+                            folder "Idle Folder" (Some [])
+                        ]
+                    )
+                )
+                |> ignore
+
+                let details = RTL.screen.getAllByTestId "lfs-busy-progress"
+                Vitest.expect(details.Count).toBe 1
+                Vitest.expect(details.[0].textContent).toBe "3/40 45%"
+
+                let row = (RTL.screen.getByText "Detail Folder").closest "[data-file-item-id]"
+                Vitest.expect(row.IsSome && row.Value.contains details.[0]).toBe true
+
+                let pill =
+                    details.[0].parentElement.querySelector "[data-testid='lfs-busy-indicator']"
+
+                Vitest.expect(isNull pill).toBe false
+        )
+
+        Vitest.test (
             "offers Refresh folder for directories and calls the callback",
             fun () ->
                 let refreshed = ResizeArray<string>()
