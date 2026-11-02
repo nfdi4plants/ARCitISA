@@ -288,10 +288,60 @@ module ArcLoadExtensions =
             |> Array.tryPick (Datamap.tryFromReadContractForRun run.Identifier)
             |> Option.iter (fun dm -> run.Datamap <- Some dm)
 
+    /// A CWL or YAML payload file that the load could not decode and left out.
+    type PayloadLoadIssue = { Path: string; Message: string }
+
+    /// Splits off CWL and YAML READ contracts that ARCtrl cannot decode. SetISAFromContracts decodes every CWL
+    /// contract and the run.yml of each loaded run, and throws on the first failure. It accepts only contracts,
+    /// so it decodes each kept payload again. An entity without a payload leaves its file untouched on save.
+    let internal partitionDecodablePayloadContracts (contracts: Contract[]) : Contract[] * PayloadLoadIssue[] =
+        // Fable erases Some around a string, so an option would read a missing message as success.
+        let tryDecode (decode: string -> 'T) (text: string) : Result<unit, string> =
+            try
+                decode text |> ignore
+                Ok()
+            with error ->
+                Error(
+                    if String.IsNullOrEmpty error.Message then
+                        string error
+                    else
+                        error.Message
+                )
+
+        let decodable = ResizeArray<Contract>()
+        let issues = ResizeArray<PayloadLoadIssue>()
+
+        for contract in contracts do
+            let decoded =
+                match contract with
+                | {
+                      Operation = Operation.READ
+                      DTOType = Some DTOType.CWL
+                      DTO = Some(DTO.Text text)
+                  } -> tryDecode CWL.Decode.decodeCWLProcessingUnit text
+                | {
+                      Operation = Operation.READ
+                      DTOType = Some DTOType.YAML
+                      DTO = Some(DTO.Text text)
+                  } -> tryDecode CWL.DecodeParameters.decodeYAMLParameterFile text
+                | _ -> Ok()
+
+            match decoded with
+            | Ok() -> decodable.Add contract
+            | Error message ->
+                issues.Add {
+                    Path = contract.Path
+                    Message = message
+                }
+
+        decodable.ToArray(), issues.ToArray()
+
     type ARC with
 
         /// Loads ARC metadata without traversing payload folders and migrates legacy `isa_datamap` paths.
-        static member LoadAsyncSwate(arcPath: string) = promise {
+        /// The load skips undecodable CWL and YAML payloads and returns them as issues. It leaves their files
+        /// on disk unchanged.
+        static member LoadAsyncSwateWithIssues(arcPath: string) = promise {
             let! discoveredPaths = discoverStructuralArcFilePathsWithAsync readdirWithTypesAsync arcPath
             let! paths = migrateLegacyDataMapPathsAsync arcPath discoveredPaths
             let arc = ARC.fromFilePaths paths
@@ -299,8 +349,24 @@ module ArcLoadExtensions =
 
             match! ContractExecutor.fulfillReadContractsSwateAsync arcPath contracts with
             | Ok fulfilledContracts ->
-                arc.SetISAFromContracts fulfilledContracts
-                applySeparateDatamaps arc fulfilledContracts
+                let decodableContracts, issues =
+                    partitionDecodablePayloadContracts fulfilledContracts
+
+                arc.SetISAFromContracts decodableContracts
+                applySeparateDatamaps arc decodableContracts
+                return Ok(arc, issues)
+            | Error errors -> return Error errors
+        }
+
+        /// Loads ARC metadata like LoadAsyncSwateWithIssues and logs each skipped payload as a warning.
+        static member LoadAsyncSwate(arcPath: string) = promise {
+            match! ARC.LoadAsyncSwateWithIssues arcPath with
+            | Ok(arc, issues) ->
+                for issue in issues do
+                    Browser.Dom.console.warn (
+                        $"Payload '{issue.Path}' could not be decoded and was not loaded: {issue.Message}"
+                    )
+
                 return Ok arc
             | Error errors -> return Error errors
         }

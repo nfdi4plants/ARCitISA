@@ -453,3 +453,172 @@ for parent in
                     Vitest.expect(actual.DataContexts.[0].Name).toEqual embedded.DataContexts.[0].Name
                 })
     )
+
+let private brokenCwl = "cwlVersion: v1.2\nclass: UnknownProcessClass\n"
+
+let private brokenYaml = "input: 1\ninput: 2\n"
+
+let private toolDescription () =
+    ARCtrl.CWL.CWLProcessingUnit.CommandLineTool(ARCtrl.CWL.CWLToolDescription(ResizeArray(), label = "Tool"))
+
+let private entityFile (arcPath: string) (folder: string) (id: string) (fileName: string) =
+    join [| arcPath; folder; id; fileName |]
+
+let private expectSuccess (result: Result<'T, string[]>) =
+    match result with
+    | Ok value -> value
+    | Error errors -> failwith (String.concat "\n" errors)
+
+Vitest.describe (
+    "undecodable workflow payloads",
+    fun () ->
+        Vitest.test (
+            "an undecodable workflow CWL is skipped and reported while valid payloads load",
+            fun () ->
+                TestHelpers.withTempArcWith
+                    "swate-undecodable-workflow-cwl-"
+                    "UndecodableWorkflowCwl"
+                    (fun arc ->
+                        arc.AddWorkflow(ArcWorkflow("Valid Workflow", cwlDescription = toolDescription ()))
+                        arc.AddWorkflow(ArcWorkflow("Broken Workflow"))
+                    )
+                    (fun arcPath -> promise {
+                        let cwlPath =
+                            entityFile
+                                arcPath
+                                ArcPathHelper.WorkflowsFolderName
+                                "Broken Workflow"
+                                ArcPathHelper.WorkflowCWLFileName
+
+                        TestHelpers.writeText cwlPath brokenCwl
+
+                        let decodeThrows =
+                            try
+                                ARCtrl.CWL.Decode.decodeCWLProcessingUnit brokenCwl |> ignore
+                                false
+                            with _ ->
+                                true
+
+                        Vitest.expect(decodeThrows).toBe true
+
+                        let! loaded = ARC.LoadAsyncSwateWithIssues arcPath
+                        let arc, issues = expectSuccess loaded
+
+                        Vitest.expect(issues |> Array.map _.Path).toEqual [|
+                            "workflows/Broken Workflow/workflow.cwl"
+                        |]
+
+                        Vitest.expect(issues.[0].Message.Length > 0).toBe true
+                        Vitest.expect(arc.GetWorkflow("Broken Workflow").CWLDescription.IsNone).toBe true
+                        Vitest.expect(arc.GetWorkflow("Valid Workflow").CWLDescription.IsSome).toBe true
+
+                        let! plain = ARC.LoadAsyncSwate arcPath
+                        TestHelpers.expectLoadedArc plain |> ignore
+                    })
+        )
+
+        Vitest.test (
+            "an undecodable run input file is skipped while the run CWL loads",
+            fun () ->
+                TestHelpers.withTempArcWith
+                    "swate-undecodable-run-yml-"
+                    "UndecodableRunYml"
+                    (fun arc -> arc.AddRun(ArcRun("Broken Inputs Run", cwlDescription = toolDescription ())))
+                    (fun arcPath -> promise {
+                        TestHelpers.writeText
+                            (entityFile
+                                arcPath
+                                ArcPathHelper.RunsFolderName
+                                "Broken Inputs Run"
+                                ArcPathHelper.RunYMLFileName)
+                            brokenYaml
+
+                        let decodeThrows =
+                            try
+                                ARCtrl.CWL.DecodeParameters.decodeYAMLParameterFile brokenYaml |> ignore
+                                false
+                            with _ ->
+                                true
+
+                        Vitest.expect(decodeThrows).toBe true
+
+                        let! loaded = ARC.LoadAsyncSwateWithIssues arcPath
+                        let arc, issues = expectSuccess loaded
+                        let run = arc.GetRun "Broken Inputs Run"
+
+                        Vitest.expect(issues |> Array.map _.Path).toEqual [| "runs/Broken Inputs Run/run.yml" |]
+                        Vitest.expect(run.CWLDescription.IsSome).toBe true
+                        Vitest.expect(run.CWLInput.Count).toBe 0
+                    })
+        )
+
+        Vitest.test (
+            "an empty workflow CWL file does not fail the load",
+            fun () ->
+                TestHelpers.withTempArcWith
+                    "swate-empty-workflow-cwl-"
+                    "EmptyWorkflowCwl"
+                    (fun arc -> arc.AddWorkflow(ArcWorkflow("Empty Workflow")))
+                    (fun arcPath -> promise {
+                        TestHelpers.writeText
+                            (entityFile
+                                arcPath
+                                ArcPathHelper.WorkflowsFolderName
+                                "Empty Workflow"
+                                ArcPathHelper.WorkflowCWLFileName)
+                            ""
+
+                        let emptyDecodeThrows =
+                            try
+                                ARCtrl.CWL.Decode.decodeCWLProcessingUnit "" |> ignore
+                                false
+                            with _ ->
+                                true
+
+                        Vitest.expect(emptyDecodeThrows).toBe true
+
+                        let! loaded = ARC.LoadAsyncSwateWithIssues arcPath
+                        let arc, issues = expectSuccess loaded
+
+                        Vitest.expect(issues |> Array.map _.Path).toEqual [| "workflows/Empty Workflow/workflow.cwl" |]
+
+                        Vitest.expect(arc.GetWorkflow("Empty Workflow").CWLDescription.IsNone).toBe true
+                    })
+        )
+
+        Vitest.test (
+            "saving after a skipped payload leaves the payload file unchanged",
+            fun () ->
+                TestHelpers.withTempArcWith
+                    "swate-skipped-payload-save-"
+                    "SkippedPayloadSave"
+                    (fun arc -> arc.AddWorkflow(ArcWorkflow("Broken Workflow")))
+                    (fun arcPath -> promise {
+                        let cwlPath =
+                            entityFile
+                                arcPath
+                                ArcPathHelper.WorkflowsFolderName
+                                "Broken Workflow"
+                                ArcPathHelper.WorkflowCWLFileName
+
+                        TestHelpers.writeText cwlPath brokenCwl
+
+                        let! loaded = ARC.LoadAsyncSwateWithIssues arcPath
+                        let arc, _ = expectSuccess loaded
+                        baselineArcStaticHashes arc
+                        arc.GetWorkflow("Broken Workflow").Description <- Some "Edited"
+
+                        let! prepared = arc.PrepareUpdateContractsSwateAsync arcPath
+                        let paths = expectSuccess prepared |> Array.map _.Path
+
+                        Vitest.expect(paths).toContain "workflows/Broken Workflow/isa.workflow.xlsx"
+                        Vitest.expect(paths |> Array.contains "workflows/Broken Workflow/workflow.cwl").toBe false
+
+                        let! saved = arc.TryUpdateAsyncSwate arcPath
+                        expectSuccess saved |> ignore
+
+                        let content = readFileSync cwlPath TextEncoding.Utf8
+                        Vitest.expect(content).toBe brokenCwl
+                    })
+        )
+)
