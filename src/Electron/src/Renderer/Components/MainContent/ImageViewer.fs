@@ -62,7 +62,8 @@ let Main (filetype: string, base64Content: string, path: string) =
                         prop.alt "Image preview"
                         prop.className "swt:max-h-full swt:max-w-full swt:object-contain"
                         prop.onLoad (fun event ->
-                            setDimensions (Some(ImageMetadata.naturalWidth event, ImageMetadata.naturalHeight event)))
+                            setDimensions (Some(ImageMetadata.naturalWidth event, ImageMetadata.naturalHeight event))
+                        )
                         prop.onError (fun (_: Browser.Types.Event) -> setFailedImageUrl (Some imageUrl))
                     ]
                     if failedImageUrl = Some imageUrl then
@@ -83,12 +84,14 @@ let Main (filetype: string, base64Content: string, path: string) =
                     Html.pre [
                         prop.className "swt:max-h-64 swt:overflow-auto swt:whitespace-pre-wrap"
                         prop.text (
-                            [ Some $"File: {path}"
-                              Some $"MIME type: {filetype}"
-                              Some $"File size: {fileSize} kB"
-                              dimensions
-                              |> Option.map (fun (width, height) -> $"Dimensions: {width} x {height} pixels")
-                              exifMetadata |> Option.map (fun value -> $"Additional info:\n{value}") ]
+                            [
+                                Some $"File: {path}"
+                                Some $"MIME type: {filetype}"
+                                Some $"File size: {fileSize} kB"
+                                dimensions
+                                |> Option.map (fun (width, height) -> $"Dimensions: {width} x {height} pixels")
+                                exifMetadata |> Option.map (fun value -> $"Additional info:\n{value}")
+                            ]
                             |> List.choose id
                             |> String.concat "\n"
                         )

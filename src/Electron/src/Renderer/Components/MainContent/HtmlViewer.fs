@@ -41,11 +41,11 @@ let Main (base64Content: string, path: string) =
                     Html.pre [
                         prop.className "swt:max-h-64 swt:overflow-auto swt:whitespace-pre-wrap"
                         prop.text (
-                            String.concat
-                                "\n"
-                                [ $"File: {path}"
-                                  "MIME type: text/html"
-                                  $"File size: {fileSize} kB" ]
+                            String.concat "\n" [
+                                $"File: {path}"
+                                "MIME type: text/html"
+                                $"File size: {fileSize} kB"
+                            ]
                         )
                     ]
                 ]

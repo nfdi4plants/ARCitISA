@@ -70,11 +70,11 @@ type DisplayPDF =
                         Html.pre [
                             prop.className "swt:overflow-auto swt:whitespace-pre-wrap"
                             prop.text (
-                                String.concat
-                                    "\n"
-                                    [ $"File: {path}"
-                                      "MIME type: application/pdf"
-                                      $"File size: {fileSize} kB" ]
+                                String.concat "\n" [
+                                    $"File: {path}"
+                                    "MIME type: application/pdf"
+                                    $"File size: {fileSize} kB"
+                                ]
                             )
                         ]
                     ]
