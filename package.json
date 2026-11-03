@@ -10,7 +10,8 @@
     "src/Client",
     "src/Components",
     "src/Electron",
-    "tests/Client"
+    "tests/Client",
+    "tests/Electron.Core"
   ],
   "devDependencies": {
     "@chromatic-com/storybook": "^4.1.3",

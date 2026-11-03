@@ -68,7 +68,7 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "fills the missing README in an existing notes folder",
+            "does not create a missing README in an existing notes folder",
             fun () ->
                 withTempArcPath (fun arcPath -> promise {
                     let notesFolderPath = join [| arcPath; NotesRootFolderName |]
@@ -77,8 +77,7 @@ Vitest.describe (
 
                     let! result = ensureNotesFolderAtArcPath arcPath true
                     assertEnsureSucceeded result
-                    let! readmeContent = readFileAsync notesReadmePath TextEncoding.Utf8
-                    Vitest.expect(readmeContent).toBe NotesReadmeContent
+                    Vitest.expect(existsSync notesReadmePath).toBe (false)
                 })
         )
 

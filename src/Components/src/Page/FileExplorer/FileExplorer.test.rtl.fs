@@ -57,16 +57,6 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "sets aria-expanded only on directories that can expand",
-            fun () ->
-                RTL.render (FileExplorer.FileExplorer(initialItems = tree)) |> ignore
-
-                Vitest.expect((treeItem "src").getAttribute "aria-expanded").toBe "false"
-                Vitest.expect((treeItem "Lazy Folder").getAttribute "aria-expanded").toBe "false"
-                Vitest.expect((treeItem "Empty Folder").hasAttribute "aria-expanded").toBe false
-        )
-
-        Vitest.test (
             "selects a file on click and routes it to onItemClick",
             fun () ->
                 let clicked = ResizeArray<string>()

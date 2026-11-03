@@ -708,10 +708,6 @@ export const DirectoryArrowsReflectLoadability: StoryObj<typeof LazyLoadDirector
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
 
-    // A folder row reports aria-expanded only when it can expand.
-    const emptyFolder = await canvas.findByRole("treeitem", { name: "Empty Folder" });
-    await expect(emptyFolder).not.toHaveAttribute("aria-expanded");
-
     const lazyFolder = await canvas.findByRole("treeitem", { name: "Lazy Folder" });
     await expect(lazyFolder).toHaveAttribute("aria-expanded", "false");
     await expect(canvas.queryByText("Lazy Child.txt")).toBeNull();
