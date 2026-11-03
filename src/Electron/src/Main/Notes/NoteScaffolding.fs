@@ -21,11 +21,13 @@ let ensureNotesFolderAtArcPath (arcPath: string) (enabled: bool) : JS.Promise<Re
 
             let! result = mkdirAsync notesFolderPath (MkdirOptions(recursive = true))
             let notesFolderWasCreated = not (isNullOrUndefined result)
+
             if notesFolderWasCreated then
                 let! _ = createTextFileExclusiveAsync notesReadmePath NotesReadmeContent
                 ()
             else
                 ()
+
             return Ok()
     with error ->
         return Error error

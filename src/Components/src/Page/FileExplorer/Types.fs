@@ -339,15 +339,15 @@ module FileExplorerLogic =
             )
             acc
 
-    /// A directory can expand when its children are not loaded yet (None) or when it has children.
-    /// Some [] is a known empty directory.
-    let canExpandDirectory (item: FileItem) =
-        item.IsDirectory
-        && (
-            match item.Children with
-            | Some children -> not (List.isEmpty children)
-            | None -> true
-        )
+
+    let canExpandDirectory (item: FileItem) = item.IsDirectory
+    // I removed this, as it removed the toggle "Anchor" from an empty directory.
+    // This might be okay with default folder icons, but i prefer a consistent ui look.
+    // && (
+    //     match item.Children with
+    //     | Some children -> not (List.isEmpty children)
+    //     | None -> true
+    // )
 
     /// One visible row of the tree in display order.
     type VisibleRow = {

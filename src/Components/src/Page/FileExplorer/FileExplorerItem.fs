@@ -534,6 +534,7 @@ module TreeRow =
 
     // A row skips its render when only the children of its item changed, and it compares the rest of the item by
     // value. A [<ReactMemoComponent>] static member compares props by reference, so it cannot express this areEqual.
+    // by @Freymaurer: Not sure about this one. It is possible to use f# equality for ReactMemoComponent: https://fable-hub.github.io/Feliz/api-docs/feliz/react-component#reactmemocomponent
     let Render =
         React.memo (
             (fun (props: TreeRowProps) ->
