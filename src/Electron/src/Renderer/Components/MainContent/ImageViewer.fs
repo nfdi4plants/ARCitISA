@@ -82,7 +82,7 @@ let Main (filetype: string, base64Content: string, path: string) =
                         prop.text "Metadata"
                     ]
                     Html.pre [
-                        prop.className "swt:max-h-64 swt:overflow-auto swt:whitespace-pre-wrap"
+                        prop.className "swt:max-h-[50vh] swt:overflow-auto swt:whitespace-pre-wrap"
                         prop.text (
                             [
                                 Some $"File: {path}"
