@@ -124,12 +124,12 @@ let Main (appRootPath: ArcRootPath, pageState: PageState option) =
                             [ LazyComponents.LazyMarkdownEditorTarget(content) ],
                             fallback = LazyComponents.FullPageLoadingSpinner("Loading markdown editor...")
                         )
-                    | Some _, Some(PageState.PDFPage(content, path)) ->
+                    | Some _, Some(PageState.PDFPage(content, _)) ->
                         React.Suspense(
-                            [ PDFViewer.DisplayPDF.Main(content, path) ],
+                            [ PDFViewer.DisplayPDF.Main(content) ],
                             fallback = LazyComponents.FullPageLoadingSpinner("Loading pdf...")
                         )
-                    | Some _, Some(PageState.ImagePage(fileType, content, path)) ->
+                    | Some _, Some(PageState.ImagePage(fileType, content, _)) ->
                         let mimeType =
                             match fileType with
                             | FileContentType.PNG -> "image/png"
@@ -138,8 +138,8 @@ let Main (appRootPath: ArcRootPath, pageState: PageState option) =
                             | FileContentType.GIF -> "image/gif"
                             | _ -> "application/octet-stream"
 
-                        ImageViewer.Main(mimeType, content, path)
-                    | Some _, Some(PageState.HtmlPage(content, path)) -> HtmlViewer.Main(content, path)
+                        ImageViewer.Main(mimeType, content)
+                    | Some _, Some(PageState.HtmlPage(content, _)) -> HtmlViewer.Main(content)
                     | Some _, Some(PageState.TextPage content) -> TextPreviewTarget content
                     | Some _, Some PageState.UnknownPage -> UnknownPreviewTarget()
                     | Some _, Some(PageState.LargeFilePage(path, sizeBytes, reason)) ->

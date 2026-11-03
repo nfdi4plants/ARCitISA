@@ -5,8 +5,6 @@ open Fable.Core.JsInterop
 open Fable.Core
 open Swate.Components.Primitive
 open Swate.Components.Primitive.LoadingSpinner
-open Renderer
-open Renderer.Components.Helper.MetadataFormatting
 
 module private PDFData =
 
@@ -21,23 +19,10 @@ module private PDFData =
 
 type DisplayPDF =
     [<ReactComponent>]
-    static member Main(filehtml, path: string) =
+    static member Main(filehtml) =
 
         let pdfUrl, setPdfUrl = React.useState<string option> (None)
         let failedPdfUrl, setFailedPdfUrl = React.useState<string option> (None)
-        let metadata, setMetadata = React.useState<string option> (None)
-
-        React.useEffect (
-            (fun () ->
-                promise {
-                    match! Api.ipcArcVaultApi.readFileMetadata path with
-                    | Ok metadataText -> setMetadata (Some metadataText)
-                    | Error ex -> setMetadata (Some("Metadata unavailable: " + ex.Message))
-                }
-                |> Promise.start
-            ),
-            [| box path |]
-        )
 
         React.useEffect (
             (fun () ->
@@ -71,9 +56,5 @@ type DisplayPDF =
                         prop.text "This file is broken or corrupted."
                     ]
 
-                Html.pre [
-                    prop.className "swt:max-h-64 swt:overflow-auto swt:whitespace-pre-wrap"
-                    prop.text (metadata |> Option.map format |> Option.defaultValue "Reading metadata...")
-                ]
             ]
         ]

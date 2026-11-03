@@ -1,28 +1,11 @@
 module Renderer.Components.MainContent.ImageViewer
 
 open Feliz
-open Renderer.Components.Helper.MetadataFormatting
 
 [<ReactComponent>]
-let Main (filetype: string, base64Content: string, path: string) =
+let Main (filetype: string, base64Content: string) =
     let imageUrl = "data:" + filetype + ";base64," + base64Content
     let failedImageUrl, setFailedImageUrl = React.useState<string option> (None)
-    let metadata, setMetadata = React.useState<string option> (None)
-
-    React.useEffect (
-        (fun () ->
-            promise {
-                try
-                    match! Api.ipcArcVaultApi.readFileMetadata path with
-                    | Ok metadataText -> setMetadata (Some metadataText)
-                    | Error ex -> setMetadata (Some("Metadata unavailable: " + ex.Message))
-                with ex ->
-                    setMetadata (Some("Metadata unavailable: " + ex.Message))
-            }
-            |> Promise.start
-        ),
-        [| box imageUrl |]
-    )
 
     Html.div [
         prop.className "swt:w-full swt:h-full swt:flex swt:flex-col swt:items-center swt:overflow-auto swt:p-4"
@@ -54,7 +37,7 @@ let Main (filetype: string, base64Content: string, path: string) =
                     ]
                     Html.pre [
                         prop.className "swt:max-h-64 swt:overflow-auto swt:whitespace-pre-wrap"
-                        prop.text (metadata |> Option.map format |> Option.defaultValue "Reading metadata...")
+                        prop.text "placeholder"
                     ]
                 ]
             ]

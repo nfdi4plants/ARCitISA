@@ -17,7 +17,6 @@ open Node.Api
 open Main
 open Main.ArcVaultState
 open Main.Bindings
-open Main.Bindings.Sharp
 open Main.ARCtrlExtensions
 open Main.ArcVaultHelper
 open Main.FileImportAuthorization
@@ -1217,43 +1216,6 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
                 | _ -> return Error(arcNotOpenError ())
             with e ->
                 return Error e
-        }
-    readFileMetadata =
-        fun (relativePath: string) -> promise {
-            try
-                let windowId = windowIdFromIpcEvent event
-
-                match ARC_VAULTS.TryGetVault(windowId) with
-                | None -> return Error(exn $"The ARC for window id {windowId} should exist")
-                | Some vault ->
-                    match tryResolveArcRelativePath vault.path.Value relativePath with
-                    | Error pathError -> return Error pathError
-                    | Ok absolutePath ->
-                        let! stats = Filesystem.statAsync absolutePath
-                        let normalizedPath = relativePath.ToLowerInvariant()
-                        let isHtml = normalizedPath.EndsWith(".html") || normalizedPath.EndsWith(".htm")
-
-                        if isHtml then
-                            return
-                                Ok(
-                                    stringifyPretty {|
-                                        fileSizeBytes = stats.size
-                                        modifiedAt = stats.mtimeMs
-                                    |}
-                                )
-                        else
-                            let! imageMetadata = sharp absolutePath |> fun image -> image.metadata ()
-
-                            return
-                                Ok(
-                                    stringifyPretty {|
-                                        fileSizeBytes = stats.size
-                                        modifiedAt = stats.mtimeMs
-                                        image = imageMetadata
-                                    |}
-                                )
-            with e ->
-                return Error(exn $"Could not read file metadata for {relativePath}: {e.Message}")
         }
     resolveCloseRequest =
         fun (decision: IPCTypesHelper.SaveBeforeQuitDecision) -> promise {
