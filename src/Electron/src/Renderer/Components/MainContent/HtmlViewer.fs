@@ -1,11 +1,18 @@
 module Renderer.Components.MainContent.HtmlViewer
 
 open Feliz
+open Fable.Core
+
+module private HtmlData =
+
+    [<Emit("atob($0).length")>]
+    let byteLength (base64Content: string) : int = jsNative
 
 [<ReactComponent>]
-let Main (base64Content: string) =
+let Main (base64Content: string, path: string) =
     let htmlContent = "data:text/html;base64," + base64Content
     let failedHtmlUrl, setFailedHtmlUrl = React.useState<string option> (None)
+    let fileSize = HtmlData.byteLength base64Content / 1024
 
     Html.div [
         prop.className "swt:w-full swt:h-full swt:overflow-auto swt:p-4"
@@ -33,7 +40,13 @@ let Main (base64Content: string) =
                     ]
                     Html.pre [
                         prop.className "swt:max-h-64 swt:overflow-auto swt:whitespace-pre-wrap"
-                        prop.text "placeholder"
+                        prop.text (
+                            String.concat
+                                "\n"
+                                [ $"File: {path}"
+                                  "MIME type: text/html"
+                                  $"File size: {fileSize} kB" ]
+                        )
                     ]
                 ]
             ]

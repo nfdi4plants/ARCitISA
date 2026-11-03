@@ -8,6 +8,9 @@ open Swate.Components.Primitive.LoadingSpinner
 
 module private PDFData =
 
+    [<Emit("atob($0).length")>]
+    let byteLength (base64Content: string) : int = jsNative
+
     [<Emit("new Uint8Array([...atob($0)].map(c => c.charCodeAt(0)))")>]
     let fromBase64 (value: string) : obj = jsNative
 
@@ -19,10 +22,11 @@ module private PDFData =
 
 type DisplayPDF =
     [<ReactComponent>]
-    static member Main(filehtml) =
+    static member Main(filehtml, path: string) =
 
         let pdfUrl, setPdfUrl = React.useState<string option> (None)
         let failedPdfUrl, setFailedPdfUrl = React.useState<string option> (None)
+        let fileSize = PDFData.byteLength filehtml / 1024
 
         React.useEffect (
             (fun () ->
@@ -56,5 +60,24 @@ type DisplayPDF =
                         prop.text "This file is broken or corrupted."
                     ]
 
+                Html.div [
+                    prop.className "swt:w-full swt:max-w-full swt:rounded swt:bg-base-200 swt:p-3"
+                    prop.children [
+                        Html.p [
+                            prop.className "swt:font-bold swt:text-lg"
+                            prop.text "Metadata"
+                        ]
+                        Html.pre [
+                            prop.className "swt:overflow-auto swt:whitespace-pre-wrap"
+                            prop.text (
+                                String.concat
+                                    "\n"
+                                    [ $"File: {path}"
+                                      "MIME type: application/pdf"
+                                      $"File size: {fileSize} kB" ]
+                            )
+                        ]
+                    ]
+                ]
             ]
         ]
