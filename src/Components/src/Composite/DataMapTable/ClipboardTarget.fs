@@ -8,7 +8,7 @@ open Swate.Components.Composite.Table.Types
 [<AutoOpen>]
 module ARCtrlExtensions =
 
-    type DataMap with
+    type Datamap with
 
         member private this.ApplyClipboardCell(targetCoordinate: CellCoordinate, source: CompositeCell) =
             let columnIndex = targetCoordinate.x - 1

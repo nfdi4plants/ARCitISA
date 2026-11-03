@@ -36,6 +36,7 @@ Components in `src/Components` are expected to be reusable and application-agnos
         ```
 - **Colocated stories**: 
     - Storybook files must be colocated with the component and named `<Component>.stories.tsx`.
+    - JavaScript and TypeScript files MUST NOT import `fable-library` directly. Put F# runtime operations in F# helpers (for example, a colocated `.sample.fs` file) and import the generated wrapper functions instead. This also avoids coupling stories to versioned `fable_modules` paths.
     - Files with sample data for stories must be named `<Component>.sample.fs` and colocated with the component. (`sample` is used to place the file between the main file (`.fs`) and the `.stories` file in the alphabetic order)
         - This file should use the namespace `Swate.Components.<level>.<Component>Sample` and be marked as `internal`.
 - **Types**

@@ -4,6 +4,10 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="TestHelpers.fs" />
+    <Compile Include="ContractExecutor.test.fs" />
+    <Compile Include="ContractPolicy.test.fs" />
+    <Compile Include="WorkflowPayloads.test.fs" />
+    <Compile Include="ArcSave.test.fs" />
     <Compile Include="AppMenu.test.fs" />
     <Compile Include="ArcMerge\MockData.fs" />
     <Compile Include="ArcMerge\HasInMemoryChanges.test.fs" />

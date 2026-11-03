@@ -57,6 +57,10 @@ let main args =
             match Test.Run.components |> Async.RunSynchronously with
             | Ok() -> 0
             | Error _ -> 1
+        | "run" :: "compatibility" :: _ ->
+            match Test.Run.compatibility |> Async.RunSynchronously with
+            | Ok() -> 0
+            | Error _ -> 1
         | "watch" :: _ ->
             Test.Watch()
             0

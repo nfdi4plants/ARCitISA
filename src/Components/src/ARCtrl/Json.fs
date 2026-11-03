@@ -11,27 +11,37 @@ module Generic =
     let readFromJsonMap =
         Map [
             (ArcFilesDiscriminate.Investigation, JsonExportFormat.ARCtrl),
-            fun json -> ArcInvestigation.fromJsonString json |> ArcFiles.Investigation
+            fun json ->
+                ARCtrl.JsonCompatibility.fromInvestigationJsonString json
+                |> ArcFiles.Investigation
             (ArcFilesDiscriminate.Investigation, JsonExportFormat.ARCtrlCompressed),
-            fun json -> ArcInvestigation.fromCompressedJsonString json |> ArcFiles.Investigation
+            fun json ->
+                ARCtrl.JsonCompatibility.fromInvestigationCompressedJsonString json
+                |> ArcFiles.Investigation
             (ArcFilesDiscriminate.Investigation, JsonExportFormat.ISA),
             fun json -> ArcInvestigation.fromISAJsonString json |> ArcFiles.Investigation
             (ArcFilesDiscriminate.Investigation, JsonExportFormat.ROCrate),
-            fun json -> ArcInvestigation.fromROCrateJsonString json |> ArcFiles.Investigation
+            fun json ->
+                JsonCompatibility.fromInvestigationROCrateJsonString json
+                |> ArcFiles.Investigation
 
             (ArcFilesDiscriminate.Study, JsonExportFormat.ARCtrl),
-            fun json -> ArcStudy.fromJsonString json |> fun x -> ArcFiles.Study(x, [])
+            fun json ->
+                ARCtrl.JsonCompatibility.fromStudyJsonString json
+                |> fun x -> ArcFiles.Study(x, [])
             (ArcFilesDiscriminate.Study, JsonExportFormat.ARCtrlCompressed),
-            fun json -> ArcStudy.fromCompressedJsonString json |> fun x -> ArcFiles.Study(x, [])
+            fun json ->
+                ARCtrl.JsonCompatibility.fromStudyCompressedJsonString json
+                |> fun x -> ArcFiles.Study(x, [])
             (ArcFilesDiscriminate.Study, JsonExportFormat.ISA),
             fun json -> ArcStudy.fromISAJsonString json |> ArcFiles.Study
             (ArcFilesDiscriminate.Study, JsonExportFormat.ROCrate),
             fun json -> ArcStudy.fromROCrateJsonString json |> ArcFiles.Study
 
             (ArcFilesDiscriminate.Assay, JsonExportFormat.ARCtrl),
-            fun json -> ArcAssay.fromJsonString json |> ArcFiles.Assay
+            fun json -> ARCtrl.JsonCompatibility.fromAssayJsonString json |> ArcFiles.Assay
             (ArcFilesDiscriminate.Assay, JsonExportFormat.ARCtrlCompressed),
-            fun json -> ArcAssay.fromCompressedJsonString json |> ArcFiles.Assay
+            fun json -> ARCtrl.JsonCompatibility.fromAssayCompressedJsonString json |> ArcFiles.Assay
             (ArcFilesDiscriminate.Assay, JsonExportFormat.ISA),
             fun json -> ArcAssay.fromISAJsonString json |> ArcFiles.Assay
             (ArcFilesDiscriminate.Assay, JsonExportFormat.ROCrate),
@@ -42,17 +52,20 @@ module Generic =
             (ArcFilesDiscriminate.Template, JsonExportFormat.ARCtrlCompressed),
             fun json -> Template.fromCompressedJsonString json |> ArcFiles.Template
 
-            (ArcFilesDiscriminate.Run, JsonExportFormat.ARCtrl), fun json -> ArcRun.fromJsonString json |> ArcFiles.Run
+            (ArcFilesDiscriminate.Run, JsonExportFormat.ARCtrl),
+            fun json -> ARCtrl.JsonCompatibility.fromRunJsonString json |> ArcFiles.Run
             (ArcFilesDiscriminate.Run, JsonExportFormat.ARCtrlCompressed),
-            fun json -> ArcRun.fromCompressedJsonString json |> ArcFiles.Run
+            fun json -> ARCtrl.JsonCompatibility.fromRunCompressedJsonString json |> ArcFiles.Run
 
             (ArcFilesDiscriminate.Workflow, JsonExportFormat.ARCtrl),
-            fun json -> ArcWorkflow.fromJsonString json |> ArcFiles.Workflow
+            fun json -> ARCtrl.JsonCompatibility.fromWorkflowJsonString json |> ArcFiles.Workflow
             (ArcFilesDiscriminate.Workflow, JsonExportFormat.ARCtrlCompressed),
-            fun json -> ArcWorkflow.fromCompressedJsonString json |> ArcFiles.Workflow
+            fun json ->
+                ARCtrl.JsonCompatibility.fromWorkflowCompressedJsonString json
+                |> ArcFiles.Workflow
 
             (ArcFilesDiscriminate.DataMap, JsonExportFormat.ARCtrl),
-            fun json -> ArcFiles.DataMap(None, DataMap.fromJsonString json)
+            fun json -> ArcFiles.DataMap(None, Datamap.fromJsonString json)
         ]
 
     let toFileName (id: string) (fileType: ArcFilesDiscriminate) (jsonType: JsonExportFormat) =
@@ -224,7 +237,15 @@ module Export =
             | ArcFiles.Investigation ai, JsonExportFormat.ISA ->
                 nameFromId ai.Identifier, ArcInvestigation.toISAJsonString 0 ai
             | ArcFiles.Investigation ai, JsonExportFormat.ROCrate ->
-                nameFromId ai.Identifier, ArcInvestigation.toROCrateJsonString 0 ai
+                nameFromId ai.Identifier,
+                // ARCtrl's toROCrateJsonString calls MakeDataFilesAbsolute() to normalize data paths
+                // against the ARC root. This mutates assay/study table and datamap paths in place.
+                // fromArcInvestigation shares those child objects, so copy first to protect the source.
+                // The workaround also restores datamap labels omitted by DataContext.Copy().
+                ai
+                |> DataMapCopyWorkaround.copyInvestigation
+                |> ARC.fromArcInvestigation
+                |> ARC.toROCrateJsonString 0
 
             | ArcFiles.Study(as', _), JsonExportFormat.ARCtrl ->
                 nameFromId as'.Identifier, ArcStudy.toJsonString 0 (as')
@@ -261,7 +282,7 @@ module Export =
             | ArcFiles.Workflow _, anyElse ->
                 failwithf "Error. It is not intended to parse Workflow to %s format." (string anyElse)
 
-            | ArcFiles.DataMap(_, d), JsonExportFormat.ARCtrl -> nameFromId "", DataMap.toJsonString 0 d
+            | ArcFiles.DataMap(_, d), JsonExportFormat.ARCtrl -> nameFromId "", Datamap.toJsonString 0 d
             | ArcFiles.DataMap(_, _), anyElse ->
                 failwithf "Error. It is not intended to parse Datamap to %s format." (string anyElse)
 

@@ -111,8 +111,8 @@ Vitest.describe (
             "preserves DataMap parent info while replacing imported DataMap content",
             fun () ->
                 let parentInfo = DatamapParentInfo.create "assay-parent" DataMapParent.Assay
-                let currentDataMap = DataMap.init ()
-                let importedDataMap = DataMap.init ()
+                let currentDataMap = Datamap.init ()
+                let importedDataMap = Datamap.init ()
                 importedDataMap.DataContexts.Add(DataContext())
 
                 let result =

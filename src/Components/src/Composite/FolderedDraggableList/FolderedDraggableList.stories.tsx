@@ -3,7 +3,9 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 import { DndContext, useDraggable, useDroppable, type DragEndEvent } from '@dnd-kit/core';
 import { expect, fireEvent, userEvent, waitFor, within } from 'storybook/test';
 import { FolderedDraggableList } from './FolderedDraggableList.fs.js';
-import { ofArray, type FSharpList } from '../../fable_modules/fable-library-ts.5.0.0-alpha.21/List.ts';
+import { listOfArray as ofArray } from '../../Util/Interop.fs.js';
+
+type FSharpList<T> = ReturnType<typeof ofArray<T>>;
 
 type PropertyPayload = {
   LayerId: string;

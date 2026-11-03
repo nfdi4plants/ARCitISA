@@ -112,7 +112,7 @@ Vitest.test (
 Vitest.test (
     "inserts at the selected DataMap row, preserving metadata and extending like FilePicker",
     fun () ->
-        let dataMap = DataMap.init ()
+        let dataMap = Datamap.init ()
         dataMap.DataContexts.Add(DataContext(name = "existing.csv#row=1", label = "keep"))
         dataMap.DataContexts.Add(DataContext(label = "target label", description = "target description"))
         let original = ArcFiles.DataMap(None, dataMap)
