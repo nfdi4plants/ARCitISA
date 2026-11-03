@@ -5,6 +5,7 @@ open Fable.Core
 open Main.Bindings.Filesystem
 open Main.Bindings.Path
 open Main.Notes.NoteConstants
+open Fable.Core.JsInterop
 
 /// Ensures ARC notes scaffolding exists for the provided ARC root path.
 let ensureNotesFolderAtArcPath (arcPath: string) (enabled: bool) : JS.Promise<Result<unit, exn>> = promise {
@@ -18,9 +19,13 @@ let ensureNotesFolderAtArcPath (arcPath: string) (enabled: bool) : JS.Promise<Re
             let notesFolderPath = join [| resolvedArcPath; NotesRootFolderName |]
             let notesReadmePath = join [| notesFolderPath; NotesReadmeFileName |]
 
-            let! _ = mkdirAsync notesFolderPath (MkdirOptions(recursive = true))
-            let! _ = createTextFileExclusiveAsync notesReadmePath NotesReadmeContent
-
+            let! result = mkdirAsync notesFolderPath (MkdirOptions(recursive = true))
+            let notesFolderWasCreated = not (isNullOrUndefined result)
+            if notesFolderWasCreated then
+                let! _ = createTextFileExclusiveAsync notesReadmePath NotesReadmeContent
+                ()
+            else
+                ()
             return Ok()
     with error ->
         return Error error
