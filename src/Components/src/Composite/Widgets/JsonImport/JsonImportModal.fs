@@ -37,8 +37,7 @@ type JsonImportModal =
             parsed: ParsedJsonFile,
             currentArcFile: ArcFiles,
             decisions: TableImportDecisions,
-            setDecisions: (TableImportDecisions -> TableImportDecisions) -> unit,
-            importing: bool
+            setDecisions: (TableImportDecisions -> TableImportDecisions) -> unit
         ) =
         let sources =
             React.useMemo ((fun () -> JsonHelper.sourcesOf parsed.File), [| box parsed |])
@@ -98,8 +97,7 @@ type JsonImportModal =
                     setDecisions,
                     names,
                     canAppend = appendTarget.IsSome,
-                    appendDisabledNote = "Select a table in the editor first to append columns to it.",
-                    disabled = importing
+                    appendDisabledNote = "Select a table in the editor first to append columns to it."
                 )
                 Html.div [
                     prop.testId "json-import-summary"
@@ -247,7 +245,7 @@ type JsonImportModal =
 
         let configuration () =
             if tableImport then
-                JsonImportModal.TableConfiguration(parsed, currentArcFile, decisions, setDecisions, importing)
+                JsonImportModal.TableConfiguration(parsed, currentArcFile, decisions, setDecisions)
             else
                 JsonImportModal.ReplacementConfiguration(parsed, currentArcFile)
 

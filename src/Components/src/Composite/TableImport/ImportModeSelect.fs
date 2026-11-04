@@ -8,11 +8,7 @@ open Feliz
 type ImportModeSelect =
 
     [<ReactComponent(true)>]
-    static member ImportModeSelect
-        (importType: TableJoinOptions, setImportType: TableJoinOptions -> unit, ?disabled: bool)
-        =
-        let disabled = defaultArg disabled false
-
+    static member ImportModeSelect(importType: TableJoinOptions, setImportType: TableJoinOptions -> unit) =
         Html.div [
             prop.className "swt:flex swt:flex-col swt:gap-2"
             prop.children [
@@ -39,7 +35,6 @@ type ImportModeSelect =
                                                 prop.name "table-import-mode"
                                                 prop.className "swt:radio swt:radio-sm"
                                                 prop.isChecked isChecked
-                                                prop.disabled disabled
                                                 prop.onChange (fun (_: bool) -> setImportType option.Mode)
                                             ]
                                             Html.span [

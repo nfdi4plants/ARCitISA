@@ -35,16 +35,14 @@ type TableImportForm =
             ?canAppend: bool,
             ?appendDisabledNote: string,
             ?emptyText: string,
-            ?previewTitle: string,
-            ?disabled: bool
+            ?previewTitle: string
         ) =
         Html.div [
             prop.className "swt:flex swt:flex-col swt:gap-2"
             prop.children [
                 ImportModeSelect.ImportModeSelect(
                     decisions.ImportType,
-                    (fun importType -> setDecisions (fun d -> { d with ImportType = importType })),
-                    ?disabled = disabled
+                    (fun importType -> setDecisions (fun d -> { d with ImportType = importType }))
                 )
                 match previewTitle with
                 | Some title ->
