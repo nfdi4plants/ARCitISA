@@ -161,5 +161,6 @@ let buildVisibleItems
     (expandedIds: Set<string>)
     : FileItem list =
     // Ids and entries are compared by path key, because a case-only rename leaves the old spelling in the set.
+    Browser.Dom.console.count ("buildVisibleItems")
     let expandedKeys = expandedIds |> Set.map (PathKey.ofPath snapshot.CaseInsensitive)
     buildChildren createItem withBusy snapshot expandedKeys true ""
