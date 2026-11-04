@@ -460,10 +460,12 @@ Vitest.test (
 )
 
 let private replacementCases: (string * ArcFiles * JsonExportFormat)[] = [|
-    "Investigation", ArcFiles.Investigation(ArcInvestigation.init "FixtureInvestigation"), JsonExportFormat.ROCrate
+    "Investigation",
+    ArcFiles.Investigation(ArcInvestigation("FixtureInvestigation", title = "Fixture title")),
+    JsonExportFormat.ROCrate
     "Workflow", ArcFiles.Workflow(ArcWorkflow.init "FixtureWorkflow"), JsonExportFormat.ARCtrl
     "Template", ArcFiles.Template(Template.init "FixtureTemplate"), JsonExportFormat.ARCtrl
-    "DataMap", ArcFiles.DataMap(None, DataMap.init ()), JsonExportFormat.ARCtrl
+    "DataMap", ArcFiles.DataMap(None, Datamap.init ()), JsonExportFormat.ARCtrl
 |]
 
 for label, file, format in replacementCases do
