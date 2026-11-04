@@ -350,7 +350,9 @@
     <Compile Include="Page\Changelog\Changelog.test.rtl.fs" />
     <Compile Include="Page\Changelog\Changelog.sample.fs" />
     <Compile Include="Page\GitSidebar\GitDefaults.fs" />
+    <Compile Include="Page\SettingsPage\Types.fs" />
     <Compile Include="Page\SettingsPage\SettingsPage.fs" />
+    <Compile Include="Page\SettingsPage\SettingsPage.test.rtl.fs" />
     <Compile Include="Page\Metadata\FormComponents\Helpers.fs" />
     <Compile Include="Page\Metadata\FormComponents\InputSequence.fs" />
     <Compile Include="Page\Metadata\FormComponents\TextInput.fs" />

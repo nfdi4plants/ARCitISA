@@ -42,6 +42,12 @@ else
             // Restore persisted auth before any IPC handlers fire
             Main.Auth.AuthService.tryRestoreFromStorage ()
 
+            // The library keeps one Git selection for all providers. It has to exist before the first
+            // provider starts Git.
+            Main.VersionControl.GitExecutableSetting.install (
+                Main.UserDefaults.production.Effective().GitExecutablePath
+            )
+
             // The provider catalog needs the settings root, which exists only once the app is
             // ready. A failure here must not take the IPC registrations below with it.
             try

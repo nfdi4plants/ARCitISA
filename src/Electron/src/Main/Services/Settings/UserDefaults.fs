@@ -24,6 +24,7 @@ let builtIn: UserDefaultValuesDto = {
     DiffIndexingLimitMb = VersionControlSettings.defaults.DiffIndexingLimitMb
     UploadRightAway = true
     AutoCreateNotesFolder = true
+    GitExecutablePath = None
 }
 
 let toVersionControlSettings (values: UserDefaultValuesDto) : VersionControlSettings = {
@@ -39,6 +40,8 @@ type UserDefaultOverrides = {
     DiffIndexingLimitMb: int option
     UploadRightAway: bool option
     AutoCreateNotesFolder: bool option
+    /// The built-in value is None, so a Some here is the override itself.
+    GitExecutablePath: string option
 }
 
 let private noOverrides: UserDefaultOverrides = {
@@ -47,6 +50,7 @@ let private noOverrides: UserDefaultOverrides = {
     DiffIndexingLimitMb = None
     UploadRightAway = None
     AutoCreateNotesFolder = None
+    GitExecutablePath = None
 }
 
 let private thresholdInRange (value: int) =
@@ -98,6 +102,12 @@ let private storedDecoder: Decoder<StoredDefaults> =
                     AutoCreateNotesFolder =
                         get.Optional.Field "autoCreateNotesFolder" (tolerant Decode.bool)
                         |> Option.bind id
+                    // A blank path counts as absent. A path that no longer exists stays, so the
+                    // dependency check can say that the chosen Git is gone.
+                    GitExecutablePath =
+                        get.Optional.Field "gitExecutablePath" (tolerant Decode.string)
+                        |> Option.bind id
+                        |> Option.filter (String.IsNullOrWhiteSpace >> not)
                 }
             )
     )
@@ -121,6 +131,7 @@ let private serialize (overrides: UserDefaultOverrides) : string =
             diffIndexingLimitMb = overrides.DiffIndexingLimitMb
             uploadRightAway = overrides.UploadRightAway
             autoCreateNotesFolder = overrides.AutoCreateNotesFolder
+            gitExecutablePath = overrides.GitExecutablePath
         |},
         space = 2
     )
@@ -135,6 +146,7 @@ let private effectiveOf (overrides: UserDefaultOverrides) : UserDefaultValuesDto
     AutoCreateNotesFolder =
         overrides.AutoCreateNotesFolder
         |> Option.defaultValue builtIn.AutoCreateNotesFolder
+    GitExecutablePath = overrides.GitExecutablePath |> Option.orElse builtIn.GitExecutablePath
 }
 
 /// A value equal to the built-in one is no override.
@@ -148,6 +160,8 @@ let private overridesOf (values: UserDefaultValuesDto) : UserDefaultOverrides =
         DiffIndexingLimitMb = differing values.DiffIndexingLimitMb builtIn.DiffIndexingLimitMb
         UploadRightAway = differing values.UploadRightAway builtIn.UploadRightAway
         AutoCreateNotesFolder = differing values.AutoCreateNotesFolder builtIn.AutoCreateNotesFolder
+        // The built-in path is None, so any chosen path is an override.
+        GitExecutablePath = values.GitExecutablePath
     }
 
 type IUserDefaultsStore =

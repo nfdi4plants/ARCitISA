@@ -57,6 +57,8 @@ type UserDefaultValuesDto = {
     DiffIndexingLimitMb: int
     UploadRightAway: bool
     AutoCreateNotesFolder: bool
+    /// Absolute path of the Git executable to use. None takes Git from PATH.
+    GitExecutablePath: string option
 }
 
 /// The values new sessions start from, next to the values Swate ships with.
@@ -166,6 +168,8 @@ type IArcVaultsApi = {
 
     pickArcPaths: unit -> JS.Promise<Result<string[], exn>>
     pickDirectory: unit -> JS.Promise<Result<string, exn>>
+    /// Opens a native file picker for one executable. Cancelling answers with the same "Cancelled" error as pickDirectory.
+    pickExecutable: unit -> JS.Promise<Result<string, exn>>
     pickAbsolutePaths: FileSystemItemKind -> JS.Promise<Result<string option, exn>>
     pickExternalTextFiles: unit -> JS.Promise<Result<ImportedTextFile[], exn>>
     tryImportExternalFiles: ImportExternalFilesRequest -> JS.Promise<Result<ImportExternalFilesResult, exn>>

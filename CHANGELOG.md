@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - "Show last log" in the Git sidebar unfolds the output of the last Git operation after it ended, whether it worked or failed, including Git LFS downloads and frees from the file tree. It stays until another Git operation replaces it or the window closes, and refreshing keeps it. It also appears on the DataHub page after an ARC download. (by @caroott)
 - When a Git action fails, "Technical details" in the error message show the output of the Git commands it ran. (by @caroott)
 - If Git or Git LFS can't be used, for example because it is missing or too old, a warning at the top of every window says why. It stays until the problem is fixed and lets you open the settings or check again. (by @caroott)
+- The general settings show which Git program ARCitISA uses and its version. You can pick a different Git program there, or go back to the one ARCitISA finds by itself. (by @caroott)
 ### 🔄 Changed
 
 - Releases are now automatically created as draft. This is part of quality control. The App will first be tested and the docs updated before the release is pushed into "New update available" status. #1488 (by @Freymaurer)

@@ -1,7 +1,8 @@
 /// The main process owns the version control dependency check, so every window sees one answer.
 /// A check runs when the app starts and whenever a window asks for one. The in-app install of a
-/// component starts another one when it succeeds. The module keeps the latest result and tells every
-/// window when it changes.
+/// component starts another one when it succeeds, and a change of the Git executable path replaces
+/// the running check with a new one. The module keeps the latest result and tells every window when
+/// it changes.
 module Main.VersionControl.DependencyState
 
 open System
@@ -109,8 +110,8 @@ let private timedOutReport (deadlineMilliseconds: float) : CheckReport = {
 /// Keeps the latest result of the check and whether one runs. A trigger while a check runs queues
 /// exactly one more run for when the first ends. At the deadline the run is canceled and ends as a
 /// failed check at once, even when the check never returns, so the flag that marks a running check
-/// clears. A result that arrives after that is ignored. Every change of the state goes to `broadcast`,
-/// which carries it to the windows.
+/// clears. A result that arrives after that is ignored, and so is the result of a run that `Restart`
+/// replaced. Every change of the state goes to `broadcast`, which carries it to the windows.
 type DependencyStateController
     (
         check: OperationCancellation -> JS.Promise<CheckReport>,
@@ -121,9 +122,16 @@ type DependencyStateController
     let mutable state = notChecked
     let mutable running = false
     let mutable rerunRequested = false
+    // Numbers the runs. Only the result of the latest run counts, so a replaced run cannot overwrite
+    // the state.
+    let mutable runId = 0
+    let mutable currentSource: OperationCancellation.Source option = None
 
     let rec launch () =
+        runId <- runId + 1
+        let thisRun = runId
         let source = OperationCancellation.Source()
+        currentSource <- Some source
         let timer = JS.setTimeout (fun () -> source.Cancel()) (int deadlineMilliseconds)
 
         // Settles when the run is canceled. Killing a launcher process can leave a child holding its
@@ -141,7 +149,9 @@ type DependencyStateController
         |]
         |> Promise.iter (fun report ->
             JS.clearTimeout timer
-            settle report
+
+            if thisRun = runId then
+                settle report
         )
 
     /// Keeps the result, then starts the queued run or reports the end. The state is set before
@@ -150,6 +160,7 @@ type DependencyStateController
         let queued = rerunRequested
         rerunRequested <- false
         running <- queued
+        currentSource <- None
 
         state <- {
             Statuses = report.Statuses
@@ -176,6 +187,22 @@ type DependencyStateController
             state <- { state with IsChecking = true }
             let announced = state
             launch ()
+            broadcast announced
+
+        state
+
+    /// Starts a new check at once. A running check is canceled and its result is dropped, because it
+    /// asked the Git that was in use before. A queued run is dropped too, since the new run covers it.
+    member _.Restart() : VersionControlDependencyStateDto =
+        let wasRunning = running
+        currentSource |> Option.iter (fun source -> source.Cancel())
+        rerunRequested <- false
+        running <- true
+        state <- { state with IsChecking = true }
+        let announced = state
+        launch ()
+
+        if not wasRunning then
             broadcast announced
 
         state
@@ -226,6 +253,11 @@ let initialize (catalog: ProviderResolver.ProviderCatalog) : unit =
 /// Checks again, or queues one more run behind the running check. Does nothing before `initialize`.
 let trigger () : unit =
     installed |> Option.iter (fun controller -> controller.Trigger() |> ignore)
+
+/// Replaces the running check with a new one, or starts one. Use it when the Git executable
+/// changed, because a running check used the old one. Does nothing before `initialize`.
+let restart () : unit =
+    installed |> Option.iter (fun controller -> controller.Restart() |> ignore)
 
 /// The state a window gets when version control did not start, so no check can run.
 let private unavailable () : VersionControlDependencyStateDto = {

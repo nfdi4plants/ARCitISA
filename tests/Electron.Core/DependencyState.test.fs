@@ -8,17 +8,24 @@ open Swate.Electron.Shared.VersionControlTypes
 open VersionControlService.Abstractions
 open Vitest
 
+module GitExecution = VersionControlService.Git.GitExecution
+
 /// A check that runs only when the test says so. Every call to the check gets its own promise,
 /// so a test can end the runs one after the other.
 type private ControlledCheck() =
     let resolvers = ResizeArray<CheckReport -> unit>()
     let rejecters = ResizeArray<exn -> unit>()
+    let cancellations = ResizeArray<OperationCancellation>()
     let mutable calls = 0
 
     member _.Calls = calls
 
-    member _.Check(_cancellation: OperationCancellation) : JS.Promise<CheckReport> =
+    /// The cancellation each call got, in the order of the calls.
+    member _.Cancellations = cancellations
+
+    member _.Check(cancellation: OperationCancellation) : JS.Promise<CheckReport> =
         calls <- calls + 1
+        cancellations.Add cancellation
 
         Promise.create (fun resolve reject ->
             resolvers.Add resolve
@@ -319,6 +326,70 @@ Vitest.describe (
         )
 
         Vitest.test (
+            "a restart during a run cancels it, starts a new run at once and ignores everything the old run reports",
+            fun () -> promise {
+                let check = ControlledCheck()
+                let controller, broadcasts = controllerOver check
+
+                controller.Trigger() |> ignore
+                // This trigger queues a run behind the first one.
+                controller.Trigger() |> ignore
+                let announced = broadcasts.Count
+
+                let restarted = controller.Restart()
+                Vitest.expect(restarted.IsChecking).toBe true
+                Vitest.expect(check.Calls).toBe 2
+                Vitest.expect(check.Cancellations[0].IsCancellationRequested()).toBe true
+                Vitest.expect(check.Cancellations[1].IsCancellationRequested()).toBe false
+
+                // The canceled run ends at its own cancellation, and a late result follows. Neither
+                // reaches the state, so the new run is still the only one that counts.
+                do! settle ()
+                check.Finish(0, report [| status "git" false |])
+                do! settle ()
+
+                Vitest.expect(controller.Current.IsChecking).toBe true
+                Vitest.expect(controller.Current.Statuses).toEqual [||]
+                Vitest.expect(controller.Current.Failure).toEqual None
+                Vitest.expect(controller.Current.CheckedAt).toEqual None
+                Vitest.expect(broadcasts.Count).toBe announced
+                Vitest.expect(check.Calls).toBe 2
+
+                // The result of the new run is the state. The run that the old run had queued is gone.
+                let statuses = [| status "git" true |]
+                check.Finish(1, report statuses)
+                do! settle ()
+
+                Vitest.expect(check.Calls).toBe 2
+                Vitest.expect(controller.Current.IsChecking).toBe false
+                Vitest.expect(controller.Current.Statuses).toEqual statuses
+                Vitest.expect(broadcasts[broadcasts.Count - 1]).toEqual controller.Current
+            }
+        )
+
+        Vitest.test (
+            "a restart without a running check starts one and announces it",
+            fun () -> promise {
+                let check = ControlledCheck()
+                let controller, broadcasts = controllerOver check
+
+                let started = controller.Restart()
+                Vitest.expect(started.IsChecking).toBe true
+                Vitest.expect(check.Calls).toBe 1
+                Vitest.expect(broadcasts.Count).toBe 1
+                Vitest.expect(broadcasts[0].IsChecking).toBe true
+
+                let statuses = [| status "git" true |]
+                check.Finish(0, report statuses)
+                do! settle ()
+
+                Vitest.expect(controller.Current.IsChecking).toBe false
+                Vitest.expect(controller.Current.Statuses).toEqual statuses
+                Vitest.expect(check.Calls).toBe 1
+            }
+        )
+
+        Vitest.test (
             "a result with a provider failure keeps the components and names the failure",
             fun () ->
                 let statuses = [|
@@ -349,6 +420,127 @@ Vitest.describe (
                 let failed = DependencyState.reportOf (Failed failure)
                 Vitest.expect(failed.Statuses).toEqual [||]
                 Vitest.expect(failed.Failure).toEqual (Some "The other provider broke.")
+        )
+)
+
+let private memoryStore () =
+    let mutable content: string option = None
+
+    UserDefaults.create
+        (fun () -> content)
+        (fun next ->
+            content <- Some next
+            Ok()
+        )
+
+/// The Git executable setting and the dependency state are process-wide. A test restores both.
+let private restoreProcessState () =
+    GitExecution.resetGitExecutableProvider ()
+    GitExecutableSetting.set None
+    DependencyState.resetForTests ()
+
+[<Emit("$0?.PATH || $0?.Path || $0?.path || ''")>]
+let private environmentPath (_environment: obj) : string = jsNative
+
+[<Import("delimiter", "path")>]
+let private pathDelimiter: string = jsNative
+
+/// The first PATH entry of the environment that the library gives to a Git process. A chosen Git puts
+/// its own directory there.
+let private firstPathEntry () : string =
+    (environmentPath (GitExecution.resolvedEnvironment ()))
+        .Split([| pathDelimiter[0] |], System.StringSplitOptions.RemoveEmptyEntries)
+    |> Array.head
+
+let private directoryOf (path: string) : string = Main.Bindings.Path.dirname path
+
+Vitest.describe (
+    "Git executable setting",
+    fun () ->
+        Vitest.test (
+            "the chosen path is the library's Git and clearing it returns to Git from PATH",
+            fun () ->
+                try
+                    GitExecutableSetting.install (Some "/chosen/git")
+                    Vitest.expect(firstPathEntry ()).toBe (directoryOf "/chosen/git")
+
+                    GitExecutableSetting.set None
+                    Vitest.expect(firstPathEntry ()).not.toBe (directoryOf "/chosen/git")
+
+                    GitExecutableSetting.set (Some "/other/git")
+                    Vitest.expect(firstPathEntry ()).toBe (directoryOf "/other/git")
+                    Vitest.expect(GitExecutableSetting.get ()).toEqual (Some "/other/git")
+                finally
+                    restoreProcessState ()
+        )
+
+        Vitest.test (
+            "saving a changed Git path updates the library and restarts the check",
+            fun () -> promise {
+                try
+                    let check = ControlledCheck()
+                    let controller, _ = controllerOver check
+                    GitExecutableSetting.install None
+                    DependencyState.install controller
+
+                    let api = Main.IPC.UserDefaultsApi.createApi (memoryStore ())
+
+                    // A change of another setting leaves the Git selection and the check alone.
+                    let! unrelated =
+                        api.setUserDefaults {
+                            UserDefaults.builtIn with
+                                UploadRightAway = false
+                        }
+
+                    Vitest.expect(unrelated.IsOk).toBe true
+                    Vitest.expect(check.Calls).toBe 0
+                    Vitest.expect(firstPathEntry ()).not.toBe (directoryOf "/chosen/git")
+
+                    let chosenPath = "/chosen/git"
+
+                    let! chosen =
+                        api.setUserDefaults {
+                            UserDefaults.builtIn with
+                                GitExecutablePath = Some chosenPath
+                        }
+
+                    Vitest.expect(chosen.IsOk).toBe true
+                    Vitest.expect(firstPathEntry ()).toBe (directoryOf chosenPath)
+                    Vitest.expect(check.Calls).toBe 1
+
+                    // Saving the same path again changes nothing.
+                    let! again =
+                        api.setUserDefaults {
+                            UserDefaults.builtIn with
+                                GitExecutablePath = Some chosenPath
+                                UploadRightAway = false
+                        }
+
+                    Vitest.expect(again.IsOk).toBe true
+                    Vitest.expect(check.Calls).toBe 1
+
+                    // Clearing the path while the first check still runs starts a new check at once.
+                    // The first check asked the old Git, so its result is dropped.
+                    let! cleared = api.setUserDefaults UserDefaults.builtIn
+                    Vitest.expect(cleared.IsOk).toBe true
+                    Vitest.expect(firstPathEntry ()).not.toBe (directoryOf chosenPath)
+                    Vitest.expect(check.Calls).toBe 2
+
+                    check.Finish(0, report [| status "git" false |])
+                    do! settle ()
+                    Vitest.expect(controller.Current.IsChecking).toBe true
+                    Vitest.expect(controller.Current.Statuses).toEqual [||]
+
+                    let statuses = [| status "git" true |]
+                    check.Finish(1, report statuses)
+                    do! settle ()
+                    Vitest.expect(controller.Current.IsChecking).toBe false
+                    Vitest.expect(controller.Current.Statuses).toEqual statuses
+                    restoreProcessState ()
+                with error ->
+                    restoreProcessState ()
+                    return raise error
+            }
         )
 )
 

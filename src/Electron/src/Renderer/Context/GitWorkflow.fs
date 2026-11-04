@@ -27,6 +27,7 @@ let builtInUserDefaults: UserDefaultValuesDto = {
     DiffIndexingLimitMb = DefaultDiffIndexingLimitMb
     UploadRightAway = true
     AutoCreateNotesFolder = true
+    GitExecutablePath = None
 }
 
 [<RequireQualifiedAccess>]

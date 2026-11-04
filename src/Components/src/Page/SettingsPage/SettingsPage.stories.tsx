@@ -186,6 +186,108 @@ export const GitDefaultsIncompleteProps: PropsStory = {
   },
 };
 
+const gitExecutableId = 'SettingsGitExecutable';
+
+type GitExecutableSetting = {
+  ChosenPath?: string;
+  PathInUse?: string;
+  GitVersion?: string;
+  GitLfsVersion?: string;
+  Problem?: string;
+  IsChecking: boolean;
+};
+
+const gitExecutableArgs = (setting: GitExecutableSetting) => ({
+  gitExecutable: setting as any,
+  onGitExecutableChoose: fn(),
+  onGitExecutableUseAutomatic: fn(),
+  onGitExecutableCheckAgain: fn(),
+});
+
+export const GitExecutableAutomatic: PropsStory = {
+  render: renderWithProps,
+  args: gitExecutableArgs({
+    PathInUse: '/usr/bin/git',
+    GitVersion: '2.47.1',
+    GitLfsVersion: '3.6.1',
+    IsChecking: false,
+  }),
+  play: async ({ canvasElement, args }) => {
+    const canvas = within(canvasElement);
+
+    await expect(canvas.getByTestId(`${gitExecutableId}PathInUse`)).toHaveTextContent('/usr/bin/git');
+    await expect(canvas.getByTestId(`${gitExecutableId}GitVersion`)).toHaveTextContent('2.47.1');
+    await expect(canvas.getByTestId(`${gitExecutableId}GitLfsVersion`)).toHaveTextContent('3.6.1');
+    await expect(canvas.queryByTestId(`${gitExecutableId}Problem`)).toBeNull();
+    await expect(canvas.queryByTestId(`${gitExecutableId}Checking`)).toBeNull();
+
+    // Without a chosen path there is nothing to switch back from.
+    await expect(canvas.queryByTestId(`${gitExecutableId}UseAutomatic`)).toBeNull();
+    await expect(canvas.getByTestId(`${gitExecutableId}CheckAgain`)).toBeEnabled();
+
+    await userEvent.click(canvas.getByTestId(`${gitExecutableId}Choose`));
+    await expect(args.onGitExecutableChoose).toHaveBeenCalledTimes(1);
+    await userEvent.click(canvas.getByTestId(`${gitExecutableId}CheckAgain`));
+    await expect(args.onGitExecutableCheckAgain).toHaveBeenCalledTimes(1);
+  },
+};
+
+export const GitExecutableChosenPath: PropsStory = {
+  render: renderWithProps,
+  args: gitExecutableArgs({
+    ChosenPath: '/opt/tools/git/bin/git',
+    PathInUse: '/opt/tools/git/bin/git',
+    GitVersion: '2.45.0',
+    GitLfsVersion: '3.5.1',
+    IsChecking: false,
+  }),
+  play: async ({ canvasElement, args }) => {
+    const canvas = within(canvasElement);
+
+    await expect(canvas.getByTestId(`${gitExecutableId}Source`)).toHaveTextContent('/opt/tools/git/bin/git');
+    await expect(canvas.getByTestId(`${gitExecutableId}PathInUse`)).toHaveTextContent('/opt/tools/git/bin/git');
+
+    await userEvent.click(canvas.getByTestId(`${gitExecutableId}UseAutomatic`));
+    await expect(args.onGitExecutableUseAutomatic).toHaveBeenCalledTimes(1);
+  },
+};
+
+export const GitExecutableProblem: PropsStory = {
+  render: renderWithProps,
+  args: gitExecutableArgs({
+    ChosenPath: '/opt/tools/git/bin/git',
+    Problem: 'The program could not be started.',
+    IsChecking: false,
+  }),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    await expect(canvas.getByTestId(`${gitExecutableId}Problem`)).toHaveTextContent(
+      'The program could not be started.',
+    );
+    // Versions and the path in use are unknown, so their rows stay out.
+    await expect(canvas.queryByTestId(`${gitExecutableId}PathInUse`)).toBeNull();
+    await expect(canvas.queryByTestId(`${gitExecutableId}GitVersion`)).toBeNull();
+    await expect(canvas.queryByTestId(`${gitExecutableId}GitLfsVersion`)).toBeNull();
+  },
+};
+
+export const GitExecutableChecking: PropsStory = {
+  render: renderWithProps,
+  args: gitExecutableArgs({
+    ChosenPath: '/opt/tools/git/bin/git',
+    PathInUse: '/opt/tools/git/bin/git',
+    IsChecking: true,
+  }),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    await expect(canvas.getByTestId(`${gitExecutableId}Checking`)).toBeInTheDocument();
+    await expect(canvas.getByTestId(`${gitExecutableId}CheckAgain`)).toBeDisabled();
+    await expect(canvas.getByTestId(`${gitExecutableId}Choose`)).toBeEnabled();
+  },
+};
+
 export const ControlledAutoCreateNotesFolder: PropsStory = {
   render: renderWithProps,
   args: {

@@ -45,6 +45,7 @@
     <Compile Include="VersionControl\ProviderComposition.fs" />
     <Compile Include="VersionControl\VersionControlSettings.fs" />
     <Compile Include="Services\Settings\UserDefaults.fs" />
+    <Compile Include="VersionControl\GitExecutableSetting.fs" />
     <Compile Include="VersionControl\VersionControlRuntime.fs" />
     <Compile Include="VersionControl\Mappings.fs" />
     <Compile Include="VersionControl\WorkspaceSessionHost.fs" />

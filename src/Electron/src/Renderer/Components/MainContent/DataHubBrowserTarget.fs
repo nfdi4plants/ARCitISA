@@ -12,9 +12,6 @@ open Swate.Components.Primitive.ErrorModal.Context
 open Swate.Electron.Shared.VersionControlTypes
 
 module DataHubBrowserHelper =
-    let isCancelError (error: exn) =
-        String.Equals(error.Message, "Cancelled", StringComparison.OrdinalIgnoreCase)
-
     let toRepositoryFolderName (projectInfo: ExploreProjectDto) =
         projectInfo.path_with_namespace.Split('/')
         |> Array.tryLast
@@ -77,7 +74,7 @@ let DataHubBrowserTarget () =
             let! destinationResult = Api.ipcArcVaultApi.pickDirectory ()
 
             match destinationResult with
-            | Error error when DataHubBrowserHelper.isCancelError error -> ()
+            | Error error when isPickCancelled error -> ()
             | Error error -> onArcError $"Could not pick download folder: {error.Message}"
             | Ok destinationFolder ->
                 let targetPath =
