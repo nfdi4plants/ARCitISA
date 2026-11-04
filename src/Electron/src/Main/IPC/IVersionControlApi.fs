@@ -290,14 +290,11 @@ let resultChangedState (result: Result<OperationResultDto<'U>, exn>) =
     | Ok(OperationResultDto.Failed failure) -> failure.StateChanged
     | Error _ -> false
 
-let private shouldRefreshObjectTree (request: ObjectPathRequestDto) (result: Result<OperationResultDto<unit>, exn>) =
-    match request.RefreshTree with
-    | Some true -> true
-    | Some false ->
-        match result with
-        | Ok(OperationResultDto.Succeeded _) -> false
-        | _ -> true
-    | None -> resultChangedState result
+let private shouldRefreshObjectTree (request: ObjectPathsRequestDto) (result: Result<OperationResultDto<unit>, exn>) =
+    if request.AlwaysRefreshTree then
+        true
+    else
+        resultChangedState result
 
 /// Same as withSession, with the vault marked busy for the duration and the file tree
 /// refreshed afterwards when the result predicate allows it.
@@ -1057,40 +1054,16 @@ let api (event: IpcMainInvokeEvent) : IVersionControlApi = {
                     "large object materialization"
                     (fun service context -> service.ListObjects context))
                 (Array.map Mappings.objectState)
-    materializeObject =
-        fun request ->
-            withMutatingSessionUsingRefreshPredicate
-                "materializeObject"
-                event
-                request.OperationId
-                (shouldRefreshObjectTree request)
-                (withService
-                    _.ObjectMaterialization
-                    "large object materialization"
-                    (fun service context -> withPath request.Path (fun path -> service.Materialize path context)))
-                id
-    dematerializeObject =
-        fun request ->
-            withMutatingSessionUsingRefreshPredicate
-                "dematerializeObject"
-                event
-                request.OperationId
-                (shouldRefreshObjectTree request)
-                (withService
-                    _.ObjectMaterialization
-                    "large object materialization"
-                    (fun service context -> withPath request.Path (fun path -> service.Dematerialize path context)))
-                id
     materializeObjects =
         fun request ->
             withMutatingSessionUsingRefreshPredicate
                 "materializeObjects"
                 event
                 request.OperationId
-                resultChangedState
+                (shouldRefreshObjectTree request)
                 (withService
-                    _.ObjectBatchMaterialization
-                    "large object batch materialization"
+                    _.ObjectMaterialization
+                    "large object materialization"
                     (fun service context -> withPaths request.Paths (fun paths -> service.Materialize paths context)))
                 id
     dematerializeObjects =
@@ -1099,10 +1072,10 @@ let api (event: IpcMainInvokeEvent) : IVersionControlApi = {
                 "dematerializeObjects"
                 event
                 request.OperationId
-                resultChangedState
+                (shouldRefreshObjectTree request)
                 (withService
-                    _.ObjectBatchMaterialization
-                    "large object batch materialization"
+                    _.ObjectMaterialization
+                    "large object materialization"
                     (fun service context -> withPaths request.Paths (fun paths -> service.Dematerialize paths context)))
                 id
     getStoragePolicySettings =

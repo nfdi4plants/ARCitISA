@@ -99,7 +99,6 @@ module private Helper =
             finalizeConflict = Renderer.VersionControlApiClient.finalizeConflict
             cancelConflict = Renderer.VersionControlApiClient.cancelConflict
             listObjects = Renderer.VersionControlApiClient.listObjects
-            materializeObject = Renderer.VersionControlApiClient.materializeObject
             materializeObjects = Renderer.VersionControlApiClient.materializeObjects
             pruneStorage = Renderer.VersionControlApiClient.pruneStorage
             deduplicateStorage = Renderer.VersionControlApiClient.deduplicateStorage

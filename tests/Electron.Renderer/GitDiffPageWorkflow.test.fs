@@ -138,7 +138,6 @@ type private FakeDiffClient() =
         finalizeConflict = fun _ -> never "finalizeConflict"
         cancelConflict = fun _ -> never "cancelConflict"
         listObjects = fun _ -> never "listObjects"
-        materializeObject = fun _ -> never "materializeObject"
         materializeObjects = fun _ -> never "materializeObjects"
         pruneStorage = fun _ -> never "pruneStorage"
         deduplicateStorage = fun _ -> never "deduplicateStorage"

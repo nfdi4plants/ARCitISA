@@ -142,7 +142,6 @@ let private sessionInfo: WorkspaceSessionInfoDto = {
         TextDiff = true
         ConflictResolution = true
         ObjectMaterialization = true
-        ObjectBatchMaterialization = true
         StoragePolicy = true
         Maintenance = true
         RepositoryBrowser = true
@@ -373,7 +372,6 @@ let private defaultDependencies: GitDependencies = {
     finalizeConflict = fun _ -> unexpectedPromise "finalizeConflict"
     cancelConflict = fun _ -> unexpectedPromise "cancelConflict"
     listObjects = fun _ -> unexpectedPromise "listObjects"
-    materializeObject = fun _ -> unexpectedPromise "materializeObject"
     materializeObjects = fun _ -> unexpectedPromise "materializeObjects"
     pruneStorage = fun _ -> unexpectedPromise "pruneStorage"
     deduplicateStorage = fun _ -> unexpectedPromise "deduplicateStorage"
@@ -5971,7 +5969,7 @@ Vitest.describe (
                                         |]
                                     )
                             }
-                        materializeObject =
+                        materializeObjects =
                             fun _ ->
                                 materializeCalls <- materializeCalls + 1
                                 promise { return Ok(succeeded ()) }
@@ -6087,7 +6085,7 @@ Vitest.describe (
                                         |]
                                     )
                             }
-                        materializeObject =
+                        materializeObjects =
                             fun _ ->
                                 materializeCalls <- materializeCalls + 1
                                 promise { return Ok(succeeded ()) }
@@ -8072,7 +8070,7 @@ Vitest.describe (
                                         |]
                                     )
                             }
-                        materializeObject = fun _ -> promise { return Ok(OperationResultDto.Failed failure) }
+                        materializeObjects = fun _ -> promise { return Ok(OperationResultDto.Failed failure) }
                 }
 
                 let requested, requestCmd =
@@ -8458,10 +8456,10 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "Download now requests a path that git-lfs wrote while the lock stopped the checkout, next to the missing ones",
+            "Download now requests a path that git-lfs wrote while the lock stopped the checkout, next to the missing ones, in one call",
             fun () -> promise {
                 let status = statusWithChanges [| "stale.bin", FileChangeKindDto.Modified |]
-                let requested = ResizeArray<string>()
+                let requests = ResizeArray<ObjectPathsRequestDto>()
 
                 let deps = {
                     (withRefresh status defaultDependencies) with
@@ -8476,9 +8474,9 @@ Vitest.describe (
                                         |]
                                     )
                             }
-                        materializeObject =
+                        materializeObjects =
                             fun request ->
-                                requested.Add request.Path
+                                requests.Add request
                                 promise { return Ok(succeeded ()) }
                 }
 
@@ -8491,7 +8489,9 @@ Vitest.describe (
                 | [| WriteCompleted(_, _, RetryMaterialization, Ok(Completed _)) |] -> ()
                 | _ -> failwith "Expected the download to complete."
 
-                Vitest.expect(requested.ToArray()).toEqual [| "stale.bin"; "missing.bin" |]
+                Vitest.expect(requests.Count).toBe 1
+                Vitest.expect(requests[0].Paths).toEqual [| "stale.bin"; "missing.bin" |]
+                Vitest.expect(requests[0].AlwaysRefreshTree).toBe true
             }
         )
 
@@ -8501,7 +8501,9 @@ Vitest.describe (
                 let status = statusWithChanges [| "edited.bin", FileChangeKindDto.Modified |]
 
                 let refusal =
-                    makeFailure ProviderError VersionControlCodes.LocalChanges "'edited.bin' has local changes." None [||]
+                    makeFailure ProviderError VersionControlCodes.LocalChanges "1 of 2 paths failed" None [|
+                        "edited.bin"
+                    |]
 
                 let deps = {
                     (withRefresh status defaultDependencies) with
@@ -8515,14 +8517,8 @@ Vitest.describe (
                                         |]
                                     )
                             }
-                        materializeObject =
-                            fun request -> promise {
-                                return
-                                    if request.Path = "edited.bin" then
-                                        Ok(OperationResultDto.Failed refusal)
-                                    else
-                                        Ok(succeeded ())
-                            }
+                        materializeObjects =
+                            fun _ -> promise { return Ok(OperationResultDto.PartiallySucceeded(operation (), refusal)) }
                 }
 
                 let requested, retryCmd =
@@ -8543,12 +8539,14 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "Download now skips a pending path that the library refuses for a local edit and downloads the others",
+            "Download now asks for every pending path in one call and skips the one that the library refuses for a local edit",
             fun () -> promise {
                 let refusal =
-                    makeFailure ProviderError VersionControlCodes.LocalChanges "'edited.bin' has local changes." None [||]
+                    makeFailure ProviderError VersionControlCodes.LocalChanges "1 of 2 paths failed" None [|
+                        "edited.bin"
+                    |]
 
-                let requested = ResizeArray<string>()
+                let requests = ResizeArray<ObjectPathsRequestDto>()
 
                 let deps = {
                     (withRefresh cleanStatus defaultDependencies) with
@@ -8562,17 +8560,10 @@ Vitest.describe (
                                         |]
                                     )
                             }
-                        materializeObject =
+                        materializeObjects =
                             fun request ->
-                                requested.Add request.Path
-
-                                promise {
-                                    return
-                                        if request.Path = "edited.bin" then
-                                            Ok(OperationResultDto.Failed refusal)
-                                        else
-                                            Ok(succeeded ())
-                                }
+                                requests.Add request
+                                promise { return Ok(OperationResultDto.PartiallySucceeded(operation (), refusal)) }
                 }
 
                 let running, retryCmd =
@@ -8588,7 +8579,104 @@ Vitest.describe (
 
                 let! _ = collectMessages finalCmd
 
-                Vitest.expect(requested.ToArray()).toEqual [| "edited.bin"; "missing.bin" |]
+                Vitest.expect(requests.Count).toBe 1
+                Vitest.expect(requests[0].Paths).toEqual [| "edited.bin"; "missing.bin" |]
+                Vitest.expect(finalState.ErrorNotice).toEqual None
+            }
+        )
+
+        Vitest.test (
+            "Download now treats a refusal of every requested path as a success",
+            fun () -> promise {
+                let refusal =
+                    makeFailure ProviderError VersionControlCodes.LocalChanges "'edited.bin' has local changes." None [|
+                        "edited.bin"
+                    |]
+
+                let deps = {
+                    (withRefresh cleanStatus defaultDependencies) with
+                        listObjects = fun _ -> promise { return Ok(succeeded [| objectState "edited.bin" false |]) }
+                        materializeObjects = fun _ -> promise { return Ok(OperationResultDto.Failed refusal) }
+                }
+
+                let running, retryCmd =
+                    update deps ignore (WriteRequested RetryMaterialization) runningState
+
+                let! completion = collectMessages retryCmd
+
+                let finalState, finalCmd =
+                    match completion with
+                    | [| WriteCompleted(_, _, RetryMaterialization, Ok(Completed _)) |] ->
+                        update deps ignore completion[0] running
+                    | _ -> failwith "Expected the download to complete."
+
+                let! _ = collectMessages finalCmd
+
+                Vitest.expect(finalState.ErrorNotice).toEqual None
+            }
+        )
+
+        Vitest.test (
+            "Download now reports the failure of a partial result that is no refusal",
+            fun () -> promise {
+                let failure =
+                    makeFailure ProviderError "lfs_pull_failed" "1 of 2 paths failed: no space" None [| "missing.bin" |]
+
+                let deps = {
+                    (withRefresh cleanStatus defaultDependencies) with
+                        listObjects =
+                            fun _ -> promise {
+                                return
+                                    Ok(
+                                        succeeded [|
+                                            objectState "other.bin" false
+                                            objectState "missing.bin" false
+                                        |]
+                                    )
+                            }
+                        materializeObjects =
+                            fun _ -> promise { return Ok(OperationResultDto.PartiallySucceeded(operation (), failure)) }
+                }
+
+                let _, retryCmd =
+                    update deps ignore (WriteRequested RetryMaterialization) runningState
+
+                let! completion = collectMessages retryCmd
+
+                match completion with
+                | [| WriteCompleted(_, _, RetryMaterialization, Error _) |] -> ()
+                | _ -> failwith "Expected the partial failure to be reported."
+            }
+        )
+
+        Vitest.test (
+            "Download now makes no call when nothing is missing or stale",
+            fun () -> promise {
+                let mutable materializeCalls = 0
+
+                let deps = {
+                    (withRefresh cleanStatus defaultDependencies) with
+                        listObjects = fun _ -> promise { return Ok(succeeded [| objectState "present.bin" true |]) }
+                        materializeObjects =
+                            fun _ ->
+                                materializeCalls <- materializeCalls + 1
+                                promise { return Ok(succeeded ()) }
+                }
+
+                let running, retryCmd =
+                    update deps ignore (WriteRequested RetryMaterialization) runningState
+
+                let! completion = collectMessages retryCmd
+
+                let finalState, finalCmd =
+                    match completion with
+                    | [| WriteCompleted(_, _, RetryMaterialization, Ok(Completed _)) |] ->
+                        update deps ignore completion[0] running
+                    | _ -> failwith "Expected the download to complete."
+
+                let! _ = collectMessages finalCmd
+
+                Vitest.expect(materializeCalls).toBe 0
                 Vitest.expect(finalState.ErrorNotice).toEqual None
             }
         )
@@ -9202,7 +9290,7 @@ Vitest.describe (
                         [||]
 
                 let mutable materializedPaths = ResizeArray<string>()
-                let mutable refreshTreeValues = ResizeArray<bool option>()
+                let mutable refreshTreeValues = ResizeArray<bool>()
 
                 let deps = {
                     (withRefresh cleanStatus defaultDependencies) with
@@ -9238,10 +9326,10 @@ Vitest.describe (
                                         |]
                                     )
                             }
-                        materializeObject =
+                        materializeObjects =
                             fun request ->
-                                materializedPaths.Add request.Path
-                                refreshTreeValues.Add request.RefreshTree
+                                materializedPaths.AddRange request.Paths
+                                refreshTreeValues.Add request.AlwaysRefreshTree
                                 promise { return Ok(succeeded ()) }
                 }
 
@@ -9291,7 +9379,7 @@ Vitest.describe (
 
                 Vitest.expect(recoveryState.Status.CurrentBranch).toEqual (Some "main")
                 Vitest.expect(materializedPaths |> Seq.toArray).toEqual ([| "large.bin"; "small.txt" |])
-                Vitest.expect(refreshTreeValues |> Seq.toArray).toEqual ([| Some false; Some true |])
+                Vitest.expect(refreshTreeValues |> Seq.toArray).toEqual ([| true |])
             }
         )
 
@@ -9482,7 +9570,7 @@ Vitest.describe (
                                 callOrder <- callOrder @ [ "finalize" ]
                                 finalized <- true
                                 promise { return Ok(succeeded (Some "rev")) }
-                        materializeObject =
+                        materializeObjects =
                             fun request ->
                                 if not finalized then
                                     failwith "Materialization ran before conflict finalization."
@@ -9520,8 +9608,8 @@ Vitest.describe (
                 let! _ = collectMessages finishCmd
 
                 Vitest.expect(resolveRequest.Value.Resolution).toEqual (ConflictResolutionDto.PickCandidate "target")
-                Vitest.expect(materializeRequest.Value.Path).toBe "data/big.bin"
-                Vitest.expect(materializeRequest.Value.RefreshTree).toEqual (Some true)
+                Vitest.expect(materializeRequest.Value.Paths).toEqual [| "data/big.bin" |]
+                Vitest.expect(materializeRequest.Value.AlwaysRefreshTree).toBe true
                 Vitest.expect(callOrder).toEqual [ "resolve"; "finalize"; "materialize" ]
                 Vitest.expect(nextState.WarningNotice).toEqual None
             }
@@ -9570,12 +9658,12 @@ Vitest.describe (
                                 else
                                     finalized <- true
                                     promise { return Ok(succeeded (Some "rev")) }
-                        materializeObject =
+                        materializeObjects =
                             fun request ->
                                 if not finalized then
                                     failwith "Materialization ran before conflict finalization."
 
-                                materializedPaths.Add request.Path
+                                materializedPaths.AddRange request.Paths
                                 promise { return Ok(succeeded ()) }
                 }
 
@@ -9696,12 +9784,12 @@ Vitest.describe (
                             fun _ ->
                                 finalized <- true
                                 promise { return Ok(succeeded (Some "rev")) }
-                        materializeObject =
+                        materializeObjects =
                             fun request ->
                                 if not finalized then
                                     failwith "Materialization ran before conflict finalization."
 
-                                materializedPaths.Add request.Path
+                                materializedPaths.AddRange request.Paths
                                 promise { return Error "The local cache is unavailable." }
                 }
 
@@ -9765,6 +9853,149 @@ Vitest.describe (
                 Vitest
                     .expect(finalState.WarningNotice)
                     .toEqual (Some "Could not download 'first.bin'. Use Download LFS file to try again.")
+            }
+        )
+
+        Vitest.test (
+            "Finalization names the path that the library reports as failed, not the first requested one",
+            fun () -> promise {
+                let conflict =
+                    (conflictedStatus [| "warning.bin"; "partial.bin" |]).ActiveConflictSession.Value
+
+                let warningHandle = {
+                    SessionId = conflict.Handle.SessionId
+                    Version = "2"
+                }
+
+                let partialHandle = {
+                    SessionId = conflict.Handle.SessionId
+                    Version = "3"
+                }
+
+                let partialFailure =
+                    makeFailure
+                        Conflict
+                        "object_materialization_failed"
+                        "The selected object could not be restored."
+                        (Some {
+                            Code = VersionControlCodes.Recovery.RetryMaterialization
+                            Instructions = None
+                        })
+                        [| "partial.bin" |]
+
+                let downloadFailure =
+                    makeFailure ProviderError "lfs_pull_failed" "1 of 2 paths failed: no space" None [| "partial.bin" |]
+
+                let warning = {
+                    Code = VersionControlCodes.ObjectNotMaterialized
+                    Message = "The selected file holds a pointer."
+                }
+
+                let mutable finalized = false
+                let materializeRequests = ResizeArray<ObjectPathsRequestDto>()
+
+                let deps = {
+                    defaultDependencies with
+                        resolveConflict =
+                            fun request ->
+                                if request.Path = "warning.bin" then
+                                    promise {
+                                        return
+                                            Ok(
+                                                succeededWithWarnings [| warning |] {
+                                                    RefreshedHandle = warningHandle
+                                                    RemainingItems = [| conflict.Items[1] |]
+                                                }
+                                            )
+                                    }
+                                else
+                                    promise {
+                                        return
+                                            Ok(
+                                                OperationResultDto.PartiallySucceeded(
+                                                    operation {
+                                                        RefreshedHandle = partialHandle
+                                                        RemainingItems = [||]
+                                                    },
+                                                    partialFailure
+                                                )
+                                            )
+                                    }
+                        getStatus = fun _ -> promise { return Ok(succeeded cleanStatus) }
+                        loadConflictPage = fun _ _ path -> promise { return Ok(conflictPage path) }
+                        finalizeConflict =
+                            fun _ ->
+                                finalized <- true
+                                promise { return Ok(succeeded (Some "rev")) }
+                        materializeObjects =
+                            fun request ->
+                                if not finalized then
+                                    failwith "Materialization ran before conflict finalization."
+
+                                materializeRequests.Add request
+
+                                promise {
+                                    return Ok(OperationResultDto.PartiallySucceeded(operation (), downloadFailure))
+                                }
+                }
+
+                let state = {
+                    runningState with
+                        ActiveConflict = Some conflict
+                        DownloadLargeFiles = true
+                }
+
+                let warningRequest = {
+                    Path = "warning.bin"
+                    Handle = conflict.Handle
+                    WorkspaceVersion = "v1"
+                    Resolution = ConflictResolutionDto.PickCandidate useOnlineCandidateId
+                }
+
+                let stateAfterWarningRequest, warningCmd =
+                    update deps ignore (ConfirmMergeResolutionRequested warningRequest) state
+
+                let! warningMessages = collectMessages warningCmd
+
+                let stateAfterWarning, warningFinishCmd =
+                    match warningMessages with
+                    | [| ConfirmMergeResolutionCompleted(_, Ok _) |] ->
+                        update deps ignore warningMessages[0] stateAfterWarningRequest
+                    | _ -> failwith "Expected the first pick to complete."
+
+                let! _ = collectMessages warningFinishCmd
+                Vitest.expect(stateAfterWarning.PendingMaterializations).toEqual [ ("warning.bin", false) ]
+
+                let partialRequest = {
+                    Path = "partial.bin"
+                    Handle = warningHandle
+                    WorkspaceVersion = "v1"
+                    Resolution = ConflictResolutionDto.PickCandidate useOnlineCandidateId
+                }
+
+                let stateAfterPartialRequest, partialCmd =
+                    update deps ignore (ConfirmMergeResolutionRequested partialRequest) stateAfterWarning
+
+                let! partialMessages = collectMessages partialCmd
+
+                let finalState, partialFinishCmd =
+                    match partialMessages with
+                    | [| ConfirmMergeResolutionCompleted(_, Ok outcome) |] ->
+                        Vitest.expect(outcome.Finalized).toBe true
+                        update deps ignore partialMessages[0] stateAfterPartialRequest
+                    | _ -> failwith "Expected the second pick to complete."
+
+                let! _ = collectMessages partialFinishCmd
+
+                Vitest.expect(materializeRequests.Count).toBe 1
+                Vitest.expect(materializeRequests[0].Paths).toEqual [| "warning.bin"; "partial.bin" |]
+                Vitest.expect(materializeRequests[0].AlwaysRefreshTree).toBe true
+
+                Vitest
+                    .expect(finalState.WarningNotice)
+                    .toEqual (
+                        Some "Could not restore 'partial.bin' from the local cache. Use Download LFS file to try again."
+                    )
             }
         )
 
@@ -9936,9 +10167,9 @@ Vitest.describe (
                             fun _ ->
                                 finalized <- true
                                 promise { return Ok(succeeded (Some "rev")) }
-                        materializeObject =
+                        materializeObjects =
                             fun request ->
-                                materializedPaths.Add request.Path
+                                materializedPaths.AddRange request.Paths
                                 promise { return Error "The local cache is unavailable." }
                 }
 
@@ -10036,7 +10267,7 @@ Vitest.describe (
                             }
                         getStatus = fun _ -> promise { return Ok(succeeded cleanStatus) }
                         finalizeConflict = fun _ -> promise { return Ok(succeeded (Some "rev")) }
-                        materializeObject =
+                        materializeObjects =
                             fun _ ->
                                 materializeCalls <- materializeCalls + 1
                                 promise { return Ok(succeeded ()) }
@@ -10235,7 +10466,7 @@ Vitest.describe (
                                 }
                         getStatus = fun _ -> promise { return Ok(succeeded cleanStatus) }
                         finalizeConflict = fun _ -> promise { return Ok(succeeded (Some "rev")) }
-                        materializeObject =
+                        materializeObjects =
                             fun _ ->
                                 materializeCalls <- materializeCalls + 1
                                 promise { return Ok(succeeded ()) }

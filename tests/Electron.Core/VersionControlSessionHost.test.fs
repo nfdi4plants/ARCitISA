@@ -615,7 +615,6 @@ let private fakeProviderRuntimeWithStoragePolicy
     (failingRoot: string)
     (storagePolicy: StoragePolicyService option)
     (objectMaterialization: ObjectMaterializationService option)
-    (objectBatchMaterialization: ObjectBatchMaterializationService option)
     : VersionControlRuntime.VersionControlRuntime =
     let providerId id =
         ProviderId.tryCreate id |> Result.defaultWith failwith
@@ -747,7 +746,6 @@ let private fakeProviderRuntimeWithStoragePolicy
                 let session = {
                     session with
                         ObjectMaterialization = objectMaterialization
-                        ObjectBatchMaterialization = objectBatchMaterialization
                         StoragePolicy = storagePolicy
                 }
 
@@ -760,6 +758,7 @@ let private fakeProviderRuntimeWithStoragePolicy
                     Version = Some "1.0"
                     Compatible = true
                     Remediation = None
+                    ProbeExecutablePath = None
                 }
             |])
 
@@ -778,7 +777,7 @@ let private fakeProviderRuntimeWithStoragePolicy
     }
 
 let private fakeProviderRuntime coreOnlyRoot failingRoot =
-    fakeProviderRuntimeWithStoragePolicy coreOnlyRoot failingRoot None None None
+    fakeProviderRuntimeWithStoragePolicy coreOnlyRoot failingRoot None None
 
 let private fakeProviderRuntimeThatThrowsOnInitialize coreOnlyRoot failingRoot =
     let runtime = fakeProviderRuntime coreOnlyRoot failingRoot
@@ -854,19 +853,20 @@ let private withCreateArcSetup
             WorkspaceSessionHost.resetForTests ()
     }
 
-/// Runs the body against the version control api of a window whose session offers the given batch service.
-let private withBatchApi
+/// Runs the body against the version control api of a window whose session offers the given
+/// object materialization service.
+let private withObjectApi
     (windowId: int)
-    (service: ObjectBatchMaterializationService option)
+    (service: ObjectMaterializationService option)
     (body: IVersionControlApi -> JS.Promise<unit>)
     =
     promise {
-        let! root = createTempDirectoryAsync "swate-vc-batch-api-"
+        let! root = createTempDirectoryAsync "swate-vc-object-api-"
         let workspace = join [| root; "workspace" |]
         Main.Bindings.Filesystem.mkdirSync workspace (Main.Bindings.Filesystem.MkdirOptions(recursive = true))
 
         let runtime =
-            fakeProviderRuntimeWithStoragePolicy workspace (join [| root; "unused" |]) None None service
+            fakeProviderRuntimeWithStoragePolicy workspace (join [| root; "unused" |]) None service
 
         let host = WorkspaceSessionHost.WorkspaceSessionHost(runtime)
         WorkspaceSessionHost.initialize host
@@ -953,31 +953,17 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "materialization defers successful tree refreshes and refreshes after failure",
+            "a NoOp result refreshes the tree only when AlwaysRefreshTree is true",
             fun () -> promise {
-                let! root = createTempDirectoryAsync "swate-vc-materialize-refresh-"
+                let! root = createTempDirectoryAsync "swate-vc-noop-refresh-"
                 let workspace = join [| root; "workspace" |]
                 Main.Bindings.Filesystem.mkdirSync workspace (Main.Bindings.Filesystem.MkdirOptions(recursive = true))
                 writeText (join [| workspace; "object.txt" |]) "object\n"
 
-                let mutable materializationFails = false
-
                 let objectMaterialization: ObjectMaterializationService = {
                     ListObjects = fun _ -> async { return OperationResult.succeeded [||] }
-                    Materialize =
-                        fun _ _ -> async {
-                            if materializationFails then
-                                return
-                                    Failed(
-                                        OperationFailure.create
-                                            ProviderError
-                                            "fake_materialization_failed"
-                                            "The fake materialization failed."
-                                    )
-                            else
-                                return OperationResult.succeeded ()
-                        }
-                    Dematerialize = fun _ _ -> async { return OperationResult.succeeded () }
+                    Materialize = fun _ _ -> async { return OperationResult.noOp (Some "already in state") () }
+                    Dematerialize = fun _ _ -> async { return OperationResult.noOp (Some "already in state") () }
                 }
 
                 let runtime =
@@ -986,11 +972,10 @@ Vitest.describe (
                         (join [| root; "unused" |])
                         None
                         (Some objectMaterialization)
-                        None
 
                 let host = WorkspaceSessionHost.WorkspaceSessionHost(runtime)
                 WorkspaceSessionHost.initialize host
-                let vault = registerVault 65 workspace
+                let vault = registerVault 67 workspace
 
                 let cleanup () = promise {
                     electronMock?reset () |> ignore
@@ -1001,30 +986,29 @@ Vitest.describe (
 
                 try
                     try
-                        let api = Main.IPC.IVersionControlApi.api (ipcEvent 65)
-                        vault.FileTreeWriter.Reset vault.isCaseInsensitive
+                        let api = Main.IPC.IVersionControlApi.api (ipcEvent 67)
 
-                        let! succeeded =
-                            api.materializeObject {
-                                OperationId = "materialize-success-no-refresh"
-                                Path = "object.txt"
-                                RefreshTree = Some false
-                            }
+                        for materialize in [ true; false ] do
+                            let call (alwaysRefreshTree: bool) =
+                                let dto = {
+                                    OperationId = "noop-refresh"
+                                    Paths = [| "object.txt" |]
+                                    AlwaysRefreshTree = alwaysRefreshTree
+                                }
 
-                        expectDtoValue "successful materialization" succeeded |> ignore
-                        Vitest.expect(vault.FileTreeWriter.Tree.Count).toBe 0
+                                if materialize then
+                                    api.materializeObjects dto
+                                else
+                                    api.dematerializeObjects dto
 
-                        materializationFails <- true
+                            vault.FileTreeWriter.Reset vault.isCaseInsensitive
+                            let! unchanged = call false
+                            expectDtoValue "no-op without a refresh request" unchanged |> ignore
+                            Vitest.expect(vault.FileTreeWriter.Tree.Count).toBe 0
 
-                        let! failed =
-                            api.materializeObject {
-                                OperationId = "materialize-failure-refresh"
-                                Path = "object.txt"
-                                RefreshTree = Some false
-                            }
-
-                        expectDtoFailure "failed materialization" failed |> ignore
-                        Vitest.expect(vault.FileTreeWriter.Tree.Count).toBeGreaterThan 0
+                            let! refreshed = call true
+                            expectDtoValue "no-op with a refresh request" refreshed |> ignore
+                            Vitest.expect(vault.FileTreeWriter.Tree.Count).toBeGreaterThan 0
                     with error ->
                         do! cleanup ()
                         return raise error
@@ -1036,9 +1020,9 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "batch materialization hands every path to the session and returns its result",
+            "materialization hands every path to the session and returns its result",
             fun () -> promise {
-                let! root = createTempDirectoryAsync "swate-vc-materialize-batch-"
+                let! root = createTempDirectoryAsync "swate-vc-materialize-paths-"
                 let workspace = join [| root; "workspace" |]
                 Main.Bindings.Filesystem.mkdirSync workspace (Main.Bindings.Filesystem.MkdirOptions(recursive = true))
 
@@ -1048,7 +1032,8 @@ Vitest.describe (
                     OperationFailure.create ProviderError "fake_batch_failed" "The fake batch failed."
                     |> OperationFailure.withDetails [| "b.bin: no space" |]
 
-                let objectBatchMaterialization: ObjectBatchMaterializationService = {
+                let objectMaterialization: ObjectMaterializationService = {
+                    ListObjects = fun _ -> async { return OperationResult.succeeded [||] }
                     Materialize =
                         fun paths _ -> async {
                             received.AddRange(paths |> Array.map RepositoryPath.value)
@@ -1062,8 +1047,7 @@ Vitest.describe (
                         workspace
                         (join [| root; "unused" |])
                         None
-                        None
-                        (Some objectBatchMaterialization)
+                        (Some objectMaterialization)
 
                 let host = WorkspaceSessionHost.WorkspaceSessionHost(runtime)
                 WorkspaceSessionHost.initialize host
@@ -1084,9 +1068,10 @@ Vitest.describe (
                             api.materializeObjects {
                                 OperationId = "materialize-objects"
                                 Paths = [| "a.bin"; "data/b.bin" |]
+                                AlwaysRefreshTree = false
                             }
 
-                        let failure = expectDtoFailure "batch materialization" result
+                        let failure = expectDtoFailure "materialization" result
                         Vitest.expect(received.ToArray()).toEqual [| "a.bin"; "data/b.bin" |]
                         Vitest.expect(failure.Code).toBe "fake_batch_failed"
                         Vitest.expect(failure.Details).toEqual [| "b.bin: no space" |]
@@ -1101,7 +1086,7 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "batch dematerialization hands every path to the session and returns its result",
+            "dematerialization hands every path to the session and returns its result",
             fun () ->
                 let received = ResizeArray<string>()
 
@@ -1109,7 +1094,8 @@ Vitest.describe (
                     OperationFailure.create ProviderError "fake_dematerialize_failed" "The fake free failed."
                     |> OperationFailure.withDetails [| "a.bin: busy" |]
 
-                let service: ObjectBatchMaterializationService = {
+                let service: ObjectMaterializationService = {
+                    ListObjects = fun _ -> async { return OperationResult.succeeded [||] }
                     Materialize = fun _ _ -> async { return OperationResult.succeeded () }
                     Dematerialize =
                         fun paths _ -> async {
@@ -1118,7 +1104,7 @@ Vitest.describe (
                         }
                 }
 
-                withBatchApi
+                withObjectApi
                     94
                     (Some service)
                     (fun api -> promise {
@@ -1126,9 +1112,10 @@ Vitest.describe (
                             api.dematerializeObjects {
                                 OperationId = "dematerialize-objects"
                                 Paths = [| "a.bin"; "data/b.bin" |]
+                                AlwaysRefreshTree = false
                             }
 
-                        let failure = expectDtoFailure "batch dematerialization" result
+                        let failure = expectDtoFailure "dematerialization" result
                         Vitest.expect(received.ToArray()).toEqual [| "a.bin"; "data/b.bin" |]
                         Vitest.expect(failure.Code).toBe "fake_dematerialize_failed"
                         Vitest.expect(failure.Details).toEqual [| "a.bin: busy" |]
@@ -1136,11 +1123,12 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "a batch with an invalid path is refused before the provider is called",
+            "a call with an invalid path is refused before the provider is called",
             fun () ->
                 let mutable calls = 0
 
-                let service: ObjectBatchMaterializationService = {
+                let service: ObjectMaterializationService = {
+                    ListObjects = fun _ -> async { return OperationResult.succeeded [||] }
                     Materialize =
                         fun _ _ -> async {
                             calls <- calls + 1
@@ -1153,7 +1141,7 @@ Vitest.describe (
                         }
                 }
 
-                withBatchApi
+                withObjectApi
                     95
                     (Some service)
                     (fun api -> promise {
@@ -1163,16 +1151,18 @@ Vitest.describe (
                             api.materializeObjects {
                                 OperationId = "materialize-invalid-path"
                                 Paths = paths
+                                AlwaysRefreshTree = false
                             }
 
                         let! dematerialize =
                             api.dematerializeObjects {
                                 OperationId = "dematerialize-invalid-path"
                                 Paths = paths
+                                AlwaysRefreshTree = false
                             }
 
                         for result in [ materialize; dematerialize ] do
-                            let failure = expectDtoFailure "batch with an invalid path" result
+                            let failure = expectDtoFailure "call with an invalid path" result
                             Vitest.expect(failure.Code).toBe VersionControlCodes.InvalidPath
                             Vitest.expect(failure.AffectedPaths).toEqual [| "../first.bin" |]
 
@@ -1181,9 +1171,9 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "a session without the batch service answers service_unavailable",
+            "a session without the object materialization service answers service_unavailable",
             fun () ->
-                withBatchApi
+                withObjectApi
                     96
                     None
                     (fun api -> promise {
@@ -1191,16 +1181,18 @@ Vitest.describe (
                             api.materializeObjects {
                                 OperationId = "materialize-without-service"
                                 Paths = [| "a.bin" |]
+                                AlwaysRefreshTree = false
                             }
 
                         let! dematerialize =
                             api.dematerializeObjects {
                                 OperationId = "dematerialize-without-service"
                                 Paths = [| "a.bin" |]
+                                AlwaysRefreshTree = false
                             }
 
                         for result in [ materialize; dematerialize ] do
-                            let failure = expectDtoFailure "batch without the service" result
+                            let failure = expectDtoFailure "call without the service" result
                             Vitest.expect(failure.Category).toEqual FailureCategoryDto.Unsupported
                             Vitest.expect(failure.Code).toBe VersionControlCodes.ServiceUnavailable
                     })
@@ -1247,7 +1239,7 @@ Vitest.describe (
                     }
 
                     let fakeRuntime =
-                        fakeProviderRuntimeWithStoragePolicy coreOnlyRoot failingRoot (Some storagePolicy) None None
+                        fakeProviderRuntimeWithStoragePolicy coreOnlyRoot failingRoot (Some storagePolicy) None
 
                     let fakeHost = WorkspaceSessionHost.WorkspaceSessionHost(fakeRuntime)
                     WorkspaceSessionHost.initialize fakeHost
@@ -1386,7 +1378,7 @@ Vitest.describe (
                     }
 
                     let fakeRuntime =
-                        fakeProviderRuntimeWithStoragePolicy coreOnlyRoot failingRoot (Some storagePolicy) None None
+                        fakeProviderRuntimeWithStoragePolicy coreOnlyRoot failingRoot (Some storagePolicy) None
 
                     let fakeHost = WorkspaceSessionHost.WorkspaceSessionHost(fakeRuntime)
                     WorkspaceSessionHost.initialize fakeHost
@@ -1469,7 +1461,7 @@ Vitest.describe (
                     }
 
                     let fakeRuntime =
-                        fakeProviderRuntimeWithStoragePolicy coreOnlyRoot failingRoot (Some storagePolicy) None None
+                        fakeProviderRuntimeWithStoragePolicy coreOnlyRoot failingRoot (Some storagePolicy) None
 
                     let fakeHost = WorkspaceSessionHost.WorkspaceSessionHost(fakeRuntime)
                     WorkspaceSessionHost.initialize fakeHost
@@ -1544,7 +1536,7 @@ Vitest.describe (
                     }
 
                     let fakeRuntime =
-                        fakeProviderRuntimeWithStoragePolicy coreOnlyRoot failingRoot (Some storagePolicy) None None
+                        fakeProviderRuntimeWithStoragePolicy coreOnlyRoot failingRoot (Some storagePolicy) None
 
                     let fakeHost = WorkspaceSessionHost.WorkspaceSessionHost(fakeRuntime)
                     WorkspaceSessionHost.initialize fakeHost

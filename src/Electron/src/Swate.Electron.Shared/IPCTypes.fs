@@ -239,8 +239,6 @@ type IVersionControlApi = {
     finalizeConflict: FinalizeConflictRequestDto -> JS.Promise<Result<OperationResultDto<string option>, exn>>
     cancelConflict: CancelConflictRequestDto -> JS.Promise<Result<OperationResultDto<unit>, exn>>
     listObjects: OperationRequestDto -> JS.Promise<Result<OperationResultDto<ObjectStateDto[]>, exn>>
-    materializeObject: ObjectPathRequestDto -> JS.Promise<Result<OperationResultDto<unit>, exn>>
-    dematerializeObject: ObjectPathRequestDto -> JS.Promise<Result<OperationResultDto<unit>, exn>>
     materializeObjects: ObjectPathsRequestDto -> JS.Promise<Result<OperationResultDto<unit>, exn>>
     dematerializeObjects: ObjectPathsRequestDto -> JS.Promise<Result<OperationResultDto<unit>, exn>>
     getStoragePolicySettings:

@@ -414,6 +414,7 @@ Vitest.describe (
                             Version = Some "2.51.0"
                             Compatible = true
                             Remediation = None
+                            ProbeExecutablePath = Some "/usr/bin/git"
                         }
                     )
                     .toEqual

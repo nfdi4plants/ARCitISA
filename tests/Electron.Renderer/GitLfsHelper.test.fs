@@ -16,21 +16,25 @@ let private outcome: OperationOutcomeDto<unit> = {
     Publication = PublicationStateDto.NotApplicable
 }
 
-/// The requests the mocked main process received, one list per batch call.
+/// The requests the mocked main process received, one list per call.
 let private materializeCalls = ResizeArray<ObjectPathsRequestDto>()
 let private dematerializeCalls = ResizeArray<ObjectPathsRequestDto>()
 
-let private succeeded
+/// What the mocked main process answers to the next calls.
+let mutable private answer: OperationResultDto<unit> =
+    OperationResultDto.Succeeded outcome
+
+let private answered
     (calls: ResizeArray<ObjectPathsRequestDto>)
     (request: ObjectPathsRequestDto)
     : JS.Promise<Result<OperationResultDto<unit>, exn>> =
     promise {
         calls.Add request
-        return Ok(OperationResultDto.Succeeded outcome)
+        return Ok answer
     }
 
 // The helper module pulls in the version control client, which reads its IPC bridge when it loads.
-// The bridge only exists inside Electron, so the test replaces the two batch calls with recorders.
+// The bridge only exists inside Electron, so the test replaces the two array calls with recorders.
 Vitest.vi.mock (
     "./src/Electron/src/Renderer/Api.js",
     box (fun () ->
@@ -38,9 +42,9 @@ Vitest.vi.mock (
             "ipcVersionControlApi"
             ==> createObj [
                 "materializeObjects"
-                ==> fun (request: ObjectPathsRequestDto) -> succeeded materializeCalls request
+                ==> fun (request: ObjectPathsRequestDto) -> answered materializeCalls request
                 "dematerializeObjects"
-                ==> fun (request: ObjectPathsRequestDto) -> succeeded dematerializeCalls request
+                ==> fun (request: ObjectPathsRequestDto) -> answered dematerializeCalls request
             ]
         ]
     )
@@ -349,6 +353,7 @@ Vitest.describe (
                 Vitest.expect(materializeCalls.Count).toBe 1
                 Vitest.expect(materializeCalls.[0].OperationId).toBe "op-download"
                 Vitest.expect(materializeCalls.[0].Paths).toEqual [| "data/a.bin"; "data/b.bin" |]
+                Vitest.expect(materializeCalls.[0].AlwaysRefreshTree).toBe false
                 Vitest.expect(dematerializeCalls.Count).toBe 0
             }
         )
@@ -365,7 +370,70 @@ Vitest.describe (
                 Vitest.expect(dematerializeCalls.Count).toBe 1
                 Vitest.expect(dematerializeCalls.[0].OperationId).toBe "op-free"
                 Vitest.expect(dematerializeCalls.[0].Paths).toEqual [| "data/a.bin"; "data/b.bin" |]
+                Vitest.expect(dematerializeCalls.[0].AlwaysRefreshTree).toBe false
                 Vitest.expect(materializeCalls.Count).toBe 0
+            }
+        )
+)
+
+Vitest.describe (
+    "single file actions",
+    fun () ->
+        Vitest.beforeEach (fun () ->
+            materializeCalls.Clear()
+            dematerializeCalls.Clear()
+            answer <- OperationResultDto.Succeeded outcome
+        )
+
+        Vitest.test (
+            "download sends one path with normalized separators and always refreshes the tree",
+            fun () -> promise {
+                let! result = runDownloadLfsFile "op-download-one" "data\\a.bin"
+
+                Vitest.expect(result).toEqual (Ok())
+                Vitest.expect(materializeCalls.Count).toBe 1
+                Vitest.expect(materializeCalls.[0].OperationId).toBe "op-download-one"
+                Vitest.expect(materializeCalls.[0].Paths).toEqual [| "data/a.bin" |]
+                Vitest.expect(materializeCalls.[0].AlwaysRefreshTree).toBe true
+                Vitest.expect(dematerializeCalls.Count).toBe 0
+            }
+        )
+
+        Vitest.test (
+            "free sends one path with normalized separators and always refreshes the tree",
+            fun () -> promise {
+                let! result = runFreeLocalLfsCopy "op-free-one" "data\\a.bin"
+
+                Vitest.expect(result).toEqual (Ok())
+                Vitest.expect(dematerializeCalls.Count).toBe 1
+                Vitest.expect(dematerializeCalls.[0].OperationId).toBe "op-free-one"
+                Vitest.expect(dematerializeCalls.[0].Paths).toEqual [| "data/a.bin" |]
+                Vitest.expect(dematerializeCalls.[0].AlwaysRefreshTree).toBe true
+                Vitest.expect(materializeCalls.Count).toBe 0
+            }
+        )
+
+        Vitest.test (
+            "download returns the message of the library failure unchanged",
+            fun () -> promise {
+                let failure = failureWith [||]
+                answer <- OperationResultDto.Failed failure
+
+                let! result = runDownloadLfsFile "op-download-fails" "data/a.bin"
+
+                Vitest.expect(result).toEqual (Error failure.Message)
+            }
+        )
+
+        Vitest.test (
+            "free returns the message of the library failure unchanged",
+            fun () -> promise {
+                let failure = failureWith [||]
+                answer <- OperationResultDto.Failed failure
+
+                let! result = runFreeLocalLfsCopy "op-free-fails" "data/a.bin"
+
+                Vitest.expect(result).toEqual (Error failure.Message)
             }
         )
 )

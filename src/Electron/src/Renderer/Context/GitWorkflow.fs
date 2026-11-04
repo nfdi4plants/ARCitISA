@@ -784,7 +784,6 @@ type GitDependencies = {
     finalizeConflict: FinalizeConflictRequestDto -> JS.Promise<Result<OperationResultDto<string option>, string>>
     cancelConflict: CancelConflictRequestDto -> JS.Promise<Result<OperationResultDto<unit>, string>>
     listObjects: OperationRequestDto -> JS.Promise<Result<OperationResultDto<ObjectStateDto[]>, string>>
-    materializeObject: ObjectPathRequestDto -> JS.Promise<Result<OperationResultDto<unit>, string>>
     materializeObjects: ObjectPathsRequestDto -> JS.Promise<Result<OperationResultDto<unit>, string>>
     pruneStorage: OperationRequestDto -> JS.Promise<Result<OperationResultDto<string>, string>>
     deduplicateStorage: OperationRequestDto -> JS.Promise<Result<OperationResultDto<string>, string>>
@@ -4480,33 +4479,39 @@ let private materializePendingAfterFinalizeAsync
                     None
             )
 
-        let mutable firstFailedPath = None
-
-        for (path, localObject) in pathsToMaterialize do
+        match pathsToMaterialize with
+        | [] -> return None
+        | firstRequested :: _ ->
             let! materialized =
                 toResult (
-                    deps.materializeObject {
+                    deps.materializeObjects {
                         OperationId = deps.newOperationId ()
-                        Path = path
-                        RefreshTree = Some true
+                        Paths = pathsToMaterialize |> List.map fst |> List.toArray
+                        AlwaysRefreshTree = true
                     }
                 )
 
-            match materialized with
-            | Ok(_, None) -> ()
-            | Ok(_, Some _)
-            | Error _ ->
-                if firstFailedPath.IsNone then
-                    firstFailedPath <- Some(path, localObject)
+            let failure =
+                match materialized with
+                | Ok(_, None) -> None
+                | Ok(_, Some failure)
+                | Error failure -> Some failure
 
-        return
-            firstFailedPath
-            |> Option.map (fun (path, localObject) ->
-                if localObject then
-                    $"Could not restore '{path}' from the local cache. Use Download LFS file to try again."
-                else
-                    $"Could not download '{path}'. Use Download LFS file to try again."
-            )
+            return
+                failure
+                |> Option.map (fun failure ->
+                    let path, localObject =
+                        failure.AffectedPaths
+                        |> Array.tryPick (fun affected ->
+                            pathsToMaterialize |> List.tryFind (fun (path, _) -> path = affected)
+                        )
+                        |> Option.defaultValue firstRequested
+
+                    if localObject then
+                        $"Could not restore '{path}' from the local cache. Use Download LFS file to try again."
+                    else
+                        $"Could not download '{path}'. Use Download LFS file to try again."
+                )
     }
 
 let private runFinalizeMergeAttemptAsync (deps: GitDependencies) (state: GitState) = promise {
@@ -4604,6 +4609,7 @@ let private restageStaleLfsPathsAsync (deps: GitDependencies) : JS.Promise<Resul
                 deps.materializeObjects {
                     OperationId = deps.newOperationId ()
                     Paths = stalePaths
+                    AlwaysRefreshTree = false
                 }
             )
 
@@ -4683,10 +4689,11 @@ let private runRestoreInterruptedPathsAttemptAsync (deps: GitDependencies) (stat
                 (fun _ partial -> refreshAfterSuccess deps partial GitPageChange.Clear (Some None) None)
 }
 
-/// Downloads the large objects an interrupted update left behind, one per object,
-/// stopping at the first failure so its message is reported. The stale paths of a lock-blocked checkout
-/// are requested as well, so the library restages them. A requested path that holds a real edit, stale or
-/// pending, is refused with the code local_changes. It is skipped, keeps its edit and does not count as a failure.
+/// Downloads the large objects an interrupted update left behind with one call. The library tries every
+/// object and reports the first real failure. The stale paths of a lock-blocked checkout are requested as
+/// well, so the library restages them. A requested path that holds a real edit, stale or pending, is refused
+/// with the code local_changes and keeps its edit. A result in which every failed path was such a refusal
+/// counts as success, and otherwise the failure is reported.
 let private runRetryMaterializationAttemptAsync (deps: GitDependencies) = promise {
     let! listed = listObjectsWithStalePathsAsync deps
 
@@ -4700,27 +4707,23 @@ let private runRetryMaterializationAttemptAsync (deps: GitDependencies) = promis
             |> Array.append stalePaths
             |> Array.distinct
 
-        let mutable failure: OperationFailureDto option = None
+        if pending.Length = 0 then
+            return! refreshAfterSuccess deps None GitPageChange.NoChange None None
+        else
+            let! materialized =
+                toResult (
+                    deps.materializeObjects {
+                        OperationId = deps.newOperationId ()
+                        Paths = pending
+                        AlwaysRefreshTree = true
+                    }
+                )
 
-        for index, path in pending |> Array.indexed do
-            if failure.IsNone then
-                let! materialized =
-                    toResult (
-                        deps.materializeObject {
-                            OperationId = deps.newOperationId ()
-                            Path = path
-                            RefreshTree = Some(index = pending.Length - 1)
-                        }
-                    )
-
-                match materialized with
-                | Ok _ -> ()
-                | Error error when isLocalChangesRefusal error -> ()
-                | Error error -> failure <- Some error
-
-        match failure with
-        | Some error -> return! routedToOutcome deps (routeFailure None error)
-        | None -> return! refreshAfterSuccess deps None GitPageChange.NoChange None None
+            match materialized with
+            | Error failure
+            | Ok(_, Some failure) when not (isLocalChangesRefusal failure) ->
+                return! routedToOutcome deps (routeFailure None failure)
+            | _ -> return! refreshAfterSuccess deps None GitPageChange.NoChange None None
 }
 
 let private executeWriteAttemptOnce
