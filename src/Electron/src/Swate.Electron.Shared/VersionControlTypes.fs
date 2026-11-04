@@ -424,6 +424,10 @@ module VersionControlCodes =
     [<Literal>]
     let BaseContentNotFound = "base_content_not_found"
 
+    /// The library's code for a selected path that exists neither in the workspace nor, for a commit, in HEAD.
+    [<Literal>]
+    let PathNotFound = "path_not_found"
+
     /// The library reports this warning when a picked file's content is not in the local cache.
     [<Literal>]
     let ObjectNotMaterialized = "object_not_materialized"

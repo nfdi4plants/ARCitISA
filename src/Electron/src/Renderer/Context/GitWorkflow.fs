@@ -1008,7 +1008,7 @@ let private applyProgressToSteps
         | _ -> steps, stepPhases
 
 /// The message shown for a structured failure: the library message plus its
-/// recovery instructions when it has any.
+/// recovery instructions when it has any. A path_not_found failure also lists up to five affected paths.
 let failureMessage (failure: OperationFailureDto) =
     // Only a commit that exists while the index lags behind gets Swate's text. A held
     // lock without a commit keeps the library's instructions for the lock dialog.
@@ -1027,9 +1027,32 @@ let failureMessage (failure: OperationFailureDto) =
         | Some recovery -> recovery.Instructions
         | None -> None
 
+    // The library message names no path, so the sentence lists the first few paths that the library reports.
+    let message =
+        if
+            failure.Code = VersionControlCodes.PathNotFound
+            && failure.AffectedPaths.Length > 0
+        then
+            let maxShown = 5
+
+            let shown =
+                failure.AffectedPaths
+                |> Array.truncate maxShown
+                |> Array.map (fun path -> $"'{path}'")
+                |> String.concat ", "
+
+            let more = failure.AffectedPaths.Length - maxShown
+
+            if more > 0 then
+                $"{failure.Message} Affected paths: {shown} and {more} more."
+            else
+                $"{failure.Message} Affected paths: {shown}."
+        else
+            failure.Message
+
     match instructions with
-    | Some instructions when not (String.IsNullOrWhiteSpace instructions) -> $"{failure.Message} {instructions}"
-    | _ -> failure.Message
+    | Some instructions when not (String.IsNullOrWhiteSpace instructions) -> $"{message} {instructions}"
+    | _ -> message
 
 /// A partial success counts as a success here. The explorer actions have no warning
 /// channel, so a partial that lands on one of these calls (a session-open failure the

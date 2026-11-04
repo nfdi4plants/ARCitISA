@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### 🔄 Changed
 
 - Releases are now automatically created as draft. This is part of quality control. The App will first be tested and the docs updated before the release is pushed into "New update available" status. #1488 (by @Freymaurer)
+- When a commit fails because a selected file can't be found, the error message names the affected files. (by @caroott)
 
 ## 3.2.0 - 2026-11-02
 

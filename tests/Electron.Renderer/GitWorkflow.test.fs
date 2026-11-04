@@ -3789,6 +3789,54 @@ Vitest.describe (
         )
 
         Vitest.test (
+            "failureMessage names the first five affected paths of a path_not_found failure",
+            fun () ->
+                let paths = [| for index in 1..7 -> $"data/file{index}.txt" |]
+                let instructions = "Select existing files and try again."
+
+                let failure =
+                    makeFailure
+                        NotFound
+                        VersionControlCodes.PathNotFound
+                        "Some selected paths do not exist."
+                        (Some {
+                            Code = VersionControlCodes.Recovery.RemoveIndexLock
+                            Instructions = Some instructions
+                        })
+                        paths
+
+                let message = failureMessage failure
+
+                for path in paths[0..4] do
+                    Vitest.expect(message).toContain ($"'{path}'")
+
+                Vitest.expect(message).not.toContain (paths[5])
+                Vitest.expect(message).not.toContain (paths[6])
+                Vitest.expect(message).toContain ("2 more")
+                Vitest.expect(message.StartsWith failure.Message).toBe true
+                Vitest.expect(message.EndsWith instructions).toBe true
+        )
+
+        Vitest.test (
+            "failureMessage ignores the affected paths of a failure with another code",
+            fun () ->
+                let instructions = "Retry the action."
+
+                let failure =
+                    makeFailure
+                        Concurrency
+                        VersionControlCodes.PreconditionFailed
+                        "The state changed."
+                        (Some {
+                            Code = VersionControlCodes.Recovery.RemoveIndexLock
+                            Instructions = Some instructions
+                        })
+                        [| "data/file1.txt"; "data/file2.txt" |]
+
+                Vitest.expect(failureMessage failure).toBe ($"{failure.Message} {instructions}")
+        )
+
+        Vitest.test (
             "a phase change of the write keeps the steps and the log and starts the progress over",
             fun () ->
                 let busyState = {
