@@ -1426,6 +1426,48 @@ Vitest.describe (
         )
 
         Vitest.test (
+            "RefreshCompleted reports the output of the failed refresh as the log of the error",
+            fun () -> promise {
+                let reportedErrors = ResizeArray<GitErrorNotification>()
+
+                let deps = {
+                    defaultDependencies with
+                        reportError = reportedErrors.Add
+                }
+
+                let refreshing, _ = update defaultDependencies ignore RefreshRequested runningState
+
+                let withOutput, _ =
+                    update
+                        defaultDependencies
+                        ignore
+                        (OperationOutputReceived(
+                            outputOf "op-1" [
+                                "command", "git fetch"
+                                "stderr", "fatal: unable to access the remote"
+                            ]
+                        ))
+                        refreshing
+
+                let _, cmd =
+                    update
+                        deps
+                        ignore
+                        (RefreshCompleted(withOutput.RefreshRequestId, Error "remote status failed"))
+                        withOutput
+
+                let! _ = collectMessages cmd
+
+                Vitest.expect(reportedErrors.Count).toBe (1)
+
+                Vitest.expect(reportedErrors[0].Log.Lines |> Array.map _.Text).toEqual [|
+                    "git fetch"
+                    "fatal: unable to access the remote"
+                |]
+            }
+        )
+
+        Vitest.test (
             "A silent refresh failure keeps the current notices and opens no modal",
             fun () -> promise {
                 let reportedErrors = ResizeArray<GitErrorNotification>()
@@ -3298,6 +3340,102 @@ Vitest.describe (
                 Vitest.expect(reportedErrors.Count).toBe (1)
                 Vitest.expect(reportedErrors[0].Title).toBe ("Could not push changes")
                 Vitest.expect(reportedErrors[0].Message).toBe ("remote rejected the push")
+            }
+        )
+
+        Vitest.test (
+            "WriteCompleted reports the output of the failed write as the log of the error",
+            fun () -> promise {
+                let reportedErrors = ResizeArray<GitErrorNotification>()
+
+                let deps = {
+                    defaultDependencies with
+                        reportError = reportedErrors.Add
+                }
+
+                let writeRequest = Push GitUpdateAcceptance.RequirePreview
+
+                let started, _ =
+                    update defaultDependencies ignore (WriteRequested writeRequest) runningState
+
+                let withOutput, _ =
+                    update
+                        defaultDependencies
+                        ignore
+                        (OperationOutputReceived(
+                            outputOf "op-1" [
+                                "command", "git push"
+                                "stderr", "remote rejected the push"
+                            ]
+                        ))
+                        started
+
+                let _, cmd =
+                    update
+                        deps
+                        ignore
+                        (WriteCompleted(
+                            withOutput.ArcSessionId,
+                            withOutput.WriteRequestId,
+                            writeRequest,
+                            Error "remote rejected the push"
+                        ))
+                        withOutput
+
+                let! _ = collectMessages cmd
+
+                Vitest.expect(reportedErrors.Count).toBe (1)
+
+                Vitest.expect(reportedErrors[0].Log.Lines |> Array.map _.Text).toEqual [|
+                    "git push"
+                    "remote rejected the push"
+                |]
+            }
+        )
+
+        Vitest.test (
+            "an error that is no failure of the running operation reports no log",
+            fun () -> promise {
+                let reportedErrors = ResizeArray<GitErrorNotification>()
+
+                let deps = {
+                    defaultDependencies with
+                        reportError = reportedErrors.Add
+                }
+
+                let started, _ =
+                    update
+                        defaultDependencies
+                        ignore
+                        (WriteRequested(Push GitUpdateAcceptance.RequirePreview))
+                        runningState
+
+                let withOutput, _ =
+                    update
+                        defaultDependencies
+                        ignore
+                        (OperationOutputReceived(outputOf "op-1" [ "command", "git push" ]))
+                        started
+
+                Vitest.expect(withOutput.CurrentLog.Lines.Length).toBe 1
+
+                let _, cmd =
+                    update
+                        deps
+                        ignore
+                        (SelectChangeCompleted(
+                            withOutput.PageLoadRequestId,
+                            "A.txt",
+                            ignore,
+                            Error "The change could not be opened."
+                        ))
+                        withOutput
+
+                let! _ = collectMessages cmd
+
+                Vitest.expect(reportedErrors.Count).toBe (1)
+                Vitest.expect(reportedErrors[0].Message).toBe ("The change could not be opened.")
+                Vitest.expect(reportedErrors[0].Log.Lines.Length).toBe 0
             }
         )
 

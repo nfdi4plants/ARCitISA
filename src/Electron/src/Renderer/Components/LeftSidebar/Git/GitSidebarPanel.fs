@@ -63,34 +63,12 @@ let private activityVerb (kind: Renderer.Context.LfsActivityContext.LfsActionKin
     | Renderer.Context.LfsActivityContext.LfsActionKind.Download -> "Downloading"
     | Renderer.Context.LfsActivityContext.LfsActionKind.Free -> "Freeing"
 
-/// The log for the sidebar. A log without lines is None, so the notice offers no "Show logs" button for it.
-let sidebarLog
-    (log: Renderer.Context.OperationLog.OperationLog)
-    : Swate.Components.Page.GitSidebarTypes.GitSidebarLog option =
-    if log.Lines.Length = 0 then
-        None
-    else
-        let lines =
-            log.Lines
-            |> Array.map (fun line ->
-                let mapped: Swate.Components.Page.GitSidebarTypes.GitSidebarLogLine = {
-                    Kind = line.Kind
-                    Text = line.Text
-                }
-
-                mapped
-            )
-
-        let mapped: Swate.Components.Page.GitSidebarTypes.GitSidebarLog = { Lines = lines; Omitted = log.Omitted }
-
-        Some mapped
-
 /// The last finished log for the sidebar. The title starts with the operation name and ends with the local time of
 /// the end, with the ARC name between them when there is one. A log without lines is None.
 let sidebarLastLog
     (lastLog: Renderer.Context.OperationLog.FinishedOperationLog)
     : Swate.Components.Page.GitSidebarTypes.GitSidebarLastLog option =
-    sidebarLog lastLog.Log
+    Renderer.Context.OperationLog.toSidebarLog lastLog.Log
     |> Option.map (fun log ->
         let finishedAt =
             System.DateTimeOffset.FromUnixTimeMilliseconds(int64 lastLog.FinishedAt).LocalDateTime.ToString("HH:mm")
@@ -121,7 +99,10 @@ let backgroundActivityItems
             Label = activityLabel action
             Detail = Renderer.Context.LfsActivityContext.LfsRunningAction.progressText action
             ProgressPercent = Renderer.Context.LfsActivityContext.LfsRunningAction.progressPercent action
-            Log = logs |> Map.tryFind action.OperationId |> Option.bind sidebarLog
+            Log =
+                logs
+                |> Map.tryFind action.OperationId
+                |> Option.bind Renderer.Context.OperationLog.toSidebarLog
         }
 
         item
@@ -197,7 +178,10 @@ let Main () =
 
     // The log changes with every batch of output. A sidebar render for something else keeps the mapped lines.
     let operationLog =
-        React.useMemo ((fun () -> sidebarLog gitStateCtx.state.CurrentLog), [| box gitStateCtx.state.CurrentLog |])
+        React.useMemo (
+            (fun () -> Renderer.Context.OperationLog.toSidebarLog gitStateCtx.state.CurrentLog),
+            [| box gitStateCtx.state.CurrentLog |]
+        )
 
     let lastLog =
         React.useMemo (

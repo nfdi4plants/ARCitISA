@@ -177,7 +177,11 @@ let GitStateCtxProvider (children: ReactElement) =
         React.useCallback (
             (fun (notification: GitErrorNotification) ->
                 errorModalCtxRef.current.enqueue (
-                    ErrorModalRequest.create (notification.Message, title = notification.Title)
+                    ErrorModalRequest.create (
+                        notification.Message,
+                        title = notification.Title,
+                        ?details = OperationLog.tryDetails notification.Log
+                    )
                 )
             ),
             [||]

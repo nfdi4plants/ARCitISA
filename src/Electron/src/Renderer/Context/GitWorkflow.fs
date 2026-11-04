@@ -154,7 +154,12 @@ type GitProvisionedRemote = {
     IsBound: bool
 }
 
-type GitErrorNotification = { Title: string; Message: string }
+type GitErrorNotification = {
+    Title: string
+    Message: string
+    /// The output of the operation that failed. Empty for an error that is no failure of the running operation.
+    Log: OperationLog.OperationLog
+}
 
 /// The automatic reopen of a diff page whose worker session ended (it sat idle or a newer diff
 /// took its slot), whose preparation token went stale, or whose side turned out not to be UTF-8
@@ -1469,9 +1474,25 @@ let private applyPageChangeCmd (setPageState: PageState option -> unit) =
         fun _dispatch -> setPageState None
       ]
 
-let private reportErrorCmd (deps: GitDependencies) (title: string) (message: string) : Cmd<Msg> = [
-    fun _dispatch -> deps.reportError { Title = title; Message = message }
-]
+/// Reports the failure of the operation whose output the log holds, so the error details show that output.
+let private reportOperationErrorCmd
+    (deps: GitDependencies)
+    (log: OperationLog.OperationLog)
+    (title: string)
+    (message: string)
+    : Cmd<Msg> =
+    [
+        fun _dispatch ->
+            deps.reportError {
+                Title = title
+                Message = message
+                Log = log
+            }
+    ]
+
+/// Reports an error that is no failure of a running operation, so the error details carry no log.
+let private reportErrorCmd (deps: GitDependencies) (title: string) (message: string) : Cmd<Msg> =
+    reportOperationErrorCmd deps OperationLog.empty title message
 
 /// The checkbox is a convenience. The update logs a failed call and never shows it to the user.
 let private logUploadRightAwayFailure (action: string) (detail: string) =
@@ -1555,8 +1576,8 @@ let private titleForWriteRequest =
     | RestoreInterruptedPaths _ -> "Could not restore interrupted files"
     | RetryMaterialization -> "Could not download large files"
 
-let private reportWriteErrorCmd deps request message =
-    reportErrorCmd deps (titleForWriteRequest request) message
+let private reportWriteErrorCmd deps log request message =
+    reportOperationErrorCmd deps log (titleForWriteRequest request) message
 
 let private isLocalPrimarySaveFailure (success: WriteSuccess) =
     let partialFailure =
@@ -5472,7 +5493,7 @@ let private updateCore
         nextModel,
         Cmd.batch [
             applyPageChangeCmd setPageState GitPageChange.Clear
-            reportErrorCmd deps "Could not refresh Git state" message
+            reportOperationErrorCmd deps model.CurrentLog "Could not refresh Git state" message
         ]
     | RefreshCompleted(_, Ok refreshResult) when refreshFailure refreshResult |> Option.exists isMissingRepository ->
         missingRepositoryModel model, clearPageOnFirstMissingCmd setPageState model
@@ -5484,7 +5505,7 @@ let private updateCore
             | Some message ->
                 Cmd.batch [
                     applyPageChangeCmd setPageState GitPageChange.Clear
-                    reportErrorCmd deps "Could not refresh Git state" message
+                    reportOperationErrorCmd deps model.CurrentLog "Could not refresh Git state" message
                 ]
             | None when nextModel.PendingPublishAfterRefresh ->
                 Cmd.ofMsg (WriteRequested(Push GitUpdateAcceptance.RequirePreview))
@@ -5562,7 +5583,7 @@ let private updateCore
                 PendingRefreshWarningNotice = None
         }
 
-        nextModel, reportErrorCmd deps "Could not initialize Git repository" message
+        nextModel, reportOperationErrorCmd deps model.CurrentLog "Could not initialize Git repository" message
     | InitRepositoryCompleted(_, Ok()) ->
         let nextModel = {
             clearBusy model with
@@ -5746,7 +5767,7 @@ let private updateCore
         Cmd.batch [
             applyPageChangeCmd setPageState GitPageChange.Clear
             Cmd.ofMsg RefreshRequested
-            reportErrorCmd deps "Could not confirm merge resolution" message
+            reportOperationErrorCmd deps model.CurrentLog "Could not confirm merge resolution" message
         ]
     | ConfirmMergeResolutionCompleted(_,
                                       Error(ConfirmMergeResolutionError.Failed(message,
@@ -5776,7 +5797,7 @@ let private updateCore
         nextModel,
         Cmd.batch [
             Cmd.ofMsg RefreshRequested
-            reportErrorCmd deps "Could not confirm merge resolution" message
+            reportOperationErrorCmd deps model.CurrentLog "Could not confirm merge resolution" message
         ]
     | ConfirmMergeResolutionCompleted(_, Ok outcome) ->
         let nextModel =
@@ -6107,7 +6128,7 @@ let private updateCore
             clearBusy model with
                 ErrorNotice = Some message
         },
-        reportErrorCmd deps "Could not rename ARC" message
+        reportOperationErrorCmd deps model.CurrentLog "Could not rename ARC" message
     | PublishRenameCompleted(_, Ok _, selection) ->
         {
             clearBusy model with
@@ -6177,7 +6198,7 @@ let private updateCore
                 ErrorNotice = Some message
                 WarningNotice = None
         },
-        reportErrorCmd deps "Could not switch branch" message
+        reportOperationErrorCmd deps model.CurrentLog "Could not switch branch" message
     | SwitchBranchPreflightCompleted(_, refName, Ok(OperationResultDto.Succeeded outcome)) when outcome.Value.IsSafe ->
         clearBusy model, Cmd.ofMsg (WriteRequested(SwitchBranch refName))
     | SwitchBranchPreflightCompleted(_, _, Ok(OperationResultDto.Succeeded outcome)) ->
@@ -6194,7 +6215,7 @@ let private updateCore
                 ErrorNotice = Some message
                 WarningNotice = None
         },
-        reportErrorCmd deps "Could not switch branch" message
+        reportOperationErrorCmd deps model.CurrentLog "Could not switch branch" message
     | SwitchBranchPreflightCompleted(_, _, Ok(OperationResultDto.Failed failure)) when isCanceled failure ->
         {
             clearBusy model with
@@ -6211,7 +6232,7 @@ let private updateCore
                     WarningNotice = None
             },
             Cmd.batch [
-                reportErrorCmd deps "Could not switch branch" message
+                reportOperationErrorCmd deps model.CurrentLog "Could not switch branch" message
                 Cmd.ofMsg RefreshRequested
             ]
         | routed ->
@@ -6222,14 +6243,14 @@ let private updateCore
                     ErrorNotice = Some message
                     WarningNotice = None
             },
-            reportErrorCmd deps "Could not switch branch" message
+            reportOperationErrorCmd deps model.CurrentLog "Could not switch branch" message
     | SwitchBranchPreflightCompleted(_, _, Error message) ->
         {
             clearBusy model with
                 ErrorNotice = Some message
                 WarningNotice = None
         },
-        reportErrorCmd deps "Could not switch branch" message
+        reportOperationErrorCmd deps model.CurrentLog "Could not switch branch" message
     | PruneLfsCacheRequested ->
         let message =
             "This cleans hidden Git LFS cache files for the current ARC. Files that are still needed can be downloaded again from the remote. Continue?"
@@ -6324,7 +6345,7 @@ let private updateCore
         nextModel,
         Cmd.batch [
             resolveCloneReplyCmd writeRequest (Error message)
-            reportWriteErrorCmd deps writeRequest message
+            reportWriteErrorCmd deps model.CurrentLog writeRequest message
             Cmd.ofMsg RefreshRequested
         ]
     | WriteCompleted(_, _, writeRequest, Ok(OperationCancelled message)) ->
@@ -6345,7 +6366,7 @@ let private updateCore
         nextModel,
         Cmd.batch [
             resolveCloneReplyCmd writeRequest (Error message)
-            reportWriteErrorCmd deps writeRequest message
+            reportWriteErrorCmd deps model.CurrentLog writeRequest message
         ]
     | WriteCompleted(_, _, _, Ok(RequiresRemoteProjectRename(message, owners, clearOwnerChoice))) ->
         let ownedModel = {
@@ -6374,7 +6395,7 @@ let private updateCore
         nextModel,
         Cmd.batch [
             Cmd.ofMsg RefreshRequested
-            reportWriteErrorCmd deps writeRequest message
+            reportWriteErrorCmd deps model.CurrentLog writeRequest message
         ]
     | WriteCompleted(_, _, writeRequest, Ok(RequiresRecovery(recovery, message))) ->
         // The recovery offer stays open. A refresh requested meanwhile runs after the offer is resolved.
@@ -6427,7 +6448,7 @@ let private updateCore
         nextModel,
         Cmd.batch [
             resolveCloneReplyCmd writeRequest (Error message)
-            reportErrorCmd deps "Version control dependency required" message
+            reportOperationErrorCmd deps model.CurrentLog "Version control dependency required" message
         ]
     | WriteInstallPromptAnswered(sessionId, writeRequest, componentName, true) ->
         let busyOperation = busyOperationForWriteRequest writeRequest
@@ -6471,7 +6492,7 @@ let private updateCore
         nextModel,
         Cmd.batch [
             resolveCloneReplyCmd writeRequest (Error message)
-            reportErrorCmd deps "Could not install the dependency" message
+            reportOperationErrorCmd deps model.CurrentLog "Could not install the dependency" message
         ]
     | WriteInstallCompleted(_, writeRequest, Ok(OperationResultDto.Failed failure)) ->
         let message = failureMessage failure
@@ -6487,7 +6508,7 @@ let private updateCore
         nextModel,
         Cmd.batch [
             resolveCloneReplyCmd writeRequest (Error message)
-            reportErrorCmd deps "Could not install the dependency" message
+            reportOperationErrorCmd deps model.CurrentLog "Could not install the dependency" message
         ]
     | WriteInstallCompleted(sessionId, writeRequest, Ok _) ->
         // The dependency is configured. The failed stage runs again with the same
@@ -6549,9 +6570,9 @@ let private updateCore
         let report =
             match writeRequest with
             | PrimarySave _ when isLocalPrimarySaveFailure success ->
-                reportErrorCmd deps "Changes saved, but Git's index needs attention" message
-            | PrimarySave _ -> reportErrorCmd deps "Could not push saved changes" message
-            | _ -> reportWriteErrorCmd deps writeRequest message
+                reportOperationErrorCmd deps model.CurrentLog "Changes saved, but Git's index needs attention" message
+            | PrimarySave _ -> reportOperationErrorCmd deps model.CurrentLog "Could not push saved changes" message
+            | _ -> reportWriteErrorCmd deps model.CurrentLog writeRequest message
 
         nextModel,
         Cmd.batch [
@@ -6567,7 +6588,7 @@ let private updateCore
                 PendingPostMergePush = false
         }
 
-        nextModel, reportWriteErrorCmd deps writeRequest message
+        nextModel, reportWriteErrorCmd deps model.CurrentLog writeRequest message
     | WriteCompleted(_, _, writeRequest, Ok(Completed success)) ->
         let baseModel, pageChange, warningMessage, recovery, partial, published =
             applyWriteSuccessModel model success

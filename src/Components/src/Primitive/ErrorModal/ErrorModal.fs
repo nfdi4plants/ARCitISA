@@ -52,7 +52,7 @@ type ErrorModal =
                     prop.className "swt:collapse-content"
                     prop.children [
                         Html.pre [
-                            prop.className "swt:whitespace-pre-wrap swt:text-sm"
+                            prop.className "swt:whitespace-pre-wrap swt:text-sm swt:max-h-80 swt:overflow-auto"
                             prop.text details
                         ]
                     ]

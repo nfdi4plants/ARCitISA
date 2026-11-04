@@ -137,3 +137,49 @@ Vitest.describe (
                 Vitest.expect(capped.Omitted).toBe 1
         )
 )
+
+Vitest.describe (
+    "OperationLog.tryText",
+    fun () ->
+        Vitest.test ("returns None for a log without lines", fun () -> Vitest.expect(tryText empty).toEqual None)
+
+        Vitest.test (
+            "starts with the omitted count, marks the command line and joins the lines with line feeds",
+            fun () ->
+                let command = "git push"
+                let output = "Everything up-to-date"
+
+                let appended =
+                    empty |> append [| entry "cmd-1" "command" command false; stdout' output |]
+
+                let log = { appended with Omitted = 2 }
+
+                let expected =
+                    String.concat "\n" [ "2 earlier lines were left out"; "$ " + command; output ]
+
+                Vitest.expect(tryText log).toEqual (Some expected)
+        )
+)
+
+Vitest.describe (
+    "OperationLog.tryDetails",
+    fun () ->
+        Vitest.test ("returns None for a log without lines", fun () -> Vitest.expect(tryDetails empty).toEqual None)
+
+        Vitest.test (
+            "puts a heading line in front of the text of the log",
+            fun () ->
+                let log =
+                    empty
+                    |> append [|
+                        entry "cmd-1" "command" "git push" false
+                        stdout' "Everything up-to-date"
+                    |]
+
+                let details = (tryDetails log).Value
+                let headingEnd = details.IndexOf('\n')
+
+                Vitest.expect(headingEnd > 0).toBe true
+                Vitest.expect(details.Substring(headingEnd + 1)).toBe (tryText log).Value
+        )
+)

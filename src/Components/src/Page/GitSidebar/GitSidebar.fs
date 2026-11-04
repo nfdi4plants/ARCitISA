@@ -129,12 +129,6 @@ module private GitSidebarInternal =
         |> List.choose id
         |> String.concat " | "
 
-    let omittedLinesText (omitted: int) =
-        if omitted = 1 then
-            "1 earlier line was left out"
-        else
-            $"{omitted} earlier lines were left out"
-
     /// Command lines are bold and notices are muted. A stderr line keeps the text color of the panel and has a
     /// warning stripe at its left edge, because the warning color as text has too little contrast on the light panel.
     /// Every line reserves the stripe so the text of all kinds starts at the same place.
@@ -144,12 +138,6 @@ module private GitSidebarInternal =
         | "stderr" -> "swt:border-warning"
         | "notice" -> "swt:border-transparent swt:italic swt:opacity-70"
         | _ -> "swt:border-transparent"
-
-    let logLineText (line: GitSidebarLogLine) =
-        if line.Kind = "command" then
-            "$ " + line.Text
-        else
-            line.Text
 
     /// The lines of one log. A title names the task when a viewer shows the logs of several tasks.
     type LogSection = {
@@ -168,13 +156,9 @@ module private GitSidebarInternal =
     let logCopyText (sections: LogSection[]) : string =
         sections
         |> Array.map (fun section ->
-            [
-                yield! section.Title |> Option.toList
-                if section.Log.Omitted > 0 then
-                    omittedLinesText section.Log.Omitted
-                yield! section.Log.Lines |> Array.map logLineText
-            ]
-            |> String.concat "\n"
+            match section.Title with
+            | Some title -> title + "\n" + GitSidebarLog.toText section.Log
+            | None -> GitSidebarLog.toText section.Log
         )
         |> String.concat "\n\n"
 
@@ -283,7 +267,7 @@ module private GitSidebarInternal =
                 Html.div [
                     prop.testId $"{panelTestId}Omitted-{sectionIndex}"
                     prop.className "swt:italic swt:opacity-70"
-                    prop.text (omittedLinesText section.Log.Omitted)
+                    prop.text (GitSidebarLog.omittedText section.Log.Omitted)
                 ]
             else
                 Html.none
@@ -295,7 +279,7 @@ module private GitSidebarInternal =
                 Html.div [
                     prop.key (section.Log.Omitted + lineIndex)
                     prop.className ("swt:whitespace-pre swt:border-l-2 swt:pl-1.5 " + logLineClassName line.Kind)
-                    prop.text (logLineText line)
+                    prop.text (GitSidebarLog.lineText line)
                 ]
             )
 

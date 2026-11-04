@@ -100,3 +100,33 @@ let append (entries: VersionControlOutputEntryDto[]) (log: OperationLog) : Opera
             Lines = lines.ToArray()
             Omitted = log.Omitted + dropped
         }
+
+/// The log for the sidebar. A log without lines is None, so the notice offers no "Show logs" button for it.
+let toSidebarLog (log: OperationLog) : Swate.Components.Page.GitSidebarTypes.GitSidebarLog option =
+    if log.Lines.Length = 0 then
+        None
+    else
+        let lines =
+            log.Lines
+            |> Array.map (fun line ->
+                let mapped: Swate.Components.Page.GitSidebarTypes.GitSidebarLogLine = {
+                    Kind = line.Kind
+                    Text = line.Text
+                }
+
+                mapped
+            )
+
+        let mapped: Swate.Components.Page.GitSidebarTypes.GitSidebarLog = { Lines = lines; Omitted = log.Omitted }
+
+        Some mapped
+
+/// The log as plain text, the same text the sidebar copies. None for a log without lines.
+let tryText (log: OperationLog) : string option =
+    toSidebarLog log
+    |> Option.map Swate.Components.Page.GitSidebarTypes.GitSidebarLog.toText
+
+/// The log as the text of an error's technical details. A heading line in front lets the reader tell the log from
+/// other details. None for a log without lines.
+let tryDetails (log: OperationLog) : string option =
+    tryText log |> Option.map (fun text -> "Git output\n" + text)
