@@ -250,7 +250,6 @@ type JsonImport =
                                 arcFile,
                                 activeTableIndex,
                                 importJson,
-                                onBack = (fun () -> setState JsonImportWidgetState.SelectingFile),
                                 onCancel = (fun () -> setState JsonImportWidgetState.SelectingFile),
                                 onDone =
                                     fun () ->

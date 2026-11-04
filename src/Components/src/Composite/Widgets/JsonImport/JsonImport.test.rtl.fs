@@ -386,7 +386,7 @@ Vitest.test (
 )
 
 Vitest.test (
-    "Back and Cancel close the modal and leave the ARC unchanged",
+    "Cancel closes the modal and leaves the ARC unchanged",
     fun () -> promise {
         let harness = newHarness ()
 
@@ -396,10 +396,6 @@ Vitest.test (
             None
             (pickerOf (jsonOf (assayWith [ "A" ]) JsonExportFormat.ROCrate))
             (recording harness (Ok()))
-
-        do! openReview ()
-        RTL.fireEvent.click (button "json-import-back")
-        Vitest.expect(modalIsOpen ()).toBe false
 
         do! openReview ()
         RTL.fireEvent.click (button "json-import-cancel")

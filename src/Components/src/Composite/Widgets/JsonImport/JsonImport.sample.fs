@@ -40,15 +40,7 @@ let private modal
     (current: ArcFiles)
     (importJson: JsonImportRequest -> JS.Promise<Result<unit, exn>>)
     =
-    JsonImportModal.JsonImportModal(
-        parsed,
-        current,
-        Some 0,
-        importJson,
-        onBack = ignore,
-        onCancel = ignore,
-        onDone = ignore
-    )
+    JsonImportModal.JsonImportModal(parsed, current, Some 0, importJson, onCancel = ignore, onDone = ignore)
 
 [<Erase; Mangle(false)>]
 type JsonImportSample =

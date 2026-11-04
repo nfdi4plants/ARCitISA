@@ -179,7 +179,6 @@ type JsonImportModal =
             currentArcFile: ArcFiles,
             activeTableIndex: int option,
             importJson: JsonImportRequest -> JS.Promise<Result<unit, exn>>,
-            onBack: unit -> unit,
             onCancel: unit -> unit,
             onDone: unit -> unit
         ) =
@@ -320,8 +319,7 @@ type JsonImportModal =
                 Html.div [
                     prop.className "swt:flex swt:w-full swt:items-center swt:gap-2"
                     prop.children [
-                        footerButton "json-import-back" "swt:btn swt:btn-outline" "Back" importing onBack
-                        footerButton "json-import-cancel" "swt:btn swt:btn-ghost" "Cancel" importing onCancel
+                        footerButton "json-import-cancel" "swt:btn swt:btn-outline" "Cancel" importing onCancel
                         Html.div [
                             prop.className "swt:ml-auto swt:flex swt:min-w-0 swt:items-center swt:gap-2"
                             prop.children [
