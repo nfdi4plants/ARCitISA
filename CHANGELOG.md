@@ -18,6 +18,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### ✨ Added
 
+- The JSON import opens a dialog that lists the tables of the file with their columns and values. You choose which tables and columns to import, and whether each table becomes a new table or is appended to the table open in the editor. (by @Etschbeijer)
+- In the JSON import dialog you can import column headers only, headers with units, or headers with all values, and you can rename new tables. (by @Etschbeijer)
+- After a JSON import, the dialog lists the new and changed tables and reminds you to save the ARC. (by @Etschbeijer)
+- The JSON and template import dialogs show each table as a scrollable grid, where you can leave out rows the same way as columns. In "Headers only" mode the grid hides the row checkboxes, because that mode imports no values. When you append a table, left-out rows stay empty, so the other rows keep lining up with the table in the editor. (by @Etschbeijer)
+
+## 3.2.0 - 2026-11-02
+
+### ✨ Added
+
 - Right-clicking a folder or the ARC name offers "Import folders", which copies the folders you pick, with everything inside them. It is available wherever "New Folder" is. #1429 (by @Etschbeijer)
 - Imported folders that would stay empty get an empty ".gitkeep" file, so they are kept when the ARC is uploaded. #1429 (by @Etschbeijer)
 - "Refresh folder" in the file tree's right-click menu reads a folder from disk again. (by @caroott)
@@ -25,10 +34,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - An overview above the provenance graph shows where you are in the ARC and lets you jump to a neighboring dataset, process, group or node. (by @caroott)
 - A minimap in the corner of the provenance graph shows the whole graph and the visible part, and a click or drag on it moves the view. (by @caroott)
 - The whole provenance graph can be saved as a PNG image or copied to paste into Slack or Teams. (by @caroott)
-- The JSON import opens a dialog that lists the tables of the file with their columns and values. You choose which tables and columns to import, and whether each table becomes a new table or is appended to the table open in the editor. (by @Etschbeijer)
-- In the JSON import dialog you can import column headers only, headers with units, or headers with all values, and you can rename new tables. (by @Etschbeijer)
-- After a JSON import, the dialog lists the new and changed tables and reminds you to save the ARC. (by @Etschbeijer)
-- The JSON and template import dialogs show each table as a scrollable grid, where you can leave out rows the same way as columns. In "Headers only" mode the grid hides the row checkboxes, because that mode imports no values. When you append a table, left-out rows stay empty, so the other rows keep lining up with the table in the editor. (by @Etschbeijer)
+- Right-clicking a folder in the file tree offers "Download all LFS files" and "Free all local LFS copies", which act on every Git LFS file in the folder and its subfolders. (by @caroott)
+- While a folder downloads or frees its Git LFS files, its row in the file tree shows how many files are done, such as "3/40", and during a download the progress of the current step. (by @caroott)
+- The Git sidebar lists the steps of Download Changes and Upload Changes as they run, for example "Fetching online changes" and "Merging online changes", with live progress for the current step. A Save lists its steps in the same way. (by @caroott)
+- "Show logs" in the Git sidebar unfolds the output of the Git commands that the running operation sends. A copy button next to it puts the log on the clipboard. (by @caroott)
+- The Git sidebar shows the Git LFS downloads and frees that run from the file tree. When a Save waits for such an action, or another change to the repository does, such as Download Changes or switching a branch, the sidebar names the action it waits for. (by @caroott)
 
 ### 🔄 Changed
 
@@ -46,6 +56,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Creating and renaming items says why a name can't be used, for example for a "dataset" folder inside an assay or an ARC metadata file name. #1429 (by @Etschbeijer)
 - Files above the preview size limit or with binary content open as a page that shows the file name and size, with a button to open the file in its default application. (by @caroott)
 - The Git LFS badge of a downloaded file no longer frees its local copy. Freeing is in the right-click menu and asks for confirmation first. (by @caroott)
+- Downloading or freeing a single Git LFS file is faster in large ARCs. (by @caroott)
 - Large ARCs open faster. The file tree shows the ARC structure first and reads other folders when you expand them. #1340 (by @caroott, @Etschbeijer)
 - Changes that other programs make inside data folders appear when the ARCitISA window gets focus, or after "Refresh folder". #1340 (by @caroott)
 - Git LFS badges come from one background listing per ARC. They update after Git operations in ARCitISA, and after changes made outside it when the window gets focus. #1340 (by @caroott, @Etschbeijer)
@@ -54,12 +65,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### 🐛 Fixed
 
+- Collapsing a parent folder in the file tree keeps the selected descendant and its path highlighted. #1469 (by @Gitarackur)
 - Files and folders named ".gitkeep", ".gitattributes" or "README.md" can be deleted from the file tree, including the ".gitkeep" files generated for empty imported folders. #1429 (by @Etschbeijer)
 - The file tree now hides Office lock files for additional document types, such as "~$Report.docx", and LibreOffice lock files such as ".~lock.notes.odt#". #1429 (by @Etschbeijer)
 - File names of Git LFS files stay visible in narrow file tree rows. The badge drops its text and size first. (by @caroott)
 - ARCitISA no longer keeps several CPU cores busy while a large ARC is open, because it watches only the ARC structure. #1340 (by @caroott, @Etschbeijer)
 - The file tree stays responsive in folders with thousands of files. #1340 (by @caroott, @Etschbeijer)
 - Renaming the ARC folder on Windows retries for longer and reports the reason when it fails. (by @caroott)
+- Canceling the download of large files during Download Changes or a clone no longer leaves a Git lock behind. (by @caroott)
+- When a Git lock stops the download of large files, ARCitISA offers "Remove lock" and then "Download now". A Save or Upload Changes that was held back from publishing continues after the download, or when you close the lock dialog. (by @caroott)
+- When a Git lock also stops "Download now", ARCitISA offers "Remove lock" and then "Download now" again. (by @caroott)
+- After a Git lock stopped a download of large files, removing the lock in ARCitISA also clears the files that git-lfs had already written from the changed files list. ARCitISA then offers "Download now" only when a large file is still missing. (by @caroott)
+- "Download now" no longer shows an error for a large file with your own edits. The file keeps its edit. (by @caroott)
 
 ## 3.1.0 - 2026-10-21
 

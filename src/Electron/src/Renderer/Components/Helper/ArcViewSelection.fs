@@ -9,7 +9,7 @@ open Swate.Electron.Shared.FileIOHelper
 let applyRequestedPathView (requestedPath: string) (pageState: Renderer.Types.PageState) =
     match PathHelpers.getNameFromPath requestedPath, pageState with
     | requestedFileName, Renderer.Types.PageState.ArcFilePage(arcFile, _) when
-        PathHelpers.pathsEqual requestedFileName ARCtrl.ArcPathHelper.DataMapFileName
+        PathHelpers.pathsEqual requestedFileName ARCtrl.ArcPathHelper.DatamapFileName
         ->
         Renderer.Types.PageState.ArcFilePage(arcFile, Some Swate.Components.Page.ArcFileEditor.Types.ActiveView.DataMap)
     | _ -> pageState

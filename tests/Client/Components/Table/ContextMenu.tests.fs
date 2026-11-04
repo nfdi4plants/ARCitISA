@@ -265,7 +265,7 @@ type TestCases =
 
     static member DataMapCopyIncludesSelector() =
         let dataMap =
-            DataMap(ResizeArray [ DataContext(name = "DatamapTesting.txt#row=2") ])
+            Datamap(ResizeArray [ DataContext(name = "DatamapTesting.txt#row=2") ])
 
         let copiedText =
             Swate.Components.ClipboardContract.Contract.Capture.matrix
@@ -276,7 +276,7 @@ type TestCases =
         Expect.equal copiedText "DatamapTesting.txt#row=2" "Copied DataMap data should include its selector."
 
         let dataMapWithoutSelector =
-            DataMap(ResizeArray [ DataContext(name = "DatamapTesting.txt") ])
+            Datamap(ResizeArray [ DataContext(name = "DatamapTesting.txt") ])
 
         let copiedTextWithoutSelector =
             Swate.Components.ClipboardContract.Contract.Capture.matrix
@@ -291,7 +291,7 @@ type TestCases =
 
     static member DataMapCopyKeepsTermsInGridColumns() =
         let source =
-            DataMap(
+            Datamap(
                 ResizeArray [
                     DataContext(
                         explication = OntologyAnnotation("explicit", "TST", "TST:1"),
@@ -308,7 +308,7 @@ type TestCases =
 
         Expect.equal copiedText "explicit\tmetre" "Each selected DataMap cell should occupy one clipboard column."
 
-        let target = DataMap(ResizeArray [ DataContext() ])
+        let target = Datamap(ResizeArray [ DataContext() ])
         let targetAnchor: CellCoordinate = {| x = 2; y = 1 |}
         target.PasteTabText(targetAnchor, [| targetAnchor |], copiedText)
 
@@ -316,7 +316,7 @@ type TestCases =
         Expect.equal target.DataContexts.[0].Description (Some "metre") "The next value should not shift right."
 
     static member DataMapPlainTextPasteKeepsTsvCellsSeparate() =
-        let dataMap = DataMap(ResizeArray [ DataContext() ])
+        let dataMap = Datamap(ResizeArray [ DataContext() ])
 
         let firstAnchor: CellCoordinate = {| x = 5; y = 1 |}
         dataMap.PasteTabText(firstAnchor, [| firstAnchor |], "foo\tbar\tbaz")
@@ -351,7 +351,7 @@ type TestCases =
             "two"
             "The next in-range value should be pasted into ObjectType."
 
-        let repeatedMap = DataMap(ResizeArray [ DataContext(); DataContext() ])
+        let repeatedMap = Datamap(ResizeArray [ DataContext(); DataContext() ])
         let repeatAnchor: CellCoordinate = {| x = 5; y = 1 |}
 
         let selection: CellCoordinate[] = [|
@@ -373,7 +373,7 @@ type TestCases =
     static member DataMapStructuredPastePreservesTermsAndUnits() =
         let term = CompositeCell.createTermFromString ("explicit", "TST", "TST:1")
         let unit = CompositeCell.createUnitizedFromString ("4", "metre", "UO", "UO:0000008")
-        let structuredTarget = DataMap(ResizeArray [ DataContext() ])
+        let structuredTarget = Datamap(ResizeArray [ DataContext() ])
         let cells = [| [| term; unit |] |]
         let anchor: CellCoordinate = {| x = 5; y = 1 |}
 
@@ -395,7 +395,7 @@ type TestCases =
             "Structured unit paste should preserve ontology metadata."
 
     static member DataMapUnitizedPasteIntoFreeTextPreservesVisibleValue() =
-        let dataMap = DataMap(ResizeArray [ DataContext() ])
+        let dataMap = Datamap(ResizeArray [ DataContext() ])
         let anchor: CellCoordinate = {| x = 2; y = 1 |}
 
         dataMap.PasteStructuredCells(
@@ -423,7 +423,7 @@ type TestCases =
             {| x = 7; y = 2 |}
         |]
 
-        let dataMap = DataMap(ResizeArray [ DataContext(); DataContext() ])
+        let dataMap = Datamap(ResizeArray [ DataContext(); DataContext() ])
         dataMap.PasteTabText(dataMapSelection.[0], dataMapSelection, "A\tB")
 
         let table = Fixture.mkTable ()
@@ -452,7 +452,7 @@ type TestCases =
 
     static member PlainTextPreservesEmptyRowsAcrossTargets() =
         let text = "A\n\nB"
-        let dataMap = DataMap(ResizeArray [ DataContext(); DataContext(); DataContext() ])
+        let dataMap = Datamap(ResizeArray [ DataContext(); DataContext(); DataContext() ])
         let dataMapAnchor: CellCoordinate = {| x = 2; y = 1 |}
         dataMap.PasteTabText(dataMapAnchor, [| dataMapAnchor |], text)
 
@@ -803,7 +803,7 @@ type TestCases =
             "A table data cell and its selector must occupy one clipboard cell."
 
     static member DataMapCellPastePreservesSelector() =
-        let dataMap = DataMap(ResizeArray [ DataContext() ])
+        let dataMap = Datamap(ResizeArray [ DataContext() ])
 
         let anchor: CellCoordinate = {| x = 1; y = 1 |}
         dataMap.PasteTabText(anchor, [| anchor |], "DatamapTesting.txt#row=2")
@@ -813,7 +813,7 @@ type TestCases =
 
     static member DataMapLabelSurvivesArcFileRefresh() =
         let assay = ArcAssay.init "assay"
-        assay.DataMap <- Some(DataMap(ResizeArray [ DataContext(label = "asdhjasklhd") ]))
+        assay.Datamap <- Some(Datamap(ResizeArray [ DataContext(label = "asdhjasklhd") ]))
 
         let refreshed =
             Swate.Components.Shared.ARCtrlHelper.ArcFiles.refreshRef (
@@ -825,7 +825,7 @@ type TestCases =
         Expect.equal label (Some "asdhjasklhd") "Refreshing an ARC file must preserve DataMap labels."
 
     static member DataMapGridPasteGrowsRows() =
-        let dataMap = DataMap(ResizeArray [ DataContext() ])
+        let dataMap = Datamap(ResizeArray [ DataContext() ])
 
         let anchor: CellCoordinate = {| x = 1; y = 1 |}
 
@@ -838,7 +838,7 @@ type TestCases =
 
     static member DataMapFillColumnCopiesCompleteCell() =
         let dataMap =
-            DataMap(
+            Datamap(
                 ResizeArray [
                     DataContext(name = "first.txt#row=2", format = "text/csv")
                     DataContext(name = "second.txt#row=3")
@@ -858,7 +858,7 @@ type TestCases =
 
     static member DataMapRowAndClearActions() =
         let dataMap =
-            DataMap(
+            Datamap(
                 ResizeArray [
                     DataContext(name = "first.txt#row=2", label = "First")
                     DataContext(name = "second.txt#row=3", label = "Second")
@@ -972,7 +972,7 @@ type TestCases =
         let unit = CompositeCell.createUnitizedFromString ("4", "metre", "UO", "UO:0000008")
 
         let dataMap =
-            DataMap(
+            Datamap(
                 ResizeArray [
                     DataContext(
                         explication = OntologyAnnotation("old", "OLD", "OLD:1"),

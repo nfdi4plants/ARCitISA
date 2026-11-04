@@ -185,6 +185,9 @@ type GitState = {
     /// A primary save that still has to publish once the update or merge is done.
     PendingPostMergePush: bool
     PendingRecovery: GitPendingRecovery option
+    /// The message of a large-file download that an index lock stopped. The lock dialog is open for it. A removed
+    /// lock turns it into the download offer, and any other end of that dialog drops it.
+    RetryMaterializationAfterLockClear: string option
     ProvisionedRemote: GitProvisionedRemote option
     /// A publish that waits until the refresh of a renamed ARC root has loaded the
     /// workspace token.
@@ -218,8 +221,28 @@ type GitState = {
     BusyNotice: string option
     /// The operation the renderer can cancel. The renderer chooses its id before the call starts.
     CurrentOperation: OperationRequestDto option
+    /// The id of the non-silent refresh that runs. A refresh keeps CurrentOperation empty, because a new refresh
+    /// request replaces a running refresh, while a write that reports the Refreshing phase owns CurrentOperation
+    /// and holds new refreshes back.
+    RefreshOperationId: string option
     CurrentProgress: GitSidebarProgress option
     CurrentProgressPhase: string option
+    /// The steps that the progress events of the running operation went through, in the order they started.
+    /// The step with IsCurrent is the one that runs.
+    CurrentSteps: GitSidebarStep[]
+    /// The phase code of each step, in the order of CurrentSteps. A step start event with a known phase code
+    /// makes that step current again instead of adding one.
+    CurrentStepPhases: string[]
+    /// The raw output that the running operation sent. Only the output of the operation that the sidebar shows
+    /// lands here, see isForeignOperation.
+    CurrentLog: OperationLog.OperationLog
+    /// Whether the busy operation has sent any progress or output of its own since it started. The sidebar says
+    /// that the operation waits for a file tree action only while this is false. The flag survives a phase change
+    /// of a write and resets when a busy operation starts or ends.
+    OperationReported: bool
+    /// Date.now () when the busy operation started. A file tree action that started earlier can hold the session
+    /// lock of the library, so only those actions can make the operation wait.
+    OperationStartedAt: float option
     ErrorNotice: string option
     WarningNotice: string option
     PendingRefreshWarningNotice: string option
@@ -262,6 +285,7 @@ type GitState = {
         PublishOwnerChoice = None
         PendingPostMergePush = false
         PendingRecovery = None
+        RetryMaterializationAfterLockClear = None
         ProvisionedRemote = None
         PendingPublishAfterRefresh = false
         PendingPublishForPath = None
@@ -282,8 +306,14 @@ type GitState = {
         BusyOperation = None
         BusyNotice = None
         CurrentOperation = None
+        RefreshOperationId = None
         CurrentProgress = None
         CurrentProgressPhase = None
+        CurrentSteps = [||]
+        CurrentStepPhases = [||]
+        CurrentLog = OperationLog.empty
+        OperationReported = false
+        OperationStartedAt = None
         ErrorNotice = None
         WarningNotice = None
         PendingRefreshWarningNotice = None
@@ -518,6 +548,8 @@ type WriteRequest =
 
 /// SelectedChangePath uses None for no override and Some None to clear the selection.
 /// Published says whether the synchronize published. It is None when the write was not a synchronize.
+/// ObjectsMissing says whether a large object is still missing after a lock removal. It is None when the write was
+/// not a lock removal or when the listing after it failed.
 type WriteUnitSuccess = {
     Refresh: GitRefreshResult
     PageChange: GitPageChange
@@ -525,6 +557,7 @@ type WriteUnitSuccess = {
     Warning: string option
     Partial: OperationFailureDto option
     Published: bool option
+    ObjectsMissing: bool option
 }
 
 type WriteSuccess =
@@ -538,6 +571,7 @@ let private unitSuccess (refresh: GitRefreshResult) = {
     Warning = None
     Partial = None
     Published = None
+    ObjectsMissing = None
 }
 
 let private joinMessages first second =
@@ -620,7 +654,8 @@ type GitDiffMsg =
 type Msg =
     | ResetWorkflow
     | DiffPageMsg of GitDiffMsg
-    | SetCurrentProgress of VersionControlProgressDto option
+    | SetCurrentProgress of VersionControlProgressDto
+    | OperationOutputReceived of VersionControlOutputDto
     | OperationStarted of OperationRequestDto
     | ArcPathChanged of ArcRootPath
     | GitRepositoryInitialized of arcPath: string
@@ -737,6 +772,7 @@ type GitDependencies = {
     cancelConflict: CancelConflictRequestDto -> JS.Promise<Result<OperationResultDto<unit>, string>>
     listObjects: OperationRequestDto -> JS.Promise<Result<OperationResultDto<ObjectStateDto[]>, string>>
     materializeObject: ObjectPathRequestDto -> JS.Promise<Result<OperationResultDto<unit>, string>>
+    materializeObjects: ObjectPathsRequestDto -> JS.Promise<Result<OperationResultDto<unit>, string>>
     pruneStorage: OperationRequestDto -> JS.Promise<Result<OperationResultDto<string>, string>>
     deduplicateStorage: OperationRequestDto -> JS.Promise<Result<OperationResultDto<string>, string>>
     clearStaleLock: OperationRequestDto -> JS.Promise<Result<OperationResultDto<WorkspaceStatusDto>, string>>
@@ -860,14 +896,18 @@ let providerRefOf (model: GitState) (refName: string) =
     |> Array.tryFind (fun reference -> String.Equals(reference.Name, refName, StringComparison.Ordinal))
     |> Option.map _.ProviderRef
 
-let private progressPercent (progress: VersionControlProgressDto) =
+let progressPercent (progress: VersionControlProgressDto) =
     match progress.Completed, progress.Total with
     | Some completed, Some total when total > 0.0 -> Some(Math.Min(100.0, completed / total * 100.0))
     | _ -> None
 
-let private mergeProgressUpdate (model: GitState) (progress: VersionControlProgressDto) =
+/// The headline of an event that starts a phase without a display message (a reset) stays on the label of the
+/// current step. The busy notice shows only while the operation has no step yet.
+let private mergeProgressUpdate (model: GitState) (steps: GitSidebarStep[]) (progress: VersionControlProgressDto) =
     let incomingPercent = progressPercent progress
     let samePhase = model.CurrentProgressPhase = Some progress.PhaseCode
+
+    let currentStepLabel = steps |> Array.tryFind _.IsCurrent |> Option.map _.Label
 
     let current =
         model.CurrentProgress
@@ -875,7 +915,6 @@ let private mergeProgressUpdate (model: GitState) (progress: VersionControlProgr
             Method = None
             Stage = model.BusyNotice
             ProgressPercent = None
-            Output = None
         }
 
     if samePhase then
@@ -886,15 +925,87 @@ let private mergeProgressUpdate (model: GitState) (progress: VersionControlProgr
                 |> Option.orElse current.Stage
                 |> Option.orElse model.BusyNotice
             ProgressPercent = incomingPercent |> Option.orElse current.ProgressPercent
-            Output = None
         }
     else
         {
             Method = None
-            Stage = progress.DisplayMessage |> Option.orElse model.BusyNotice
+            Stage =
+                progress.DisplayMessage
+                |> Option.orElse currentStepLabel
+                |> Option.orElse model.BusyNotice
             ProgressPercent = incomingPercent
-            Output = None
         }
+
+/// The label of a meter message: the text before the first " (". A message without " (" is its own label.
+let stepLabelOf (message: string) : string =
+    match message.IndexOf(" (", StringComparison.Ordinal) with
+    | index when index > 0 -> message.Substring(0, index)
+    | _ -> message
+
+/// True for a meter message: a label followed by " (k/n)", with or without a trailing size or rate.
+let private isMeterMessage (message: string) =
+    System.Text.RegularExpressions.Regex.IsMatch(message, @"^[^(]+ \(\d+/\d+\)")
+
+/// Applies one progress event to the step list. A step belongs to one phase code, so the steps never outnumber
+/// the phase codes of the operation. A phase that repeats (one materialization per file) keeps its step.
+/// - An event with a display message and no numbers starts the step of its phase code. A phase that has a step
+///   makes that step current again and keeps its label.
+/// - An event with a display message that is a meter ("Downloading LFS objects (0/1), 1.2 MB") starts the step of
+///   its phase code when the phase has none. The step is labelled with the meter's label only.
+/// - Every other event changes only the step with the phase code of the event. The detail is the display message
+///   when it differs from the label, and the percent is the one of the event, or none when the event has no
+///   numbers. The step becomes current. An event of a phase without a step that starts none changes nothing, for
+///   example the "Preparing" and "materialized" events of a download that carry numbers but no meter.
+let private applyProgressToSteps
+    (steps: GitSidebarStep[])
+    (stepPhases: string[])
+    (progress: VersionControlProgressDto)
+    : GitSidebarStep[] * string[] =
+    let percent = progressPercent progress
+    let hasNumbers = progress.Completed.IsSome || progress.Total.IsSome
+
+    let message =
+        progress.DisplayMessage
+        |> Option.filter (fun text -> not (String.IsNullOrWhiteSpace text))
+
+    let detailFor (label: string) (previous: string option) =
+        match message with
+        | Some text when text <> label -> Some text
+        | Some _ -> None
+        | None -> previous
+
+    match stepPhases |> Array.tryFindIndex (fun phase -> phase = progress.PhaseCode) with
+    | Some index ->
+        let updated =
+            steps
+            |> Array.mapi (fun stepIndex step ->
+                if stepIndex <> index then
+                    { step with IsCurrent = false }
+                else
+                    {
+                        step with
+                            Detail = detailFor step.Label step.Detail
+                            Percent = percent
+                            IsCurrent = true
+                    }
+            )
+
+        updated, stepPhases
+    | None ->
+        match message with
+        | Some text when not hasNumbers || isMeterMessage text ->
+            let label = if isMeterMessage text then stepLabelOf text else text
+            let earlier = steps |> Array.map (fun step -> { step with IsCurrent = false })
+
+            let started: GitSidebarStep = {
+                Label = label
+                Detail = detailFor label None
+                Percent = percent
+                IsCurrent = true
+            }
+
+            Array.append earlier [| started |], Array.append stepPhases [| progress.PhaseCode |]
+        | _ -> steps, stepPhases
 
 /// The message shown for a structured failure: the library message plus its
 /// recovery instructions when it has any.
@@ -954,8 +1065,48 @@ let recoveryOfPartial (partial: OperationFailureDto option) : GitPendingRecovery
             Some(GitPendingRecovery.RetryMaterialization(failureMessage failure))
         | Some code when code = VersionControlCodes.Recovery.RetryPublish ->
             Some(GitPendingRecovery.RetryPublish(failureMessage failure))
+        | Some code when code = VersionControlCodes.Recovery.RemoveIndexLock ->
+            Some(GitPendingRecovery.ClearStaleLock(failure.RecoveryAction |> Option.bind _.Instructions))
         | _ -> None
     )
+
+/// The message of a large-file download that a held index lock stopped. The failure keeps the
+/// hydration code and carries the lock removal as its recovery. The message leaves out the lock
+/// instructions, because the offer that uses it opens after the lock is removed.
+let lockBlockedDownloadMessage (partial: OperationFailureDto option) : string option =
+    partial
+    |> Option.filter (fun failure ->
+        failure.Code = VersionControlCodes.HydrationFailed
+        && recoveryCode failure = Some VersionControlCodes.Recovery.RemoveIndexLock
+    )
+    |> Option.map _.Message
+
+/// The text of the download offer after a Download now retry stopped at a Git lock. The library message of that
+/// failure says the lock is still held, which is no longer true when the offer opens.
+let retryLockStoppedMessage =
+    "The download of the large files stopped at a Git lock."
+
+/// The large objects whose file git-lfs already wrote while the index entry stayed stale, as after a checkout that a
+/// held lock stopped. The listing marks such an object as materialized because the file has the full size, and the
+/// status lists the path as modified. The status has no split between index and working tree, so a path counts when
+/// it is a plain modification. An added, deleted, renamed or conflicted path is left out. The library restages only
+/// files that hold the committed object and refuses a real edit, so a plain modification that is an edit does no harm.
+let staleLfsPaths (objects: ObjectStateDto[]) (status: WorkspaceStatusDto) : string[] =
+    let modified =
+        status.Changes
+        |> Array.filter (fun change -> change.Kind = FileChangeKindDto.Modified && change.OldPath.IsNone)
+        |> Array.map _.Path
+        |> Set.ofArray
+
+    objects
+    |> Array.filter (fun objectState -> objectState.IsMaterialized && modified.Contains objectState.Path)
+    |> Array.map _.Path
+    |> Array.distinct
+
+/// Whether every path of the failure was refused because it has a local edit. The restage of a stale path and the
+/// download of a pending path ask for paths that may hold real edits, and the library refuses those with its own code.
+let private isLocalChangesRefusal (failure: OperationFailureDto) =
+    failure.Code = VersionControlCodes.LocalChanges
 
 /// The dialog the sidebar shows for a recovery. Confirm runs it, cancel keeps the
 /// workspace as it is. Restoring interrupted files discards local changes on them.
@@ -1394,7 +1545,13 @@ let private withBusyOperation busyOperation model = {
         BusyNotice = busyOperation |> Option.bind busyNoticeFromOperation
         CurrentProgress = None
         CurrentProgressPhase = None
+        CurrentSteps = [||]
+        CurrentStepPhases = [||]
+        CurrentLog = OperationLog.empty
+        OperationReported = false
+        OperationStartedAt = busyOperation |> Option.map (fun _ -> JS.Constructors.Date.now ())
         CurrentOperation = None
+        RefreshOperationId = None
 }
 
 let private startRefreshRequest requestId model = {
@@ -3380,6 +3537,7 @@ let private completeAfterUpdateAsync
                                 Warning = pendingWarning
                                 Partial = partialToKeep
                                 Published = None
+                                ObjectsMissing = None
                             }
                         )
                     )
@@ -3489,6 +3647,7 @@ let private refreshAfterSuccessWithOutcome
                             Warning = warningMessage
                             Partial = partial
                             Published = published
+                            ObjectsMissing = None
                         }
                     )
                 )
@@ -3620,6 +3779,11 @@ let private runCloneAttemptAsync (deps: GitDependencies) (cloneRequest: CloneWor
         return
             Error(
                 $"The ARC was cloned to '{outcome.Value}', but its large files could not be downloaded. Open the folder and use Download LFS file to get them."
+            )
+    | Ok(outcome, Some failure) when recoveryCode failure = Some VersionControlCodes.Recovery.RemoveIndexLock ->
+        return
+            Error(
+                $"The ARC was cloned to '{outcome.Value}', but a Git lock (index.lock) blocked the download of its large files. Open the folder, remove the lock once no other Git program uses it, and use Download LFS file to get the files."
             )
     | Ok(outcome, _) -> return Ok(Completed(CloneSuccess outcome.Value))
     | Error failure ->
@@ -4311,13 +4475,70 @@ let private runAbandonMergeAttemptAsync (deps: GitDependencies) (state: GitState
                 (fun _ partial -> refreshAfterSuccess deps partial GitPageChange.Clear (Some None) None)
 }
 
-/// Removes a stale lock and refreshes. The refreshed status decides what follows: an
-/// active conflict session is abandoned through the normal path.
+/// Lists the large objects and the paths among them that a lock-blocked checkout left with a stale index.
+/// The status is read only when some object is on disk, because only those can be stale.
+let private listObjectsWithStalePathsAsync (deps: GitDependencies) = promise {
+    let! listed = toResult (deps.listObjects (request deps))
+
+    match listed with
+    | Error failure -> return Error failure
+    | Ok(objectsOutcome, _) ->
+        let objects = objectsOutcome.Value
+
+        if objects |> Array.exists _.IsMaterialized then
+            let! status = toResult (deps.getStatus (request deps))
+
+            return
+                status
+                |> Result.map (fun (statusOutcome, _) -> objects, staleLfsPaths objects statusOutcome.Value)
+        else
+            return Ok(objects, [||])
+}
+
+let private anyObjectMissing (objects: ObjectStateDto[]) =
+    objects |> Array.exists (fun objectState -> not objectState.IsMaterialized)
+
+/// Asks the library to restage the stale large-file paths after a lock removal. A path that holds a real edit
+/// is refused with the code local_changes and stays as it is. Any other failure of that call, a held lock
+/// included, is returned. A listing or status that fails means there is nothing known to restage. The refresh
+/// that follows reports a workspace that is really broken.
+/// The result says whether a large object is still missing after the restage. It is None when the listing
+/// after the restage failed.
+let private restageStaleLfsPathsAsync (deps: GitDependencies) : JS.Promise<Result<bool option, OperationFailureDto>> = promise {
+    let! listed = listObjectsWithStalePathsAsync deps
+
+    match listed with
+    | Error _ -> return Ok None
+    | Ok(objects, [||]) -> return Ok(Some(anyObjectMissing objects))
+    | Ok(_, stalePaths) ->
+        let! restaged =
+            toResult (
+                deps.materializeObjects {
+                    OperationId = deps.newOperationId ()
+                    Paths = stalePaths
+                }
+            )
+
+        match restaged with
+        | Error failure
+        | Ok(_, Some failure) when not (isLocalChangesRefusal failure) -> return Error failure
+        | _ ->
+            let! relisted = toResult (deps.listObjects (request deps))
+
+            return
+                match relisted with
+                | Ok(objectsOutcome, _) -> Ok(Some(anyObjectMissing objectsOutcome.Value))
+                | Error _ -> Ok None
+}
+
+/// Removes a stale lock, restages the large files that git-lfs had already written when the lock stopped a
+/// checkout, and refreshes. The refreshed status decides what follows: an active conflict session is abandoned
+/// through the normal path.
 let private runClearStaleLockAttemptAsync (deps: GitDependencies) =
     runTrackedWriteAsync
         deps
         (fun () -> deps.clearStaleLock (request deps))
-        (fun outcome partial ->
+        (fun outcome partial -> promise {
             let removedLockPaths =
                 outcome.Warnings
                 |> Array.choose (fun warning ->
@@ -4335,8 +4556,27 @@ let private runClearStaleLockAttemptAsync (deps: GitDependencies) =
                     let joined = String.concat ", " paths
                     Some $"Removed stale lock files: {joined}."
 
-            refreshAfterSuccess deps partial GitPageChange.NoChange None warningMessage
-        )
+            let! restaged = restageStaleLfsPathsAsync deps
+
+            match restaged with
+            | Error failure -> return! routedToOutcome deps (routeFailure None failure)
+            | Ok objectsMissing ->
+                let! refreshed = refreshAfterSuccess deps partial GitPageChange.NoChange None warningMessage
+
+                return
+                    refreshed
+                    |> Result.map (
+                        function
+                        | Completed(UnitSuccess success) ->
+                            Completed(
+                                UnitSuccess {
+                                    success with
+                                        ObjectsMissing = objectsMissing
+                                }
+                            )
+                        | other -> other
+                    )
+        })
 
 let private runRestoreInterruptedPathsAttemptAsync (deps: GitDependencies) (state: GitState) (paths: string[]) = promise {
     match requireWorkspaceVersion state with
@@ -4356,32 +4596,38 @@ let private runRestoreInterruptedPathsAttemptAsync (deps: GitDependencies) (stat
 }
 
 /// Downloads the large objects an interrupted update left behind, one per object,
-/// stopping at the first failure so its message is reported.
+/// stopping at the first failure so its message is reported. The stale paths of a lock-blocked checkout
+/// are requested as well, so the library restages them. A requested path that holds a real edit, stale or
+/// pending, is refused with the code local_changes. It is skipped, keeps its edit and does not count as a failure.
 let private runRetryMaterializationAttemptAsync (deps: GitDependencies) = promise {
-    let! objects = toResult (deps.listObjects (request deps))
+    let! listed = listObjectsWithStalePathsAsync deps
 
-    match objects with
+    match listed with
     | Error failure -> return! routedToOutcome deps (routeFailure None failure)
-    | Ok(outcome, _) ->
+    | Ok(objects, stalePaths) ->
         let pending =
-            outcome.Value
+            objects
             |> Array.filter (fun objectState -> not objectState.IsMaterialized)
+            |> Array.map _.Path
+            |> Array.append stalePaths
+            |> Array.distinct
 
         let mutable failure: OperationFailureDto option = None
 
-        for index, objectState in pending |> Array.indexed do
+        for index, path in pending |> Array.indexed do
             if failure.IsNone then
                 let! materialized =
                     toResult (
                         deps.materializeObject {
                             OperationId = deps.newOperationId ()
-                            Path = objectState.Path
+                            Path = path
                             RefreshTree = Some(index = pending.Length - 1)
                         }
                     )
 
                 match materialized with
                 | Ok _ -> ()
+                | Error error when isLocalChangesRefusal error -> ()
                 | Error error -> failure <- Some error
 
         match failure with
@@ -4707,7 +4953,13 @@ let private clearBusy (model: GitState) = {
         BusyNotice = None
         CurrentProgress = None
         CurrentProgressPhase = None
+        CurrentSteps = [||]
+        CurrentStepPhases = [||]
+        CurrentLog = OperationLog.empty
+        OperationReported = false
+        OperationStartedAt = None
         CurrentOperation = None
+        RefreshOperationId = None
 }
 
 let private writeErrorModel (message: string) (model: GitState) = {
@@ -4790,6 +5042,31 @@ let private operationRootId (operationId: string) =
     else
         operationId.Substring(0, separatorIndex)
 
+/// Whether an event belongs to an operation other than the one this workflow runs, such as
+/// a file tree action that started in the same window. The sub-operations of a write share the root
+/// id of the write. A workflow that does not know its operation id (a silent refresh, the rename of the ARC
+/// folder) takes every event.
+let private isForeignOperation (model: GitState) (operationId: string) =
+    let ownOperationId =
+        model.CurrentOperation
+        |> Option.map _.OperationId
+        |> Option.orElse model.RefreshOperationId
+
+    match ownOperationId with
+    | Some current -> operationRootId current <> operationRootId operationId
+    | None -> false
+
+/// Whether the sidebar shows the events (progress and output) of the operation with this id. A silent refresh has
+/// no notice text. Events from another source, such as the text diff scan, would otherwise show the progress
+/// banner that the silent refresh avoids. The rename of the ARC folder runs no version control call, so any event
+/// belongs to another operation.
+let private showsOperationEvents (model: GitState) (operationId: string) =
+    match model.BusyOperation with
+    | None -> false
+    | Some GitBusyOperation.Refreshing when model.BusyNotice.IsNone -> false
+    | Some GitBusyOperation.RenamingRepository -> false
+    | Some _ -> not (isForeignOperation model operationId)
+
 let private writeCmd
     (deps: GitDependencies)
     (model: GitState)
@@ -4820,6 +5097,12 @@ let private writeCmd
 let private shouldRunPostMergePush (model: GitState) =
     model.PendingPostMergePush && model.ActiveConflict.IsNone
 
+/// The restage after a lock removal found every large object on disk, so Download now would have nothing to fetch.
+let private lockRemovalFoundNoMissingObject (success: WriteSuccess) =
+    match success with
+    | UnitSuccess { ObjectsMissing = Some false } -> true
+    | _ -> false
+
 let private updateCore
     (deps: GitDependencies)
     (setPageState: PageState option -> unit)
@@ -4829,27 +5112,30 @@ let private updateCore
     match msg with
     | ResetWorkflow -> resetFor model, Cmd.none
     | DiffPageMsg diffMsg -> GitDiffPageLoader.update deps diffMsg model
-    // A silent refresh has no notice text. Progress from another source, such as the text diff
-    // scan, would otherwise show the progress banner that the silent refresh avoids.
-    | SetCurrentProgress(Some _) when
-        model.BusyOperation = Some GitBusyOperation.Refreshing
-        && model.BusyNotice.IsNone
-        ->
-        model, Cmd.none
-    | SetCurrentProgress(Some progress) when model.BusyOperation.IsSome ->
+    | SetCurrentProgress progress when showsOperationEvents model progress.OperationId ->
+        let steps, stepPhases =
+            applyProgressToSteps model.CurrentSteps model.CurrentStepPhases progress
+
         {
             model with
-                CurrentProgress = Some(mergeProgressUpdate model progress)
+                CurrentProgress = Some(mergeProgressUpdate model steps progress)
                 CurrentProgressPhase = Some progress.PhaseCode
+                CurrentSteps = steps
+                CurrentStepPhases = stepPhases
+                OperationReported = true
         },
         Cmd.none
-    | SetCurrentProgress _ ->
+    // Progress of a silent refresh, of another operation, of the rename of the ARC folder or after the busy
+    // operation ended. The same model instance returns, so the many events of a file tree action cause no render.
+    | SetCurrentProgress _ -> model, Cmd.none
+    | OperationOutputReceived output when showsOperationEvents model output.OperationId ->
         {
             model with
-                CurrentProgress = None
-                CurrentProgressPhase = None
+                CurrentLog = OperationLog.append output.Entries model.CurrentLog
+                OperationReported = true
         },
         Cmd.none
+    | OperationOutputReceived _ -> model, Cmd.none
     | OperationStarted key when model.BusyOperation.IsSome ->
         match model.CurrentOperation with
         | Some currentOperation ->
@@ -5004,6 +5290,9 @@ let private updateCore
         Cmd.none
     | RefreshRequested ->
         let requestId = nextRefreshRequestId model
+        // The calls of the refresh take sub-ids of this id. isForeignOperation then drops the progress of other
+        // operations, such as a file tree action in the same window.
+        let operationId = deps.newOperationId ()
 
         let nextModel =
             model
@@ -5011,6 +5300,7 @@ let private updateCore
             |> startRefreshRequest requestId
             |> fun state -> {
                 state with
+                    RefreshOperationId = Some operationId
                     ErrorNotice = None
                     WarningNotice =
                         match state.PendingRefreshWarningNotice with
@@ -5021,7 +5311,7 @@ let private updateCore
         let cmd =
             Cmd.OfPromise.either
                 refreshAllAsync
-                deps
+                (withFirstOperationId deps operationId)
                 (fun refreshResult -> RefreshCompleted(requestId, Ok refreshResult))
                 (fun err -> RefreshCompleted(requestId, Error(string err)))
 
@@ -5141,6 +5431,8 @@ let private updateCore
         loadingModel, Cmd.batch [ publishCmd; loadCmd ]
     | InitRepositoryRequested when model.CurrentArcPath.IsNone -> model, Cmd.none
     | InitRepositoryRequested ->
+        let operationId = deps.newOperationId ()
+
         let nextModel =
             model
             |> withBusyOperation (Some GitBusyOperation.InitializingRepository)
@@ -5148,12 +5440,13 @@ let private updateCore
                 state with
                     ErrorNotice = None
                     WarningNotice = None
+                    CurrentOperation = Some { OperationId = operationId }
             }
 
         let cmd =
             Cmd.OfPromise.either
                 (fun (deps, arcPath) -> runInitRepositoryAsync deps arcPath)
-                (deps, Option.get model.CurrentArcPath)
+                (withFirstOperationId deps operationId, Option.get model.CurrentArcPath)
                 (fun result -> InitRepositoryCompleted(model.ArcSessionId, result))
                 (fun err -> InitRepositoryCompleted(model.ArcSessionId, Error(string err)))
 
@@ -5263,11 +5556,14 @@ let private updateCore
                     |> Option.exists (fun candidate -> candidate.Preview.IsNone && candidate.Object.IsNone)
                 | ConflictResolutionDto.SupplyResolvedContent _ -> false
 
+            let operationId = deps.newOperationId ()
+
             let nextModel =
                 model
                 |> withBusyOperation (Some(GitBusyOperation.ConfirmingMergeResolution resolution.Path))
                 |> fun state -> {
                     state with
+                        CurrentOperation = Some { OperationId = operationId }
                         MergeResolutionPendingPath = Some resolution.Path
                         ErrorNotice = None
                         WarningNotice =
@@ -5294,7 +5590,7 @@ let private updateCore
                             deletedCandidatePick
                             resolution
                     )
-                    (deps,
+                    (withFirstOperationId deps operationId,
                      model.DownloadLargeFiles,
                      model.PendingMaterializations,
                      model.PendingMaterializationSessionId,
@@ -5863,6 +6159,7 @@ let private updateCore
         {
             model with
                 PendingRecovery = None
+                RetryMaterializationAfterLockClear = None
                 RefreshPending = false
                 PendingPostMergePush =
                     if shouldRunPostMergePush model then
@@ -5902,6 +6199,7 @@ let private updateCore
             model with
                 BusyOperation = Some phase
                 BusyNotice = busyNoticeFromOperation phase
+                // The bar starts over with each phase. The steps and the log cover the whole write.
                 CurrentProgress = None
                 CurrentProgressPhase = None
         },
@@ -5976,10 +6274,17 @@ let private updateCore
         ]
     | WriteCompleted(_, _, writeRequest, Ok(RequiresRecovery(recovery, message))) ->
         // The recovery offer stays open. A refresh requested meanwhile runs after the offer is resolved.
+        // A download retry that a held lock stopped is remembered like the hydration of a pull, so the
+        // download is offered again once the lock is gone. The library message of the retry failure says
+        // the lock is still held, so the offer gets a fixed sentence.
         let nextModel = {
             clearBusy model with
                 ErrorNotice = None
                 WarningNotice = Some message
+                RetryMaterializationAfterLockClear =
+                    match writeRequest, recovery with
+                    | RetryMaterialization, GitPendingRecovery.ClearStaleLock _ -> Some retryLockStoppedMessage
+                    | _ -> model.RetryMaterializationAfterLockClear
                 PendingRecovery = Some recovery
                 PendingConfirmation = Some(recoveryDialog recovery)
                 PendingRemoteAction = GitPendingRemoteAction.Recover
@@ -6169,6 +6474,10 @@ let private updateCore
                 WarningNotice = warningMessage
                 PendingPublishRename = None
                 PendingRecovery = recovery
+                RetryMaterializationAfterLockClear =
+                    match success with
+                    | UnitSuccess completed -> lockBlockedDownloadMessage completed.Partial
+                    | CloneSuccess _ -> None
                 PendingConfirmation = recovery |> Option.map recoveryDialog
                 PendingRemoteAction =
                     match recovery with
@@ -6193,6 +6502,13 @@ let private updateCore
             match writeRequest with
             // A cleared lock revealed an open merge: the abandon path runs it.
             | ClearStaleLock when nextModel.ActiveConflict.IsSome -> Cmd.ofMsg (WriteRequested AbandonMerge)
+            // No download offer follows the lock removal, so the publish that waited for the download resumes here.
+            | ClearStaleLock when
+                model.RetryMaterializationAfterLockClear.IsSome
+                && lockRemovalFoundNoMissingObject success
+                && shouldRunPostMergePush nextModel
+                ->
+                Cmd.ofMsg (WriteRequested(Push GitUpdateAcceptance.RequirePreview))
             | FinalizeMerge when shouldRunPostMergePush nextModel ->
                 Cmd.ofMsg (WriteRequested(Push GitUpdateAcceptance.RequirePreview))
             | RetryMaterialization when shouldRunPostMergePush nextModel ->
@@ -6209,6 +6525,15 @@ let private updateCore
                 nextModel with
                     PendingPostMergePush = false
               }
+            | ClearStaleLock when
+                model.RetryMaterializationAfterLockClear.IsSome
+                && lockRemovalFoundNoMissingObject success
+                && shouldRunPostMergePush nextModel
+                  ->
+                  {
+                      nextModel with
+                          PendingPostMergePush = false
+                  }
             | AbandonMerge -> {
                 nextModel with
                     PendingPostMergePush = false
@@ -6218,10 +6543,12 @@ let private updateCore
             // Only a materialization recovery leaves the publish undone with nothing else
             // offering it. The publish resumes after that recovery. The retry_publish partial
             // is its own offer, and an unmapped partial has no path that could resume.
+            // A download that an index lock stopped reaches the same retry once the lock is gone.
             | (PrimarySave _ | Push _) when published = Some false && partial.IsSome ->
                 let resumesAfterMaterialization =
                     match recovery with
                     | Some(GitPendingRecovery.RetryMaterialization _) -> true
+                    | Some(GitPendingRecovery.ClearStaleLock _) -> nextModel.RetryMaterializationAfterLockClear.IsSome
                     | _ -> false
 
                 {
@@ -6248,6 +6575,31 @@ let private updateCore
             followUp
         ]
 
+/// A removed index lock turns the stopped download into the download offer. Any other end of the
+/// lock removal drops it, because the next pull offers the download again. The offer is dropped as well when
+/// the restage after the lock removal found no large object missing, because Download now would have nothing to fetch.
+let private offerDownloadAfterLockRemoval (msg: Msg) (model: GitState) (next: GitState) =
+    match msg with
+    | WriteCompleted(sessionId, writeRequestId, ClearStaleLock, result) when
+        sessionId = model.ArcSessionId && writeRequestId = model.WriteRequestId
+        ->
+        match result, model.RetryMaterializationAfterLockClear with
+        | Ok(Completed success), Some message when not (lockRemovalFoundNoMissingObject success) ->
+            let recovery = GitPendingRecovery.RetryMaterialization message
+
+            {
+                next with
+                    RetryMaterializationAfterLockClear = None
+                    PendingRecovery = Some recovery
+                    PendingConfirmation = Some(recoveryDialog recovery)
+                    PendingRemoteAction = GitPendingRemoteAction.Recover
+            }
+        | _ -> {
+            next with
+                RetryMaterializationAfterLockClear = None
+          }
+    | _ -> next
+
 /// The wrapper holds a refresh until the write finishes and any open confirmation is resolved.
 /// It also waits for the pending recovery to be handled.
 let update
@@ -6273,6 +6625,8 @@ let update
                       PublishOwnerChoice = None
               }
         | _ -> next
+
+    let next = offerDownloadAfterLockRemoval msg model next
 
     // Every way of leaving a diff page ends here: another selection, another page, a closed
     // page or a reset for another ARC.
@@ -6311,8 +6665,9 @@ let subscribe (_model: GitState) : Sub<Msg> = [
     fun dispatch ->
         let dispose =
             Renderer.IpcReceiver.subscribeProxyReceiver<IVersionControlRendererApi> {
-                versionControlProgress = fun progress -> dispatch (SetCurrentProgress(Some progress))
+                versionControlProgress = fun progress -> dispatch (SetCurrentProgress progress)
                 versionControlOperationStarted = fun key -> dispatch (OperationStarted key)
+                versionControlOutput = fun output -> dispatch (OperationOutputReceived output)
             }
 
         { new System.IDisposable with

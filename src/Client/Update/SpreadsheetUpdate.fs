@@ -210,7 +210,7 @@ module Spreadsheet =
                     | ArcFiles.Template t -> n + "_" + t.FileName, Spreadsheet.Template.toFsWorkbook t
                     | ArcFiles.Run r -> n + "_" + ArcRun.FileName, ArcRun.toFsWorkbook r
                     | ArcFiles.Workflow w -> n + "_" + ArcWorkflow.FileName, ArcWorkflow.toFsWorkbook w
-                    | ArcFiles.DataMap(_, d) -> n + "_" + "datamap.xlsx", Spreadsheet.DataMap.toFsWorkbook d
+                    | ArcFiles.DataMap(_, d) -> n + "_" + "datamap.xlsx", Spreadsheet.Datamap.toFsWorkbook d
 
                 let cmd =
                     Cmd.OfPromise.either

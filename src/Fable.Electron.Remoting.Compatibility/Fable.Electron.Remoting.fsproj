@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <PackageId>Fable.Electron.Remoting</PackageId>
+    <AssemblyName>Fable.Electron.Remoting</AssemblyName>
+    <Version>7.2.0</Version>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Renderer.fs" />
+    <Compile Include="Preload.fs" />
+    <Compile Include="Main.fs" />
+    <ProjectReference Include="..\Fable.SimpleJson.Compatibility\Fable.SimpleJson.fsproj" />
+    <PackageReference Include="Fable.Electron" />
+  </ItemGroup>
+</Project>

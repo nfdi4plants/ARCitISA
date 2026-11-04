@@ -40,7 +40,7 @@ let private createConfig (item: FileItem) (probe: DeleteWorkflowProbe) : FileTre
     closeDeleteModal = fun () -> probe.Closed <- true
     setIsDeleting = ignore
     enqueueError = fun request -> probe.Errors <- probe.Errors @ [ request ]
-    getLfsActivePaths = fun () -> probe.ActivePaths
+    getLfsActivePaths = fun () -> Renderer.Context.LfsActivityContext.LfsActivePathIndex.create probe.ActivePaths
     deletePath =
         fun path -> promise {
             probe.DeletedPaths <- probe.DeletedPaths @ [ path ]

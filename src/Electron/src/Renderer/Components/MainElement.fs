@@ -92,9 +92,9 @@ let CreateAddRowsFooter (arcFile: ArcFiles) (activeView: PreviewActiveView) (set
         | PreviewActiveView.Table tableIndex -> tableIndex >= 0 && tableIndex < tables.Count
         | PreviewActiveView.DataMap ->
             match arcFile with
-            | ArcFiles.Assay assay -> assay.DataMap.IsSome
-            | ArcFiles.Study(study, _) -> study.DataMap.IsSome
-            | ArcFiles.Run run -> run.DataMap.IsSome
+            | ArcFiles.Assay assay -> assay.Datamap.IsSome
+            | ArcFiles.Study(study, _) -> study.Datamap.IsSome
+            | ArcFiles.Run run -> run.Datamap.IsSome
             | ArcFiles.DataMap _ -> true
             | _ -> false
         | PreviewActiveView.Metadata -> false
@@ -108,14 +108,14 @@ let CreateAddRowsFooter (arcFile: ArcFiles) (activeView: PreviewActiveView) (set
             | PreviewActiveView.Table tableIndex, _ when tableIndex >= 0 && tableIndex < tables.Count ->
                 tables.[tableIndex].AddRowsEmpty rowCount
                 setArcFile (WidgetArcFile.refreshRef arcFile)
-            | PreviewActiveView.DataMap, ArcFiles.Assay assay when assay.DataMap.IsSome ->
-                assay.DataMap.Value.DataContexts.AddRange(Array.init rowCount (fun _ -> DataContext()))
+            | PreviewActiveView.DataMap, ArcFiles.Assay assay when assay.Datamap.IsSome ->
+                assay.Datamap.Value.DataContexts.AddRange(Array.init rowCount (fun _ -> DataContext()))
                 setArcFile (WidgetArcFile.refreshRef arcFile)
-            | PreviewActiveView.DataMap, ArcFiles.Study(study, _) when study.DataMap.IsSome ->
-                study.DataMap.Value.DataContexts.AddRange(Array.init rowCount (fun _ -> DataContext()))
+            | PreviewActiveView.DataMap, ArcFiles.Study(study, _) when study.Datamap.IsSome ->
+                study.Datamap.Value.DataContexts.AddRange(Array.init rowCount (fun _ -> DataContext()))
                 setArcFile (WidgetArcFile.refreshRef arcFile)
-            | PreviewActiveView.DataMap, ArcFiles.Run run when run.DataMap.IsSome ->
-                run.DataMap.Value.DataContexts.AddRange(Array.init rowCount (fun _ -> DataContext()))
+            | PreviewActiveView.DataMap, ArcFiles.Run run when run.Datamap.IsSome ->
+                run.Datamap.Value.DataContexts.AddRange(Array.init rowCount (fun _ -> DataContext()))
                 setArcFile (WidgetArcFile.refreshRef arcFile)
             | PreviewActiveView.DataMap, ArcFiles.DataMap(_, dataMap) ->
                 dataMap.DataContexts.AddRange(Array.init rowCount (fun _ -> DataContext()))
@@ -239,7 +239,7 @@ let CreateARCitectFooter
                 ]
             // DataMap tab
             match arcFile with
-            | ArcFiles.Assay a when a.DataMap.IsSome ->
+            | ArcFiles.Assay a when a.Datamap.IsSome ->
                 Html.button [
                     prop.className [
                         footerTabBaseClasses
@@ -254,7 +254,7 @@ let CreateARCitectFooter
                         Html.span [ prop.text "DataMap" ]
                     |]
                 ]
-            | ArcFiles.Study(s, _) when s.DataMap.IsSome ->
+            | ArcFiles.Study(s, _) when s.Datamap.IsSome ->
                 Html.button [
                     prop.className [
                         footerTabBaseClasses
@@ -269,7 +269,7 @@ let CreateARCitectFooter
                         Html.span [ prop.text "DataMap" ]
                     |]
                 ]
-            | ArcFiles.Run r when r.DataMap.IsSome ->
+            | ArcFiles.Run r when r.Datamap.IsSome ->
                 Html.button [
                     prop.className [
                         footerTabBaseClasses
@@ -334,7 +334,7 @@ let CreateMetadataPreview (arcFile: ArcFiles, setArcFile: ArcFiles -> unit) =
     ]
 
 [<ReactComponent>]
-let CreateDataMapPreview (datamap: DataMap, setDatamapInArcFile: DataMap -> unit) =
+let CreateDataMapPreview (datamap: Datamap, setDatamapInArcFile: Datamap -> unit) =
     DataMapTable.DataMapTable(datamap, setDatamapInArcFile)
 
 let CreateTableView activeView arcFileState setArcFileState =
@@ -356,26 +356,26 @@ let CreateTableView activeView arcFileState setArcFileState =
             ]
     | PreviewActiveView.DataMap ->
         match arcFileState with
-        | ArcFiles.Assay assay when assay.DataMap.IsSome ->
-            let setDatamap (nextDatamap: DataMap) =
-                assay.DataMap <- Some nextDatamap
+        | ArcFiles.Assay assay when assay.Datamap.IsSome ->
+            let setDatamap (nextDatamap: Datamap) =
+                assay.Datamap <- Some nextDatamap
                 setArcFileState (WidgetArcFile.refreshRef arcFileState)
 
-            CreateDataMapPreview(assay.DataMap.Value, setDatamap)
-        | ArcFiles.Study(study, assays) when study.DataMap.IsSome ->
-            let setDatamap (nextDatamap: DataMap) =
-                study.DataMap <- Some nextDatamap
+            CreateDataMapPreview(assay.Datamap.Value, setDatamap)
+        | ArcFiles.Study(study, assays) when study.Datamap.IsSome ->
+            let setDatamap (nextDatamap: Datamap) =
+                study.Datamap <- Some nextDatamap
                 setArcFileState (ArcFiles.Study(study, assays))
 
-            CreateDataMapPreview(study.DataMap.Value, setDatamap)
-        | ArcFiles.Run run when run.DataMap.IsSome ->
-            let setDatamap (nextDatamap: DataMap) =
-                run.DataMap <- Some nextDatamap
+            CreateDataMapPreview(study.Datamap.Value, setDatamap)
+        | ArcFiles.Run run when run.Datamap.IsSome ->
+            let setDatamap (nextDatamap: Datamap) =
+                run.Datamap <- Some nextDatamap
                 setArcFileState (WidgetArcFile.refreshRef arcFileState)
 
-            CreateDataMapPreview(run.DataMap.Value, setDatamap)
+            CreateDataMapPreview(run.Datamap.Value, setDatamap)
         | ArcFiles.DataMap(parent, datamap) ->
-            let setDatamap (nextDatamap: DataMap) =
+            let setDatamap (nextDatamap: Datamap) =
                 setArcFileState (ArcFiles.DataMap(parent, nextDatamap))
 
             CreateDataMapPreview(datamap, setDatamap)
