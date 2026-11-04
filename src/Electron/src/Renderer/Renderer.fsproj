@@ -21,6 +21,7 @@
     <Compile Include="Context\FileTreeHooks.fs" />
     <Compile Include="Context\FileTreeExpansionContext.fs" />
     <Compile Include="Context\AuthStateContext.fs" />
+    <Compile Include="Context\VersionControlDependencyContext.fs" />
     <Compile Include="Context\OperationLog.fs" />
     <Compile Include="Context\GitWorkflow.fs" />
     <Compile Include="Context\GitStateContext.fs" />
@@ -85,6 +86,7 @@
     <Compile Include="Components\MainContent\Main.fs" />
     <Compile Include="Components\CloseWindowController.fs" />
     <Compile Include="Components\Navbar.fs" />
+    <Compile Include="Components\VersionControlDependencyBanner.fs" />
     <Compile Include="App.fs" />
     <Compile Include="Program.fs" />
     <Content Include="tailwind.css" />

@@ -671,6 +671,20 @@ type DependencyStatusDto = {
     Version: string option
     Compatible: bool
     Remediation: string option
+    /// The Git executable the check ran or tried to run, as an absolute path when it could be resolved.
+    ProbeExecutablePath: string option
+}
+
+/// What the main process knows about the version control dependencies. Statuses and Failure hold the
+/// result of the latest finished check. A check that is running replaces them when it ends.
+type VersionControlDependencyStateDto = {
+    /// The components of the latest check. Empty before the first check ends or when it failed outright.
+    Statuses: DependencyStatusDto[]
+    /// Why the latest check could not report every component. None when it reported all of them.
+    Failure: string option
+    IsChecking: bool
+    /// Epoch milliseconds at which the latest check ended. None before the first check ends.
+    CheckedAt: float option
 }
 
 type RepositoryLocationDto = {

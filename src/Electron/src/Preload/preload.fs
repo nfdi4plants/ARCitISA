@@ -23,6 +23,10 @@ Remoting.createIpc () |> Remoting.buildBridge<IFileTreeRendererApi>
 Remoting.createIpc () |> Remoting.buildBridge<IFileImportRendererApi>
 Remoting.createIpc () |> Remoting.buildBridge<IGitRepositoryRendererApi>
 Remoting.createIpc () |> Remoting.buildBridge<IVersionControlRendererApi>
+
+Remoting.createIpc ()
+|> Remoting.buildBridge<IVersionControlDependencyRendererApi>
+
 Remoting.createIpc () |> Remoting.buildBridge<IHasUnsavedArcChangesRendererApi>
 Remoting.createIpc () |> Remoting.buildBridge<IUiSettingsRendererApi>
 Remoting.createIpc () |> Remoting.buildBridge<IUserDefaultsRendererApi>

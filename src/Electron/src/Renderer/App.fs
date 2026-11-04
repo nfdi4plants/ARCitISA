@@ -350,15 +350,22 @@ let Main () =
                                                         .AnnotationTable
                                                         .AnnotationTableContextProvider
                                                         .AnnotationTableContextProvider(
-                                                            Layout.Main(
-                                                                children =
-                                                                    React.Fragment [|
-                                                                        children
-                                                                        CloseWindowController.CloseWindowController()
-                                                                    |],
-                                                                navbar = Renderer.Components.Navbar.Main(),
-                                                                ?leftSidebar = leftSidebar,
-                                                                leftActions = leftActions
+                                                            Renderer.Context.VersionControlDependencyContext.Provider(
+                                                                Layout.Main(
+                                                                    children =
+                                                                        React.Fragment [|
+                                                                            children
+                                                                            CloseWindowController.CloseWindowController()
+                                                                        |],
+                                                                    navbar = Renderer.Components.Navbar.Main(),
+                                                                    banner =
+                                                                        Renderer
+                                                                            .Components
+                                                                            .VersionControlDependencyBanner
+                                                                            .Main(),
+                                                                    ?leftSidebar = leftSidebar,
+                                                                    leftActions = leftActions
+                                                                )
                                                             )
                                                         )
                                                 )

@@ -48,6 +48,7 @@
     <Compile Include="VersionControl\VersionControlRuntime.fs" />
     <Compile Include="VersionControl\Mappings.fs" />
     <Compile Include="VersionControl\WorkspaceSessionHost.fs" />
+    <Compile Include="VersionControl\DependencyState.fs" />
     <Compile Include="VersionControl\TextDiffHandles.fs" />
     <Compile Include="IndexedFileTree.fs" />
     <Compile Include="Git\LargeObjectIndex.fs" />

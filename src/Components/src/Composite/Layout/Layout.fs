@@ -445,6 +445,7 @@ type Layout =
         (
             children: ReactElement,
             ?navbar: ReactElement,
+            ?banner: ReactElement,
             ?leftSidebar: ReactElement,
             ?rightSidebar: ReactElement,
             ?leftActions: ReactElement,
@@ -505,6 +506,12 @@ type Layout =
                 Html.div [
                     prop.className "swt:flex-1 swt:flex swt:flex-col swt:h-screen swt:overflow-hidden"
                     prop.children [
+                        if banner.IsSome then
+                            Html.div [
+                                prop.className "swt:w-full swt:shrink-0 swt:grow-0"
+                                prop.testId "layout-main-banner"
+                                prop.children banner.Value
+                            ]
                         if navbar.IsSome then
                             Html.div [
                                 prop.className

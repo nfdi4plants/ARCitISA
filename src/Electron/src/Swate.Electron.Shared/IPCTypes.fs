@@ -256,6 +256,12 @@ type IVersionControlApi = {
     /// Removes a stale provider lock left by a killed process, only while no operation
     /// of this session runs, then refreshes and returns the status.
     clearStaleLock: OperationRequestDto -> JS.Promise<Result<OperationResultDto<WorkspaceStatusDto>, exn>>
+    /// The latest dependency check of the main process. The result of a running check arrives through
+    /// IVersionControlDependencyRendererApi.
+    getDependencyState: unit -> JS.Promise<VersionControlDependencyStateDto>
+    /// Starts a dependency check, or queues one more run when a check is running, and answers at once
+    /// with the state that says it is running. The result arrives through IVersionControlDependencyRendererApi.
+    recheckDependencies: unit -> JS.Promise<VersionControlDependencyStateDto>
     /// Opens a paged diff of one path. A Scanning result returns a continuation for the
     /// next openTextDiff call. The handle belongs to the calling window.
     openTextDiff: OpenTextDiffRequestDto -> JS.Promise<Result<OperationResultDto<ResumableOpenDto>, exn>>
@@ -342,6 +348,11 @@ module MainToRendererIpc =
         versionControlProgress: VersionControlProgressDto -> unit
         versionControlOperationStarted: OperationRequestDto -> unit
         versionControlOutput: VersionControlOutputDto -> unit
+    }
+
+    /// Sent to every window whenever the dependency state changes, at the start and at the end of a check.
+    type IVersionControlDependencyRendererApi = {
+        versionControlDependenciesChanged: VersionControlDependencyStateDto -> unit
     }
 
     type IHasUnsavedArcChangesRendererApi = {

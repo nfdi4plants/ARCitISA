@@ -731,8 +731,8 @@ let api (event: IpcMainInvokeEvent) : IVersionControlApi = {
             logOperationFinished operationName key.OperationId (OperationResult.succeeded canceled) durationMilliseconds
             return Ok canceled
         }
-    // Every registered provider reports its components. A provider whose check fails
-    // does not hide the others: its failure rides along as the partial failure.
+    // The install flow checks the dependencies in the operation of its window. The shared check asks
+    // every registered provider and keeps a failing provider from hiding the others.
     checkDependencies =
         fun request -> promise {
             let host = WorkspaceSessionHost.get ()
@@ -747,47 +747,12 @@ let api (event: IpcMainInvokeEvent) : IVersionControlApi = {
                     None
                     (windowFromIpcEvent event |> Option.map _.id)
                     false
-                    (fun context -> async {
-                        let factories = ProviderResolver.factories host.Runtime.Catalog
-                        let mutable statuses: DependencyStatus[] = [||]
-                        let mutable failure: OperationFailure option = None
-
-                        for factory in factories do
-                            if not (context.Cancellation.IsCancellationRequested()) then
-                                let! reported = factory.CheckDependencies context
-
-                                match reported with
-                                | Succeeded outcome
-                                | PartiallySucceeded(outcome, _) -> statuses <- Array.append statuses outcome.Value
-                                | Failed error when error.Category = Canceled -> failure <- Some error
-                                | Failed error ->
-                                    if failure.IsNone then
-                                        failure <- Some error
-
-                        return
-                            match failure with
-                            | Some error when error.Category = Canceled -> Failed error
-                            | _ when context.Cancellation.IsCancellationRequested() ->
-                                OperationResult.canceled "The dependency check was canceled."
-                            | Some error ->
-                                PartiallySucceeded(
-                                    OperationOutcome.performed statuses,
-                                    {
-                                        error with
-                                            StateChanged = false
-                                            RecoveryAction =
-                                                Some {
-                                                    Code = VersionControlCodes.Recovery.CheckDependencies
-                                                    Instructions =
-                                                        Some "One provider could not report its dependencies."
-                                                }
-                                    }
-                                )
-                            | None -> OperationResult.succeeded statuses
-                    })
+                    (DependencyState.checkDependencies host.Runtime.Catalog)
 
             return Ok(Mappings.result (Array.map Mappings.dependencyStatus) result)
         }
+    getDependencyState = fun () -> promise { return DependencyState.getState () }
+    recheckDependencies = fun () -> promise { return DependencyState.recheck () }
     // The first provider that does not answer Unsupported owns the component, whether
     // its installation succeeded or failed.
     installDependency =
@@ -820,6 +785,12 @@ let api (event: IpcMainInvokeEvent) : IVersionControlApi = {
                             outcome
                             |> Option.defaultValue (serviceUnavailable $"installation of '{request.Component}'")
                     })
+
+            // The banner shows the shared check, so a fix made here needs a new check to clear it.
+            match result with
+            | Failed _ -> ()
+            | Succeeded _
+            | PartiallySucceeded _ -> DependencyState.trigger ()
 
             return Ok(Mappings.result Mappings.dependencyStatus result)
         }

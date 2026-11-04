@@ -51,6 +51,7 @@ else
 
                 let host = Main.VersionControl.WorkspaceSessionHost.WorkspaceSessionHost(runtime)
                 Main.VersionControl.WorkspaceSessionHost.initialize host
+                Main.VersionControl.DependencyState.initialize runtime.Catalog
             with error ->
                 Browser.Dom.console.error ("Version control host initialization failed", error.Message)
 

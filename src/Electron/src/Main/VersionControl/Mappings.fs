@@ -232,6 +232,7 @@ let dependencyStatus (status: DependencyStatus) : DependencyStatusDto = {
     Version = status.Version
     Compatible = status.Compatible
     Remediation = status.Remediation
+    ProbeExecutablePath = status.ProbeExecutablePath
 }
 
 let repositoryLocation (location: RepositoryLocation) : RepositoryLocationDto = {

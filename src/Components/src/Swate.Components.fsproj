@@ -137,6 +137,9 @@
     <Compile Include="Primitive\LoadingSpinner\LoadingSpinner.fs" />
     <Compile Include="Primitive\Blankslate\Types.fs" />
     <Compile Include="Primitive\Blankslate\Blankslate.fs" />
+    <Compile Include="Primitive\Banner\Types.fs" />
+    <Compile Include="Primitive\Banner\Banner.fs" />
+    <Compile Include="Primitive\Banner\Banner.test.rtl.fs" />
     <Compile Include="Primitive\Popover\Context.fs" />
     <Compile Include="Primitive\Popover\Popover.fs" />
     <Compile Include="Primitive\Select\Types.fs" />

@@ -10583,6 +10583,7 @@ Vitest.describe (
                         Version = Some "2.0"
                         Compatible = true
                         Remediation = None
+                        ProbeExecutablePath = None
                     }
                     {
                         Component = "git-lfs"
@@ -10590,6 +10591,7 @@ Vitest.describe (
                         Version = Some "3.0"
                         Compatible = true
                         Remediation = None
+                        ProbeExecutablePath = None
                     }
                     {
                         Component = "git-lfs-configuration"
@@ -10597,6 +10599,7 @@ Vitest.describe (
                         Version = None
                         Compatible = false
                         Remediation = Some "run git lfs install"
+                        ProbeExecutablePath = None
                     }
                 |]
 
@@ -11257,6 +11260,7 @@ Vitest.describe (
                                                 Version = None
                                                 Compatible = true
                                                 Remediation = None
+                                                ProbeExecutablePath = None
                                             }
                                         )
                                 }

@@ -4,50 +4,6 @@ open Browser.Dom
 open Feliz
 open Renderer.Components.Helper.ArcVaultHelper
 open Swate.Components.Primitive.ErrorModal.Context
-open Swate.Components.Primitive.ErrorModal.Types
-open Swate.Electron.Shared.VersionControlTypes
-
-let mutable private dependencyCheckStarted = false
-
-/// The message shown when a version control dependency is missing or too old. The
-/// library decides what is required (Git 2.42, Git LFS 3.7 and the LFS filter
-/// configuration) and says how to fix it. Its remediation text starts with the cause when a
-/// version check failed.
-let dependencyProblemMessage (statuses: DependencyStatusDto[]) : string option =
-    // The library reports the filter configuration as installed when the filter is set up, whatever
-    // the state of git-lfs itself. A problem of the configuration is only worth a line of its own
-    // while git-lfs works. Otherwise the line of git-lfs says what to do first.
-    let gitLfsWorks =
-        statuses
-        |> Array.tryFind (fun status -> status.Component = "git-lfs")
-        |> Option.forall (fun status -> status.Installed && status.Compatible)
-
-    let problems =
-        statuses
-        |> Array.filter (fun status -> not status.Installed || not status.Compatible)
-        |> Array.choose (fun status ->
-            let remediation =
-                status.Remediation
-                |> Option.map (fun text -> $" {text}")
-                |> Option.defaultValue ""
-
-            if status.Component = "git-lfs-configuration" then
-                if gitLfsWorks then
-                    Some $"Git LFS is installed but not set up.{remediation}"
-                else
-                    None
-            elif not status.Installed then
-                Some $"{status.Component} was not found or could not be run.{remediation}"
-            else
-                match status.Version with
-                | Some version -> Some $"{version} is not supported.{remediation}"
-                | None -> Some $"{status.Component} is not supported.{remediation}"
-        )
-
-    if problems.Length = 0 then
-        None
-    else
-        Some(String.concat "\n" problems)
 
 /// Remote transfer operations run cancellable git processes, so the cancel button is offered for all of them.
 let private isCancellableBusyOperation (busyOperation: Renderer.Context.GitWorkflow.GitBusyOperation) =
@@ -192,38 +148,6 @@ let Main () =
 
     let onOpenArcError =
         createErrorModalCallback errorCtx.enqueue "Error opening ARC" appStateCtx
-
-    React.useEffectOnce (fun () ->
-        if not dependencyCheckStarted then
-            dependencyCheckStarted <- true
-
-            Renderer.VersionControlApiClient.checkDependencies {
-                OperationId = Renderer.VersionControlApiClient.newOperationId ()
-            }
-            |> Promise.map (fun result ->
-                let statuses =
-                    match result with
-                    | Ok(OperationResultDto.Succeeded outcome)
-                    | Ok(OperationResultDto.PartiallySucceeded(outcome, _)) -> outcome.Value
-                    | _ -> [||]
-
-                match result, dependencyProblemMessage statuses with
-                | _, Some message ->
-                    errorCtx.enqueue (ErrorModalRequest.create (message, title = "Version control dependencies"))
-                | Ok(OperationResultDto.Failed failure), None
-                | Ok(OperationResultDto.PartiallySucceeded(_, failure)), None ->
-                    errorCtx.enqueue (
-                        ErrorModalRequest.create (
-                            Renderer.Context.GitWorkflow.failureMessage failure,
-                            title = "Could not verify Git installation"
-                        )
-                    )
-                | Error message, None ->
-                    errorCtx.enqueue (ErrorModalRequest.create (message, title = "Could not verify Git installation"))
-                | _ -> ()
-            )
-            |> ignore
-    )
 
     let remoteActionsEnabled = authState.UsableActiveUser().IsSome
 
