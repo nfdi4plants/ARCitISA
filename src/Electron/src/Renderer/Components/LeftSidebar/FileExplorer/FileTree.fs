@@ -302,7 +302,7 @@ type FileTree =
                 |]
             )
 
-        let fileItem =
+        let materializedRoot =
             React.useMemo (
                 (fun () ->
                     rootEntry
@@ -329,13 +329,13 @@ type FileTree =
         // A folder shows its load: an ellipsis icon while it loads and the error tone after a failure until the
         // next expand retries it. The overlay copies the folder rows with a state and leaves every other row alone,
         // so a change of the load states does not rebuild the items.
-        let fileItem =
+        let loadStateRoot =
             React.useMemo (
                 (fun () ->
                     if expansionCtx.loadStates.IsEmpty then
-                        fileItem
+                        materializedRoot
                     else
-                        fileItem
+                        materializedRoot
                         |> Option.map (fun root -> {
                             root with
                                 Children =
@@ -365,7 +365,7 @@ type FileTree =
                         })
                 ),
                 [|
-                    box fileItem
+                    box materializedRoot
                     box expansionCtx.loadStates
                     box snapshot.CaseInsensitive
                 |]
@@ -386,13 +386,13 @@ type FileTree =
         let busyDetails =
             React.useMemo ((fun () -> busyDetailsNow), [| box busyDetailsKey |])
 
-        let fileItem =
+        let displayRoot =
             React.useMemo (
                 (fun () ->
                     if busyDetails.IsEmpty then
-                        fileItem
+                        loadStateRoot
                     else
-                        fileItem
+                        loadStateRoot
                         |> Option.map (fun root -> {
                             root with
                                 Children =
@@ -400,7 +400,7 @@ type FileTree =
                                     |> Option.map (FileTreeMaterialization.overlayBusyDetails busyDetails)
                         })
                 ),
-                [| box fileItem; box busyDetails |]
+                [| box loadStateRoot; box busyDetails |]
             )
 
         let applyPreviewResult itemName result =
@@ -916,7 +916,7 @@ type FileTree =
                 isRenaming = isDialogBusy
             )
 
-        match fileItem with
+        match displayRoot with
         | Some rootItem ->
             let visibleItems = rootItem.Children |> Option.defaultValue []
 
