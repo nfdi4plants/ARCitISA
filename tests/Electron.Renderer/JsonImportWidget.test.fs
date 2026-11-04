@@ -70,7 +70,7 @@ Vitest.describe (
             "shows only JSON formats supported by the active file type",
             fun () -> promise {
                 let! container, cleanup =
-                    jsonImportWidget (ArcFiles.DataMap(None, DataMap.init ())) ignore None None ignore
+                    jsonImportWidget (ArcFiles.DataMap(None, Datamap.init ())) ignore None None ignore
                     |> renderToBody
 
                 try

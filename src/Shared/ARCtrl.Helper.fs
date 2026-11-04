@@ -275,7 +275,7 @@ module ARCtrlHelper =
         | Assay of ArcAssay
         | Run of ArcRun
         | Workflow of ArcWorkflow
-        | DataMap of (DatamapParentInfo option * DataMap)
+        | DataMap of (DatamapParentInfo option * Datamap)
 
         member this.HasMetadata() =
             match this with
@@ -345,10 +345,10 @@ module ARCtrlHelper =
 
         member this.TryGetDataMap() =
             match this with
-            | ArcFiles.Assay assay when assay.DataMap.IsSome -> Some assay.DataMap.Value
-            | ArcFiles.Study(study, _) when study.DataMap.IsSome -> Some study.DataMap.Value
-            | ArcFiles.Workflow workflow when workflow.DataMap.IsSome -> Some workflow.DataMap.Value
-            | ArcFiles.Run run when run.DataMap.IsSome -> Some run.DataMap.Value
+            | ArcFiles.Assay assay when assay.Datamap.IsSome -> Some assay.Datamap.Value
+            | ArcFiles.Study(study, _) when study.Datamap.IsSome -> Some study.Datamap.Value
+            | ArcFiles.Workflow workflow when workflow.Datamap.IsSome -> Some workflow.Datamap.Value
+            | ArcFiles.Run run when run.Datamap.IsSome -> Some run.Datamap.Value
             | ArcFiles.DataMap(_, dataMap) -> Some dataMap
             | _ -> None
 
@@ -385,25 +385,25 @@ module ARCtrlHelper =
 
         member this.TryGetDataMap(parentInfo: DatamapParentInfo) =
             match parentInfo.Parent with
-            | DataMapParent.Assay -> this.TryGetAssay parentInfo.ParentId |> Option.bind _.DataMap
-            | DataMapParent.Study -> this.TryGetStudy parentInfo.ParentId |> Option.bind _.DataMap
-            | DataMapParent.Run -> this.TryGetRun parentInfo.ParentId |> Option.bind _.DataMap
-            | DataMapParent.Workflow -> this.TryGetWorkflow parentInfo.ParentId |> Option.bind _.DataMap
+            | DataMapParent.Assay -> this.TryGetAssay parentInfo.ParentId |> Option.bind _.Datamap
+            | DataMapParent.Study -> this.TryGetStudy parentInfo.ParentId |> Option.bind _.Datamap
+            | DataMapParent.Run -> this.TryGetRun parentInfo.ParentId |> Option.bind _.Datamap
+            | DataMapParent.Workflow -> this.TryGetWorkflow parentInfo.ParentId |> Option.bind _.Datamap
 
-        member this.TrySetDataMap(parentInfo: DatamapParentInfo, dataMap: DataMap option) =
+        member this.TrySetDataMap(parentInfo: DatamapParentInfo, dataMap: Datamap option) =
             match parentInfo.Parent with
             | DataMapParent.Assay ->
                 this.TryGetAssay parentInfo.ParentId
-                |> Option.map (fun assay -> assay.DataMap <- dataMap)
+                |> Option.map (fun assay -> assay.Datamap <- dataMap)
             | DataMapParent.Study ->
                 this.TryGetStudy parentInfo.ParentId
-                |> Option.map (fun study -> study.DataMap <- dataMap)
+                |> Option.map (fun study -> study.Datamap <- dataMap)
             | DataMapParent.Run ->
                 this.TryGetRun parentInfo.ParentId
-                |> Option.map (fun run -> run.DataMap <- dataMap)
+                |> Option.map (fun run -> run.Datamap <- dataMap)
             | DataMapParent.Workflow ->
                 this.TryGetWorkflow parentInfo.ParentId
-                |> Option.map (fun workflow -> workflow.DataMap <- dataMap)
+                |> Option.map (fun workflow -> workflow.Datamap <- dataMap)
             |> Option.isSome
 
     /// Single source of truth for file paths stored relative to the ARC root.

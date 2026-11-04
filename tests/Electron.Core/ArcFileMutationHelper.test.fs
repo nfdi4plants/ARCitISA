@@ -78,13 +78,13 @@ Vitest.describe (
             fun () ->
                 let oldArc = ARC("test-arc")
 
-                let existingDataMap = DataMap.init ()
+                let existingDataMap = Datamap.init ()
                 existingDataMap.StaticHash <- 777
 
                 let assay = ArcAssay("assay_1", datamap = existingDataMap)
                 oldArc.AddAssay(assay)
 
-                let incomingDataMap = DataMap.init ()
+                let incomingDataMap = Datamap.init ()
                 incomingDataMap.StaticHash <- 5
 
                 let datamapParent = DatamapParentInfo.create "assay_1" DataMapParent.Assay
@@ -99,7 +99,7 @@ Vitest.describe (
                 let updatedDataMap =
                     updatedArc.TryGetAssay("assay_1") |> expectSome
                     <| "Expected assay to exist after datamap update."
-                    |> fun updatedAssay -> updatedAssay.DataMap
+                    |> fun updatedAssay -> updatedAssay.Datamap
                     |> expectSome
                     <| "Expected datamap to be present on assay."
 
@@ -112,19 +112,19 @@ Vitest.describe (
                 let arc = ARC("test-arc")
 
                 let assay = ArcAssay("assay_1")
-                assay.DataMap <- Some(DataMap.init ())
+                assay.Datamap <- Some(Datamap.init ())
                 arc.AddAssay assay
 
                 let study = ArcStudy("study_1")
-                study.DataMap <- Some(DataMap.init ())
+                study.Datamap <- Some(Datamap.init ())
                 arc.AddStudy study
 
                 let workflow = ArcWorkflow("workflow_1")
-                workflow.DataMap <- Some(DataMap.init ())
+                workflow.Datamap <- Some(Datamap.init ())
                 arc.AddWorkflow workflow
 
                 let run = ArcRun("run_1")
-                run.DataMap <- Some(DataMap.init ())
+                run.Datamap <- Some(Datamap.init ())
                 arc.AddRun run
 
                 let cases = [|

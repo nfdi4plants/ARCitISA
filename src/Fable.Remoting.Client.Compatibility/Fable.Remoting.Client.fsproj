@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <PackageId>Fable.Remoting.Client</PackageId>
+    <AssemblyName>Fable.Remoting.Client</AssemblyName>
+    <Version>7.32.0</Version>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Types.fs" />
+    <Compile Include="Extensions.fs" />
+    <Compile Include="Http.fs" />
+    <Compile Include="Proxy.fs" />
+    <Compile Include="Remoting.fs" />
+    <ProjectReference Include="..\Fable.SimpleJson.Compatibility\Fable.SimpleJson.fsproj" />
+    <PackageReference Include="Fable.Core" />
+    <PackageReference Include="Fable.Browser.Dom" />
+    <PackageReference Include="Fable.Browser.XMLHttpRequest" />
+    <PackageReference Include="Fable.Remoting.MsgPack" />
+  </ItemGroup>
+</Project>

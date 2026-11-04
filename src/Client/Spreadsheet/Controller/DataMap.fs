@@ -6,14 +6,14 @@ open Swate.Components
 open Swate.Components.Shared
 
 
-let updateDatamap (dataMapOpt: DataMap option) (state: Spreadsheet.Model) : Spreadsheet.Model =
+let updateDatamap (dataMapOpt: Datamap option) (state: Spreadsheet.Model) : Spreadsheet.Model =
     let nextArcFile =
         match state.ArcFile with
         | Some(ArcFiles.Assay a) ->
-            a.DataMap <- dataMapOpt
+            a.Datamap <- dataMapOpt
             Some(ArcFiles.Assay a)
         | Some(ArcFiles.Study(s, _)) ->
-            s.DataMap <- dataMapOpt
+            s.Datamap <- dataMapOpt
             Some(ArcFiles.Study(s, []))
         | Some(ArcFiles.DataMap(p, d)) ->
             if dataMapOpt.IsSome then
@@ -33,7 +33,7 @@ let updateDatamap (dataMapOpt: DataMap option) (state: Spreadsheet.Model) : Spre
     | _ -> { state with ArcFile = nextArcFile }
 
 let updateDataMapDataContextAt (dtx) (index) (state: Spreadsheet.Model) : Spreadsheet.Model =
-    let ensureIndexExists (dtm: DataMap) =
+    let ensureIndexExists (dtm: Datamap) =
         if index >= dtm.DataContexts.Count then
             failwithf
                 "DataMap does not contain the an item at index: %i. Only %i items exist."
@@ -42,13 +42,13 @@ let updateDataMapDataContextAt (dtx) (index) (state: Spreadsheet.Model) : Spread
 
     let nextArcFile =
         match state.ArcFile with
-        | Some(ArcFiles.Assay a) when a.DataMap.IsSome ->
-            ensureIndexExists a.DataMap.Value
-            a.DataMap.Value.DataContexts.[index] <- dtx
+        | Some(ArcFiles.Assay a) when a.Datamap.IsSome ->
+            ensureIndexExists a.Datamap.Value
+            a.Datamap.Value.DataContexts.[index] <- dtx
             Some(ArcFiles.Assay a)
-        | Some(ArcFiles.Study(s, _)) when s.DataMap.IsSome ->
-            ensureIndexExists s.DataMap.Value
-            s.DataMap.Value.DataContexts.[index] <- dtx
+        | Some(ArcFiles.Study(s, _)) when s.Datamap.IsSome ->
+            ensureIndexExists s.Datamap.Value
+            s.Datamap.Value.DataContexts.[index] <- dtx
             Some(ArcFiles.Study(s, []))
         | _ ->
             console.warn "[WARNING] updateDatamap: No Assay or Study found in ArcFile"

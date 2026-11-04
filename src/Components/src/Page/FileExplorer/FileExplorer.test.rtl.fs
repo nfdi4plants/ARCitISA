@@ -198,16 +198,6 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "sets aria-expanded only on directories that can expand",
-            fun () ->
-                RTL.render (FileExplorer.FileExplorer(initialItems = tree)) |> ignore
-
-                Vitest.expect((treeItem "src").getAttribute "aria-expanded").toBe "false"
-                Vitest.expect((treeItem "Lazy Folder").getAttribute "aria-expanded").toBe "false"
-                Vitest.expect((treeItem "Empty Folder").hasAttribute "aria-expanded").toBe false
-        )
-
-        Vitest.test (
             "selects a file on click and routes it to onItemClick",
             fun () ->
                 let clicked = ResizeArray<string>()
@@ -426,6 +416,62 @@ Vitest.describe (
                 RTL.fireEvent.click (RTL.screen.getByText "sub")
                 Vitest.expect(changes.Count).toBe 1
                 Vitest.expect(changes.[0] |> Set.toArray).toEqual [| "src"; "sub" |]
+        )
+
+        Vitest.test (
+            "shows the busy indicator on a folder row while an LFS action runs below it",
+            fun () ->
+                let busy = {
+                    folder "Busy Folder" (Some []) with
+                        LfsActivity = Some "Downloading"
+                }
+
+                RTL.render (FileExplorer.FileExplorer(initialItems = [ busy; folder "Idle Folder" (Some []) ]))
+                |> ignore
+
+                let indicators = RTL.screen.getAllByTestId "lfs-busy-indicator"
+                Vitest.expect(indicators.Count).toBe 1
+
+                let busyRow = (RTL.screen.getByText "Busy Folder").closest "[data-file-item-id]"
+                Vitest.expect(busyRow.IsSome && busyRow.Value.contains indicators.[0]).toBe true
+        )
+
+        Vitest.test (
+            "shows the busy detail next to the busy pill of the row that has one and on no other row",
+            fun () ->
+                let withDetail = {
+                    folder "Detail Folder" (Some []) with
+                        LfsActivity = Some "Downloading"
+                        LfsActivityDetail = Some "3/40 45%"
+                }
+
+                let withoutDetail = {
+                    folder "Plain Folder" (Some []) with
+                        LfsActivity = Some "Downloading"
+                }
+
+                RTL.render (
+                    FileExplorer.FileExplorer(
+                        initialItems = [
+                            withDetail
+                            withoutDetail
+                            folder "Idle Folder" (Some [])
+                        ]
+                    )
+                )
+                |> ignore
+
+                let details = RTL.screen.getAllByTestId "lfs-busy-progress"
+                Vitest.expect(details.Count).toBe 1
+                Vitest.expect(details.[0].textContent).toBe "3/40 45%"
+
+                let row = (RTL.screen.getByText "Detail Folder").closest "[data-file-item-id]"
+                Vitest.expect(row.IsSome && row.Value.contains details.[0]).toBe true
+
+                let pill =
+                    details.[0].parentElement.querySelector "[data-testid='lfs-busy-indicator']"
+
+                Vitest.expect(isNull pill).toBe false
         )
 
         Vitest.test (

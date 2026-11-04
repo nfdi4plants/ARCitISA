@@ -15,14 +15,6 @@ open Swate.Electron.Shared.RenamePathRules
 [<RequireQualifiedAccess>]
 module ArcRenameHelper =
 
-    let private tryRenameEntityOnDiskAsync arcPath fileType oldIdentifier newIdentifier (arc: ARC) =
-        match fileType with
-        | ArcFilesDiscriminate.Assay -> arc.TryRenameAssayAsync(arcPath, oldIdentifier, newIdentifier)
-        | ArcFilesDiscriminate.Study -> arc.TryRenameStudyAsync(arcPath, oldIdentifier, newIdentifier)
-        | ArcFilesDiscriminate.Workflow -> arc.TryRenameWorkflowAsync(arcPath, oldIdentifier, newIdentifier)
-        | ArcFilesDiscriminate.Run -> arc.TryRenameRunAsync(arcPath, oldIdentifier, newIdentifier)
-        | fileType -> promise { return Error [| $"Renaming {fileType} is not supported." |] }
-
     let private applyInMemoryRename fileType oldIdentifier newIdentifier (arc: ARC) =
         match fileType with
         | ArcFilesDiscriminate.Assay -> arc.RenameAssay(oldIdentifier, newIdentifier)
@@ -111,25 +103,60 @@ module ArcRenameHelper =
                             with
                             | Error resolutionError -> return Error resolutionError
                             | Ok() ->
+                                let dirtyBefore = ContractPolicy.captureDirtyDatamapKeys diskArc
+
+                                let raw =
+                                    match fileType with
+                                    | ArcFilesDiscriminate.Assay ->
+                                        diskArc.GetAssayRenameContracts(oldIdentifier, newIdentifier)
+                                    | ArcFilesDiscriminate.Study ->
+                                        diskArc.GetStudyRenameContracts(oldIdentifier, newIdentifier)
+                                    | ArcFilesDiscriminate.Workflow ->
+                                        diskArc.GetWorkflowRenameContracts(oldIdentifier, newIdentifier)
+                                    | ArcFilesDiscriminate.Run ->
+                                        diskArc.GetRunRenameContracts(oldIdentifier, newIdentifier)
+                                    | _ -> failwith $"Renaming {fileType} is not supported."
+
+                                let dirty = ContractPolicy.remapKeys sourcePath targetPath dirtyBefore
+
+                                let diskPathBefore path =
+                                    PathHelpers.tryRemapPathPrefix targetPath sourcePath path
+                                    |> Option.defaultValue path
+
                                 match!
-                                    tryRenameEntityOnDiskAsync arcPath fileType oldIdentifier newIdentifier diskArc
+                                    ContractPolicy.prepareAsync {
+                                        ArcPath = arcPath
+                                        Snapshot = diskArc
+                                        RawContracts = raw
+                                        DirtyDatamapKeys = dirty
+                                        IsFullWrite = false
+                                        DiskPathBeforeExecution = diskPathBefore
+                                    }
                                 with
-                                | Error errors ->
+                                | Error message ->
                                     return
                                         Error(
                                             exn
-                                                $"Could not rename ARC entity from '{sourcePath}' to '{targetPath}': {PathHelpers.formatContractErrors errors}"
+                                                $"Could not rename ARC entity from '{sourcePath}' to '{targetPath}': {message}"
                                         )
-                                | Ok _ ->
-                                    return!
-                                        mergeRenamedEntityFromDisk
-                                            arcPath
-                                            sourcePath
-                                            targetPath
-                                            fileType
-                                            oldIdentifier
-                                            newIdentifier
-                                            arcLocal
+                                | Ok contracts ->
+                                    match! ContractExecutor.fulfillContractsSwateAsync arcPath contracts with
+                                    | Error errors ->
+                                        return
+                                            Error(
+                                                exn
+                                                    $"Could not rename ARC entity from '{sourcePath}' to '{targetPath}': {PathHelpers.formatContractErrors errors}"
+                                            )
+                                    | Ok _ ->
+                                        return!
+                                            mergeRenamedEntityFromDisk
+                                                arcPath
+                                                sourcePath
+                                                targetPath
+                                                fileType
+                                                oldIdentifier
+                                                newIdentifier
+                                                arcLocal
             with renameError ->
                 let mappedError = mapRenameDiskError sourcePath targetPath renameError
 

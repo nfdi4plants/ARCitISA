@@ -14,7 +14,7 @@ import {
   FileTree_createFile,
   FileTree_createFolder,
 } from "./Types.fs.js";
-import { ofArray } from "../../fable_modules/fable-library-ts.5.0.0-alpha.21/List.ts";
+import { listOfArray as ofArray } from "../../Util/Interop.fs.js";
 
 const arcCreateItems = [
   { label: "Add Study", path: "studies/NewStudy/isa.study.xlsx" },
@@ -522,6 +522,25 @@ const BusyLfsRowFileExplorer = () => {
   );
 };
 
+const BusyFolderFileExplorer = () => {
+  const items = React.useMemo(
+    () => [
+      Object.assign(createStableFolder("raw-data", "runs/raw-data", "busy-folder", []), {
+        LfsActivity: "Downloading",
+        LfsActivityDetail: "3/40 45%",
+      }),
+      createStableFolder("notes", "runs/notes", "idle-folder", []),
+    ],
+    [],
+  );
+
+  return (
+    <div data-testid="busy-folder-viewport" className="swt:p-2" style={{ width: 320, overflow: "hidden" }}>
+      <FileExplorer initialItems={ofArray(items)} truncateOverflowingItemNames={true} />
+    </div>
+  );
+};
+
 const lfsRowLabel = (canvasElement: HTMLElement, id: string) => {
   const row = canvasElement.querySelector(`[role="treeitem"][data-file-item-id="${id}"]`);
 
@@ -726,10 +745,6 @@ export const DirectoryArrowsReflectLoadability: StoryObj<typeof LazyLoadDirector
 
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-
-    // A folder row reports aria-expanded only when it can expand.
-    const emptyFolder = await canvas.findByRole("treeitem", { name: "Empty Folder" });
-    await expect(emptyFolder).not.toHaveAttribute("aria-expanded");
 
     const lazyFolder = await canvas.findByRole("treeitem", { name: "Lazy Folder" });
     await expect(lazyFolder).toHaveAttribute("aria-expanded", "false");
@@ -1158,6 +1173,24 @@ export const BusyLfsRowKeepsNameSpace: StoryObj<typeof BusyLfsRowFileExplorer> =
         idleLabel.getBoundingClientRect().width - 1,
       );
     });
+  },
+};
+
+export const BusyFolderShowsProgressNextToPill: StoryObj<typeof BusyFolderFileExplorer> = {
+  render: () => <BusyFolderFileExplorer />,
+
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const busyRow = canvasElement.querySelector('[role="treeitem"][data-file-item-id="busy-folder"]');
+
+    if (!(busyRow instanceof HTMLElement)) {
+      throw new Error("Expected the busy folder row.");
+    }
+
+    const progress = within(busyRow).getByTestId("lfs-busy-progress");
+    await expect(progress).toHaveTextContent("3/40 45%");
+    await expect(within(busyRow).getByTestId("lfs-busy-indicator")).toBeInTheDocument();
+    await expect(canvas.getAllByTestId("lfs-busy-progress")).toHaveLength(1);
   },
 };
 

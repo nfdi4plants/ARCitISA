@@ -27,6 +27,7 @@ module private FileTreeHelper =
         | RenameDialog of ArcRenameDraft
         | DeleteDialog of FileItem
         | FreeLfsDialog of string
+        | FreeLfsFolderDialog of string
 
 open FileTreeHelper
 
@@ -76,10 +77,31 @@ type FileTree =
 
         let lfsActivityCtx = Renderer.Context.LfsActivityContext.useLfsActivityCtx ()
         let tryFindLfs = Renderer.Context.LargeObjectStore.useLargeObjectLookup ()
+        let largeObjectStore = Renderer.Context.LargeObjectStore.useLargeObjectStore ()
         let lfsActivityByPath = lfsActivityCtx.activities
 
+        // Progress changes this value but not lfsActivityCtx, so the path indexes below stay as they are.
+        let runningLfsActions =
+            Renderer.Context.LfsActivityContext.useLfsRunningActionsCtx ()
+
+        // The row checks (Rename and Delete locks) and the busy children of a folder read these once per change of
+        // the activities, so a tree rebuild stays linear when thousands of files are busy.
         let lfsActivePaths =
-            React.useMemo ((fun () -> lfsActivityByPath |> Map.toList |> List.map fst), [| box lfsActivityByPath |])
+            React.useMemo (
+                (fun () ->
+                    lfsActivityByPath
+                    |> Map.toSeq
+                    |> Seq.map fst
+                    |> Renderer.Context.LfsActivityContext.LfsActivePathIndex.create
+                ),
+                [| box lfsActivityByPath |]
+            )
+
+        let busyByParent =
+            React.useMemo (
+                (fun () -> Renderer.Context.LfsActivityContext.LfsActivityState.busyEntriesByParent lfsActivityByPath),
+                [| box lfsActivityByPath |]
+            )
 
         // The delete confirmation reads the paths through this ref, so it sees the actions that
         // started after the modal opened.
@@ -88,22 +110,137 @@ type FileTree =
 
         let runLfsActionWithActivity
             (activity: string)
-            (runAction: string -> JS.Promise<Result<unit, string>>)
+            (kind: Renderer.Context.LfsActivityContext.LfsActionKind)
+            (runAction: string -> string -> JS.Promise<Result<unit, string>>)
             (relativePath: string)
             : JS.Promise<Result<unit, string>> =
             let entry =
                 Renderer.Context.FileTreeStore.tryFind fileStateCtx.fileTreeStore.Snapshot relativePath
 
-            lfsActivityCtx.run activity entry runAction relativePath
+            // The action picks its operation id here, so the context can follow the progress of that id.
+            lfsActivityCtx.run
+                activity
+                entry
+                (fun path ->
+                    let operationId = Renderer.VersionControlApiClient.newOperationId ()
+
+                    let runningAction: Renderer.Context.LfsActivityContext.LfsRunningAction = {
+                        OperationId = operationId
+                        Kind = kind
+                        Target = path
+                        IsFolder = false
+                        FileCount = 1
+                        Count = None
+                        StepPercent = None
+                        StartedAt = 0.0
+                    }
+
+                    lfsActivityCtx.track runningAction (fun () -> runAction operationId path)
+                )
+                relativePath
 
         let runDownloadLfsFile relativePath =
             runLfsActionWithActivity
                 "Downloading"
+                Renderer.Context.LfsActivityContext.LfsActionKind.Download
                 Renderer.Components.Helper.GitLfsHelper.runDownloadLfsFile
                 relativePath
 
         let runFreeLocalLfsCopy relativePath =
-            runLfsActionWithActivity "Freeing" Renderer.Components.Helper.GitLfsHelper.runFreeLocalLfsCopy relativePath
+            runLfsActionWithActivity
+                "Freeing"
+                Renderer.Context.LfsActivityContext.LfsActionKind.Free
+                Renderer.Components.Helper.GitLfsHelper.runFreeLocalLfsCopy
+                relativePath
+
+        // getFolderLargeObjects reads the snapshot on each call, so a lookup sees the latest large object state.
+        let getFolderLargeObjects (folderPath: string) =
+            Renderer.Context.LargeObjectStore.LargeObjectSnapshot.folderObjects folderPath largeObjectStore.Snapshot
+
+        // The folder stays busy for the whole action. The action marks its files busy too, which disables their own
+        // actions and keeps the rows of files that a Free briefly moves away.
+        let runLfsFolderAction
+            (action: Renderer.Components.Helper.GitLfsHelper.FolderLfsAction)
+            (folderPath: string)
+            : unit =
+            let folderEntry =
+                Renderer.Context.FileTreeStore.tryFind fileStateCtx.fileTreeStore.Snapshot folderPath
+
+            lfsActivityCtx.run
+                action.Activity
+                folderEntry
+                (fun _ -> promise {
+                    let paths = action.SelectPaths(getFolderLargeObjects folderPath)
+
+                    if paths.Length > 0 then
+                        let targets =
+                            paths
+                            |> Array.map (
+                                Renderer.Context.LfsActivityContext.LfsActivityState.batchTarget
+                                    fileStateCtx.fileTreeStore.Snapshot
+                            )
+
+                        // The controller passes plain string errors, so the structured failure stays in this cell.
+                        let batchFailure = ref None
+
+                        let! _ =
+                            lfsActivityCtx.runAll
+                                action.Activity
+                                targets
+                                (fun () ->
+                                    let operationId = Renderer.VersionControlApiClient.newOperationId ()
+
+                                    let runningAction: Renderer.Context.LfsActivityContext.LfsRunningAction = {
+                                        OperationId = operationId
+                                        Kind = action.Kind
+                                        Target = folderPath
+                                        IsFolder = true
+                                        FileCount = paths.Length
+                                        Count = None
+                                        StepPercent = None
+                                        StartedAt = 0.0
+                                    }
+
+                                    lfsActivityCtx.track
+                                        runningAction
+                                        (fun () -> promise {
+                                            match! action.RunBatch operationId paths with
+                                            | Ok() -> return Ok()
+                                            | Error failure ->
+                                                batchFailure.Value <- Some failure
+                                                return Error failure.Message
+                                        })
+                                )
+
+                        match batchFailure.Value with
+                        | Some failure ->
+                            let message, details =
+                                Renderer.Components.Helper.GitLfsHelper.folderFailureText
+                                    (PathHelpers.getFileName folderPath)
+                                    action.Outcome
+                                    paths.Length
+                                    failure
+
+                            errorModal.enqueue (
+                                ErrorModalRequest.create (
+                                    message,
+                                    title = action.FailureTitle,
+                                    ?details = details,
+                                    ?scopeId = arcScopeId
+                                )
+                            )
+                        | None -> ()
+
+                    return Ok()
+                })
+                folderPath
+            |> Promise.start
+
+        let downloadLfsFolder =
+            runLfsFolderAction Renderer.Components.Helper.GitLfsHelper.FolderLfsAction.download
+
+        let freeLfsFolder =
+            runLfsFolderAction Renderer.Components.Helper.GitLfsHelper.FolderLfsAction.free
 
         React.useEffect (
             (fun () ->
@@ -123,7 +260,7 @@ type FileTree =
         )
 
         let withBusy =
-            Renderer.Context.LfsActivityContext.LfsActivityState.withBusyChildren lfsActivityByPath
+            Renderer.Context.LfsActivityContext.LfsActivityState.withBusyChildren busyByParent
 
         // Entries are immutable and keep their instance while unchanged, so the base row of an entry is built once.
         // A new large object snapshot gets a new cache, because the rows carry that state.
@@ -223,6 +360,38 @@ type FileTree =
                     box expansionCtx.loadStates
                     box snapshot.CaseInsensitive
                 |]
+            )
+
+        // The live progress text goes on the rows of the running actions. Only these rows are copied. The item
+        // cache and the path indexes above are not rebuilt for a progress event. Log output also changes the running
+        // actions, so the memo below follows the text of the details, and a log batch leaves the rows alone.
+        let busyDetailsNow =
+            Renderer.Context.LfsActivityContext.LfsRunningAction.busyDetails runningLfsActions
+
+        let busyDetailsKey =
+            busyDetailsNow
+            |> Map.toArray
+            |> Array.map (fun (path, text) -> path + "\u0000" + text)
+            |> String.concat "\n"
+
+        let busyDetails =
+            React.useMemo ((fun () -> busyDetailsNow), [| box busyDetailsKey |])
+
+        let fileItem =
+            React.useMemo (
+                (fun () ->
+                    if busyDetails.IsEmpty then
+                        fileItem
+                    else
+                        fileItem
+                        |> Option.map (fun root -> {
+                            root with
+                                Children =
+                                    root.Children
+                                    |> Option.map (FileTreeMaterialization.overlayBusyDetails busyDetails)
+                        })
+                ),
+                [| box fileItem; box busyDetails |]
             )
 
         let applyPreviewResult itemName result =
@@ -328,6 +497,9 @@ type FileTree =
             openDialog (FreeLfsDialog relativePath)
             promise { return Ok() }
 
+        let requestFreeLfsFolder (folderPath: string) =
+            openDialog (FreeLfsFolderDialog folderPath)
+
         // The row getters below keep their identity until their inputs change. A new identity re-renders every row.
         // The dialog state setters never change, so the workflows that only open dialogs can be created once.
         let requestDeleteItem =
@@ -402,12 +574,25 @@ type FileTree =
             | Some(RenameDialog renameDraft) -> None, None, Some renameDraft, None
             | Some(DeleteDialog item) -> None, None, None, Some item
             | Some(FreeLfsDialog _)
+            | Some(FreeLfsFolderDialog _)
             | None -> None, None, None, None
 
         let activeFreeLfsPath =
             match activeDialog with
             | Some(FreeLfsDialog path) -> Some path
             | _ -> None
+
+        let activeFreeLfsFolderPath =
+            match activeDialog with
+            | Some(FreeLfsFolderDialog path) -> Some path
+            | _ -> None
+
+        let confirmFreeLfsFolder () =
+            activeFreeLfsFolderPath
+            |> Option.iter (fun path ->
+                closeDialog ()
+                freeLfsFolder path
+            )
 
         let confirmFreeLocalLfsCopy () =
             activeFreeLfsPath
@@ -531,7 +716,7 @@ type FileTree =
             promise {
                 match!
                     ArcFileApiHelper.withArcFileRequest
-                        (ArcFiles.DataMap(Some parentInfo, DataMap.init ()))
+                        (ArcFiles.DataMap(Some parentInfo, Datamap.init ()))
                         Api.ipcArcVaultApi.addArcFile
                 with
                 | Error exn -> applyCreateError exn.Message
@@ -600,6 +785,9 @@ type FileTree =
             runToggleLfsMark = runToggleLfsMark
             runDownloadLfsFile = runDownloadLfsFile
             runFreeLocalLfsCopy = requestFreeLocalLfsCopy
+            getFolderLargeObjects = getFolderLargeObjects
+            runDownloadLfsFolder = downloadLfsFolder
+            requestFreeLfsFolder = requestFreeLfsFolder
             refreshDirectory = (fun (item: FileItem) -> item.Path |> Option.iter expansionCtx.refreshDirectory)
             lfsActivePaths = lfsActivePaths
         }
@@ -698,6 +886,17 @@ type FileTree =
                 submit = confirmFreeLocalLfsCopy
             )
 
+        let freeLfsFolderModal =
+            FileTreeFreeLfsModal.Main(
+                isOpen = activeFreeLfsFolderPath.IsSome,
+                itemName = (activeFreeLfsFolderPath |> Option.map PathHelpers.getFileName),
+                ?fileCount =
+                    (activeFreeLfsFolderPath
+                     |> Option.map (fun path -> (getFolderLargeObjects path).HasLocalCopy.Length)),
+                close = closeDialog,
+                submit = confirmFreeLfsFolder
+            )
+
         let renameModal =
             FileTreeRenameModal.Main(
                 isOpen = activeRenameDraft.IsSome,
@@ -743,6 +942,7 @@ type FileTree =
                 renameModal
                 deleteConfirmModal
                 freeLfsModal
+                freeLfsFolderModal
             ]
         | None ->
             React.Fragment [
@@ -752,4 +952,5 @@ type FileTree =
                 renameModal
                 deleteConfirmModal
                 freeLfsModal
+                freeLfsFolderModal
             ]

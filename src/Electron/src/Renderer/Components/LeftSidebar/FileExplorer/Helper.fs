@@ -204,6 +204,7 @@ let createItem
             Checkout = None
             Downloaded = None
             LfsActivity = None
+            LfsActivityDetail = None
             Size = None
             SizeFormatted = None
             ItemType = "node"
@@ -228,6 +229,7 @@ let createItem
             Checkout = None
             Downloaded = None
             LfsActivity = None
+            LfsActivityDetail = None
             Size = None
             SizeFormatted = None
             ItemType = "node"

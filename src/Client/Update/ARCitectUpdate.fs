@@ -38,19 +38,19 @@ module ARCitect =
                 let resolvedArcFile = // if the fable transpiled string from ARCitect.Interop.InteropTypes.ARCFile does not exactly match any available here it will somehow fallback to "ARCitect.Interop.InteropTypes.ARCFile.Assay"
                     match arcFile with
                     | ArcFilesDiscriminate.Assay ->
-                        let assay = ArcAssay.fromJsonString json
+                        let assay = ARCtrl.JsonCompatibility.fromAssayJsonString json
                         ArcFiles.Assay assay
                     | ArcFilesDiscriminate.Study ->
-                        let study = ArcStudy.fromJsonString json
+                        let study = ARCtrl.JsonCompatibility.fromStudyJsonString json
                         ArcFiles.Study(study, [])
                     | ArcFilesDiscriminate.Investigation ->
-                        let inv = ArcInvestigation.fromJsonString json
+                        let inv = ARCtrl.JsonCompatibility.fromInvestigationJsonString json
                         ArcFiles.Investigation inv
                     | ArcFilesDiscriminate.Run ->
-                        let run = ArcRun.fromJsonString json
+                        let run = ARCtrl.JsonCompatibility.fromRunJsonString json
                         ArcFiles.Run run
                     | ArcFilesDiscriminate.Workflow ->
-                        let workflow = ArcWorkflow.fromJsonString json
+                        let workflow = ARCtrl.JsonCompatibility.fromWorkflowJsonString json
                         ArcFiles.Workflow workflow
                     | ArcFilesDiscriminate.Template ->
                         let template = Template.fromJsonString json
@@ -59,7 +59,7 @@ module ARCitect =
                         if dataMapParent.IsNone then
                             failwith "No parent for datamap is available!"
 
-                        let dataMap = DataMap.fromJsonString json
+                        let dataMap = Datamap.fromJsonString json
 
                         ArcFiles.DataMap(dataMapParent, dataMap)
 
@@ -79,7 +79,7 @@ module ARCitect =
                 | ArcFiles.Workflow workflow -> ArcFilesDiscriminate.Workflow, ArcWorkflow.toJsonString 0 workflow, None
                 | ArcFiles.Template template -> ArcFilesDiscriminate.Template, Template.toJsonString 0 template, None
                 | ArcFiles.DataMap(datamapParent, datamap) ->
-                    ArcFilesDiscriminate.DataMap, DataMap.toJsonString 0 datamap, datamapParent
+                    ArcFilesDiscriminate.DataMap, Datamap.toJsonString 0 datamap, datamapParent
 
             let cmd =
                 Cmd.OfPromise.attempt

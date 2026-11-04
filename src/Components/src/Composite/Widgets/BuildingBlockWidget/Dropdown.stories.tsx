@@ -3,13 +3,13 @@ import { expect, screen, userEvent, waitFor, within } from "storybook/test";
 import React, { useState } from "react";
 import { Main as BuildingBlockDropdown } from "./Dropdown.fs.js";
 import { CompositeHeaderDiscriminate_Parameter } from "../../../ARCtrl/Types/CompositeHeaderDiscriminate.fs.js";
-import { IOType_FreeText } from "../../../fable_modules/ARCtrl.Core.3.0.0-beta.12/Table/CompositeHeader.fs.js";
+import { customIOType } from "./Dropdown.sample.fs.js";
 
 type PickerProps = React.ComponentProps<typeof BuildingBlockDropdown>;
 
 const PickerExample = () => {
   const [header, setHeader] = useState<PickerProps["selectedHeaderType"]>(CompositeHeaderDiscriminate_Parameter);
-  const [ioType, setIOType] = useState<PickerProps["selectedIOType"]>(IOType_FreeText("existing type"));
+  const [ioType, setIOType] = useState<PickerProps["selectedIOType"]>(customIOType("existing type"));
   const [selection, setSelection] = useState("none");
   const [submits, setSubmits] = useState(0);
 

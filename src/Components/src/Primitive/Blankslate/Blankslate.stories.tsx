@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 import React, { useState } from 'react';
 import { expect, userEvent, within } from 'storybook/test';
 import { Blankslate } from './Blankslate.fs.js';
-import { ofArray } from '../../fable_modules/fable-library-ts.5.0.0-alpha.21/List.ts';
+import { listOfArray as ofArray } from '../../Util/Interop.fs.js';
 
 const BasicExample = () => (
   <div className="swt:w-105 swt:max-w-full">

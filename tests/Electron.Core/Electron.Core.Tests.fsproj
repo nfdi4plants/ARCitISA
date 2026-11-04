@@ -4,6 +4,10 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="TestHelpers.fs" />
+    <Compile Include="ContractExecutor.test.fs" />
+    <Compile Include="ContractPolicy.test.fs" />
+    <Compile Include="WorkflowPayloads.test.fs" />
+    <Compile Include="ArcSave.test.fs" />
     <Compile Include="AppMenu.test.fs" />
     <Compile Include="ArcMerge\MockData.fs" />
     <Compile Include="ArcMerge\HasInMemoryChanges.test.fs" />
@@ -42,6 +46,7 @@
     <Compile Include="UserDefaults.test.fs" />
     <Compile Include="VersionControlComposition.test.fs" />
     <Compile Include="VersionControlMappings.test.fs" />
+    <Compile Include="VersionControlProgressThrottle.test.fs" />
     <Compile Include="VersionControlSessionHost.test.fs" />
     <Compile Include="VersionControlLakeFs.test.fs" />
     <Compile Include="VersionControlTextDiff.test.fs" />
