@@ -85,6 +85,26 @@ let sidebarLog
 
         Some mapped
 
+/// The last finished log for the sidebar. The title starts with the operation name and ends with the local time of
+/// the end, with the ARC name between them when there is one. A log without lines is None.
+let sidebarLastLog
+    (lastLog: Renderer.Context.OperationLog.FinishedOperationLog)
+    : Swate.Components.Page.GitSidebarTypes.GitSidebarLastLog option =
+    sidebarLog lastLog.Log
+    |> Option.map (fun log ->
+        let finishedAt =
+            System.DateTimeOffset.FromUnixTimeMilliseconds(int64 lastLog.FinishedAt).LocalDateTime.ToString("HH:mm")
+
+        let title =
+            [ Some lastLog.Label; lastLog.ArcName; Some finishedAt ]
+            |> List.choose id
+            |> String.concat " · "
+
+        let mapped: Swate.Components.Page.GitSidebarTypes.GitSidebarLastLog = { Title = title; Log = log }
+
+        mapped
+    )
+
 let private activityLabel (action: Renderer.Context.LfsActivityContext.LfsRunningAction) =
     $"{activityVerb action.Kind} {Swate.Components.Shared.PathHelpers.getFileName action.Target}"
 
@@ -178,6 +198,12 @@ let Main () =
     // The log changes with every batch of output. A sidebar render for something else keeps the mapped lines.
     let operationLog =
         React.useMemo ((fun () -> sidebarLog gitStateCtx.state.CurrentLog), [| box gitStateCtx.state.CurrentLog |])
+
+    let lastLog =
+        React.useMemo (
+            (fun () -> gitStateCtx.state.LastLog |> Option.bind sidebarLastLog),
+            [| box gitStateCtx.state.LastLog |]
+        )
 
     // The dialog resets its name and owner state when the prompt object changes. The model keeps
     // the same prompt object between unrelated updates, so a re-render of the panel keeps them.
@@ -312,6 +338,7 @@ let Main () =
             backgroundActivities = backgroundActivities,
             operationSteps = gitStateCtx.state.CurrentSteps,
             ?operationLog = operationLog,
+            ?lastLog = lastLog,
             ?busyHeadlineOverride =
                 waitingHeadline
                     gitStateCtx.state.BusyOperation

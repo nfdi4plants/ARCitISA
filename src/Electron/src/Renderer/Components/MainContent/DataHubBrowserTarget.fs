@@ -69,6 +69,16 @@ let DataHubBrowserTarget () =
     let isCloneBusy = gitStateCtx.state.BusyOperation.IsSome
     let runStatus = Renderer.Context.GitWorkflow.currentRunStatus gitStateCtx.state
 
+    // The last Git log of this window, so the output of a clone that failed can be read here.
+    let lastLog =
+        React.useMemo (
+            (fun () ->
+                gitStateCtx.state.LastLog
+                |> Option.bind Renderer.Components.LeftSidebar.Git.GitSidebarPanel.sidebarLastLog
+            ),
+            [| box gitStateCtx.state.LastLog |]
+        )
+
     let cloneAndOpenRepo (projectInfo: ExploreProjectDto) =
         promise {
             let! destinationResult = Api.ipcArcVaultApi.pickDirectory ()
@@ -106,6 +116,7 @@ let DataHubBrowserTarget () =
                 ?runStatus = runStatus,
                 ?errorNotice = gitStateCtx.state.ErrorNotice,
                 ?warningNotice = gitStateCtx.state.WarningNotice,
+                ?lastLog = lastLog,
                 busyTestId = "DataHubCloneProgressNotice",
                 errorTestId = "DataHubCloneErrorNotice",
                 ?onCancelOperation =

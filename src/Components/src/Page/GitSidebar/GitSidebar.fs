@@ -483,6 +483,8 @@ type private LogViewerProps = {
     PanelTestId: string
     PanelLabel: string
     CopyTestId: string
+    /// The noun in the toggle text, as in "Show logs".
+    Subject: string
 }
 
 [<Erase; Mangle(false)>]
@@ -566,7 +568,14 @@ type GitSidebar =
                                 "swt:iconify swt:fluent--chevron-right-24-regular swt:size-4"
                         )
                     ]
-                    Html.span [ prop.text (if isOpen then "Hide logs" else "Show logs") ]
+                    Html.span [
+                        prop.text (
+                            if isOpen then
+                                $"Hide {props.Subject}"
+                            else
+                                $"Show {props.Subject}"
+                        )
+                    ]
                 ]
             ]
 
@@ -656,7 +665,8 @@ type GitSidebar =
             ?backgroundActivities: GitSidebarBackgroundActivity[],
             ?busyHeadlineOverride: string,
             ?operationSteps: GitSidebarStep[],
-            ?operationLog: GitSidebarLog
+            ?operationLog: GitSidebarLog,
+            ?lastLog: GitSidebarLastLog
         ) =
         let runStatus = defaultArg runStatus GitSidebarRunStatus.Idle
 
@@ -678,6 +688,7 @@ type GitSidebar =
                         PanelTestId = "GitSidebarLogPanel"
                         PanelLabel = "Operation logs"
                         CopyTestId = "GitSidebarCopyLogs"
+                        Subject = "logs"
                     }
                 )
             | _ -> Html.none
@@ -709,8 +720,37 @@ type GitSidebar =
                         PanelTestId = "GitSidebarBackgroundLogPanel"
                         PanelLabel = "Background activity logs"
                         CopyTestId = "GitSidebarBackgroundCopyLogs"
+                        Subject = "logs"
                     }
                 )
+
+        // The last log appears only while no operation of this sidebar runs, so it never competes with the live log.
+        let lastLogView =
+            match runStatus, lastLog with
+            | (GitSidebarRunStatus.Idle | GitSidebarRunStatus.BusyWithoutNotice), Some lastLog when
+                lastLog.Log.Lines.Length > 0
+                ->
+                Html.div [
+                    prop.className "swt:min-w-0 swt:px-3 swt:pt-3 swt:@max-xs:px-2"
+                    prop.children [
+                        GitSidebar.LogViewer(
+                            {
+                                Sections = [|
+                                    {
+                                        Title = Some lastLog.Title
+                                        Log = lastLog.Log
+                                    }
+                                |]
+                                ShowTestId = "GitSidebarShowLastLog"
+                                PanelTestId = "GitSidebarLastLogPanel"
+                                PanelLabel = "Last Git log"
+                                CopyTestId = "GitSidebarCopyLastLog"
+                                Subject = "last log"
+                            }
+                        )
+                    ]
+                ]
+            | _ -> Html.none
 
         let cancelButton =
             onCancelOperation
@@ -925,6 +965,8 @@ type GitSidebar =
                     ]
                 ]
             | None -> Html.none
+
+            lastLogView
         ]
 
     [<ReactComponent>]
@@ -2310,7 +2352,8 @@ type GitSidebar =
             ?backgroundActivities: GitSidebarBackgroundActivity[],
             ?busyHeadlineOverride: string,
             ?operationSteps: GitSidebarStep[],
-            ?operationLog: GitSidebarLog
+            ?operationLog: GitSidebarLog,
+            ?lastLog: GitSidebarLastLog
         ) =
 
         let runStatus = defaultArg runStatus GitSidebarRunStatus.Idle
@@ -2756,7 +2799,8 @@ type GitSidebar =
                     ?backgroundActivities = backgroundActivities,
                     ?busyHeadlineOverride = busyHeadlineOverride,
                     ?operationSteps = operationSteps,
-                    ?operationLog = operationLog
+                    ?operationLog = operationLog,
+                    ?lastLog = lastLog
                 )
 
                 GitSidebar.BranchStatusDetails(branchHeaderProps)

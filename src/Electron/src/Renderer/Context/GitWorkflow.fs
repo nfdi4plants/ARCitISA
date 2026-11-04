@@ -236,6 +236,12 @@ type GitState = {
     /// The raw output that the running operation sent. Only the output of the operation that the sidebar shows
     /// lands here, see isForeignOperation.
     CurrentLog: OperationLog.OperationLog
+    /// The name of the running operation for the last log, decided when the operation starts. None for a
+    /// refresh, so a refresh log never becomes the last log.
+    CurrentLogName: OperationLog.OperationLogName option
+    /// The log of the last operation that ended with output. It stays when another ARC opens and is gone when
+    /// the window closes or reloads, since it lives only in memory.
+    LastLog: OperationLog.FinishedOperationLog option
     /// Whether the busy operation has sent any progress or output of its own since it started. The sidebar says
     /// that the operation waits for a file tree action only while this is false. The flag survives a phase change
     /// of a write and resets when a busy operation starts or ends.
@@ -312,6 +318,8 @@ type GitState = {
         CurrentSteps = [||]
         CurrentStepPhases = [||]
         CurrentLog = OperationLog.empty
+        CurrentLogName = None
+        LastLog = None
         OperationReported = false
         OperationStartedAt = None
         ErrorNotice = None
@@ -1562,20 +1570,56 @@ let private isLocalPrimarySaveFailure (success: WriteSuccess) =
         recovery = Some VersionControlCodes.Recovery.ReconcileIndex
     )
 
-let private withBusyOperation busyOperation model = {
-    model with
-        BusyOperation = busyOperation
-        BusyNotice = busyOperation |> Option.bind busyNoticeFromOperation
-        CurrentProgress = None
-        CurrentProgressPhase = None
-        CurrentSteps = [||]
-        CurrentStepPhases = [||]
-        CurrentLog = OperationLog.empty
-        OperationReported = false
-        OperationStartedAt = busyOperation |> Option.map (fun _ -> JS.Constructors.Date.now ())
-        CurrentOperation = None
-        RefreshOperationId = None
+/// Moves the output of the operation that ends into LastLog. An operation without output and a refresh (no
+/// CurrentLogName) keep the previous last log.
+let private keepLastLog (model: GitState) : GitState =
+    match model.CurrentLogName with
+    | Some name when model.CurrentLog.Lines.Length > 0 ->
+        let finished: OperationLog.FinishedOperationLog = {
+            Label = name.Label
+            ArcName = name.ArcName
+            FinishedAt = JS.Constructors.Date.now ()
+            Log = model.CurrentLog
+        }
+
+        { model with LastLog = Some finished }
+    | _ -> model
+
+/// A log name with the folder of the ARC path as the ARC name.
+let private logName (label: string) (arcPath: string option) : OperationLog.OperationLogName = {
+    Label = label
+    ArcName = arcPath |> Option.map Swate.Components.Shared.PathHelpers.getFileName
 }
+
+/// The log name of an operation: its busy notice and the folder of the open ARC.
+let private operationLogName (model: GitState) (operation: GitBusyOperation) : OperationLog.OperationLogName option =
+    busyNoticeFromOperation operation
+    |> Option.map (fun label -> logName label model.CurrentArcPath)
+
+let private withBusyOperation
+    (busyOperation: GitBusyOperation option)
+    (name: OperationLog.OperationLogName option)
+    model
+    =
+    {
+        model with
+            BusyOperation = busyOperation
+            BusyNotice = busyOperation |> Option.bind busyNoticeFromOperation
+            CurrentProgress = None
+            CurrentProgressPhase = None
+            CurrentSteps = [||]
+            CurrentStepPhases = [||]
+            CurrentLog = OperationLog.empty
+            CurrentLogName = name
+            OperationReported = false
+            OperationStartedAt = busyOperation |> Option.map (fun _ -> JS.Constructors.Date.now ())
+            CurrentOperation = None
+            RefreshOperationId = None
+    }
+
+/// Starts an operation whose log is named after its busy notice.
+let private startOperation (operation: GitBusyOperation) (model: GitState) =
+    withBusyOperation (Some operation) (operationLogName model operation) model
 
 let private startRefreshRequest requestId model = {
     model with
@@ -4942,6 +4986,25 @@ let private withSeededGitValues (defaults: UserDefaultValuesDto) (model: GitStat
 }
 
 let private resetFor (model: GitState) =
+    // An operation that still runs when the ARC changes ends here for the sidebar. Its output goes to the last
+    // log, and a closing line tells the reader that the log is cut off. An operation without output keeps the
+    // previous last log, as everywhere else.
+    let ended =
+        if model.BusyOperation.IsSome && model.CurrentLog.Lines.Length > 0 then
+            let cutOff: VersionControlOutputEntryDto = {
+                CommandId = ""
+                Kind = "notice"
+                Text = "The ARC changed before this operation ended, so the log stops here."
+                IsPartial = false
+            }
+
+            {
+                model with
+                    CurrentLog = OperationLog.append [| cutOff |] model.CurrentLog
+            }
+        else
+            model
+
     {
         GitState.Empty with
             SidebarVisible = model.SidebarVisible
@@ -4949,6 +5012,7 @@ let private resetFor (model: GitState) =
             // The page load counter keeps counting. A page load of an ARC that closed could finish after
             // a counter that started again at 0 has reached its id in a later ARC.
             PageLoadRequestId = model.PageLoadRequestId
+            LastLog = (keepLastLog ended).LastLog
     }
     |> withSeededGitValues model.UserDefaults
 
@@ -4971,7 +5035,7 @@ let private clearPageOnFirstMissingCmd (setPageState: PageState option -> unit) 
     | GitRepositoryAvailability.Ready -> applyPageChangeCmd setPageState GitPageChange.Clear
 
 let private clearBusy (model: GitState) = {
-    model with
+    keepLastLog model with
         BusyOperation = None
         BusyNotice = None
         CurrentProgress = None
@@ -4979,6 +5043,7 @@ let private clearBusy (model: GitState) = {
         CurrentSteps = [||]
         CurrentStepPhases = [||]
         CurrentLog = OperationLog.empty
+        CurrentLogName = None
         OperationReported = false
         OperationStartedAt = None
         CurrentOperation = None
@@ -5011,6 +5076,20 @@ let private busyOperationForWriteRequest =
     | ClearStaleLock -> GitBusyOperation.ClearingStaleLock
     | RestoreInterruptedPaths _ -> GitBusyOperation.RestoringInterruptedPaths
     | RetryMaterialization -> GitBusyOperation.RetryingMaterialization
+
+/// The title of the log of a write is the busy notice of its operation. A save is titled "Saving changes",
+/// because its busy operation changes with the phase of the save. A clone runs before its ARC opens, so its log
+/// names the folder of the clone target.
+let private logNameForWriteRequest
+    (model: GitState)
+    (writeRequest: WriteRequest)
+    : OperationLog.OperationLogName option =
+    match writeRequest with
+    | PrimarySave _ -> Some(logName "Saving changes" model.CurrentArcPath)
+    | Clone(cloneRequest, _) ->
+        busyNoticeFromOperation (busyOperationForWriteRequest writeRequest)
+        |> Option.map (fun label -> logName label (Some cloneRequest.TargetPath))
+    | _ -> operationLogName model (busyOperationForWriteRequest writeRequest)
 
 let private requiresArcForWriteRequest =
     function
@@ -5319,7 +5398,7 @@ let private updateCore
 
         let nextModel =
             model
-            |> withBusyOperation (Some GitBusyOperation.Refreshing)
+            |> withBusyOperation (Some GitBusyOperation.Refreshing) None
             |> startRefreshRequest requestId
             |> fun state -> {
                 state with
@@ -5367,7 +5446,7 @@ let private updateCore
 
         let nextModel =
             model
-            |> withBusyOperation (Some GitBusyOperation.Refreshing)
+            |> withBusyOperation (Some GitBusyOperation.Refreshing) None
             |> startRefreshRequest requestId
             // No notice text, so the sidebar shows no banner that pushes its content down.
             |> fun state -> { state with BusyNotice = None }
@@ -5458,7 +5537,7 @@ let private updateCore
 
         let nextModel =
             model
-            |> withBusyOperation (Some GitBusyOperation.InitializingRepository)
+            |> startOperation GitBusyOperation.InitializingRepository
             |> fun state -> {
                 state with
                     ErrorNotice = None
@@ -5583,7 +5662,7 @@ let private updateCore
 
             let nextModel =
                 model
-                |> withBusyOperation (Some(GitBusyOperation.ConfirmingMergeResolution resolution.Path))
+                |> startOperation (GitBusyOperation.ConfirmingMergeResolution resolution.Path)
                 |> fun state -> {
                     state with
                         CurrentOperation = Some { OperationId = operationId }
@@ -5978,7 +6057,7 @@ let private updateCore
                             model with
                                 PublishOwnerChoice = Some choice
                         }
-                        |> withBusyOperation (Some GitBusyOperation.RenamingRepository)
+                        |> startOperation GitBusyOperation.RenamingRepository
                         |> fun state -> { state with ErrorNotice = None }
 
                     let cmd =
@@ -6067,7 +6146,7 @@ let private updateCore
 
                 let nextModel =
                     model
-                    |> withBusyOperation (Some GitBusyOperation.SwitchingBranch)
+                    |> startOperation GitBusyOperation.SwitchingBranch
                     |> fun state -> {
                         state with
                             ErrorNotice = None
@@ -6203,7 +6282,9 @@ let private updateCore
 
         let nextModel =
             model
-            |> withBusyOperation (Some(busyOperationForWriteRequest writeRequest))
+            |> withBusyOperation
+                (Some(busyOperationForWriteRequest writeRequest))
+                (logNameForWriteRequest model writeRequest)
             |> fun state -> {
                 state with
                     ErrorNotice = None

@@ -57,6 +57,9 @@ type GitSidebarLog = {
     Omitted: int
 }
 
+/// The log of the last operation that ended. Title names the operation and where and when it ran.
+type GitSidebarLastLog = { Title: string; Log: GitSidebarLog }
+
 [<RequireQualifiedAccess>]
 type GitSidebarRunStatus =
     | Idle

@@ -236,6 +236,16 @@ let private outputOf operationId (lines: (string * string) list) : VersionContro
         |> List.toArray
 }
 
+let private finishedLog label : Renderer.Context.OperationLog.FinishedOperationLog = {
+    Label = label
+    ArcName = Some "earlier-arc"
+    FinishedAt = 1.0
+    Log =
+        Renderer.Context.OperationLog.append
+            (outputOf "earlier-1" [ "stdout", "earlier line" ]).Entries
+            Renderer.Context.OperationLog.empty
+}
+
 let private sidebarStep label detail percent isCurrent : GitSidebarStep = {
     Label = label
     Detail = detail
@@ -3786,6 +3796,283 @@ Vitest.describe (
                 Vitest.expect(ended.CurrentLog.Lines.Length).toBe 0
                 Vitest.expect(ended.CurrentSteps.Length).toBe 0
                 Vitest.expect(ended.CurrentStepPhases).toEqual [||]
+        )
+
+        Vitest.test (
+            "a write labels its log with the busy notice of its operation",
+            fun () ->
+                let started, _ =
+                    update
+                        defaultDependencies
+                        ignore
+                        (WriteRequested(Push GitUpdateAcceptance.RequirePreview))
+                        runningState
+
+                Vitest.expect(started.CurrentLogName.IsSome).toBe true
+
+                Vitest
+                    .expect(started.CurrentLogName |> Option.map _.Label)
+                    .toEqual (busyNoticeFromOperation started.BusyOperation.Value)
+
+                let committing, _ =
+                    update
+                        defaultDependencies
+                        ignore
+                        (WriteRequested(CommitAll(prepareCommitAll runningState "msg")))
+                        runningState
+
+                Vitest
+                    .expect(committing.CurrentLogName |> Option.map _.Label)
+                    .toEqual (busyNoticeFromOperation committing.BusyOperation.Value)
+        )
+
+        Vitest.test (
+            "a save keeps the name of its log when its phase changes",
+            fun () ->
+                let started, _ =
+                    update
+                        defaultDependencies
+                        ignore
+                        (WriteRequested(PrimarySave(prepareCommitAll runningState "msg")))
+                        runningState
+
+                Vitest.expect(started.CurrentLogName.IsSome).toBe true
+
+                let afterPhase, _ =
+                    update
+                        defaultDependencies
+                        ignore
+                        (WritePhaseChanged(
+                            started.ArcSessionId,
+                            started.WriteRequestId,
+                            GitBusyOperation.PushingToRemote
+                        ))
+                        started
+
+                Vitest.expect(afterPhase.BusyOperation).toEqual (Some GitBusyOperation.PushingToRemote)
+                Vitest.expect(afterPhase.CurrentLogName.IsSome).toBe true
+                Vitest.expect(afterPhase.CurrentLogName).toEqual started.CurrentLogName
+        )
+
+        Vitest.test (
+            "a clone that ends after output keeps the folder of the clone target as the ARC name",
+            fun () ->
+                let cloneRequest = {
+                    OperationId = "clone-op"
+                    ProviderLocation = "https://gitlab.example/carol/new-arc.git"
+                    DisplayName = Some "new-arc"
+                    TargetPath = "C:/data/new-arc"
+                    TargetRef = None
+                    MaterializeAllObjects = false
+                }
+
+                let writeRequest = Clone(cloneRequest, ignore)
+
+                let cloning, _ =
+                    update defaultDependencies ignore (WriteRequested writeRequest) runningState
+
+                let withOutput, _ =
+                    update
+                        defaultDependencies
+                        ignore
+                        (OperationOutputReceived(outputOf "op-1" [ "stderr", "fatal: repository not found" ]))
+                        cloning
+
+                let ended, _ =
+                    update
+                        defaultDependencies
+                        ignore
+                        (WriteCompleted(
+                            withOutput.ArcSessionId,
+                            withOutput.WriteRequestId,
+                            writeRequest,
+                            Error "not found"
+                        ))
+                        withOutput
+
+                Vitest.expect(ended.LastLog.IsSome).toBe true
+                Vitest.expect(ended.LastLog.Value.ArcName).toEqual (Some "new-arc")
+        )
+
+        Vitest.test (
+            "a write that ends after output keeps the output as the last log",
+            fun () ->
+                let apply state message =
+                    fst (update defaultDependencies ignore message state)
+
+                let before = JS.Constructors.Date.now ()
+                let writeRequest = Push GitUpdateAcceptance.RequirePreview
+                let started = apply runningState (WriteRequested writeRequest)
+
+                let withOutput =
+                    apply started (OperationOutputReceived(outputOf "op-1" [ "command", "git push"; "stdout", "done" ]))
+
+                let ended =
+                    apply
+                        withOutput
+                        (WriteCompleted(
+                            withOutput.ArcSessionId,
+                            withOutput.WriteRequestId,
+                            writeRequest,
+                            Error "rejected"
+                        ))
+
+                let last = ended.LastLog.Value
+
+                Vitest.expect(last.Label).toBe started.CurrentLogName.Value.Label
+                Vitest.expect(last.ArcName).toEqual (Some "arc")
+                Vitest.expect(last.FinishedAt >= before).toBe true
+                Vitest.expect(last.Log.Lines |> Array.map _.Text).toEqual [| "git push"; "done" |]
+                Vitest.expect(ended.CurrentLog.Lines.Length).toBe 0
+                Vitest.expect(ended.CurrentLogName).toEqual None
+        )
+
+        Vitest.test (
+            "a write that succeeds after output keeps the output as the last log",
+            fun () ->
+                let apply state message =
+                    fst (update defaultDependencies ignore message state)
+
+                let writeRequest = Push GitUpdateAcceptance.RequirePreview
+                let started = apply runningState (WriteRequested writeRequest)
+
+                let withOutput =
+                    apply started (OperationOutputReceived(outputOf "op-1" [ "command", "git push"; "stdout", "done" ]))
+
+                let ended =
+                    apply
+                        withOutput
+                        (WriteCompleted(
+                            withOutput.ArcSessionId,
+                            withOutput.WriteRequestId,
+                            writeRequest,
+                            Ok(
+                                Completed(
+                                    UnitSuccess {
+                                        Refresh = refreshed cleanStatus
+                                        PageChange = GitPageChange.NoChange
+                                        SelectedChangePath = None
+                                        Warning = None
+                                        Partial = None
+                                        Published = None
+                                        ObjectsMissing = None
+                                    }
+                                )
+                            )
+                        ))
+
+                Vitest.expect(ended.ErrorNotice).toEqual None
+                Vitest.expect(ended.BusyOperation).toEqual None
+                Vitest.expect(ended.LastLog.IsSome).toBe true
+                Vitest.expect(ended.LastLog.Value.Label).toBe started.CurrentLogName.Value.Label
+                Vitest.expect(ended.LastLog.Value.Log.Lines |> Array.map _.Text).toEqual [| "git push"; "done" |]
+                Vitest.expect(ended.CurrentLog.Lines.Length).toBe 0
+                Vitest.expect(ended.CurrentLogName).toEqual None
+        )
+
+        Vitest.test (
+            "a refresh with output that ends leaves the last log unchanged",
+            fun () ->
+                let apply state message =
+                    fst (update defaultDependencies ignore message state)
+
+                let earlier = finishedLog "Earlier operation"
+
+                let refreshing =
+                    apply
+                        {
+                            runningState with
+                                LastLog = Some earlier
+                        }
+                        RefreshRequested
+
+                Vitest.expect(refreshing.CurrentLogName).toEqual None
+
+                let withOutput =
+                    apply refreshing (OperationOutputReceived(outputOf "op-1" [ "stdout", "line" ]))
+
+                Vitest.expect(withOutput.CurrentLog.Lines.Length).toBe 1
+
+                let ended =
+                    apply withOutput (RefreshCompleted(withOutput.RefreshRequestId, Error "failed"))
+
+                Vitest.expect(ended.LastLog).toEqual (Some earlier)
+        )
+
+        Vitest.test (
+            "an operation that ends without output keeps the previous last log",
+            fun () ->
+                let apply state message =
+                    fst (update defaultDependencies ignore message state)
+
+                let earlier = finishedLog "Earlier operation"
+                let writeRequest = Push GitUpdateAcceptance.RequirePreview
+
+                let started =
+                    apply
+                        {
+                            runningState with
+                                LastLog = Some earlier
+                        }
+                        (WriteRequested writeRequest)
+
+                let ended =
+                    apply
+                        started
+                        (WriteCompleted(started.ArcSessionId, started.WriteRequestId, writeRequest, Error "rejected"))
+
+                Vitest.expect(ended.LastLog).toEqual (Some earlier)
+        )
+
+        Vitest.test (
+            "opening another ARC keeps the last log",
+            fun () ->
+                let earlier = finishedLog "Earlier operation"
+
+                let next, _ =
+                    update defaultDependencies ignore (ArcPathChanged(Some "C:/other-arc")) {
+                        runningState with
+                            LastLog = Some earlier
+                    }
+
+                Vitest.expect(next.CurrentArcPath).toEqual (Some "C:/other-arc")
+                Vitest.expect(next.LastLog).toEqual (Some earlier)
+        )
+
+        Vitest.test (
+            "opening another ARC while an operation runs keeps its output as the last log",
+            fun () ->
+                let busy = {
+                    runningState with
+                        BusyOperation = Some GitBusyOperation.CommittingAllChanges
+                        CurrentLogName =
+                            busyNoticeFromOperation GitBusyOperation.CommittingAllChanges
+                            |> Option.map (fun label ->
+                                let name: Renderer.Context.OperationLog.OperationLogName = {
+                                    Label = label
+                                    ArcName = Some "arc"
+                                }
+
+                                name
+                            )
+                        CurrentOperation = Some { OperationId = "op-1" }
+                        CurrentLog =
+                            Renderer.Context.OperationLog.append
+                                (outputOf "op-1" [ "stdout", "committing" ]).Entries
+                                Renderer.Context.OperationLog.empty
+                }
+
+                let next, _ =
+                    update defaultDependencies ignore (ArcPathChanged(Some "C:/other-arc")) busy
+
+                Vitest.expect(next.CurrentArcPath).toEqual (Some "C:/other-arc")
+                Vitest.expect(next.LastLog.IsSome).toBe true
+
+                let lines = next.LastLog.Value.Log.Lines
+
+                Vitest.expect(lines.Length).toBe 2
+                Vitest.expect(lines[0].Text).toBe "committing"
+                Vitest.expect(lines[1].Kind).toBe "notice"
         )
 
         Vitest.test (

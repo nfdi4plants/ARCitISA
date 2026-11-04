@@ -18,6 +18,23 @@ type OperationLog = {
     Omitted: int
 }
 
+/// The name of an operation and the ARC it works on, decided when the operation starts.
+type OperationLogName = {
+    Label: string
+    ArcName: string option
+}
+
+/// The log of an operation that ended, kept so the user can read it after the operation is gone.
+type FinishedOperationLog = {
+    /// The name of the operation.
+    Label: string
+    /// The folder name of the ARC that was open, None without an ARC.
+    ArcName: string option
+    /// Date.now () when the operation ended.
+    FinishedAt: float
+    Log: OperationLog
+}
+
 [<Literal>]
 let MaxLines = 2000
 

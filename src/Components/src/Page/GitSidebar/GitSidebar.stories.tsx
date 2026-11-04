@@ -928,6 +928,43 @@ export const ProgressNoticeFollowsSidebarSize: Story = {
   },
 };
 
+const lastLogTitle = "Committing all changes · demo-arc · 14:32";
+const lastLogLines = [
+  { Kind: "command", Text: "git add --all" },
+  { Kind: "command", Text: "git commit -m \"Add measurements\"" },
+  { Kind: "stderr", Text: "error: gpg failed to sign the data" },
+  { Kind: "notice", Text: "The commit was not created." },
+];
+
+export const IdleWithLastLog: Story = {
+  args: {
+    status: baseStatus,
+    changedFiles: changedFiles.slice(),
+    branchOptions: branchOptions.slice(),
+    callbacks: buildCallbacks(),
+    errorNotice: "Committing all changes failed.",
+    lastLog: { Title: lastLogTitle, Log: { Lines: lastLogLines, Omitted: 0 } },
+    downloadLargeFiles: true,
+    lfsAutoTrackThresholdMb: 1,
+    diffIndexingLimitMb: 1024,
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    await expect(canvas.queryByTestId("GitSidebarLastLogPanel")).not.toBeInTheDocument();
+    await userEvent.click(canvas.getByTestId("GitSidebarShowLastLog"));
+
+    const panel = canvas.getByTestId("GitSidebarLastLogPanel");
+    await expect(panel).toHaveTextContent(lastLogTitle);
+    await expect(panel).toHaveTextContent("$ git add --all");
+    await expect(panel).toHaveTextContent("error: gpg failed to sign the data");
+    await expect(canvas.getByTestId("GitSidebarCopyLastLog")).toBeInTheDocument();
+
+    await userEvent.click(canvas.getByTestId("GitSidebarShowLastLog"));
+    await expect(canvas.queryByTestId("GitSidebarLastLogPanel")).not.toBeInTheDocument();
+  },
+};
+
 export const CreateBranchModal: Story = {
   args: {
     status: baseStatus,
