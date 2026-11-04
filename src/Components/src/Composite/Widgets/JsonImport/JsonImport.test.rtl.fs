@@ -309,6 +309,43 @@ Vitest.test (
 )
 
 Vitest.test (
+    "a disabled Import says why, and the reason goes away once the import can start",
+    fun () -> promise {
+        let harness = newHarness ()
+
+        renderWidget
+            harness
+            (currentAssay ())
+            None
+            (pickerOf (jsonOf (assayWith [ "A" ]) JsonExportFormat.ROCrate))
+            None
+
+        do! openReview ()
+        let reason = "table-import-blocked-reason"
+        Vitest.expect(exists reason).toBe false
+
+        RTL.fireEvent.click (radio 0 "NoImport")
+        Vitest.expect((button "json-import-confirm").disabled).toBe true
+        Vitest.expect((RTL.screen.getByTestId reason).textContent).toBe "Select at least one table to import."
+
+        RTL.fireEvent.click (radio 0 "ImportAsNewTable")
+        Vitest.expect(exists reason).toBe false
+        openColumns 0
+
+        for box in checkboxes () do
+            RTL.fireEvent.click box
+
+        // The table hint sits in the details the user may have closed, so the footer has to name the table.
+        Vitest.expect((button "json-import-confirm").disabled).toBe true
+        Vitest.expect((RTL.screen.getByTestId reason).textContent).toBe "Select at least one column of \"A\"."
+
+        RTL.fireEvent.click ((checkboxes ()).[0])
+        Vitest.expect((button "json-import-confirm").disabled).toBe false
+        Vitest.expect(exists reason).toBe false
+    }
+)
+
+Vitest.test (
     "append is disabled without an active table and enabled with one",
     fun () -> promise {
         let content = jsonOf (assayWith [ "A" ]) JsonExportFormat.ROCrate

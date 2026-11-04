@@ -63,8 +63,9 @@ Vitest.test (
         setNewTableName "SugarExtraction"
         Vitest.expect(RTL.screen.queryByText(notice).IsNone).toBe true
 
-        RTL.screen.getByText "A table named \"SugarExtraction\" already exists."
-        |> ignore
+        // The name field and the reason next to Import both name the problem.
+        let nameError = "A table named \"SugarExtraction\" already exists."
+        Vitest.expect((RTL.screen.getAllByText nameError).Count).toBe 2
 
         Vitest.expect((importButton () :?> HTMLButtonElement).disabled).toBe true
 
@@ -73,6 +74,26 @@ Vitest.test (
         RTL.fireEvent.click (importButton ())
 
         Vitest.expect(Map.toArray submitted.Value.EnteredNames).toEqual [| 0, "Sugar extraction day 2" |]
+)
+
+Vitest.test (
+    "a disabled Import says why, and the reason goes away once the import can start",
+    fun () ->
+        renderModal (Template.init "SugarExtraction") [||] ignore
+
+        Vitest.expect(RTL.screen.queryByTestId("table-import-blocked-reason").IsNone).toBe true
+
+        RTL.fireEvent.click (RTL.screen.getByLabelText "Do not import")
+
+        Vitest.expect((importButton () :?> HTMLButtonElement).disabled).toBe true
+
+        Vitest.expect((RTL.screen.getByTestId "table-import-blocked-reason").textContent).toBe
+            "Select at least one table to import."
+
+        RTL.fireEvent.click (RTL.screen.getByLabelText "Append to active table")
+
+        Vitest.expect((importButton () :?> HTMLButtonElement).disabled).toBe false
+        Vitest.expect(RTL.screen.queryByTestId("table-import-blocked-reason").IsNone).toBe true
 )
 
 Vitest.test (

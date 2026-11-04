@@ -315,17 +315,27 @@ type JsonImportModal =
             | _ ->
                 let canImport = JsonHelper.canImport phase currentArcFile parsed decisions
 
+                let blockedReason = JsonHelper.importBlockedReason currentArcFile parsed decisions
+
                 Html.div [
-                    prop.className "swt:flex swt:w-full swt:gap-2"
+                    prop.className "swt:flex swt:w-full swt:items-center swt:gap-2"
                     prop.children [
                         footerButton "json-import-back" "swt:btn swt:btn-outline" "Back" importing onBack
                         footerButton "json-import-cancel" "swt:btn swt:btn-ghost" "Cancel" importing onCancel
-                        footerButton
-                            "json-import-confirm"
-                            "swt:btn swt:btn-primary swt:ml-auto"
-                            (if tableImport then "Import" else "Replace")
-                            (importing || not canImport)
-                            confirm
+                        Html.div [
+                            prop.className "swt:ml-auto swt:flex swt:min-w-0 swt:items-center swt:gap-2"
+                            prop.children [
+                                match blockedReason with
+                                | Some reason -> TableImportForm.BlockedReason reason
+                                | None -> Html.none
+                                footerButton
+                                    "json-import-confirm"
+                                    "swt:btn swt:btn-primary swt:shrink-0"
+                                    (if tableImport then "Import" else "Replace")
+                                    (importing || not canImport)
+                                    confirm
+                            ]
+                        ]
                     ]
                 ]
 

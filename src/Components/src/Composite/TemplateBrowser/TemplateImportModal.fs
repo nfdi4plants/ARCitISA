@@ -58,8 +58,7 @@ type TemplateImportModal =
                 (TableHelper.actionOf decisions)
                 decisions.EnteredNames
 
-        let canConfirmImport =
-            (TableHelper.validate currentArcFile sources decisions).IsNone
+        let blockedReason = TableHelper.validate currentArcFile sources decisions
 
         let submittedDecisions, setSubmittedDecisions = React.useState None
 
@@ -100,7 +99,7 @@ type TemplateImportModal =
                 ],
             footer =
                 Html.div [
-                    prop.className "swt:flex swt:w-full swt:gap-2"
+                    prop.className "swt:flex swt:w-full swt:items-center swt:gap-2"
                     prop.children [
                         Html.button [
                             prop.testId "template-import-cancel"
@@ -108,12 +107,20 @@ type TemplateImportModal =
                             prop.text "Cancel"
                             prop.onClick (fun _ -> setIsOpen false)
                         ]
-                        Html.button [
-                            prop.testId "template-import-confirm"
-                            prop.className "swt:btn swt:btn-primary swt:ml-auto"
-                            prop.disabled (not canConfirmImport)
-                            prop.text "Import"
-                            prop.onClick (fun _ -> confirmImport ())
+                        Html.div [
+                            prop.className "swt:ml-auto swt:flex swt:min-w-0 swt:items-center swt:gap-2"
+                            prop.children [
+                                match blockedReason with
+                                | Some reason -> TableImportForm.BlockedReason reason
+                                | None -> Html.none
+                                Html.button [
+                                    prop.testId "template-import-confirm"
+                                    prop.className "swt:btn swt:btn-primary swt:shrink-0"
+                                    prop.disabled blockedReason.IsSome
+                                    prop.text "Import"
+                                    prop.onClick (fun _ -> confirmImport ())
+                                ]
+                            ]
                         ]
                     ]
                 ]

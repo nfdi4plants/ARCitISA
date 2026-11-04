@@ -79,6 +79,13 @@ let applyImport
             }
         )
 
+/// The first reason the decisions block the import. A file that gets replaced has no decisions to check.
+let importBlockedReason (current: ArcFiles) (parsed: ParsedJsonFile) (decisions: TableImportDecisions) =
+    if isTableImport current then
+        Swate.Components.Composite.TableImport.Helper.validate current (sourcesOf parsed.File) decisions
+    else
+        None
+
 /// True when the user may start the import in the given phase with the given decisions.
 let canImport
     (phase: JsonImportModalPhase)
@@ -93,9 +100,4 @@ let canImport
         | JsonImportModalPhase.Importing
         | JsonImportModalPhase.Succeeded _ -> false
 
-    if not phaseAllows then
-        false
-    elif not (isTableImport current) then
-        true
-    else
-        (Swate.Components.Composite.TableImport.Helper.validate current (sourcesOf parsed.File) decisions).IsNone
+    phaseAllows && (importBlockedReason current parsed decisions).IsNone
