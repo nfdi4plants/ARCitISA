@@ -130,3 +130,32 @@ let tryText (log: OperationLog) : string option =
 /// other details. None for a log without lines.
 let tryDetails (log: OperationLog) : string option =
     tryText log |> Option.map (fun text -> "Git output\n" + text)
+
+/// The last finished log for the sidebar. The title starts with the operation name and ends with the local time of
+/// the end, with the ARC name between them when there is one. A log without lines is None.
+let toSidebarLastLog (lastLog: FinishedOperationLog) : Swate.Components.Page.GitSidebarTypes.GitSidebarLastLog option =
+    toSidebarLog lastLog.Log
+    |> Option.map (fun log ->
+        let finishedAt =
+            System.DateTimeOffset.FromUnixTimeMilliseconds(int64 lastLog.FinishedAt).LocalDateTime.ToString("HH:mm")
+
+        let title =
+            [ Some lastLog.Label; lastLog.ArcName; Some finishedAt ]
+            |> List.choose id
+            |> String.concat " · "
+
+        let mapped: Swate.Components.Page.GitSidebarTypes.GitSidebarLastLog = { Title = title; Log = log }
+
+        mapped
+    )
+
+/// The log that ended later. With only one of them, that one. On a tie the first wins.
+let newest (first: FinishedOperationLog option) (second: FinishedOperationLog option) : FinishedOperationLog option =
+    match first, second with
+    | Some firstLog, Some secondLog ->
+        if secondLog.FinishedAt > firstLog.FinishedAt then
+            second
+        else
+            first
+    | Some _, None -> first
+    | None, _ -> second

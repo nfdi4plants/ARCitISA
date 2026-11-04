@@ -25,6 +25,7 @@
     <Compile Include="Context\GitWorkflow.fs" />
     <Compile Include="Context\GitStateContext.fs" />
     <Compile Include="Context\LfsActivityContext.fs" />
+    <Compile Include="Context\LastGitLog.fs" />
     <Compile Include="Components\Helper\ArcViewSelection.fs" />
     <Compile Include="Components\Helper\ArcViewHelper.fs" />
     <Compile Include="Components\Helper\GitLfsHelper.fs" />

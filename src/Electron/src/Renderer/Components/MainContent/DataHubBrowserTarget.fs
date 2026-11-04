@@ -69,15 +69,8 @@ let DataHubBrowserTarget () =
     let isCloneBusy = gitStateCtx.state.BusyOperation.IsSome
     let runStatus = Renderer.Context.GitWorkflow.currentRunStatus gitStateCtx.state
 
-    // The last Git log of this window, so the output of a clone that failed can be read here.
-    let lastLog =
-        React.useMemo (
-            (fun () ->
-                gitStateCtx.state.LastLog
-                |> Option.bind Renderer.Components.LeftSidebar.Git.GitSidebarPanel.sidebarLastLog
-            ),
-            [| box gitStateCtx.state.LastLog |]
-        )
+    // The same last Git log as in the Git sidebar. It lets the user read the output of a clone that failed.
+    let lastLog = Renderer.Context.LastGitLog.useLastGitLog ()
 
     let cloneAndOpenRepo (projectInfo: ExploreProjectDto) =
         promise {

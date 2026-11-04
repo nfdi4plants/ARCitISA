@@ -102,6 +102,14 @@ type FileItemConfig = {
     ItemType: string
 }
 
+/// The failure of a Git LFS file action. Details holds text for a technical section, for example the output of the commands that ran.
+type GitLfsActionFailure = {
+    Message: string
+    Details: string option
+} with
+
+    static member ofMessage(message: string) = { Message = message; Details = None }
+
 // ============================================================================
 // FILE TREE OPERATIONS
 // ============================================================================

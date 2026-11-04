@@ -758,6 +758,36 @@ Vitest.describe (
         )
 
         Vitest.test (
+            "composed LFS pointer menu passes the details of a failed download to the error modal request",
+            fun () -> promise {
+                let item = createLfsFileItem "pointer.bin" "data/pointer.bin" false true
+                let enqueued = ResizeArray()
+
+                let failure = {
+                    GitLfsActionFailure.ofMessage "network down" with
+                        Details = Some "git lfs fetch output"
+                }
+
+                let config = {
+                    createContextMenuConfig () with
+                        enqueueError = enqueued.Add
+                        runDownloadLfsFile = fun _ -> promise { return Error failure }
+                }
+
+                let downloadItem =
+                    createComposedContextMenuItems config item
+                    |> List.find (fun menuItem -> menuItem.Label = "Download LFS file")
+
+                downloadItem.OnClick()
+                do! Promise.sleep 0
+
+                Vitest.expect(enqueued.Count).toBe 1
+                Vitest.expect(enqueued.[0].Details).toEqual failure.Details
+                Vitest.expect(enqueued.[0].Message.Contains failure.Message).toBe true
+            }
+        )
+
+        Vitest.test (
             "composed downloaded LFS menu disables download and enables freeing the local copy",
             fun () -> promise {
                 let item = createLfsFileItem "downloaded.bin" "data/downloaded.bin" true false

@@ -134,6 +134,10 @@ let private failureTextFor (failure: OperationFailureDto) (totalCount: int) =
 let private failureTextOf (details: string[]) (totalCount: int) =
     failureTextFor (failureOf details) totalCount
 
+/// The technical details without their heading line, which ends at the first line feed.
+let private withoutHeading (technical: string option) : string option =
+    technical |> Option.map (fun text -> text.Substring(text.IndexOf('\n') + 1))
+
 Vitest.describe (
     "folderFailureText",
     fun () ->
@@ -184,7 +188,7 @@ Vitest.describe (
                 Vitest.expect(lines.[3]).toBe "b.bin: no space"
                 Vitest.expect(message.Contains "Fetching reference").toBe false
                 Vitest.expect(message.Contains "failed to fetch some objects").toBe false
-                Vitest.expect(technical).toEqual (Some(String.concat "\n\n" details))
+                Vitest.expect(withoutHeading technical).toEqual (Some(String.concat "\n\n" details))
         )
 
         Vitest.test (
@@ -277,7 +281,7 @@ Vitest.describe (
                     Vitest.expect(failure.AffectedPaths.Length).toBe 0
                     Vitest.expect((linesOf message).Length).toBe 2
                     Vitest.expect(message.Contains full).toBe true
-                    Vitest.expect(technical).toEqual (Some(String.concat "\n\n" details))
+                    Vitest.expect(withoutHeading technical).toEqual (Some(String.concat "\n\n" details))
         )
 
         Vitest.test (

@@ -113,7 +113,7 @@ type FileTree =
             (kind: Renderer.Context.LfsActivityContext.LfsActionKind)
             (runAction: string -> string -> JS.Promise<Result<unit, string>>)
             (relativePath: string)
-            : JS.Promise<Result<unit, string>> =
+            : JS.Promise<Result<unit, GitLfsActionFailure>> =
             let entry =
                 Renderer.Context.FileTreeStore.tryFind fileStateCtx.fileTreeStore.Snapshot relativePath
 
@@ -135,7 +135,12 @@ type FileTree =
                         StartedAt = 0.0
                     }
 
-                    lfsActivityCtx.track runningAction (fun () -> runAction operationId path)
+                    lfsActivityCtx.track
+                        runningAction
+                        (fun () ->
+                            runAction operationId path
+                            |> Promise.map (Result.mapError GitLfsActionFailure.ofMessage)
+                        )
                 )
                 relativePath
 
@@ -180,10 +185,7 @@ type FileTree =
                                     fileStateCtx.fileTreeStore.Snapshot
                             )
 
-                        // The controller passes plain string errors, so the structured failure stays in this cell.
-                        let batchFailure = ref None
-
-                        let! _ =
+                        let! result =
                             lfsActivityCtx.runAll
                                 action.Activity
                                 targets
@@ -206,30 +208,34 @@ type FileTree =
                                         (fun () -> promise {
                                             match! action.RunBatch operationId paths with
                                             | Ok() -> return Ok()
-                                            | Error failure ->
-                                                batchFailure.Value <- Some failure
-                                                return Error failure.Message
+                                            | Error batchFailure ->
+                                                let message, details =
+                                                    Renderer.Components.Helper.GitLfsHelper.folderFailureText
+                                                        (PathHelpers.getFileName folderPath)
+                                                        action.Outcome
+                                                        paths.Length
+                                                        batchFailure
+
+                                                let failure: GitLfsActionFailure = {
+                                                    Message = message
+                                                    Details = details
+                                                }
+
+                                                return Error failure
                                         })
                                 )
 
-                        match batchFailure.Value with
-                        | Some failure ->
-                            let message, details =
-                                Renderer.Components.Helper.GitLfsHelper.folderFailureText
-                                    (PathHelpers.getFileName folderPath)
-                                    action.Outcome
-                                    paths.Length
-                                    failure
-
+                        match result with
+                        | Error failure ->
                             errorModal.enqueue (
                                 ErrorModalRequest.create (
-                                    message,
+                                    failure.Message,
                                     title = action.FailureTitle,
-                                    ?details = details,
+                                    ?details = failure.Details,
                                     ?scopeId = arcScopeId
                                 )
                             )
-                        | None -> ()
+                        | Ok() -> ()
 
                     return Ok()
                 })
@@ -502,7 +508,7 @@ type FileTree =
                 openDialog (FileSystemCreateDialog { Parent = item; Kind = kind })
 
         // The context menu runs Free through this request, which only opens the confirmation.
-        let requestFreeLocalLfsCopy (relativePath: string) : JS.Promise<Result<unit, string>> =
+        let requestFreeLocalLfsCopy (relativePath: string) : JS.Promise<Result<unit, GitLfsActionFailure>> =
             openDialog (FreeLfsDialog relativePath)
             promise { return Ok() }
 
@@ -611,11 +617,12 @@ type FileTree =
                 promise {
                     match! runFreeLocalLfsCopy path with
                     | Ok() -> ()
-                    | Error msg ->
+                    | Error failure ->
                         errorModal.enqueue (
                             ErrorModalRequest.create (
-                                $"Git LFS cleanup failed for '{PathHelpers.getFileName path}': {msg}",
+                                $"Git LFS cleanup failed for '{PathHelpers.getFileName path}': {failure.Message}",
                                 title = "Git LFS cleanup failed",
+                                ?details = failure.Details,
                                 ?scopeId = arcScopeId
                             )
                         )

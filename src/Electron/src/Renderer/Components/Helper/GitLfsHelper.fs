@@ -191,12 +191,13 @@ let folderFailureText
     : string * string option =
     let header = $"Not every file in '{folderName}' was processed."
 
-    // An entry can span several lines, so a blank line separates the entries.
+    // An entry can span several lines, so a blank line separates the entries. The heading line lets the reader tell
+    // the entries from other details.
     let technical =
         if failure.Details.Length = 0 then
             None
         else
-            Some(System.String.Join("\n\n", failure.Details))
+            Some("Failed files\n" + System.String.Join("\n\n", failure.Details))
 
     if failure.AffectedPaths.Length > 0 && failure.Details.Length > 0 then
         let listed = [|

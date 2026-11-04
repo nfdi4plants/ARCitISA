@@ -58,34 +58,6 @@ let private isCancellableBusyOperation (busyOperation: Renderer.Context.GitWorkf
     | Renderer.Context.GitWorkflow.GitBusyOperation.CloningRepository _ -> true
     | _ -> false
 
-let private activityVerb (kind: Renderer.Context.LfsActivityContext.LfsActionKind) =
-    match kind with
-    | Renderer.Context.LfsActivityContext.LfsActionKind.Download -> "Downloading"
-    | Renderer.Context.LfsActivityContext.LfsActionKind.Free -> "Freeing"
-
-/// The last finished log for the sidebar. The title starts with the operation name and ends with the local time of
-/// the end, with the ARC name between them when there is one. A log without lines is None.
-let sidebarLastLog
-    (lastLog: Renderer.Context.OperationLog.FinishedOperationLog)
-    : Swate.Components.Page.GitSidebarTypes.GitSidebarLastLog option =
-    Renderer.Context.OperationLog.toSidebarLog lastLog.Log
-    |> Option.map (fun log ->
-        let finishedAt =
-            System.DateTimeOffset.FromUnixTimeMilliseconds(int64 lastLog.FinishedAt).LocalDateTime.ToString("HH:mm")
-
-        let title =
-            [ Some lastLog.Label; lastLog.ArcName; Some finishedAt ]
-            |> List.choose id
-            |> String.concat " · "
-
-        let mapped: Swate.Components.Page.GitSidebarTypes.GitSidebarLastLog = { Title = title; Log = log }
-
-        mapped
-    )
-
-let private activityLabel (action: Renderer.Context.LfsActivityContext.LfsRunningAction) =
-    $"{activityVerb action.Kind} {Swate.Components.Shared.PathHelpers.getFileName action.Target}"
-
 /// One background item per running file tree action. The label names the kind and the folder or file. The detail
 /// and the percent come from the progress that the action reported, the same text as on the file tree row. The
 /// log is the output that the action sent, taken from the logs by operation id.
@@ -96,7 +68,7 @@ let backgroundActivityItems
     actions
     |> Array.map (fun action ->
         let item: Swate.Components.Page.GitSidebarTypes.GitSidebarBackgroundActivity = {
-            Label = activityLabel action
+            Label = Renderer.Context.LfsActivityContext.LfsRunningAction.label action
             Detail = Renderer.Context.LfsActivityContext.LfsRunningAction.progressText action
             ProgressPercent = Renderer.Context.LfsActivityContext.LfsRunningAction.progressPercent action
             Log =
@@ -145,7 +117,7 @@ let waitingHeadline
         actions
         |> Array.tryFind (fun action -> action.StartedAt < startedAt)
         |> Option.map (fun action ->
-            let label = activityLabel action
+            let label = Renderer.Context.LfsActivityContext.LfsRunningAction.label action
             $"Waits for {label.Substring(0, 1).ToLowerInvariant()}{label.Substring 1} to finish"
         )
     | _ -> None
@@ -183,11 +155,7 @@ let Main () =
             [| box gitStateCtx.state.CurrentLog |]
         )
 
-    let lastLog =
-        React.useMemo (
-            (fun () -> gitStateCtx.state.LastLog |> Option.bind sidebarLastLog),
-            [| box gitStateCtx.state.LastLog |]
-        )
+    let lastLog = Renderer.Context.LastGitLog.useLastGitLog ()
 
     // The dialog resets its name and owner state when the prompt object changes. The model keeps
     // the same prompt object between unrelated updates, so a re-render of the panel keeps them.

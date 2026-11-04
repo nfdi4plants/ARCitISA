@@ -22,7 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - In the JSON import dialog you can import column headers only, headers with units, or headers with all values, and you can rename new tables. (by @Etschbeijer)
 - After a JSON import, the dialog lists the new and changed tables and reminds you to save the ARC. (by @Etschbeijer)
 - The JSON and template import dialogs show each table as a scrollable grid, where you can leave out rows the same way as columns. In "Headers only" mode the grid hides the row checkboxes, because that mode imports no values. When you append a table, left-out rows stay empty, so the other rows keep lining up with the table in the editor. The dialog also explains that appended rows line up by position and that columns the table in the editor already has, including Input and Output, stay as they are. (by @Etschbeijer)
-- "Show last log" in the Git sidebar unfolds the output of the last Git operation after it ended, whether it worked or failed. It stays until another Git operation replaces it or the window closes, and refreshing keeps it. It also appears on the DataHub page after an ARC download. (by @caroott)
+- "Show last log" in the Git sidebar unfolds the output of the last Git operation after it ended, whether it worked or failed, including Git LFS downloads and frees from the file tree. It stays until another Git operation replaces it or the window closes, and refreshing keeps it. It also appears on the DataHub page after an ARC download. (by @caroott)
 - When a Git action fails, "Technical details" in the error message show the output of the Git commands it ran. (by @caroott)
 ### 🔄 Changed
 
