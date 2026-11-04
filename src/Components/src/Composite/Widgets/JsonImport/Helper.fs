@@ -41,6 +41,16 @@ let readError (fileName: string option) (exn: exn) : JsonImportError = {
     Details = Some exn.Message
 }
 
+/// A parser can accept a file of another format and find nothing in it, so the message names the format it read.
+let noTablesError (fileName: string option) (format: JsonExportFormat) : JsonImportError = {
+    Title = "Could not import JSON"
+    Message =
+        match fileName with
+        | Some name -> $"\"{name}\" contains no tables when read as {format.AsStringRdbl}."
+        | None -> $"The selected file contains no tables when read as {format.AsStringRdbl}."
+    Details = None
+}
+
 /// Name of the file type in the texts the user reads.
 let fileTypeDisplayName (file: ArcFiles) =
     match file with

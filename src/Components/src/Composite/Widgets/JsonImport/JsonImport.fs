@@ -122,15 +122,7 @@ type JsonImport =
                     onError (JsonHelper.parseError jsonFile.FileName exn)
                 | Ok file when JsonHelper.isTableImport arcFile && (JsonHelper.sourcesOf file).Length = 0 ->
                     setState JsonImportWidgetState.SelectingFile
-
-                    onError {
-                        Title = "Could not import JSON"
-                        Message =
-                            match jsonFile.FileName with
-                            | Some name -> $"\"{name}\" contains no tables to import."
-                            | None -> "The selected file contains no tables to import."
-                        Details = None
-                    }
+                    onError (JsonHelper.noTablesError jsonFile.FileName jsonFormat)
                 | Ok file ->
                     setState (
                         JsonImportWidgetState.Reviewing {

@@ -44,7 +44,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Choosing a JSON file no longer changes the ARC right away. The ARC changes only when you confirm the import in the dialog. (by @Etschbeijer)
 - For an investigation, workflow, template or DataMap, the JSON import asks before it replaces the content of the open file. A workflow keeps its identifier, so it stays in its folder. (by @Etschbeijer)
-- The JSON import describes each JSON format and says why a file could not be read. (by @Etschbeijer)
+- The JSON import describes each JSON format and says why a file could not be read. If a file has no tables in the selected format, the message names that format. (by @Etschbeijer)
 - The template import dialog uses the same choices as the JSON import ("Create new table", "Append to active table", "Do not import", and "Headers only", "With units", "With values"). It shows the size of each template and explains each import mode. (by @Etschbeijer)
 - Import in the template dialog stays disabled while an imported template has no column or no row selected. The JSON and template import dialogs say why Import is disabled next to the button. (by @Etschbeijer)
 - New files and folders and renamed items can't use names that Windows does not allow, such as names with a colon or names like CON and AUX, so the ARC can also be downloaded and used on Windows. #1429 (by @Etschbeijer)

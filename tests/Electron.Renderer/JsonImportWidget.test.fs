@@ -473,7 +473,10 @@ Vitest.describe (
 
                     do! waitUntil ((fun () -> observedError.IsSome), 100)
 
-                    Vitest.expect(observedError.Value.Message).toBe ("\"empty.json\" contains no tables to import.")
+                    Vitest
+                        .expect(observedError.Value.Message)
+                        .toBe ("\"empty.json\" contains no tables when read as RO-Crate Metadata.")
+
                     Vitest.expect(observedError.Value.Details).toEqual (None)
                     Vitest.expect(isNull (document.querySelector "[data-testid='modal_json-import']")).toBe (true)
                 finally

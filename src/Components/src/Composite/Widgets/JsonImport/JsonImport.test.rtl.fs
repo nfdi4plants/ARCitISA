@@ -309,6 +309,28 @@ Vitest.test (
 )
 
 Vitest.test (
+    "a file with tables read under the wrong format is reported with the format that found no tables",
+    fun () -> promise {
+        let harness = newHarness ()
+
+        renderWidget
+            harness
+            (currentAssay ())
+            None
+            (pickerOf (jsonOf (assayWith [ "A"; "B"; "C" ]) JsonExportFormat.ARCtrl))
+            None
+
+        choosePicker ()
+        do! eventually (fun () -> Vitest.expect(harness.Errors.Count).toBe 1)
+
+        Vitest.expect(harness.Errors.[0].Message).toBe
+            "\"fixture.json\" contains no tables when read as RO-Crate Metadata."
+
+        Vitest.expect(modalIsOpen ()).toBe false
+    }
+)
+
+Vitest.test (
     "a disabled Import says why, and the reason goes away once the import can start",
     fun () -> promise {
         let harness = newHarness ()
