@@ -105,6 +105,7 @@ type TableImportPreview =
             else
                 measured |> Array.map (fun item -> item.index, item.start)
 
+        // Only text is dimmed. On a parent the opacity would also fade the checkbox, whose unchecked border is faint.
         let dimmed (selected: bool) =
             if selected then "" else "swt:opacity-50"
 
@@ -152,10 +153,8 @@ type TableImportPreview =
                                         prop.className "swt:w-52 swt:min-w-52 swt:shrink-0 swt:px-2 swt:py-1"
                                         prop.children [
                                             Html.label [
-                                                prop.className [
+                                                prop.className
                                                     "swt:flex swt:items-center swt:gap-2 swt:cursor-pointer swt:border swt:border-base-300 swt:rounded-box swt:px-2 swt:py-1"
-                                                    dimmed selected
-                                                ]
                                                 prop.children [
                                                     Html.input [
                                                         prop.testId $"table-import-column-{index}-{columnIndex}"
@@ -168,7 +167,10 @@ type TableImportPreview =
                                                         )
                                                     ]
                                                     Html.span [
-                                                        prop.className "swt:text-xs swt:font-medium swt:truncate"
+                                                        prop.className [
+                                                            "swt:text-xs swt:font-medium swt:truncate"
+                                                            dimmed selected
+                                                        ]
                                                         prop.title header
                                                         prop.text header
                                                     ]
@@ -190,14 +192,14 @@ type TableImportPreview =
                                 prop.children [
                                     for (row, start) in visibleRows do
                                         let rowSelected = callbacks.IsRowSelected index row
+                                        // Without row selection no row can be left out.
+                                        let rowKept = rowSelected || not showRowSelection
 
                                         Html.div [
                                             prop.key $"{index}_{row}"
                                             prop.role.row
-                                            prop.className [
+                                            prop.className
                                                 "swt:flex swt:items-center swt:absolute swt:left-0 swt:top-0 swt:border-t swt:border-base-300"
-                                                dimmed (rowSelected || not showRowSelection)
-                                            ]
                                             prop.style [ style.top start; style.height rowHeight ]
                                             prop.children [
                                                 rowNumberCell false [
@@ -214,7 +216,10 @@ type TableImportPreview =
                                                             )
                                                         ]
                                                     Html.span [
-                                                        prop.className "swt:text-xs swt:opacity-70"
+                                                        prop.className [
+                                                            "swt:text-xs"
+                                                            if rowKept then "swt:opacity-70" else "swt:opacity-35"
+                                                        ]
                                                         prop.text (row + 1)
                                                     ]
                                                 ]
@@ -229,7 +234,9 @@ type TableImportPreview =
                                                         prop.custom ("role", "cell")
                                                         prop.className [
                                                             "swt:w-52 swt:min-w-52 swt:shrink-0 swt:px-2 swt:text-xs swt:truncate"
-                                                            dimmed (callbacks.IsColumnSelected index columnIndex)
+                                                            dimmed (
+                                                                rowKept && callbacks.IsColumnSelected index columnIndex
+                                                            )
                                                         ]
                                                         prop.title text
                                                         prop.text text

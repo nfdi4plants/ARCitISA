@@ -12,6 +12,15 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
+/** The opacity the user sees: an element fades with every ancestor that sets one. */
+const visibleOpacity = (element: Element | null): number => {
+  let opacity = 1;
+  for (let current = element; current; current = current.parentElement) {
+    opacity *= Number(getComputedStyle(current).opacity);
+  }
+  return opacity;
+};
+
 export const Default: Story = {
   render: () => <Sample />,
   play: async ({ canvasElement }) => {
@@ -25,6 +34,14 @@ export const Default: Story = {
 
     await userEvent.click(canvas.getByTestId('table-import-row-0-0'));
     expect(canvas.getByText('Columns: 4/5 selected, rows: 19/20 selected')).toBeInTheDocument();
+
+    // A left-out column or row dims its text. An unchecked box has a faint border, so it stays at full opacity.
+    const columnBox = canvas.getByTestId('table-import-column-0-0');
+    const rowBox = canvas.getByTestId('table-import-row-0-0');
+    expect(visibleOpacity(columnBox)).toBe(1);
+    expect(visibleOpacity(rowBox)).toBe(1);
+    expect(visibleOpacity(columnBox.nextElementSibling)).toBeLessThan(1);
+    expect(visibleOpacity(rowBox.nextElementSibling)).toBeLessThan(1);
 
     await userEvent.click(canvas.getByTestId('table-import-action-2-NoImport'));
     expect(canvas.getByTestId('table-import-action-2-NoImport')).toBeChecked();
