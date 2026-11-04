@@ -151,6 +151,59 @@ let private openColumns (index: int) =
     details.setAttribute ("open", "")
     RTL.act (fun () -> details.dispatchEvent (Browser.Event.Event.Create "toggle") |> ignore)
 
+let private appendingFirstTable = {
+    callbacks (fun _ _ -> ()) (fun _ _ -> true) with
+        GetImportAction =
+            fun index ->
+                if index = 0 then
+                    TableImportAction.AppendToActiveTable
+                else
+                    TableImportAction.ImportAsNewTable
+}
+
+let private rowRule = "Rows line up by position"
+let private columnRule = "including Input and Output"
+
+Vitest.test (
+    "only an appended table says how its rows and columns are merged",
+    fun () ->
+        RTL.render (
+            TableImportPreview.TableImportPreview([| sourceWithRows 3; createSource 1 "Second" |], appendingFirstTable)
+        )
+        |> ignore
+
+        let note = RTL.screen.getByTestId "table-import-append-note-0"
+        Vitest.expect(note.textContent).toContain rowRule
+        Vitest.expect(note.textContent).toContain columnRule
+        Vitest.expect(RTL.screen.queryByTestId("table-import-append-note-1").IsNone).toBe true
+)
+
+Vitest.test (
+    "the append note leaves out the row rule when no rows are imported",
+    fun () ->
+        let renderNote (source: ImportSource) (showRowSelection: bool) =
+            RTL.render (
+                TableImportPreview.TableImportPreview(
+                    [| source |],
+                    appendingFirstTable,
+                    showRowSelection = showRowSelection
+                )
+            )
+            |> ignore
+
+            let text = (RTL.screen.getByTestId "table-import-append-note-0").textContent
+            RTL.cleanup ()
+            text
+
+        for text in
+            [
+                renderNote (sourceWithRows 3) false
+                renderNote (sourceWithRows 0) true
+            ] do
+            Vitest.expect(text).toContain columnRule
+            Vitest.expect(text).not.toContain rowRule
+)
+
 Vitest.test (
     "a large table renders only the visible rows with their cell texts",
     fun () ->

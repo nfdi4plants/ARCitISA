@@ -455,6 +455,42 @@ Vitest.test (
         Vitest.expect(table.GetCellAt(0, 0)).toEqual (CompositeCell.FreeText "source-1")
 )
 
+// The dialog describes this rule to the user in the append note of TableImportPreview.
+Vitest.test (
+    "appending a longer source lines rows up by position and keeps the columns the active table already has",
+    fun () ->
+        let source = ArcTable.init "Long"
+
+        source.AddColumn(
+            CompositeHeader.Input IOType.Source,
+            ResizeArray [ for i in 1..5 -> CompositeCell.FreeText $"imported-{i}" ]
+        )
+
+        source.AddColumn(
+            CompositeHeader.Comment "Note",
+            ResizeArray [ for i in 1..5 -> CompositeCell.FreeText $"note-{i}" ]
+        )
+
+        let result =
+            applyImport
+                (createBasicAssay ())
+                [| sourceOf 0 source |]
+                (decisionsFor TableJoinOptions.WithValues TableImportAction.AppendToActiveTable)
+            |> applied
+
+        let table = (importedTables result).[0]
+        let inputIndex = table.Headers |> Seq.findIndex _.isInput
+
+        let noteIndex =
+            table.Headers |> Seq.findIndex ((=) (CompositeHeader.Comment "Note"))
+
+        Vitest.expect(table.RowCount).toBe 5
+        Vitest.expect(table.GetCellAt(inputIndex, 0)).toEqual (CompositeCell.FreeText "source-1")
+        Vitest.expect(table.GetCellAt(inputIndex, 4)).toEqual (CompositeCell.FreeText "")
+        Vitest.expect(table.GetCellAt(noteIndex, 0)).toEqual (CompositeCell.FreeText "note-1")
+        Vitest.expect(table.GetCellAt(noteIndex, 4)).toEqual (CompositeCell.FreeText "note-5")
+)
+
 Vitest.test (
     "appending does not add a column whose header exists in the active table",
     fun () ->

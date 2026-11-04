@@ -270,6 +270,16 @@ type TableImportPreview =
         let canEdit = importAction <> TableImportAction.NoImport
         let hasRowSelection = showRowSelection && rowCount > 0
 
+        // Describes what Table.distinctByHeader and the join do with an appended table.
+        let appendNote =
+            let columns =
+                "Columns the active table already has, including Input and Output, stay as they are and are not taken from this table."
+
+            if hasRowSelection then
+                $"Rows line up by position: row 1 goes to row 1 of the active table. Rows beyond the active table are added with its other columns left empty. {columns}"
+            else
+                columns
+
         let plural (count: int) (singular: string) =
             if count = 1 then
                 $"1 {singular}"
@@ -360,6 +370,17 @@ type TableImportPreview =
                                 prop.text note
                             ]
                         | _ -> Html.none
+                        if canAppend && importAction = TableImportAction.AppendToActiveTable then
+                            Html.div [
+                                prop.testId $"table-import-append-note-{index}"
+                                prop.className "swt:flex swt:gap-1 swt:text-xs swt:text-info"
+                                prop.children [
+                                    Html.i [
+                                        prop.className "swt:iconify swt:fluent--info-12-regular swt:shrink-0 swt:mt-0.5"
+                                    ]
+                                    Html.span appendNote
+                                ]
+                            ]
                     ]
                 ]
                 match callbacks.GetNewTableName index with
