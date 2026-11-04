@@ -287,11 +287,20 @@ type FileTree =
         let rootEntry = Renderer.Context.FileTreeStore.tryFind snapshot ""
 
         let materializedIds =
-            fileStateCtx.state.Selection.TreePath
-            |> Option.map Renderer.Context.FileTreeExpansionContext.ancestorPaths
-            |> Option.defaultValue []
-            |> Set.ofList
-            |> Set.union expansionCtx.expandedIds
+            React.useMemo (
+                (fun () ->
+                    fileStateCtx.state.Selection.TreePath
+                    |> Option.map Renderer.Context.FileTreeExpansionContext.ancestorPaths
+                    |> Option.defaultValue []
+                    |> Set.ofList
+                    |> Set.union expansionCtx.expandedIds
+
+                ),
+                [|
+                    box fileStateCtx.state.Selection.TreePath
+                    box expansionCtx.expandedIds
+                |]
+            )
 
         let fileItem =
             React.useMemo (
