@@ -380,10 +380,11 @@ type TableImportPreview =
                         if canAppend && importAction = TableImportAction.AppendToActiveTable then
                             Html.div [
                                 prop.testId $"table-import-append-note-{index}"
-                                prop.className "swt:flex swt:gap-1 swt:text-xs swt:text-info"
+                                prop.className "swt:flex swt:gap-1 swt:text-xs"
                                 prop.children [
                                     Html.i [
-                                        prop.className "swt:iconify swt:fluent--info-12-regular swt:shrink-0 swt:mt-0.5"
+                                        prop.className
+                                            "swt:iconify swt:fluent--info-12-regular swt:shrink-0 swt:mt-0.5 swt:text-info"
                                     ]
                                     Html.span appendNote
                                 ]

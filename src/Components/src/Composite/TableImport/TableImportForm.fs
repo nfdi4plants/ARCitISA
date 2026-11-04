@@ -15,10 +15,10 @@ type TableImportForm =
         Html.div [
             prop.testId "table-import-blocked-reason"
             prop.role.status
-            prop.className "swt:flex swt:min-w-0 swt:items-center swt:gap-1 swt:text-xs swt:text-warning"
+            prop.className "swt:flex swt:min-w-0 swt:items-center swt:gap-1 swt:text-xs"
             prop.children [
                 Html.i [
-                    prop.className "swt:iconify swt:fluent--warning-12-filled swt:shrink-0"
+                    prop.className "swt:iconify swt:fluent--warning-12-filled swt:shrink-0 swt:text-warning"
                 ]
                 Html.span reason
             ]
