@@ -44,6 +44,10 @@ Vitest.describe (
                 Vitest.expect(FileContentDTO.inferFileTypeFromPath "notes/README.MD").toEqual (FileContentType.Markdown)
 
                 Vitest
+                    .expect(FileContentDTO.inferFileTypeFromPath "notes/README")
+                    .toEqual (FileContentType.Markdown)
+
+                Vitest
                     .expect(FileContentDTO.inferFileTypeFromPath "assays/assay_1/notes.txt")
                     .toEqual (FileContentType.PlainText)
 
