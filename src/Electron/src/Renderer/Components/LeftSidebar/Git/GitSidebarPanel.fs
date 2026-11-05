@@ -277,14 +277,9 @@ let Main () =
             onUploadRightAwayChange = gitStateCtx.uploadRightAwayChanged,
             remoteActionsEnabled = remoteActionsEnabled,
             canCancelOperation = canCancelOperation,
-            canOpenRemoteRepository = gitStateCtx.state.OriginRemoteRepositoryWebUrl.IsSome,
+            ?remoteRepositoryWebUrl = gitStateCtx.state.OriginRemoteRepositoryWebUrl,
             onSubmitPublishRename = gitStateCtx.submitPublishRename,
             onCancelPublishRename = gitStateCtx.cancelPublishRename,
-            onOpenRemoteRepository =
-                (fun () ->
-                    match gitStateCtx.state.OriginRemoteRepositoryWebUrl with
-                    | Some repositoryWebUrl -> window.``open`` (repositoryWebUrl, "_blank") |> ignore
-                    | None -> ()
-                ),
+            onOpenRemoteRepository = (fun repositoryWebUrl -> window.``open`` (repositoryWebUrl, "_blank") |> ignore),
             ?remoteActionsWarning = remoteActionsWarning
         )

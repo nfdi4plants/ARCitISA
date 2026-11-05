@@ -349,7 +349,7 @@ export const AdvancedActions: Story = {
     downloadLargeFiles: true,
     lfsAutoTrackThresholdMb: 1,
     diffIndexingLimitMb: 1024,
-    canOpenRemoteRepository: true,
+    remoteRepositoryWebUrl: "https://git.example.org/plant-lab/drought-arc",
     onOpenRemoteRepository: noopOpenRemoteRepository,
   },
   play: async ({ canvasElement }) => {
@@ -1194,7 +1194,7 @@ export const OpenRemoteRepositoryButton: Story = {
     downloadLargeFiles: true,
     lfsAutoTrackThresholdMb: 1,
     diffIndexingLimitMb: 1024,
-    canOpenRemoteRepository: true,
+    remoteRepositoryWebUrl: "https://git.example.org/plant-lab/drought-arc",
     onOpenRemoteRepository: openRemoteRepositorySpy,
   },
   play: async ({ canvasElement }) => {
@@ -1204,6 +1204,7 @@ export const OpenRemoteRepositoryButton: Story = {
     await expect(canvas.getByTestId("GitSidebarOpenRemoteRepositoryButton")).toBeEnabled();
     await userEvent.click(canvas.getByTestId("GitSidebarOpenRemoteRepositoryButton"));
     await expect(openRemoteRepositorySpy).toHaveBeenCalledTimes(1);
+    await expect(openRemoteRepositorySpy).toHaveBeenCalledWith("https://git.example.org/plant-lab/drought-arc");
   },
 };
 

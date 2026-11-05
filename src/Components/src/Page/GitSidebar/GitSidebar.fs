@@ -96,6 +96,14 @@ module private GitSidebarInternal =
         | index when index > 0 -> path.Substring(index + 1), Some(path.Substring(0, index))
         | _ -> path, None
 
+    /// The namespace and repository part of a repository web URL, "group/arc" for "https://host/group/arc".
+    let repositoryPathOfWebUrl (webUrl: string) : string option =
+        match Uri.TryCreate(webUrl, UriKind.Absolute) with
+        | true, uri ->
+            let path = Uri.UnescapeDataString(uri.AbsolutePath).Trim('/')
+            if String.IsNullOrWhiteSpace path then None else Some path
+        | _ -> None
+
     let commitCountLabel (count: int) =
         if count = 1 then "1 commit" else $"{count} commits"
 
@@ -341,8 +349,8 @@ type private BranchHeaderProps = {
     HasRemote: bool
     HasConflicts: bool
     IsBusy: bool
-    CanOpenRemoteRepository: bool
-    OnOpenRemoteRepository: unit -> unit
+    RemoteRepositoryWebUrl: string option
+    OnOpenRemoteRepository: string -> unit
     OnRefresh: unit -> unit
 }
 
@@ -1120,10 +1128,19 @@ type GitSidebar =
                                         | Some branch -> branch
                                         | None -> "Detached HEAD"
 
+                                    let branchLocation =
+                                        match
+                                            props.RemoteRepositoryWebUrl
+                                            |> Option.bind GitSidebarInternal.repositoryPathOfWebUrl
+                                        with
+                                        | Some repositoryPath -> $"{repositoryPath} · {branchName}"
+                                        | None -> branchName
+
                                     Html.span [
+                                        prop.testId "GitSidebarBranchLocation"
                                         prop.className "swt:truncate swt:text-xs swt:text-base-content/60"
-                                        prop.title branchName
-                                        prop.text branchName
+                                        prop.title branchLocation
+                                        prop.text branchLocation
                                     ]
                                 ]
                             ]
@@ -1135,10 +1152,17 @@ type GitSidebar =
                             Html.button [
                                 prop.testId "GitSidebarOpenRemoteRepositoryButton"
                                 prop.className "swt:btn swt:btn-ghost swt:btn-square swt:btn-sm swt:shrink-0"
-                                prop.disabled (props.IsBusy || not props.CanOpenRemoteRepository)
-                                prop.title "Open ARC in DataHUB"
                                 prop.ariaLabel "Open ARC in DataHUB"
-                                prop.onClick (fun _ -> props.OnOpenRemoteRepository())
+
+                                match props.RemoteRepositoryWebUrl with
+                                | Some webUrl ->
+                                    prop.disabled props.IsBusy
+                                    prop.title $"Open ARC in DataHUB: {webUrl}"
+                                    prop.onClick (fun _ -> props.OnOpenRemoteRepository webUrl)
+                                | None ->
+                                    prop.disabled true
+                                    prop.title "Open ARC in DataHUB"
+
                                 prop.children [
                                     Html.span [
                                         prop.className "swt:iconify swt:fluent--open-24-regular swt:size-4"
@@ -2342,9 +2366,9 @@ type GitSidebar =
             ?remoteActionsEnabled: bool,
             ?remoteActionsWarning: string,
             ?hasRemote: bool,
-            ?canOpenRemoteRepository: bool,
+            ?remoteRepositoryWebUrl: string,
             ?canCancelOperation: bool,
-            ?onOpenRemoteRepository: unit -> unit,
+            ?onOpenRemoteRepository: string -> unit,
             ?onSubmitPublishRename: GitSidebarPublishSubmit -> unit,
             ?onCancelPublishRename: unit -> unit,
             ?uploadRightAway: bool,
@@ -2365,9 +2389,8 @@ type GitSidebar =
         let remoteActionsEnabled = defaultArg remoteActionsEnabled true
         let remoteActionsWarning = remoteActionsWarning
         let hasRemote = defaultArg hasRemote true
-        let canOpenRemoteRepository = defaultArg canOpenRemoteRepository false
         let canCancelOperation = defaultArg canCancelOperation false
-        let onOpenRemoteRepository = defaultArg onOpenRemoteRepository (fun () -> ())
+        let onOpenRemoteRepository = defaultArg onOpenRemoteRepository ignore
         let onSubmitPublishRename = defaultArg onSubmitPublishRename (fun _ -> ())
         let onCancelPublishRename = defaultArg onCancelPublishRename (fun () -> ())
         let _selectedFileForCompatibility = selectedFile
@@ -2771,7 +2794,7 @@ type GitSidebar =
             HasRemote = hasRemote
             HasConflicts = hasConflicts
             IsBusy = isBusy
-            CanOpenRemoteRepository = canOpenRemoteRepository
+            RemoteRepositoryWebUrl = remoteRepositoryWebUrl
             OnOpenRemoteRepository = onOpenRemoteRepository
             OnRefresh =
                 fun () ->
