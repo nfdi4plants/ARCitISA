@@ -7939,6 +7939,37 @@ Vitest.describe (
         )
 
         Vitest.test (
+            "A large-file download that failed after an update keeps the git-lfs output out of the warning and the offer",
+            fun () -> promise {
+                let gitLfsOutput =
+                    "error transferring \"cd285a1ff124\": [0] remote missing object cd285a1ff124"
+
+                let partial =
+                    makeFailure
+                        ProviderError
+                        VersionControlCodes.HydrationFailed
+                        $"Large-object hydration failed after a successful update: {gitLfsOutput}"
+                        (Some {
+                            Code = VersionControlCodes.Recovery.RetryMaterialization
+                            Instructions = None
+                        })
+                        [||]
+
+                let! _, finished = runPullWithPartial partial
+
+                let offerMessage =
+                    match finished.PendingRecovery with
+                    | Some(GitPendingRecovery.RetryMaterialization message) -> message
+                    | _ -> failwith "Expected the download offer."
+
+                Vitest.expect(offerMessage.Contains gitLfsOutput).toBe false
+                Vitest.expect(finished.PendingConfirmation.Value.Message.Contains gitLfsOutput).toBe false
+                Vitest.expect(finished.WarningNotice.IsSome).toBe true
+                Vitest.expect(finished.WarningNotice.Value.Contains gitLfsOutput).toBe false
+            }
+        )
+
+        Vitest.test (
             "A removed index lock offers the download of the large files",
             fun () -> promise {
                 let partial = lockedPartial VersionControlCodes.HydrationFailed
@@ -8645,6 +8676,51 @@ Vitest.describe (
 
                 match completion with
                 | [| WriteCompleted(_, _, RetryMaterialization, Error _) |] -> ()
+                | _ -> failwith "Expected the partial failure to be reported."
+            }
+        )
+
+        Vitest.test (
+            "Download now keeps the failure text and drops the library's download instruction",
+            fun () -> promise {
+                let libraryInstruction = "Materialize the path again."
+
+                let failure =
+                    makeFailure
+                        ProviderError
+                        "lfs_pull_failed"
+                        "1 of 2 paths failed: the remote does not have missing.bin."
+                        (Some {
+                            Code = VersionControlCodes.Recovery.RetryMaterialization
+                            Instructions = Some libraryInstruction
+                        })
+                        [| "missing.bin" |]
+
+                let deps = {
+                    (withRefresh cleanStatus defaultDependencies) with
+                        listObjects =
+                            fun _ -> promise {
+                                return
+                                    Ok(
+                                        succeeded [|
+                                            objectState "other.bin" false
+                                            objectState "missing.bin" false
+                                        |]
+                                    )
+                            }
+                        materializeObjects =
+                            fun _ -> promise { return Ok(OperationResultDto.PartiallySucceeded(operation (), failure)) }
+                }
+
+                let _, retryCmd =
+                    update deps ignore (WriteRequested RetryMaterialization) runningState
+
+                let! completion = collectMessages retryCmd
+
+                match completion with
+                | [| WriteCompleted(_, _, RetryMaterialization, Error message) |] ->
+                    Vitest.expect(message.Contains failure.Message).toBe true
+                    Vitest.expect(message.Contains libraryInstruction).toBe false
                 | _ -> failwith "Expected the partial failure to be reported."
             }
         )

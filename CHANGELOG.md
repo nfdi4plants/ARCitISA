@@ -31,6 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Releases are now automatically created as draft. This is part of quality control. The App will first be tested and the docs updated before the release is pushed into "New update available" status. #1488 (by @Freymaurer)
 - When a commit fails because a selected file can't be found, the error message names the affected files. (by @caroott)
 - When large files could not be downloaded after an update, "Download now" tries every missing file, even when one of them fails. (by @caroott)
+- When large files could not be downloaded after an update, the warning and the "Download now" question no longer show the raw Git LFS output. "Show last log" still has it. If "Download now" fails, the message points to "Download LFS file" to try again. (by @caroott)
 
 ## 3.2.0 - 2026-11-02
 

@@ -1083,6 +1083,18 @@ let recoveryCode (failure: OperationFailureDto) =
 let isCanceled (failure: OperationFailureDto) =
     failure.Category = FailureCategoryDto.Canceled
 
+/// The text of a partial failure. The library message of a large-file download that failed after an update quotes the
+/// git-lfs output with object ids and no file names. The last log already shows that output, so the warning and the
+/// download offer get a plain sentence.
+let partialFailureMessage (failure: OperationFailureDto) =
+    if
+        failure.Code = VersionControlCodes.HydrationFailed
+        && recoveryCode failure = Some VersionControlCodes.Recovery.RetryMaterialization
+    then
+        "Some large files could not be downloaded."
+    else
+        failureMessage failure
+
 let needsDependencyInstall (failure: OperationFailureDto) =
     failure.Category = FailureCategoryDto.DependencyMissing
 
@@ -1098,7 +1110,7 @@ let recoveryOfPartial (partial: OperationFailureDto option) : GitPendingRecovery
     |> Option.bind (fun failure ->
         match recoveryCode failure with
         | Some code when code = VersionControlCodes.Recovery.RetryMaterialization ->
-            Some(GitPendingRecovery.RetryMaterialization(failureMessage failure))
+            Some(GitPendingRecovery.RetryMaterialization(partialFailureMessage failure))
         | Some code when code = VersionControlCodes.Recovery.RetryPublish ->
             Some(GitPendingRecovery.RetryPublish(failureMessage failure))
         | Some code when code = VersionControlCodes.Recovery.RemoveIndexLock ->
@@ -1421,7 +1433,7 @@ let private applyWriteSuccessModel model success =
         success.PageChange,
         success.Warning,
         recoveryOfPartial success.Partial,
-        success.Partial |> Option.map failureMessage,
+        success.Partial |> Option.map partialFailureMessage,
         success.Published
     | CloneSuccess _ -> model, GitPageChange.NoChange, None, None, None, None
 
@@ -3664,7 +3676,7 @@ let private completeAfterUpdateAsync
                         Completed(
                             UnitSuccess {
                                 unitSuccess refreshResult with
-                                    Warning = partial |> Option.map failureMessage
+                                    Warning = partial |> Option.map partialFailureMessage
                                     Partial = partial
                             }
                         )
@@ -3749,7 +3761,7 @@ let private refreshAfterSuccess
     (warningMessage: string option)
     =
     let combinedWarningMessage =
-        joinMessages warningMessage (partial |> Option.map failureMessage)
+        joinMessages warningMessage (partial |> Option.map partialFailureMessage)
 
     refreshAfterSuccessWithOutcome deps partial pageChange selectedChangePathOverride combinedWarningMessage None
 
@@ -3763,7 +3775,7 @@ let private completeAfterSynchronizeAsync
         if partial |> Option.exists isConflictPartial then
             return! completeAfterUpdateAsync deps partial pendingWarning
         else
-            let partialMessage = partial |> Option.map failureMessage
+            let partialMessage = partial |> Option.map partialFailureMessage
 
             let finalWarning =
                 match recoveryOfPartial partial with
@@ -4690,6 +4702,20 @@ let private runRestoreInterruptedPathsAttemptAsync (deps: GitDependencies) (stat
                 (fun _ partial -> refreshAfterSuccess deps partial GitPageChange.Clear (Some None) None)
 }
 
+/// The library's instruction for a failed download tells the caller to materialize the path again. In the app
+/// that is the Download LFS file action, so the error names it instead.
+let private withDownloadAgainInstructions (failure: OperationFailureDto) =
+    match failure.RecoveryAction with
+    | Some recovery when recovery.Code = VersionControlCodes.Recovery.RetryMaterialization -> {
+        failure with
+            RecoveryAction =
+                Some {
+                    recovery with
+                        Instructions = Some "Use Download LFS file to try again."
+                }
+      }
+    | _ -> failure
+
 /// Downloads the large objects an interrupted update left behind with one call. The library tries every
 /// object and reports the first real failure. The stale paths of a lock-blocked checkout are requested as
 /// well, so the library restages them. A requested path that holds a real edit, stale or pending, is refused
@@ -4723,7 +4749,7 @@ let private runRetryMaterializationAttemptAsync (deps: GitDependencies) = promis
             match materialized with
             | Error failure
             | Ok(_, Some failure) when not (isLocalChangesRefusal failure) ->
-                return! routedToOutcome deps (routeFailure None failure)
+                return! routedToOutcome deps (routeFailure None (withDownloadAgainInstructions failure))
             | _ -> return! refreshAfterSuccess deps None GitPageChange.NoChange None None
 }
 
