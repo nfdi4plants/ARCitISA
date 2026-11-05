@@ -2049,7 +2049,8 @@ type GitSidebar =
                                     ]
                                     Html.select [
                                         prop.testId "GitSidebarStartPointSelect"
-                                        prop.className "swt:select swt:select-bordered swt:w-full"
+                                        prop.className
+                                            "swt:select swt:select-bordered swt:w-full swt:[&_option::checkmark]:hidden"
                                         prop.value (props.SelectedStartPoint |> Option.defaultValue "")
                                         prop.onChange (fun nextValue ->
                                             if String.IsNullOrWhiteSpace nextValue then
@@ -2106,7 +2107,8 @@ type GitSidebar =
                                     ]
                                     Html.select [
                                         prop.testId "GitSidebarSwitchBranchSelect"
-                                        prop.className "swt:select swt:select-bordered swt:w-full"
+                                        prop.className
+                                            "swt:select swt:select-bordered swt:w-full swt:[&_option::checkmark]:hidden"
                                         prop.value (props.SelectedSwitchBranch |> Option.defaultValue "")
                                         prop.onChange (fun (nextValue: string) ->
                                             if String.IsNullOrWhiteSpace nextValue then
