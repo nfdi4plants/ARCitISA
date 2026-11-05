@@ -1,4 +1,4 @@
-module Renderer.Components.MainContent.ImageViewer
+module Swate.Components.Page.ImageViewer
 
 open Feliz
 open Fable.Core

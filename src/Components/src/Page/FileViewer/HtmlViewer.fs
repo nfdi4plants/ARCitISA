@@ -1,4 +1,4 @@
-module Renderer.Components.MainContent.HtmlViewer
+module Swate.Components.Page.HtmlViewer
 
 open Feliz
 open Fable.Core

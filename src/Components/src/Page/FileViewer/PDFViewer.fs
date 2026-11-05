@@ -1,4 +1,4 @@
-module Renderer.Components.MainContent.PDFViewer
+module Swate.Components.Page.PDFViewer
 
 open Feliz
 open Fable.Core.JsInterop
