@@ -124,7 +124,7 @@ let Main (appRootPath: ArcRootPath, pageState: PageState option) =
                             [ LazyComponents.LazyMarkdownEditorTarget(content) ],
                             fallback = LazyComponents.FullPageLoadingSpinner("Loading markdown editor...")
                         )
-                    | Some _, Some ((PageState.PDFPage _ | PageState.ImagePage _ | PageState.HtmlPage _) as pageState) ->
+                    | Some _, Some((PageState.PDFPage _ | PageState.ImagePage _ | PageState.HtmlPage _) as pageState) ->
                         FileViewerTarget.FileViewerTarget pageState
                     | Some _, Some(PageState.TextPage content) -> TextPreviewTarget content
                     | Some _, Some PageState.UnknownPage -> UnknownPreviewTarget()
