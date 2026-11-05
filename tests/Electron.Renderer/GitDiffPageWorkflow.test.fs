@@ -141,6 +141,7 @@ type private FakeDiffClient() =
         materializeObjects = fun _ -> never "materializeObjects"
         pruneStorage = fun _ -> never "pruneStorage"
         deduplicateStorage = fun _ -> never "deduplicateStorage"
+        canDeduplicateStorage = fun _ -> never "canDeduplicateStorage"
         clearStaleLock = fun _ -> never "clearStaleLock"
         textDiff = {
             openTextDiff =

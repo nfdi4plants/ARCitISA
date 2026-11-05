@@ -5,6 +5,14 @@ open Feliz
 open Renderer.Components.Helper.ArcVaultHelper
 open Swate.Components.Primitive.ErrorModal.Context
 
+/// The version control provider answers once per opened ARC whether deduplication can work. On a no, the sidebar disables the button and its tooltip says why.
+let private lfsDedupUnavailableReason (canDeduplicate: bool option) =
+    match canDeduplicate with
+    | Some false ->
+        Some
+            "Not available for this ARC: deduplication needs copy-on-write file copies, which the file system of the ARC's folder does not support."
+    | _ -> None
+
 /// Remote transfer operations run cancellable git processes, so the cancel button is offered for all of them.
 let private isCancellableBusyOperation (busyOperation: Renderer.Context.GitWorkflow.GitBusyOperation) =
     match busyOperation with
@@ -215,6 +223,7 @@ let Main () =
             operationSteps = gitStateCtx.state.CurrentSteps,
             ?operationLog = operationLog,
             ?lastLog = lastLog,
+            ?lfsDedupUnavailableReason = lfsDedupUnavailableReason gitStateCtx.state.CanDeduplicateStorage,
             ?busyHeadlineOverride =
                 waitingHeadline
                     gitStateCtx.state.BusyOperation

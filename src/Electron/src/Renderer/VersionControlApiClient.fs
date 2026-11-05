@@ -93,6 +93,9 @@ let pruneStorage (dto: OperationRequestDto) = call (fun () -> api.pruneStorage d
 let deduplicateStorage (dto: OperationRequestDto) =
     call (fun () -> api.deduplicateStorage dto)
 
+let canDeduplicateStorage (dto: OperationRequestDto) =
+    call (fun () -> api.canDeduplicateStorage dto)
+
 let getRepositoryWebUrl (dto: OperationRequestDto) =
     call (fun () -> api.getRepositoryWebUrl dto)
 

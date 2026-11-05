@@ -380,6 +380,8 @@ type private AdvancedActionsProps = {
     DiffIndexingLimit: DiffIndexingLimitSectionProps
     SubmitPruneLfsCache: unit -> unit
     SubmitDedupLfsStorage: unit -> unit
+    /// Disables the dedup button and replaces its command tooltip with this reason.
+    LfsDedupUnavailableReason: string option
 }
 
 type private CommitSectionProps = {
@@ -1052,32 +1054,41 @@ type GitSidebar =
         let isActive = defaultArg isActive false
         let titleText = defaultArg tooltipText label
 
-        Html.button [
-            if testId.IsSome then
-                prop.testId testId.Value
-
-            prop.className [
-                "swt:btn swt:btn-sm swt:w-full swt:min-w-0 swt:justify-start swt:gap-2 swt:overflow-hidden swt:px-2 swt:normal-case"
-                "swt:@max-2xs/gitSidebar:gap-1 swt:@max-3xs/gitSidebar:justify-center swt:@max-3xs/gitSidebar:gap-0 swt:@max-3xs/gitSidebar:px-0"
-                if isActive then
-                    "swt:btn-primary"
-                else
-                    "swt:bg-base-100 swt:border-base-300"
-            ]
-            prop.disabled isBusy
-            prop.ariaLabel label
+        // A disabled daisyUI button has pointer-events: none, so a wrapper repeats the title
+        // for the hover. The title on the button stays for screen readers.
+        Html.div [
+            prop.className "swt:min-w-0"
             prop.title titleText
-            prop.onClick (fun _ -> onClick ())
             prop.children [
-                Html.span [
-                    prop.className [ "swt:iconify"; iconClassName; "swt:size-4 swt:shrink-0" ]
-                ]
-                Html.span [
+                Html.button [
                     if testId.IsSome then
-                        prop.testId (testId.Value + "Label")
+                        prop.testId testId.Value
 
-                    prop.className "swt:min-w-0 swt:flex-1 swt:truncate swt:text-left swt:@max-3xs/gitSidebar:sr-only"
-                    prop.text label
+                    prop.className [
+                        "swt:btn swt:btn-sm swt:w-full swt:min-w-0 swt:justify-start swt:gap-2 swt:overflow-hidden swt:px-2 swt:normal-case"
+                        "swt:@max-2xs/gitSidebar:gap-1 swt:@max-3xs/gitSidebar:justify-center swt:@max-3xs/gitSidebar:gap-0 swt:@max-3xs/gitSidebar:px-0"
+                        if isActive then
+                            "swt:btn-primary"
+                        else
+                            "swt:bg-base-100 swt:border-base-300"
+                    ]
+                    prop.disabled isBusy
+                    prop.ariaLabel label
+                    prop.title titleText
+                    prop.onClick (fun _ -> onClick ())
+                    prop.children [
+                        Html.span [
+                            prop.className [ "swt:iconify"; iconClassName; "swt:size-4 swt:shrink-0" ]
+                        ]
+                        Html.span [
+                            if testId.IsSome then
+                                prop.testId (testId.Value + "Label")
+
+                            prop.className
+                                "swt:min-w-0 swt:flex-1 swt:truncate swt:text-left swt:@max-3xs/gitSidebar:sr-only"
+                            prop.text label
+                        ]
+                    ]
                 ]
             ]
         ]
@@ -1498,7 +1509,8 @@ type GitSidebar =
                                     props.IsBusy || not props.RemoteActionsEnabled,
                                     props.SubmitFetch,
                                     testId = "GitSidebarFetchButton",
-                                    tooltipText = "Fetch Changes:\n- git fetch origin (when the branch tracks an online branch)"
+                                    tooltipText =
+                                        "Fetch Changes:\n- git fetch origin (when the branch tracks an online branch)"
                                 )
                                 GitSidebar.ActionButton(
                                     "Create Branch",
@@ -1530,10 +1542,12 @@ type GitSidebar =
                                 GitSidebar.ActionButton(
                                     "Deduplicate Large Files",
                                     "swt:fluent--folder-sync-24-regular",
-                                    props.IsBusy,
+                                    props.IsBusy || props.LfsDedupUnavailableReason.IsSome,
                                     props.SubmitDedupLfsStorage,
                                     testId = "GitSidebarLfsDedupButton",
-                                    tooltipText = "Deduplicate Large Files:\n- git lfs dedup"
+                                    tooltipText =
+                                        (props.LfsDedupUnavailableReason
+                                         |> Option.defaultValue "Deduplicate Large Files:\n- git lfs dedup")
                                 )
                             ]
                         ]
@@ -2339,7 +2353,8 @@ type GitSidebar =
             ?busyHeadlineOverride: string,
             ?operationSteps: GitSidebarStep[],
             ?operationLog: GitSidebarLog,
-            ?lastLog: GitSidebarLastLog
+            ?lastLog: GitSidebarLastLog,
+            ?lfsDedupUnavailableReason: string
         ) =
 
         let runStatus = defaultArg runStatus GitSidebarRunStatus.Idle
@@ -2824,6 +2839,7 @@ type GitSidebar =
                         CanSwitchBranch = canSwitchBranch
                         SubmitPruneLfsCache = submitPruneLfsCache
                         SubmitDedupLfsStorage = submitDedupLfsStorage
+                        LfsDedupUnavailableReason = lfsDedupUnavailableReason
                         LfsSettings = {
                             IsBusy = isBusy
                             LfsThresholdInput = lfsThresholdInput

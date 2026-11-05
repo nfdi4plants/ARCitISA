@@ -272,6 +272,9 @@ type IVersionControlApi = {
     setPathStoragePolicy: PathStoragePolicyRequestDto -> JS.Promise<Result<OperationResultDto<unit>, exn>>
     pruneStorage: OperationRequestDto -> JS.Promise<Result<OperationResultDto<string>, exn>>
     deduplicateStorage: OperationRequestDto -> JS.Promise<Result<OperationResultDto<string>, exn>>
+    /// Whether Deduplicate can work for the ARC open in the calling window, as the version control provider
+    /// reports it. A failed result means the answer is unknown.
+    canDeduplicateStorage: OperationRequestDto -> JS.Promise<Result<OperationResultDto<bool>, exn>>
     getRepositoryWebUrl: OperationRequestDto -> JS.Promise<Result<OperationResultDto<string option>, exn>>
     /// Removes a stale provider lock left by a killed process, only while no operation
     /// of this session runs, then refreshes and returns the status.

@@ -375,6 +375,7 @@ let private defaultDependencies: GitDependencies = {
     materializeObjects = fun _ -> unexpectedPromise "materializeObjects"
     pruneStorage = fun _ -> unexpectedPromise "pruneStorage"
     deduplicateStorage = fun _ -> unexpectedPromise "deduplicateStorage"
+    canDeduplicateStorage = fun _ -> promise { return Error "The storage check is not stubbed." }
     clearStaleLock = fun _ -> unexpectedPromise "clearStaleLock"
     textDiff = {
         openTextDiff = fun _ -> unexpectedPromise "openTextDiff"
@@ -2171,6 +2172,89 @@ Vitest.describe (
 
                 Vitest.expect(afterSecondRefresh).toEqual ([||])
                 Vitest.expect(reads.Count).toBe 1
+            }
+        )
+
+        Vitest.test (
+            "The first refresh of an ARC asks once whether storage deduplication can work",
+            fun () -> promise {
+                let checks = ResizeArray<string>()
+
+                let deps = {
+                    withRefresh cleanStatus defaultDependencies with
+                        canDeduplicateStorage =
+                            fun _ ->
+                                checks.Add "check"
+                                promise { return Ok(succeeded false) }
+                }
+
+                let! bound, bindMessages = step deps GitState.Empty (ArcPathChanged(Some "C:/arc"))
+                let! refreshing, refreshMessages = step deps bound bindMessages[0]
+                let! refreshed, loadMessages = step deps refreshing refreshMessages[0]
+
+                Vitest.expect(loadMessages).toEqual ([| StorageDeduplicationChecked(bound.ArcSessionId, false) |])
+                Vitest.expect(refreshed.CanDeduplicateStorage).toEqual None
+
+                let! checkedState, _ = step deps refreshed loadMessages[0]
+
+                Vitest.expect(checkedState.CanDeduplicateStorage).toEqual (Some false)
+                Vitest.expect(checks.Count).toBe 1
+
+                let! refreshingAgain, againMessages = step deps checkedState RefreshRequested
+                let! _, afterSecondRefresh = step deps refreshingAgain againMessages[0]
+
+                Vitest.expect(afterSecondRefresh).toEqual ([||])
+                Vitest.expect(checks.Count).toBe 1
+            }
+        )
+
+        Vitest.test (
+            "A session without storage maintenance does not ask whether deduplication can work",
+            fun () -> promise {
+                let checks = ResizeArray<string>()
+
+                let sessionWithoutMaintenance = {
+                    sessionInfo with
+                        Services = {
+                            sessionInfo.Services with
+                                Maintenance = false
+                        }
+                }
+
+                let deps = {
+                    withRefresh cleanStatus defaultDependencies with
+                        getSessionInfo = fun _ -> promise { return Ok(succeeded sessionWithoutMaintenance) }
+                        canDeduplicateStorage =
+                            fun _ ->
+                                checks.Add "check"
+                                promise { return Ok(succeeded false) }
+                }
+
+                let! bound, bindMessages = step deps GitState.Empty (ArcPathChanged(Some "C:/arc"))
+                let! refreshing, refreshMessages = step deps bound bindMessages[0]
+                let! refreshed, loadMessages = step deps refreshing refreshMessages[0]
+
+                Vitest.expect(loadMessages).toEqual ([||])
+                Vitest.expect(checks.Count).toBe 0
+                Vitest.expect(refreshed.CanDeduplicateStorage).toEqual None
+            }
+        )
+
+        Vitest.test (
+            "A storage deduplication answer of an earlier ARC session is ignored",
+            fun () -> promise {
+                let nextArc, _ =
+                    update defaultDependencies ignore (ArcPathChanged(Some "C:/arc-b")) runningState
+
+                let afterAnswer, _ =
+                    update
+                        defaultDependencies
+                        ignore
+                        (StorageDeduplicationChecked(runningState.ArcSessionId, false))
+                        nextArc
+
+                Vitest.expect(nextArc.ArcSessionId).not.toBe runningState.ArcSessionId
+                Vitest.expect(afterAnswer.CanDeduplicateStorage).toEqual None
             }
         )
 

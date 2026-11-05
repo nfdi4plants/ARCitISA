@@ -102,6 +102,7 @@ module private Helper =
             materializeObjects = Renderer.VersionControlApiClient.materializeObjects
             pruneStorage = Renderer.VersionControlApiClient.pruneStorage
             deduplicateStorage = Renderer.VersionControlApiClient.deduplicateStorage
+            canDeduplicateStorage = Renderer.VersionControlApiClient.canDeduplicateStorage
             clearStaleLock = Renderer.VersionControlApiClient.clearStaleLock
             textDiff = {
                 openTextDiff = Renderer.VersionControlApiClient.openTextDiff

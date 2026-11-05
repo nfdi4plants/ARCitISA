@@ -180,6 +180,9 @@ type GitState = {
     /// The provider refs behind BranchOptions, kept so requests carry the opaque ref.
     Refs: LogicalRefDto[]
     OriginRemoteRepositoryWebUrl: string option
+    /// Whether the version control provider can deduplicate the ARC. None until the check answers or
+    /// when it could not tell.
+    CanDeduplicateStorage: bool option
     PendingConfirmation: GitSidebarConfirmationDialog option
     PendingRemoteAction: GitPendingRemoteAction
     PendingPublishRename: GitPublishRenamePrompt option
@@ -290,6 +293,7 @@ type GitState = {
         BranchOptions = [||]
         Refs = [||]
         OriginRemoteRepositoryWebUrl = None
+        CanDeduplicateStorage = None
         PendingConfirmation = None
         PendingRemoteAction = GitPendingRemoteAction.None
         PendingPublishRename = None
@@ -672,6 +676,7 @@ type Msg =
     | OperationOutputReceived of VersionControlOutputDto
     | OperationStarted of OperationRequestDto
     | ArcPathChanged of ArcRootPath
+    | StorageDeduplicationChecked of arcSessionId: int * canDeduplicate: bool
     | GitRepositoryInitialized of arcPath: string
     | RefreshRequested
     | RefreshRequestedSilently
@@ -788,6 +793,7 @@ type GitDependencies = {
     materializeObjects: ObjectPathsRequestDto -> JS.Promise<Result<OperationResultDto<unit>, string>>
     pruneStorage: OperationRequestDto -> JS.Promise<Result<OperationResultDto<string>, string>>
     deduplicateStorage: OperationRequestDto -> JS.Promise<Result<OperationResultDto<string>, string>>
+    canDeduplicateStorage: OperationRequestDto -> JS.Promise<Result<OperationResultDto<bool>, string>>
     clearStaleLock: OperationRequestDto -> JS.Promise<Result<OperationResultDto<WorkspaceStatusDto>, string>>
     textDiff: GitTextDiffClient
     hasUsableAccount: unit -> bool
@@ -1550,20 +1556,38 @@ let private loadUploadRightAwayCmd (deps: GitDependencies) (arcSessionId: int) :
         |> Promise.start
     )
 
-/// The first refresh of an ARC that reaches an open session starts the read of the stored
-/// checkbox value. Later refreshes of the same ARC do not read again, because the load has left NotStarted.
-let private startUploadRightAwayLoad
+/// Asks the version control provider of the open ARC whether deduplication can work. Only a
+/// successful answer is dispatched, because an unknown result is what the model starts with.
+let private loadStorageDeduplicationCmd (deps: GitDependencies) (arcSessionId: int) : Cmd<Msg> =
+    Cmd.ofEffect (fun dispatch ->
+        promise {
+            match! deps.canDeduplicateStorage { OperationId = deps.newOperationId () } with
+            | Ok(OperationResultDto.Succeeded outcome) ->
+                dispatch (StorageDeduplicationChecked(arcSessionId, outcome.Value))
+            | _ -> ()
+        }
+        |> Promise.start
+    )
+
+/// The first refresh of an ARC that reaches an open session reads the stored checkbox value. When
+/// the session offers storage maintenance it also asks whether deduplication can work. Later
+/// refreshes of the same ARC do not read again, because the checkbox load has left NotStarted.
+let private startArcSessionLoads
     (deps: GitDependencies)
     (refreshResult: GitRefreshResult)
     (model: GitState)
     : GitState * Cmd<Msg> =
     match model.UploadRightAwayLoad, refreshResult.Session with
-    | UploadRightAwayLoad.NotStarted, Ok _ ->
+    | UploadRightAwayLoad.NotStarted, Ok session ->
         {
             model with
                 UploadRightAwayLoad = UploadRightAwayLoad.Pending
         },
-        loadUploadRightAwayCmd deps model.ArcSessionId
+        Cmd.batch [
+            loadUploadRightAwayCmd deps model.ArcSessionId
+            if session.Services.Maintenance then
+                loadStorageDeduplicationCmd deps model.ArcSessionId
+        ]
     | _ -> model, Cmd.none
 
 let private titleForWriteRequest =
@@ -5348,6 +5372,13 @@ let private updateCore
             | None -> applyPageChangeCmd setPageState GitPageChange.Clear
 
         nextModel, cmd
+    | StorageDeduplicationChecked(arcSessionId, _) when arcSessionId <> model.ArcSessionId -> model, Cmd.none
+    | StorageDeduplicationChecked(_, canDeduplicate) ->
+        {
+            model with
+                CanDeduplicateStorage = Some canDeduplicate
+        },
+        Cmd.none
     | SidebarVisibilityChanged false ->
         {
             model with
@@ -5542,7 +5573,7 @@ let private updateCore
             | None -> Cmd.none
 
         let loadingModel, loadCmd =
-            startUploadRightAwayLoad deps refreshResult {
+            startArcSessionLoads deps refreshResult {
                 nextModel with
                     PendingPublishAfterRefresh = false
             }
@@ -5567,7 +5598,7 @@ let private updateCore
         let nextModel = model |> applyRefreshResult refreshResult |> clearBusy
 
         let loadingModel, loadCmd =
-            startUploadRightAwayLoad deps refreshResult {
+            startArcSessionLoads deps refreshResult {
                 nextModel with
                     ErrorNotice = model.ErrorNotice
                     WarningNotice = model.WarningNotice

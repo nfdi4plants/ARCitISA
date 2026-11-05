@@ -1207,6 +1207,33 @@ export const OpenRemoteRepositoryButton: Story = {
   },
 };
 
+const lfsDedupUnavailableReason = "Deduplication is not available on this system.";
+
+export const LfsDedupUnavailable: Story = {
+  args: {
+    status: baseStatus,
+    changedFiles: changedFiles.slice(),
+    branchOptions: branchOptions.slice(),
+    callbacks: buildCallbacks(),
+    downloadLargeFiles: true,
+    lfsAutoTrackThresholdMb: 1,
+    diffIndexingLimitMb: 1024,
+    lfsDedupUnavailableReason,
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(canvas.getByTestId("GitSidebarAdvancedActionsButton"));
+
+    const dedupButton = canvas.getByTestId("GitSidebarLfsDedupButton");
+    await expect(dedupButton).toBeDisabled();
+
+    // The hover tooltip is the title of whatever the pointer hits over the disabled button.
+    const box = dedupButton.getBoundingClientRect();
+    const hovered = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+    await expect(hovered?.closest("[title]")?.getAttribute("title")).toBe(lfsDedupUnavailableReason);
+  },
+};
+
 export const GlobalErrorState: Story = {
   args: {
     status: baseStatus,
