@@ -260,6 +260,21 @@ let private LeftActionButtons (leftSidebarTarget: LeftSidebarPage) setLeftSideba
             )
     ]
 
+/// The window's layout with the app's banners. It renders inside the context providers, so the banner
+/// hooks read their contexts. Each banner source adds its entry to the list.
+[<ReactComponent>]
+let private WindowLayout (children: ReactElement) (leftSidebar: ReactElement option) (leftActions: ReactElement) =
+    let dependencyBanner = VersionControlDependencyBanner.useBannerEntry ()
+    let banners = Array.choose id [| dependencyBanner |]
+
+    Layout.Main(
+        children = children,
+        navbar = Renderer.Components.Navbar.Main(),
+        banners = banners,
+        ?leftSidebar = leftSidebar,
+        leftActions = leftActions
+    )
+
 [<ReactComponent>]
 let Main () =
     let model, dispatch = React.useElmish (init, update, subscribe, [||])
@@ -351,21 +366,13 @@ let Main () =
                                                         .AnnotationTableContextProvider
                                                         .AnnotationTableContextProvider(
                                                             Renderer.Context.VersionControlDependencyContext.Provider(
-                                                                Layout.Main(
-                                                                    children =
-                                                                        React.Fragment [|
-                                                                            children
-                                                                            CloseWindowController.CloseWindowController()
-                                                                        |],
-                                                                    navbar = Renderer.Components.Navbar.Main(),
-                                                                    banner =
-                                                                        Renderer
-                                                                            .Components
-                                                                            .VersionControlDependencyBanner
-                                                                            .Main(),
-                                                                    ?leftSidebar = leftSidebar,
-                                                                    leftActions = leftActions
-                                                                )
+                                                                WindowLayout
+                                                                    (React.Fragment [|
+                                                                        children
+                                                                        CloseWindowController.CloseWindowController()
+                                                                    |])
+                                                                    leftSidebar
+                                                                    leftActions
                                                             )
                                                         )
                                                 )

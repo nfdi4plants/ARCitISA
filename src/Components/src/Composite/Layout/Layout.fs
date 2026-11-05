@@ -5,6 +5,8 @@ open Fable.Core
 open Swate.Components
 open Swate.Components.Primitive
 open Swate.Components.Primitive.Navbar
+open Swate.Components.Primitive.Banner
+open Swate.Components.Primitive.Banner.Types
 
 module private Mocks =
 
@@ -445,7 +447,7 @@ type Layout =
         (
             children: ReactElement,
             ?navbar: ReactElement,
-            ?banner: ReactElement,
+            ?banners: BannerEntry[],
             ?leftSidebar: ReactElement,
             ?rightSidebar: ReactElement,
             ?leftActions: ReactElement,
@@ -506,12 +508,6 @@ type Layout =
                 Html.div [
                     prop.className "swt:flex-1 swt:flex swt:flex-col swt:h-screen swt:overflow-hidden"
                     prop.children [
-                        if banner.IsSome then
-                            Html.div [
-                                prop.className "swt:w-full swt:shrink-0 swt:grow-0"
-                                prop.testId "layout-main-banner"
-                                prop.children banner.Value
-                            ]
                         if navbar.IsSome then
                             Html.div [
                                 prop.className
@@ -519,6 +515,31 @@ type Layout =
                                 prop.testId "layout-main-navbar"
                                 prop.children navbar.Value
                             ]
+                        // Below the navbar, so the navbar does not move when a banner comes or goes. Without
+                        // banners the slot stays as an empty child, so the sidebars keep their position among the
+                        // children and React does not remount them and the content.
+                        match banners with
+                        | Some banners when banners.Length > 0 ->
+                            Html.div [
+                                prop.className "swt:w-full swt:shrink-0 swt:grow-0 swt:flex swt:flex-col"
+                                prop.testId "layout-main-banners"
+                                prop.children [
+                                    for entry in banners do
+                                        React.KeyedFragment(
+                                            entry.Key,
+                                            [
+                                                Banner.Banner(
+                                                    entry.Message,
+                                                    actions = entry.Actions,
+                                                    variant = entry.Variant,
+                                                    ?icon = entry.Icon,
+                                                    testId = entry.Key
+                                                )
+                                            ]
+                                        )
+                                ]
+                            ]
+                        | _ -> Html.none
                         Layout.Sidebars(
                             children,
                             ?leftContent = leftSidebar,

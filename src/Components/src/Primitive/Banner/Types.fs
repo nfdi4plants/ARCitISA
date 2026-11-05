@@ -1,5 +1,15 @@
 module Swate.Components.Primitive.Banner.Types
 
+open Fable.Core
+
+/// Sets the colour of a banner and its default icon.
+[<StringEnum; RequireQualifiedAccess>]
+type BannerVariant =
+    | Info
+    | Success
+    | Warning
+    | Error
+
 type BannerAction = {
     Label: string
     OnClick: unit -> unit
@@ -14,3 +24,25 @@ type BannerAction = {
         Icon = icon
         Disabled = defaultArg disabled false
     }
+
+/// One banner in a list of banners, for example in Layout.Main.
+type BannerEntry = {
+    /// Unique within the list. It is also the banner's test id.
+    Key: string
+    Message: string
+    Variant: BannerVariant
+    /// Fully qualified icon class. None uses the variant's icon.
+    Icon: string option
+    Actions: BannerAction[]
+} with
+
+    static member create
+        (key: string, message: string, ?variant: BannerVariant, ?icon: string, ?actions: BannerAction[])
+        =
+        {
+            Key = key
+            Message = message
+            Variant = defaultArg variant BannerVariant.Info
+            Icon = icon
+            Actions = defaultArg actions [||]
+        }

@@ -2,7 +2,6 @@ module Renderer.Components.VersionControlDependencyBanner
 
 open Feliz
 open Renderer.Context.VersionControlDependencyContext
-open Swate.Components.Primitive.Banner
 open Swate.Components.Primitive.Banner.Types
 open Swate.Electron.Shared.VersionControlTypes
 
@@ -25,16 +24,18 @@ let bannerContent (state: VersionControlDependencyStateDto option) : BannerConte
         })
     )
 
-[<ReactComponent>]
-let Main () =
+/// The banner entry for Layout.Main, or None while there is nothing to show.
+[<Hook>]
+let useBannerEntry () : BannerEntry option =
     let dependencies = useVersionControlDependencyCtx ()
     let pageStateCtx = Renderer.Context.PageStateContext.usePageStateCtx ()
 
-    match bannerContent dependencies.state with
-    | None -> Html.none
-    | Some content ->
-        Banner.Banner(
-            message = content.Message,
+    bannerContent dependencies.state
+    |> Option.map (fun content ->
+        BannerEntry.create (
+            "VersionControlDependencyBanner",
+            content.Message,
+            variant = BannerVariant.Warning,
             actions = [|
                 BannerAction.create (
                     "Open settings",
@@ -47,6 +48,6 @@ let Main () =
                     icon = "swt:fluent--arrow-sync-24-regular",
                     disabled = content.IsChecking
                 )
-            |],
-            testId = "VersionControlDependencyBanner"
+            |]
         )
+    )

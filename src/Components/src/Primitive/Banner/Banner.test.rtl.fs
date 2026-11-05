@@ -131,4 +131,44 @@ Vitest.describe (
                 Vitest.expect(present "CustomAction0").toBe true
                 Vitest.expect(present "Banner").toBe false
         )
+
+        Vitest.test (
+            "shows a different icon for each variant",
+            fun () ->
+                let iconClassOf (variant: BannerVariant) =
+                    RTL.render (Banner.Banner("Message", variant = variant)) |> ignore
+                    let className = (RTL.screen.getByTestId "BannerIcon").className
+                    RTL.cleanup ()
+                    className
+
+                let classes =
+                    [
+                        BannerVariant.Info
+                        BannerVariant.Success
+                        BannerVariant.Warning
+                        BannerVariant.Error
+                    ]
+                    |> List.map iconClassOf
+                    |> List.distinct
+
+                Vitest.expect(classes.Length).toBe 4
+        )
+
+        Vitest.test (
+            "a given icon replaces the icon of the variant",
+            fun () ->
+                RTL.render (Banner.Banner("Message", variant = BannerVariant.Error)) |> ignore
+                let variantIcon = (RTL.screen.getByTestId "BannerIcon").className
+                RTL.cleanup ()
+
+                RTL.render (
+                    Banner.Banner("Message", variant = BannerVariant.Error, icon = "swt:fluent--cloud-24-regular")
+                )
+                |> ignore
+
+                let icon = RTL.screen.getByTestId "BannerIcon"
+
+                Vitest.expect(icon.classList.contains "swt:fluent--cloud-24-regular").toBe true
+                Vitest.expect(icon.className).not.toBe variantIcon
+        )
 )
