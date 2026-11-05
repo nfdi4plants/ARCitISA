@@ -7,6 +7,7 @@
 ## Working rules for this branch
 
 - Commits are allowed on `feature/RobustArcFileSync`, without `Co-Authored-By` or any other attribution line. The maintainer granted this exception to the Git rule in `AGENTS.md`. It does not cover pushing, so ask before pushing.
+- The whole plan is one PR, merged only after every phase is done. Phases are commits, not releases.
 - The branch stacks on #1458, which is still open. Rebase it onto `main` once #1458 merges.
 - Do not stage `.github/PULL_REQUEST_TEMPLATE/default.md`. That uncommitted deletion is not part of this work.
 - **Slimming rule:** keep workarounds for ARCtrl bugs. Remove any other sync code this design makes unnecessary.
@@ -37,19 +38,19 @@ This branch also makes entity folder clicks only expand and collapse (phase 4b).
 
 ## Decisions
 
-The first column is what this plan assumes. Items marked **confirm** differ from or refine the maintainer's first thoughts.
+The maintainer confirmed D1, D2, D4, D8 and D9, and has agreed D8 and D9 with caroott, who had asked on #1458 to keep the folder click behaviour and to reveal only the zone folder on create.
 
 | # | Decision | Why |
 |---|---|---|
-| D1 | Disk wins **per file**, not for the whole ARC. Confirmed by the maintainer. | An external edit to study S should not throw away unsaved edits to assay A. `ARC.merge` already works this way, and merging inside a file stays out of scope. |
-| D2 | Own writes are recognized by **comparing files**, not by time. **Confirm.** | "Drop events during a write" cannot catch own events, because they arrive more than 2 s later. A longer window would drop real external edits for longer. Comparing gives the intended result: files changed during our write count as ours. |
+| D1 | Disk wins **per file**, not for the whole ARC. | An external edit to study S should not throw away unsaved edits to assay A. `ARC.merge` already works this way, and merging inside a file stays out of scope. |
+| D2 | Own writes are recognized by **comparing files**, not by time. | "Drop events during a write" cannot catch own events, because they arrive more than 2 s later. A longer window would drop real external edits for longer. Comparing gives the intended result: files changed during our write count as ours. |
 | D3 | Reject **all** edits during a sync, as requested, but start a sync only when files really differ. | Without the check, every Save would flash "external changes detected". |
-| D4 | A file that was touched but has identical content keeps local edits. **Confirm.** | Sync tools and `git checkout` can change the modified time without changing the content. Discarding unsaved work then would be a pure loss. |
+| D4 | A file that was touched but has identical content keeps local edits. | Sync tools and `git checkout` can change the modified time without changing the content. Discarding unsaved work then would be a pure loss. |
 | D5 | Git operations and imports are **not** own writes. They hold the lock, then trigger a normal sync. | Their changes must reach memory. |
 | D6 | When disk replaces an entity with unsaved edits, the notice names it. | Otherwise work disappears silently. |
 | D7 | Keep writing first and committing to memory afterwards, as `TryAddArcFileAsync` does. | A failed write then leaves memory clean. |
 | D8 | Clicking a study, assay, workflow or run folder only expands or collapses it. It no longer opens the `isa.*.xlsx` file. Requested by the maintainer. | The logic is annoying to maintain and confusing for beginners. |
-| D9 | Right-click "Open" goes away for these folders too, and a new study, assay, workflow or run opens its workbook directly. **Confirm.** | Keeping either one would keep the folder-to-workbook logic that D8 wants gone. |
+| D9 | Right-click "Open" goes away for these folders too, and a new study, assay, workflow or run opens its workbook directly. | Keeping either one would keep the folder-to-workbook logic that D8 wants gone. |
 
 ## Design
 
@@ -204,15 +205,7 @@ Write failing tests first, using the temp ARC and fake watcher in `tests/Electro
 - Add with an unreadable workbook elsewhere in the ARC: the add succeeds.
 - External edit whose event arrives during a write: it loads after the write.
 
-The maintainer confirmed the first case in the app, so that test must fail before the fix. If it passes, it does not reproduce the bug yet. Deliver its event after the suppression window ends, so it keeps failing until phase 2 and does not depend on the stopgap below.
-
-Then commit the stopgap, which keeps the branch safe to use until phase 2 removes it:
-
-- Raise `fileWatcherOwnWriteArcMergeSuppressionMs` (`ArcVaultState.fs:100`) from 500 to 3000, so own-write events fall inside the window.
-- Update the tests that wait for the window (`ArcVaultHelper.test.fs:938`, `:1418`).
-- Cost: external edits arriving within 3 s after a write are dropped from the merge. Disk stays correct, and the app shows the old version until that file next changes.
-
-The maintainer chose to make this part of this branch rather than a separate fix, so it only reaches users if the branch is released before phase 2.
+The maintainer confirmed the first case in the app, so that test must fail before the fix. If it passes, it does not reproduce the bug yet. Deliver its event after the suppression window ends, as the real event does.
 
 ### Phase 1: file comparison
 
@@ -267,7 +260,6 @@ Side effect: the new entity's selection can no longer be cleared by the missing-
 - Add the IPC messages and the `baseRevision` check.
 - Add the notice, `inert`, page reload, refused-edit handling and the `PublishFileContentChanges` filter.
 - Add React Testing Library tests in `.test.rtl.fs` for: a notice during a sync, no notice for an empty diff, a folder-selected entity page refreshing, a refused edit reverting the page, and the naming of replaced unsaved edits.
-- **Ship this with phase 2 if the branch will be used in between.** Until it lands, problem 3 can still put stale content back.
 
 ### Phase 6: Git and import
 
@@ -319,4 +311,3 @@ Test observable behaviour only.
 - **One bad workbook blocks every sync.** `LoadAsyncSwate` fails as a whole. This is the case today too, and it is now visible to the user. Loading only changed files could remove it later and is out of scope here.
 - **Full load per external change.** Kept for simplicity. It now runs only for real external changes.
 - **Long external operations delay sync.** A long Git or LFS operation holds the lock, and memory catches up when it ends. The tree keeps updating meanwhile.
-- **Phase 4b reverses review outcomes on #1458.** caroott asked to keep the folder click behaviour (review thread at `FileTree.fs:670`) and to reveal only the zone folder on create (`740bb00ed`). Agree on this with caroott before phase 4b.
