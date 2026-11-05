@@ -373,7 +373,8 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
                 match tryGetVaultAndArcPath event with
                 | Error error -> return Error error
                 | Ok(vault, arcPath) ->
-                    let! result = Main.Notes.NoteScaffolding.ensureNotesFolderAtArcPath arcPath
+                    let enabled = Main.UserDefaults.production.Effective().AutoCreateNotesFolder
+                    let! result = Main.Notes.NoteScaffolding.ensureNotesFolderAtArcPath arcPath enabled
 
                     match result with
                     | Ok _ -> do! vault.EnqueueFileTreeDirectoriesReconcile [| arcPath |]
@@ -989,8 +990,13 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
                                                         arcLocal
                                                 with
                                                 | Error deleteError -> return Error deleteError
-                                                | Ok deletedArc ->
-                                                    vault.SetArc deletedArc
+                                                | Ok outcome ->
+                                                    let nextArc, partialError =
+                                                        match outcome with
+                                                        | Deleted arc -> arc, None
+                                                        | PartiallyDeleted(arc, error) -> arc, Some error
+
+                                                    vault.SetArc nextArc
                                                     vault.RefreshHasUnsavedArcChangesFlag()
                                                     // The watcher reports this late, so the zone folder is reconciled here.
                                                     do!
@@ -998,7 +1004,9 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
                                                             entityFolderOf normalizedRelativePath
                                                         ]
 
-                                                    return Ok()
+                                                    match partialError with
+                                                    | None -> return Ok()
+                                                    | Some error -> return Error error
                                             })
                             | ArcFileSystemHelper.DeletePathRoute.DataMap normalizedDataMapPath ->
                                 match vault.arc, DatamapParentInfo.tryFromPath normalizedDataMapPath with

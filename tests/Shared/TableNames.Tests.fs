@@ -135,7 +135,7 @@ let tests =
         testCase "a suggested name does not clash with the sheets saved next to the tables"
         <| fun _ ->
             let assay = ArcAssay.init "Assay"
-            assay.DataMap <- Some(DataMap.init ())
+            assay.Datamap <- Some(Datamap.init ())
 
             let result =
                 resolveNewTableNames [] [| ArcAssay.metadataSheetName, None; "isa_datamap", None |]

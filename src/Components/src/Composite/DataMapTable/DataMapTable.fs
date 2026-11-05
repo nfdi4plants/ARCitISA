@@ -49,7 +49,7 @@ type DataMapTable =
 
     [<ReactComponent>]
     static member private ModalDetails
-        (index: CellCoordinate, datamap: DataMap, setDatamap, setModal: Modal option -> unit)
+        (index: CellCoordinate, datamap: Datamap, setDatamap, setModal: Modal option -> unit)
         =
 
         let close = fun () -> setModal None
@@ -251,7 +251,7 @@ type DataMapTable =
     [<ReactComponent(true)>]
     static member DataMapTable
         // 👀 If you rename these variables, ensure that the names are forwarded for lazy loading in `src\Components\src\ARCFileEditor\ArcFileEditor.fs` as well!
-        (datamap: DataMap, setDatamap: DataMap -> unit, ?height, ?debug: bool) =
+        (datamap: Datamap, setDatamap: Datamap -> unit, ?height, ?debug: bool) =
 
         let modal, setModal = React.useState (None: Modal option)
         let tableRef = React.useRef<TableHandle> (unbox null)
@@ -371,7 +371,7 @@ type DataMapTable =
 
         let datamap, setDatamap =
             React.useState (
-                ARCtrl.DataMap(
+                ARCtrl.Datamap(
                     ResizeArray [
                         for i in 0..100 do
                             DataContext(

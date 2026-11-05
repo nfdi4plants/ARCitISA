@@ -58,6 +58,97 @@ let private isCancellableBusyOperation (busyOperation: Renderer.Context.GitWorkf
     | Renderer.Context.GitWorkflow.GitBusyOperation.CloningRepository _ -> true
     | _ -> false
 
+let private activityVerb (kind: Renderer.Context.LfsActivityContext.LfsActionKind) =
+    match kind with
+    | Renderer.Context.LfsActivityContext.LfsActionKind.Download -> "Downloading"
+    | Renderer.Context.LfsActivityContext.LfsActionKind.Free -> "Freeing"
+
+/// The log for the sidebar. A log without lines is None, so the notice offers no "Show logs" button for it.
+let sidebarLog
+    (log: Renderer.Context.OperationLog.OperationLog)
+    : Swate.Components.Page.GitSidebarTypes.GitSidebarLog option =
+    if log.Lines.Length = 0 then
+        None
+    else
+        let lines =
+            log.Lines
+            |> Array.map (fun line ->
+                let mapped: Swate.Components.Page.GitSidebarTypes.GitSidebarLogLine = {
+                    Kind = line.Kind
+                    Text = line.Text
+                }
+
+                mapped
+            )
+
+        let mapped: Swate.Components.Page.GitSidebarTypes.GitSidebarLog = { Lines = lines; Omitted = log.Omitted }
+
+        Some mapped
+
+let private activityLabel (action: Renderer.Context.LfsActivityContext.LfsRunningAction) =
+    $"{activityVerb action.Kind} {Swate.Components.Shared.PathHelpers.getFileName action.Target}"
+
+/// One background item per running file tree action. The label names the kind and the folder or file. The detail
+/// and the percent come from the progress that the action reported, the same text as on the file tree row. The
+/// log is the output that the action sent, taken from the logs by operation id.
+let backgroundActivityItems
+    (actions: Renderer.Context.LfsActivityContext.LfsRunningAction[])
+    (logs: Renderer.Context.LfsActivityContext.LfsRunningLogs)
+    : Swate.Components.Page.GitSidebarTypes.GitSidebarBackgroundActivity[] =
+    actions
+    |> Array.map (fun action ->
+        let item: Swate.Components.Page.GitSidebarTypes.GitSidebarBackgroundActivity = {
+            Label = activityLabel action
+            Detail = Renderer.Context.LfsActivityContext.LfsRunningAction.progressText action
+            ProgressPercent = Renderer.Context.LfsActivityContext.LfsRunningAction.progressPercent action
+            Log = logs |> Map.tryFind action.OperationId |> Option.bind sidebarLog
+        }
+
+        item
+    )
+
+/// The writes that take the mutation lock of the library, so they wait for a file tree action that holds it: the
+/// commit of a Save, Download Changes, Upload Changes, the discard, the restore of interrupted files, the creation
+/// and the switch of a branch, the steps of a merge resolution and the "Download now" retry. The other busy
+/// operations do not take the lock: refresh, fetch, clone, the initialization and the rename of the repository, the
+/// LFS settings, the cache maintenance, the dependency install and the lock removal.
+let private waitsForFileTreeActions (busyOperation: Renderer.Context.GitWorkflow.GitBusyOperation) =
+    match busyOperation with
+    | Renderer.Context.GitWorkflow.GitBusyOperation.CommittingSelectedChanges
+    | Renderer.Context.GitWorkflow.GitBusyOperation.CommittingAllChanges
+    | Renderer.Context.GitWorkflow.GitBusyOperation.PullingFromRemote
+    | Renderer.Context.GitWorkflow.GitBusyOperation.PushingToRemote
+    | Renderer.Context.GitWorkflow.GitBusyOperation.DiscardingSelectedChanges
+    | Renderer.Context.GitWorkflow.GitBusyOperation.RestoringInterruptedPaths
+    | Renderer.Context.GitWorkflow.GitBusyOperation.CreatingBranch
+    | Renderer.Context.GitWorkflow.GitBusyOperation.SwitchingBranch
+    | Renderer.Context.GitWorkflow.GitBusyOperation.ConfirmingMergeResolution _
+    | Renderer.Context.GitWorkflow.GitBusyOperation.FinalizingMerge
+    | Renderer.Context.GitWorkflow.GitBusyOperation.AbandoningMerge
+    | Renderer.Context.GitWorkflow.GitBusyOperation.RetryingMaterialization -> true
+    | _ -> false
+
+/// The headline of a busy sidebar operation that waits for a file tree action. It names the first action that
+/// started before the operation did, because only such an action can hold the mutation lock of the library. The
+/// headline covers the wait before the first report of the operation. A Save that has reported its commit and then
+/// waits for an action that started later shows its own headline, and the background notice still names that
+/// action. Without an earlier action the headline stays unset.
+let waitingHeadline
+    (busyOperation: Renderer.Context.GitWorkflow.GitBusyOperation option)
+    (operationReported: bool)
+    (operationStartedAt: float option)
+    (actions: Renderer.Context.LfsActivityContext.LfsRunningAction[])
+    : string option =
+    match busyOperation, operationStartedAt with
+    | Some operation, Some startedAt when waitsForFileTreeActions operation && not operationReported ->
+        actions
+        |> Array.tryFind (fun action -> action.StartedAt < startedAt)
+        |> Option.map (fun action ->
+            let label = activityLabel action
+            $"Waits for {label.Substring(0, 1).ToLowerInvariant()}{label.Substring 1} to finish"
+        )
+    | _ -> None
+
 [<ReactComponent>]
 let Main () =
 
@@ -71,6 +162,22 @@ let Main () =
     let runStatus = Renderer.Context.GitWorkflow.currentRunStatus gitStateCtx.state
     let errorCtx = useErrorModalCtx ()
     let appStateCtx = Renderer.Context.AppStateContext.useAppStateCtx ()
+
+    let runningLfsActions =
+        Renderer.Context.LfsActivityContext.useLfsRunningActionsCtx ()
+
+    // Only the sidebar reads the logs, so a batch of output renders this panel and leaves the file tree alone.
+    let runningLfsLogs = Renderer.Context.LfsActivityContext.useLfsRunningLogsCtx ()
+
+    let backgroundActivities =
+        React.useMemo (
+            (fun () -> backgroundActivityItems runningLfsActions runningLfsLogs),
+            [| box runningLfsActions; box runningLfsLogs |]
+        )
+
+    // The log changes with every batch of output. A sidebar render for something else keeps the mapped lines.
+    let operationLog =
+        React.useMemo ((fun () -> sidebarLog gitStateCtx.state.CurrentLog), [| box gitStateCtx.state.CurrentLog |])
 
     // The dialog resets its name and owner state when the prompt object changes. The model keeps
     // the same prompt object between unrelated updates, so a re-render of the panel keeps them.
@@ -202,6 +309,15 @@ let Main () =
             changedFiles = gitStateCtx.state.ChangedFiles,
             branchOptions = gitStateCtx.state.BranchOptions,
             ?runStatus = runStatus,
+            backgroundActivities = backgroundActivities,
+            operationSteps = gitStateCtx.state.CurrentSteps,
+            ?operationLog = operationLog,
+            ?busyHeadlineOverride =
+                waitingHeadline
+                    gitStateCtx.state.BusyOperation
+                    gitStateCtx.state.OperationReported
+                    gitStateCtx.state.OperationStartedAt
+                    runningLfsActions,
             ?hasRemote = Some(Renderer.Context.GitWorkflow.hasRemote gitStateCtx.state),
             ?selectedFile = gitStateCtx.state.SelectedChangePath,
             ?errorNotice = gitStateCtx.state.ErrorNotice,

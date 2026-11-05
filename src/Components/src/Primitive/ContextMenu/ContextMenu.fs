@@ -151,6 +151,8 @@ type ContextMenu =
             let items = childInfo data
             listContentRef.current.Clear()
             listItemsRef.current.Clear()
+            // Ref callbacks assign by item index, including the slots occupied by dividers.
+            listItemsRef.current.AddRange(items |> List.map (fun _ -> Unchecked.defaultof<HTMLElement>))
             setActiveIndex None
             setChildren items
             setSpawnData data
@@ -261,7 +263,10 @@ type ContextMenu =
                                                         {|
                                                             ref =
                                                                 fun (node: HTMLElement) ->
-                                                                    listItemsRef.current.[index] <- node
+                                                                    // React also clears the previous menu's refs when a
+                                                                    // new menu has fewer items (or no items at all).
+                                                                    if index < listItemsRef.current.Count then
+                                                                        listItemsRef.current.[index] <- node
 
                                                                     if
                                                                         child.label.IsNone

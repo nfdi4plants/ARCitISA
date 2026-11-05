@@ -284,7 +284,7 @@ module History =
                     |> Promise.start
                 | Some(ArcFiles.DataMap(parent, datamap)) ->
                     if parent.IsSome then
-                        ARCitect.api.Save(ArcFilesDiscriminate.DataMap, DataMap.toJsonString 0 datamap, parent)
+                        ARCitect.api.Save(ArcFilesDiscriminate.DataMap, Datamap.toJsonString 0 datamap, parent)
                         |> Promise.start
                     else
                         failwith "No datamap parent is available"

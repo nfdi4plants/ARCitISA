@@ -93,6 +93,10 @@ jobs:
       fail-fast: false
       matrix:
         target: [nuget, npm, docker, electron-web, storybook]
+        # NuGet packages omit the patched remoting dependencies. Re-enable after the
+        # compatibility workaround is removed; see src/Fable.SimpleJson.Compatibility/README.md.
+        exclude:
+          - target: nuget
     steps:
       # Checkout the repository
       - name: Checkout code
@@ -177,11 +181,13 @@ jobs:
 
           - os: macos-latest
             arch: arm64
-
-          - os: ubuntu-latest
+            
+          # The rpm maker fails on ubuntu-latest (26.04). Its rpmbuild runs %install in a per-package
+          # build folder, where the spec of electron-installer-redhat cannot find the app files.
+          - os: ubuntu-24.04
             arch: x64
 
-          - os: ubuntu-latest
+          - os: ubuntu-24.04
             arch: arm64
 
     runs-on: ${{ matrix.os }}

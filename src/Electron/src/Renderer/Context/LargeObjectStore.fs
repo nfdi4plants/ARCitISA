@@ -18,6 +18,14 @@ type LargeObjectSnapshot = {
     ByExactPath: System.Collections.Generic.Dictionary<string, ObjectStateDto>
 }
 
+/// The large object paths below one folder, split by the folder action they allow.
+type FolderLargeObjects = {
+    /// Objects that are not on disk as real content yet.
+    NeedsDownload: string[]
+    /// Objects whose content is on disk and can be freed.
+    HasLocalCopy: string[]
+}
+
 module LargeObjectSnapshot =
 
     let empty: LargeObjectSnapshot = {
@@ -55,6 +63,39 @@ module LargeObjectSnapshot =
             match snapshot.ByExactPath.TryGetValue relativePath with
             | true, found -> Some found
             | false, _ -> Map.tryFind (PathKey.ofPath snapshot.CaseInsensitive relativePath) snapshot.ByPathKey
+
+    /// Every large object at any depth below the folder, sorted by path. The ARC root (an empty path) matches
+    /// nothing, so a folder action never reaches the whole repository. folderObjects compares the folder and the
+    /// entries through the same path key as tryFind. The key composes Unicode and follows the case rule of the
+    /// volume. Whitespace stays part of a name.
+    let folderObjects (folderPath: string) (snapshot: LargeObjectSnapshot) : FolderLargeObjects =
+        let keyOf (path: string) =
+            PathKey.value (PathKey.ofPath snapshot.CaseInsensitive path)
+
+        let folderKey = keyOf folderPath
+        let folderPrefix = folderKey + "/"
+
+        let isBelowFolder (path: string) =
+            let key = keyOf path
+
+            not (System.String.IsNullOrEmpty folderKey)
+            && (key = folderKey || key.StartsWith(folderPrefix, System.StringComparison.Ordinal))
+
+        let below =
+            snapshot.ByExactPath.Values
+            |> Seq.filter (fun dto -> isBelowFolder dto.Path)
+            |> Seq.toArray
+
+        let pathsWhere predicate =
+            below
+            |> Array.filter predicate
+            |> Array.map _.Path
+            |> Array.sortWith (fun a b -> System.String.CompareOrdinal(a, b))
+
+        {
+            NeedsDownload = pathsWhere (fun dto -> not dto.IsMaterialized)
+            HasLocalCopy = pathsWhere _.IsMaterialized
+        }
 
 type LargeObjectStore() =
     let mutable snapshot = LargeObjectSnapshot.empty

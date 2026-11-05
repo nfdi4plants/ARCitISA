@@ -1,0 +1,10 @@
+{
+  "name": "electron-core-tests",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "clean": "dotnet fable clean -e fs.ts --yes && node -e \"require('node:fs').rmSync('output', { recursive: true, force: true })\"",
+    "fable": "dotnet fable -o output -s --define SWATE_ENVIRONMENT ./Electron.Core.Tests.fsproj",
+    "test": "npm run clean && npm run fable -- --noCache && npx vitest run"
+  }
+}

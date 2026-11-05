@@ -28,11 +28,11 @@
     <PackageReference Include="ARCtrl.Core" />
     <PackageReference Include="ARCtrl.Javascript" />
     <PackageReference Include="ARCtrl.Spreadsheet" />
-    <PackageReference Include="Fable.Remoting.Client" />
     <PackageReference Include="Fable.Fetch" />
     <PackageReference Include="Fable.React.Types" />
     <PackageReference Include="Fable.Core" />
     <PackageReference Include="Feliz" />
+    <PackageReference Include="Feliz.CompilerPlugins" />
     <PackageReference Include="Feliz.UseElmish" />
     <PackageReference Include="Fable.Browser.Dom" />
     <PackageReference Include="Vitest" />
@@ -62,6 +62,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\Shared\Swate.Components.Core.fsproj" />
+    <ProjectReference Include="..\..\Fable.Remoting.Client.Compatibility\Fable.Remoting.Client.fsproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -90,6 +91,7 @@
     <Compile Include="Api\GitHubReleases.test.fs" />
     <Compile Include="Util\DateTimeExtensions.fs" />
     <Compile Include="Util\Extensions.fs" />
+    <Compile Include="Util\Interop.fs" />
     <Compile Include="Util\ReactHooks.fs" />
     <Compile Include="Util\WebWorker.sample.fs" />
     <Compile Include="Util\WebWorker.test.rtl.fs" />
@@ -97,16 +99,22 @@
     <Compile Include="ARCtrl\TermCollection.fs" />
     <Compile Include="ARCtrl\Helper.fs" />
     <Compile Include="ARCtrl\ArcIO.fs" />
+    <Compile Include="ARCtrl\JsonCompatibility.fs" />
     <Compile Include="ARCtrl\EmptyColumnJson.fs" />
-    <Compile Include="ARCtrl\Json.fs" />
-    <Compile Include="ARCtrl\TableFiles.test.helpers.fs" />
-    <Compile Include="ARCtrl\Json.test.fs" />
-    <Compile Include="ARCtrl\EmptyColumnJson.test.fs" />
     <Compile Include="ARCtrl\Types\CompositeCellDiscriminate.fs" />
     <Compile Include="ARCtrl\Types\CompositeHeaderDiscriminate.fs" />
     <Compile Include="ARCtrl\ArcTable.fs" />
-    <Compile Include="ARCtrl\Extensions\ARC.fs" />
     <Compile Include="ARCtrl\Extensions\OntologyAnnotation.fs" />
+    <Compile Include="Composite\TableImport\Types.fs" />
+    <Compile Include="Composite\TableImport\Helper.fs" />
+    <Compile Include="ARCtrl\Json.fs" />
+    <Compile Include="ARCtrl\TableFiles.test.helpers.fs" />
+    <Compile Include="ARCtrl\Json.test.fs" />
+    <Compile Include="ARCtrl\JsonParse.test.fs" />
+    <Compile Include="ARCtrl\JsonCompatibility.test.fs" />
+    <Compile Include="ARCtrl\EmptyColumnJson.test.fs" />
+    <Compile Include="Composite\TableImport\Helper.test.fs" />
+    <Compile Include="ARCtrl\Extensions\ARC.fs" />
     <Compile Include="ARCtrl\Extensions\CompositeHeader.fs" />
     <Compile Include="ARCtrl\Extensions\CompositeCell.fs" />
     <Compile Include="ClipboardContract\Types.fs" />
@@ -119,6 +127,7 @@
     <Compile Include="ARCtrl\Extensions\Template.fs" />
     <Compile Include="Api\Helper.fs" />
     <Compile Include="Api\SwateApi.fs" />
+    <Compile Include="Api\JsonWireFormat.test.fs" />
     <Compile Include="Api\GitLabApi.fs" />
     <Compile Include="Api\TIBApi.fs" />
 
@@ -138,12 +147,14 @@
     <Compile Include="Primitive\Select\MultiSelect.sample.fs" />
     <Compile Include="Primitive\BaseModal\Context.fs" />
     <Compile Include="Primitive\BaseModal\BaseModal.fs" />
+    <Compile Include="Primitive\BaseModal\BaseModal.test.rtl.fs" />
     <Compile Include="Primitive\Dialog\Dialog.fs" />
     <Compile Include="Primitive\Dialog\Dialog.test.rtl.fs" />
     <Compile Include="Primitive\LayoutComponents\LayoutComponents.fs" />
     <Compile Include="Primitive\CardGrid\CardGrid.fs" />
     <Compile Include="Primitive\ContextMenu\Types.fs" />
     <Compile Include="Primitive\ContextMenu\ContextMenu.fs" />
+    <Compile Include="Primitive\ContextMenu\ContextMenu.test.rtl.fs" />
     <Compile Include="Primitive\ComboBox\Types.fs" />
     <Compile Include="Primitive\ComboBox\ComboBox.fs" />
     <Compile Include="Primitive\Dropdown\Dropdown.fs" />
@@ -235,14 +246,17 @@
     <Compile Include="Composite\Layout\Layout.fs" />
     <Compile Include="Composite\TemplateBrowser\Types.fs" />
     <Compile Include="Composite\TemplateBrowser\Helper.fs" />
-    <Compile Include="Composite\TemplateBrowser\Helper.test.fs" />
     <Compile Include="Composite\TemplateBrowser\Context.fs" />
     <Compile Include="Composite\TemplateBrowser\TemplateCacheContext.fs" />
     <Compile Include="Composite\TemplateBrowser\TemplateCacheProvider.fs" />
     <Compile Include="Composite\TemplateBrowser\TemplateActions.fs" />
     <Compile Include="Composite\TemplateBrowser\TemplateActions.test.fs" />
     <Compile Include="Composite\TemplateBrowser\TemplateFilter.fs" />
-    <Compile Include="Composite\TemplateBrowser\TemplateImportModalPreview.fs" />
+    <Compile Include="Composite\TableImport\ImportModeSelect.fs" />
+    <Compile Include="Composite\TableImport\TableImportPreview.fs" />
+    <Compile Include="Composite\TableImport\TableImportPreview.sample.fs" />
+    <Compile Include="Composite\TableImport\TableImportPreview.test.rtl.fs" />
+    <Compile Include="Composite\TableImport\TableImportForm.fs" />
     <Compile Include="Composite\TemplateBrowser\TemplateImportModal.fs" />
     <Compile Include="Composite\TemplateBrowser\TemplateImportModal.test.rtl.fs" />
     <Compile Include="Composite\TemplateBrowser\TemplatesDisplay.fs" />
@@ -252,9 +266,14 @@
     <Compile Include="Composite\Widgets\Context.fs" />
     <Compile Include="Composite\Widgets\JsonFormatSelect.fs" />
     <Compile Include="Composite\Widgets\JsonImport\Types.fs" />
+    <Compile Include="Composite\Widgets\JsonImport\Helper.fs" />
+    <Compile Include="Composite\Widgets\JsonImport\JsonImportModal.fs" />
     <Compile Include="Composite\Widgets\JsonImport\JsonImport.fs" />
+    <Compile Include="Composite\Widgets\JsonImport\JsonImport.sample.fs" />
+    <Compile Include="Composite\Widgets\JsonImport\JsonImport.test.rtl.fs" />
     <Compile Include="Composite\Widgets\JsonExport\JsonExport.fs" />
     <Compile Include="Composite\Widgets\BuildingBlockWidget\Dropdown.fs" />
+    <Compile Include="Composite\Widgets\BuildingBlockWidget\Dropdown.sample.fs" />
     <Compile Include="Composite\Widgets\BuildingBlockWidget\BuildingBlockWidget.fs" />
     <Compile Include="Composite\Widgets\CellInsertion.fs" />
     <Compile Include="Composite\Widgets\FilePickerWidget.fs" />
@@ -341,6 +360,7 @@
     <Compile Include="Page\Metadata\FormComponents\PersonsInput\PersonSearchDialog.fs" />
     <Compile Include="Page\Metadata\FormComponents\PersonsInput\PersonImportDialog.fs" />
     <Compile Include="Page\Metadata\FormComponents\PersonsInput\PersonsInput.fs" />
+    <Compile Include="Page\Metadata\FormComponents\PersonsInput\PersonsInput.sample.fs" />
     <Compile Include="Page\Metadata\FormComponents\PersonsInput\PersonsInput.test.rtl.fs" />
     <Compile Include="Page\Metadata\FormComponents\PersonsInput\PersonImportDialog.test.rtl.fs" />
     <Compile Include="Page\Metadata\FormComponents\PublicationsInput\Types.fs" />
@@ -348,6 +368,7 @@
     <Compile Include="Page\Metadata\FormComponents\PublicationsInput\Lookup.test.fs" />
     <Compile Include="Page\Metadata\FormComponents\PublicationsInput\PublicationSearchDialog.fs" />
     <Compile Include="Page\Metadata\FormComponents\PublicationsInput\PublicationsInput.fs" />
+    <Compile Include="Page\Metadata\FormComponents\PublicationsInput\PublicationsInput.sample.fs" />
     <Compile Include="Page\Metadata\FormComponents\PublicationsInput\PublicationsInput.test.rtl.fs" />
     <Compile Include="Page\Metadata\FormComponents\OntologySourceReferencesInput.fs" />
     <Compile Include="Page\Metadata\TemplateMetadata.fs" />
@@ -371,6 +392,7 @@
     <Compile Include="Page\Landing\Landing.fs" />
     <Compile Include="Page\GitSidebar\Types.fs" />
     <Compile Include="Page\GitSidebar\GitSidebar.fs" />
+    <Compile Include="Page\GitSidebar\GitSidebar.test.rtl.fs" />
     <Compile Include="Page\GitComparison\GitTextComparison.Core.fs" />
     <Compile Include="Page\GitComparison\GitPagedDiff.Types.fs" />
     <Compile Include="Page\GitComparison\GitTextComparison.fs" />

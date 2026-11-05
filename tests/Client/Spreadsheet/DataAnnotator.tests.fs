@@ -101,8 +101,8 @@ let Main =
         testCase "stores assay DataMap uploads relative to the ARC root"
         <| fun _ ->
             let assay = ArcAssay.init "MyAssay"
-            let dataMap = DataMap.init ()
-            assay.DataMap <- Some dataMap
+            let dataMap = Datamap.init ()
+            assay.Datamap <- Some dataMap
             let arcFile = ArcFiles.Assay assay
             let mutable nextArcFile = None
 
@@ -144,7 +144,7 @@ let Main =
                 ArcFiles.Study(ArcStudy.init "MyStudy", []), "./studies/MyStudy/resources/test.csv"
                 ArcFiles.Run(ArcRun.init "MyRun"), "./runs/MyRun/test.csv"
                 ArcFiles.Workflow(ArcWorkflow.init "MyWorkflow"), "./workflows/MyWorkflow/test.csv"
-                ArcFiles.DataMap(Some(DatamapParentInfo.create "MyStudy" DataMapParent.Study), DataMap.init ()),
+                ArcFiles.DataMap(Some(DatamapParentInfo.create "MyStudy" DataMapParent.Study), Datamap.init ()),
                 "./studies/MyStudy/resources/test.csv"
             |]
 

@@ -345,7 +345,17 @@ type ComboBox =
                                                         (useInteractions.getItemProps (
                                                             {|
                                                                 key = index
-                                                                ref = fun node -> listRef.current.[index] <- node
+                                                                ref =
+                                                                    fun node ->
+                                                                        let nodes = listRef.current
+
+                                                                        while nodes.Count <= index do
+                                                                            nodes.Add
+                                                                                Unchecked.defaultof<
+                                                                                    Browser.Types.HTMLElement
+                                                                                 >
+
+                                                                        nodes.[index] <- node
                                                                 onClick = fun _ -> onSelect index item
                                                                 onMouseDown = fun _ -> onSelect index item
                                                             |}

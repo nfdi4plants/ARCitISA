@@ -49,13 +49,13 @@ Vitest.describe (
             "change event: in-memory DataMap is forwarded onto disc run when no datamap event exists",
             fun () ->
                 let arcLocal, arcRemote = withRun ()
-                arcLocal.Runs.[0].DataMap <- Some(DataMap.init ())
+                arcLocal.Runs.[0].Datamap <- Some(Datamap.init ())
                 arcRemote.Runs.[0].Title <- Some "Disc Run Title"
 
                 let merged = ARC.merge arcLocal arcRemote [ runEvent EventName.Change "My Run" ]
 
                 Vitest.expect(merged.Runs.[0].Title).toEqual (Some "Disc Run Title")
-                Vitest.expect(merged.Runs.[0].DataMap.IsSome).toBe (true)
+                Vitest.expect(merged.Runs.[0].Datamap.IsSome).toBe (true)
         )
 
         Vitest.test (
