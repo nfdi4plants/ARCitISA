@@ -20,6 +20,8 @@
 3. While external changes load, edits are rejected and a notice says so.
 4. The renderer shows the result as soon as the change is in memory.
 
+This branch also makes entity folder clicks only expand and collapse (phase 4b). That is a separate request from the maintainer, but it removes one cause of problem 3 below.
+
 ## What is wrong today
 
 | # | Problem | Evidence | Checked by |
@@ -46,6 +48,8 @@ The first column is what this plan assumes. Items marked **confirm** differ from
 | D5 | Git operations and imports are **not** own writes. They hold the lock, then trigger a normal sync. | Their changes must reach memory. |
 | D6 | When disk replaces an entity with unsaved edits, the notice names it. | Otherwise work disappears silently. |
 | D7 | Keep writing first and committing to memory afterwards, as `TryAddArcFileAsync` does. | A failed write then leaves memory clean. |
+| D8 | Clicking a study, assay, workflow or run folder only expands or collapses it. It no longer opens the `isa.*.xlsx` file. Requested by the maintainer. | The logic is annoying to maintain and confusing for beginners. |
+| D9 | Right-click "Open" goes away for these folders too, and a new study, assay, workflow or run opens its workbook directly. **Confirm.** | Keeping either one would keep the folder-to-workbook logic that D8 wants gone. |
 
 ## Design
 
@@ -150,7 +154,7 @@ Keep `ARC.merge` and its per-entity handling. It already implements disk wins, a
 - **Notice:** "External changes detected, waiting…", styled like `FileWatcherNotice`.
 - **Input:** make the main content `inert` during a sync, with a typed binding. This blocks every editor without touching each one.
 - **Refused edit:** the page already shows the edit, so always reload it from main and tell the user the edit was not applied. Otherwise the next accepted edit would resend it inside the whole entity.
-- **`ArcSyncFinished`:** reload the open page if its file is in `changedPaths`, compared on the workbook path and not on the selection, which fixes problem 3. Adopt the new revision only **after** that reload finishes, so a stale page can never send an accepted edit.
+- **`ArcSyncFinished`:** reload the open page if its file is in `changedPaths`. Together with phase 4b, which makes the selection of an ARC page always its file, this fixes problem 3. Adopt the new revision only **after** that reload finishes, so a stale page can never send an accepted edit.
 - **Double reloads:** remove ARC metadata files from `PublishFileContentChanges`. Otherwise a Save still reloads the page through `useReconcileSelectedPreview`, which can drop an edit that is still on its way to main.
 
 Notes and other text files keep their existing content stamp path.
@@ -182,6 +186,9 @@ Notes and other text files keep their existing content stamp path.
 | Reload and sync calls in `AddArcFile`, `syncAddedArcFileFromPersisted` | `ArcVault.fs:130-135`, `ArcVaultHelper.fs:45` | Memory hash on commit |
 | `mergeDeletedEntityFromDisk` | `Delete.fs:65` | Silent `RequestSync` |
 | Second reload in rename | `Rename.fs:55` | See phase 4 |
+| Directory branch of `openPreview`, its `alwaysOpen` parameter, `withStartingView` | `FileTree.fs:229-263` | Folder rows only expand and collapse |
+| `tryGetArcEntityWorkbookName`, `isArcEntityFolderViewOpen` | `Helper.fs:166-183` | Nothing |
+| "Open" for folders in the right-click menu | `FileTreeContextMenu.fs:118-121` | "Open" for files only |
 
 Check each removal for other callers before deleting it. Startup buffering (`BufferedFileWatcherEvents`) stays for now, because the tree still needs it.
 
@@ -197,7 +204,15 @@ Write failing tests first, using the temp ARC and fake watcher in `tests/Electro
 - Add with an unreadable workbook elsewhere in the ARC: the add succeeds.
 - External edit whose event arrives during a write: it loads after the write.
 
-The maintainer confirmed the first case in the app, so that test must fail before the fix. If it passes, it does not reproduce the bug yet.
+The maintainer confirmed the first case in the app, so that test must fail before the fix. If it passes, it does not reproduce the bug yet. Deliver its event after the suppression window ends, so it keeps failing until phase 2 and does not depend on the stopgap below.
+
+Then commit the stopgap, which keeps the branch safe to use until phase 2 removes it:
+
+- Raise `fileWatcherOwnWriteArcMergeSuppressionMs` (`ArcVaultState.fs:100`) from 500 to 3000, so own-write events fall inside the window.
+- Update the tests that wait for the window (`ArcVaultHelper.test.fs:938`, `:1418`).
+- Cost: external edits arriving within 3 s after a write are dropped from the merge. Disk stays correct, and the app shows the old version until that file next changes.
+
+The maintainer chose to make this part of this branch rather than a separate fix, so it only reaches users if the branch is released before phase 2.
 
 ### Phase 1: file comparison
 
@@ -229,6 +244,24 @@ The maintainer confirmed the first case in the app, so that test must fail befor
 - **Rename:** cannot use the sync, because that would lose unsaved edits on the renamed entity. Keep `applyInMemoryRename` and `remapArcFileSystemPaths`, run under `WithOwnWriteScope`, and replace the second reload: if the entity had no unsaved edits, set its hash from memory. If it had, leave it unsaved.
 - **Check cross references first.** Rename and delete can change other files on disk. Test that memory matches disk for a study that references a renamed or deleted assay. If it does not, keep the rename reload and record why.
 
+### Phase 4b: folder clicks only expand and collapse
+
+This does not depend on the sync work and can be done at any time before phase 5, which relies on it. Use `3a2f1fa1f` (removed the click behaviour) and `bbf1be7b9` (restored it) as a guide. This phase goes further, because `3a2f1fa1f` kept the folder branch for right-click "Open".
+
+- `FileTree.fs`: `onItemClick` opens files only. Remove the directory branch of `openPreview`, `alwaysOpen` and `withStartingView`.
+- `FileTreeContextMenu.fs:118-121`: offer "Open" for files only. Update `FileTreeContextMenu.test.fs:268` and `:297`.
+- `Helper.fs`: remove `tryGetArcEntityWorkbookName` and `isArcEntityFolderViewOpen` once nothing calls them.
+- `FileTreeCreate.fs`: `createArcEntry` opens the workbook with `toItem false draft.Path`. Remove the zone folder reveal if the selection reveal makes it redundant, and update the comments at `:34` and `:64` and `FileTreeCreateWorkflow.test.fs:65`.
+- Check that renaming an entity folder moves the selection along when its workbook is selected (`FileTreeRename.fs:81`).
+- `resolveArcPreviewPath` also serves DataMap paths. Remove only what exists for folders.
+
+Visible changes to accept:
+
+- A new entity selects its workbook, so the selection reveal opens its folder too. This undoes the effect of `740bb00ed`, and matches what `main` did before #1458.
+- Workbooks start on the first table if there is one, otherwise on Metadata (`Types.fs:259-264`). Folder clicks always started on Metadata.
+
+Side effect: the new entity's selection can no longer be cleared by the missing-selection check in `FileTree.fs:110` when a tree update fails, because a file in a folder that is not loaded yet counts as unknown rather than missing.
+
 ### Phase 5: renderer
 
 - Add the IPC messages and the `baseRevision` check.
@@ -251,7 +284,9 @@ The maintainer confirmed the first case in the app, so that test must fail befor
   - Edit with unsaved changes in another entity.
   - `git pull` with a metadata change.
   - Save a broken workbook externally, then fix it.
-- Add a user-facing line to `CHANGELOG.md` under `[Unreleased]`, stating that external changes now replace unsaved edits to that file.
+  - Click an entity folder while another file is open.
+  - Create a study and check that its workbook opens.
+- Add user-facing lines to `CHANGELOG.md` under `[Unreleased]`, stating that external changes now replace unsaved edits to that file, and that clicking a study, assay, workflow or run folder only expands or collapses it. Adjust the entry at `CHANGELOG.md:69` if it is still unreleased.
 - Delete this plan.
 
 ## Test list
@@ -272,6 +307,9 @@ Test observable behaviour only.
 | Watcher down, window focus | External change loads |
 | Root rename during a sync | Result discarded |
 | Save during a sync | Refused with a clear message |
+| Click on an entity folder | Folder expands or collapses, open page and selection unchanged |
+| Right-click on an entity folder | No "Open" item |
+| Create a study, assay, workflow or run | Its workbook opens and is selected |
 
 ## Risks
 
@@ -281,3 +319,4 @@ Test observable behaviour only.
 - **One bad workbook blocks every sync.** `LoadAsyncSwate` fails as a whole. This is the case today too, and it is now visible to the user. Loading only changed files could remove it later and is out of scope here.
 - **Full load per external change.** Kept for simplicity. It now runs only for real external changes.
 - **Long external operations delay sync.** A long Git or LFS operation holds the lock, and memory catches up when it ends. The tree keeps updating meanwhile.
+- **Phase 4b reverses review outcomes on #1458.** caroott asked to keep the folder click behaviour (review thread at `FileTree.fs:670`) and to reveal only the zone folder on create (`740bb00ed`). Agree on this with caroott before phase 4b.
