@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 🔄 Changed
+
+- Releases are now automatically created as draft. This is part of quality control. The App will first be tested and the docs updated before the release is pushed into "New update available" status. #1488 (by @Freymaurer)
+
 ## 3.2.0 - 2026-11-02
 
 ### ✨ Added
