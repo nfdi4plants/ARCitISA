@@ -24,7 +24,7 @@
 
 | # | Problem | Evidence | Checked by |
 |---|---|---|---|
-| 1 | Our own writes come back as external changes. Suppression lasts 500 ms (`ArcVaultState.fs:100`), but chokidar holds events until a file is stable for 2000 ms (`ArcVaultHelper.fs:398`). No other filter exists. The merge then replaces the entity with the disk copy, even with local edits (`ArcMergeLibraryExtensions.fs:118`). | Own-write events arrived 2.08–2.33 s after the write, with polling and with native events (chokidar 3.6.0, app settings, plain files). | Timing measured. Edit loss read in code, **not reproduced in the app**. |
+| 1 | Our own writes come back as external changes. Suppression lasts 500 ms (`ArcVaultState.fs:100`), but chokidar holds events until a file is stable for 2000 ms (`ArcVaultHelper.fs:398`). No other filter exists. The merge then replaces the entity with the disk copy, even with local edits (`ArcMergeLibraryExtensions.fs:118`). | Own-write events arrived 2.08–2.33 s after the write, with polling and with native events (chokidar 3.6.0, app settings, plain files). | Timing measured. Loss directly after a Save confirmed in the app by the maintainer. |
 | 2 | External events that arrive during a write or the 500 ms after it are dropped from the merge with no retry. They only update the tree (`ArcVaultFileWatcher.fs:522-531`, `queueFileWatcherEvent`). Memory stays stale with no signal. | Code | Read |
 | 3 | A stale page can overwrite an external change. Each edit sends the whole entity (`ArcFilePreviewTarget.fs:26-38`), and main replaces its copy (`updateARCByFileContentDTO`). Pages only refresh on `change` events (`ArcVaultFileTree.fs:208`) whose path equals the selection (`FileTreeExpansionContext.fs:550-555`), but an entity page opened from its folder has the folder as its selection. The next edit puts the old content back, and the next Save writes it to disk. | Code | Read, **not reproduced** |
 | 4 | `AddArcFile` reloads the whole ARC after writing (`ArcVault.fs:130`). One unreadable workbook anywhere makes it return an error although the file is written and committed to memory. The tree update is skipped, and a retry reports that the entity already exists. | Code, plus the batch fold in ARCtrl `ContractIO` | Read |
@@ -39,7 +39,7 @@ The first column is what this plan assumes. Items marked **confirm** differ from
 
 | # | Decision | Why |
 |---|---|---|
-| D1 | Disk wins **per file**, not for the whole ARC. **Confirm.** | An external edit to study S should not throw away unsaved edits to assay A. `ARC.merge` already works this way, and merging inside a file stays out of scope. |
+| D1 | Disk wins **per file**, not for the whole ARC. Confirmed by the maintainer. | An external edit to study S should not throw away unsaved edits to assay A. `ARC.merge` already works this way, and merging inside a file stays out of scope. |
 | D2 | Own writes are recognized by **comparing files**, not by time. **Confirm.** | "Drop events during a write" cannot catch own events, because they arrive more than 2 s later. A longer window would drop real external edits for longer. Comparing gives the intended result: files changed during our write count as ours. |
 | D3 | Reject **all** edits during a sync, as requested, but start a sync only when files really differ. | Without the check, every Save would flash "external changes detected". |
 | D4 | A file that was touched but has identical content keeps local edits. **Confirm.** | Sync tools and `git checkout` can change the modified time without changing the content. Discarding unsaved work then would be a pure loss. |
@@ -197,7 +197,7 @@ Write failing tests first, using the temp ARC and fake watcher in `tests/Electro
 - Add with an unreadable workbook elsewhere in the ARC: the add succeeds.
 - External edit whose event arrives during a write: it loads after the write.
 
-If the maintainer's manual check shows that typing after a Save is **not** lost, find out why before phase 2, because problem 1 would be misunderstood.
+The maintainer confirmed the first case in the app, so that test must fail before the fix. If it passes, it does not reproduce the bug yet.
 
 ### Phase 1: file comparison
 
