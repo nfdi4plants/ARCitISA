@@ -912,7 +912,10 @@ Vitest.describe (
                         do! Promise.sleep 600
 
                         let loadingChanges = ResizeArray<bool>()
-                        let handleFileEvent = vault._FileEventController (recordingWatcherApi loadingChanges)
+
+                        let handleFileEvent =
+                            vault._FileEventController (recordingWatcherApi loadingChanges)
+
                         handleFileEvent "change" (join [| arcPath; "assays/SavedAssay/isa.assay.xlsx" |])
                         do! waitForWatcherIdle loadingChanges
 
@@ -986,7 +989,10 @@ Vitest.describe (
                         let writeScope = vault.WithBusyWritingScope(fun () -> writeGate)
 
                         let loadingChanges = ResizeArray<bool>()
-                        let handleFileEvent = vault._FileEventController (recordingWatcherApi loadingChanges)
+
+                        let handleFileEvent =
+                            vault._FileEventController (recordingWatcherApi loadingChanges)
+
                         handleFileEvent "change" (join [| arcPath; "assays/DiskAssay/isa.assay.xlsx" |])
 
                         releaseWrite ()
