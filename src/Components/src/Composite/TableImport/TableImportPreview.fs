@@ -278,7 +278,7 @@ type TableImportPreview =
         let hasRowSelection = showRowSelection && rowCount > 0
 
         // Describes what Table.distinctByHeader and the join do with an appended table.
-        let appendNote =
+        let appendNote: string =
             let columns =
                 "Columns the active table already has, including Input and Output, stay as they are and are not taken from this table."
 

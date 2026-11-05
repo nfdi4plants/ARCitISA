@@ -312,7 +312,8 @@ type JsonImportModal =
             | _ ->
                 let canImport = JsonHelper.canImport phase currentArcFile parsed decisions
 
-                let blockedReason = JsonHelper.importBlockedReason currentArcFile parsed decisions
+                let blockedReason: string option =
+                    JsonHelper.importBlockedReason currentArcFile parsed decisions
 
                 Html.div [
                     prop.className "swt:flex swt:w-full swt:items-center swt:gap-2"

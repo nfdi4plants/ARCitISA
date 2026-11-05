@@ -58,7 +58,8 @@ type TemplateImportModal =
                 (TableHelper.actionOf decisions)
                 decisions.EnteredNames
 
-        let blockedReason = TableHelper.validate currentArcFile sources decisions
+        let blockedReason: string option =
+            TableHelper.validate currentArcFile sources decisions
 
         let submittedDecisions, setSubmittedDecisions = React.useState None
 
