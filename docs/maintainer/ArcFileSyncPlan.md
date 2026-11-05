@@ -1,12 +1,12 @@
 # Plan: keep ARC files and memory in sync
 
-**Status:** proposed. Nothing in this plan is implemented yet.
+**Status:** phases 0 and 1 are implemented. Phase 2 is next.
 **Base:** `feature/AddNewFileFocus` at `33a3b1530`. All line numbers refer to that commit.
-**Delete this file before the branch merges.**
+**Delete this file and `ArcFileSyncPlan-codex-review.md` before the branch merges.**
 
 ## Working rules for this branch
 
-- Commits are allowed on `feature/RobustArcFileSync`, without `Co-Authored-By` or any other attribution line. The maintainer granted this exception to the Git rule in `AGENTS.md`. It does not cover pushing, so ask before pushing.
+- Commits are allowed on `feature/RobustArcFileSync`, without `Co-Authored-By` or any other attribution line. The maintainer granted this exception to the Git rule in `AGENTS.md`. It does not cover pushing, so ask before pushing. The auto mode classifier can still block `git commit`. Then keep each phase's files separable and give the maintainer the commands.
 - The whole plan is one PR, merged only after every phase is done. Phases are commits, not releases.
 - The branch stacks on #1458, which is still open. Rebase it onto `main` once #1458 merges.
 - Do not stage `.github/PULL_REQUEST_TEMPLATE/default.md`. That uncommitted deletion is not part of this work.
@@ -35,10 +35,11 @@ This branch also makes entity folder clicks only expand and collapse (phase 4b).
 | 6 | Git operations run in the same busy scope as our writes (`IVersionControlApi.fs:233`, `:577`). Events arriving during a long operation fall under problem 2. | Code. Which Git operations change the working tree still has to be listed. | Read |
 | 7 | Merge failures are only logged (`ArcVaultFileWatcher.fs:441`). The user never learns that memory is behind. | Code | Read |
 | 8 | Writes are not blocked during a merge. The merge notices afterwards and retries, which needs a generation counter, an epoch, a deferral counter with a limit and a test barrier. | Code | Read |
+| 9 | A failed Save looks saved. `GetUpdateContracts` moves each entity's hash while generating contracts, before anything is written (ARCtrl `ARC.fs:773`), and the error path of `WriteArc` (`ArcVault.fs:90`) does not restore it. The entity then looks clean and a retry writes nothing. A workbook locked by Excel is a likely cause on Windows. | Code, plus `GetUpdateContracts` | Reproduced by the phase 0 test |
 
 ## Decisions
 
-The maintainer confirmed D1, D2, D4, D8 and D9, and has agreed D8 and D9 with caroott, who had asked on #1458 to keep the folder click behaviour and to reveal only the zone folder on create.
+The maintainer confirmed D1, D2, D4, D8 and D9, and has agreed D8 and D9 with caroott, who had asked on #1458 to keep the folder click behaviour and to reveal only the zone folder on create. D10 to D13 come from the review in `ArcFileSyncPlan-codex-review.md`, reduced to what the code needs, and the maintainer accepted them.
 
 | # | Decision | Why |
 |---|---|---|
@@ -51,6 +52,10 @@ The maintainer confirmed D1, D2, D4, D8 and D9, and has agreed D8 and D9 with ca
 | D7 | Keep writing first and committing to memory afterwards, as `TryAddArcFileAsync` does. | A failed write then leaves memory clean. |
 | D8 | Clicking a study, assay, workflow or run folder only expands or collapses it. It no longer opens the `isa.*.xlsx` file. Requested by the maintainer. | The logic is annoying to maintain and confusing for beginners. |
 | D9 | Right-click "Open" goes away for these folders too, and a new study, assay, workflow or run opens its workbook directly. | Keeping either one would keep the folder-to-workbook logic that D8 wants gone. |
+| D10 | Save syncs first when disk differs from `KnownDisk`, then writes what is left, with no retry needed. If that sync fails, Save is refused only when its files overlap the changed ones. | Otherwise Save overwrites an external change it has just detected. The limited refusal stops one broken workbook from blocking every Save. Add needs no such check because it writes new files, and rename and delete work from a fresh disk load. |
+| D11 | A failed write restores the static hashes it moved, leaves `KnownDisk` unchanged and requests a sync. | The Save stays retryable, and files a partial write left behind still reach memory. |
+| D12 | A read returns its content together with a revision, and the page keeps that revision. Main refuses an edit only if a sync changed **that file** after the edit's revision. | A stale read then carries its old revision, so its next edit is refused and the page reverts. A sync of another file does not affect the open page, so the renderer adopts nothing from sync messages. |
+| D13 | `ARC.License` is taken from the snapshot on license events, with no baseline of its own. | The app cannot edit the license in memory, nothing in the renderer reads it, and Save does not write it while its hash is unchanged. Two lines make the guarantee true. |
 
 ## Design
 
@@ -60,23 +65,30 @@ The maintainer confirmed D1, D2, D4, D8 and D9, and has agreed D8 and D9 with ca
 type FileFingerprint = { SizeBytes: float; MtimeMs: float }
 type ArcSyncMode =
     | Idle
+    // A scan is looking for changes. Edits are accepted and no notice shows.
+    | Checking
     | Writing of depth: int
     | Syncing
 
 // The file versions that memory was last in sync with.
-KnownDisk: Map<PathKey, FileFingerprint>
+// ArcDiskSnapshot is Map<PathKey, ScannedFile>. It keeps the on-disk path next to the fingerprint,
+// because a case-insensitive key cannot give back the path that the merge events need.
+KnownDisk: ArcDiskSnapshot
 // Grows each time a sync changes memory.
 ArcRevision: int
+// The revision at which a sync last changed each file. A DataMap counts as its parent workbook,
+// through resolveArcPreviewPath, because one page edits both.
+FileRevisions: Map<PathKey, int>
 // A sync was asked for while it could not run.
 SyncRequested: bool
 ```
 
 ### Invariants
 
-1. **One at a time.** `Writing` and `Syncing` exclude each other. A write requested during a sync is refused with the existing "still saving" style of error, and a sync requested during a write runs when the write ends.
-2. **`KnownDisk` changes only** at ARC load, at the end of an own write, and at the end of a successful sync.
-3. **A static hash moves only together with content.** Replacing an entity from disk takes the disk hash. Writing an entity takes the memory hash. No other entity's hash moves.
-4. **Every edit names its revision.** Main refuses edits based on an older revision.
+1. **One at a time.** `Checking`, `Writing` and `Syncing` exclude each other, and each is taken before the first await. A write requested during `Syncing` is refused with the existing "still saving" style of error. A write requested during `Checking` waits for the check, because refusing it would make a Save fail right after an alt-tab. A sync requested while another mode runs waits until that ends.
+2. **`KnownDisk` changes only** at ARC load, at the end of a successful own write, and at the end of a successful sync.
+3. **A static hash moves only together with content.** Replacing an entity from disk takes the disk hash. Writing an entity takes the memory hash. A failed write restores the hashes it moved. No other entity's hash moves.
+4. **Every edit names the revision of its content.** Main refuses it if a sync changed that file at a later revision, or if a sync is running.
 
 ### The sync
 
@@ -84,24 +96,28 @@ There is one entry point: `RequestSync(announce)`. The watcher, window focus, a 
 
 ```text
 RequestSync:
-  if Writing or Syncing: SyncRequested <- true; return
-  before <- scan()
-  if diff(KnownDisk, before) is empty: return          // own writes end here, with no notice
-  mode <- Syncing; if announce: send ArcSyncStarted
+  if mode is not Idle: SyncRequested <- true; return
+  mode <- Checking                                     // before the first await
   try
+    before <- scan()
+    if diff(KnownDisk, before) is empty: return        // own writes end here, with no notice
+    mode <- Syncing; if announce: send ArcSyncStarted
     snapshot <- ARC.LoadAsyncSwate
     after <- scan()
     if after <> before: retry the load (at most 3 times)
     events <- diff(KnownDisk, after) as FileEvents
     memory <- ARC.merge memory snapshot events
     KnownDisk <- after; ArcRevision += 1
-    send ArcSyncFinished { revision, changedPaths, replacedUnsaved }
+    FileRevisions[each changed file] <- ArcRevision
+    send ArcSyncFinished { changedPaths, replacedUnsaved }
   with error:
     // KnownDisk is unchanged, so the next request tries again
     send ArcSyncFailed { message }
   finally
-    mode <- Idle; if SyncRequested: run again
+    mode <- Idle; wake a write waiting for the check; if SyncRequested: run again
 ```
+
+The part from the load to the messages is one function, so Save can call it while it holds the lock.
 
 `scan()` lists structural files with `discoverStructuralArcFilePathsWithAsync` and stats each one. It reads no workbooks. A path that disappears during the scan counts as missing.
 
@@ -111,13 +127,33 @@ If the vault's root changes during a sync (root rename, close), the sync discard
 
 `WithBusyWritingScope` splits in two:
 
-- **`WithOwnWriteScope`** for Save, add, rename and ARC creation:
-  1. `pre <- scan()`, run the operation, `post <- scan()`.
-  2. Add to `KnownDisk` only the entries that differ between `pre` and `post`.
-  3. Anything that already differed from `KnownDisk` before the write stays external and loads in the next sync.
+- **`WithOwnWriteScope`** for Save, add and rename:
+  1. Take `Writing` before the first await. `pre <- scan()`, run the operation, `post <- scan()`.
+  2. If the operation returned `Ok`, add to `KnownDisk` only the entries that differ between `pre` and `post`.
+  3. If it returned `Error` or threw, leave `KnownDisk` unchanged and request a sync. Files a partial write left behind then load through the normal path.
+  4. Anything that already differed from `KnownDisk` before the write stays external and loads in the next sync. This holds only for files the operation does not overwrite, which is why Save has its own check below.
 - **`WithExternalOperationScope`** for Git, LFS and import: holds the lock and does not touch `KnownDisk`, then calls `RequestSync` at the end.
 
 Both end with `RequestSync` when `SyncRequested` is set. Writers need no knowledge of which files they touch, which is what lets the ARCtrl-driven delete and rename fit the same code.
+
+**ARC creation** holds the lock without scanning, because its root does not exist yet. `CreateARC` calls `Startup()` afterwards, which seeds `KnownDisk`. A missing root stays an error for an ARC that is open.
+
+**Save** runs inside `WithOwnWriteScope`, with these extra steps (D10, D11):
+
+```text
+pre <- scan()
+if diff(KnownDisk, pre) is not empty:
+  run the sync with mode Syncing, then back to Writing   // memory now has the disk version of those files
+  pre <- the final scan of that sync
+saved <- the static hashes of the ARC, its entities, DataMaps and license
+contracts <- GetUpdateContractsSwate                     // moves the hashes
+if the sync failed and the contract paths overlap diff(KnownDisk, pre):
+  restore saved; refuse, naming the files
+write contracts
+on failure: restore saved
+```
+
+Restore by identifier, because an edit during the write can replace the entity object. An entity edited during the write then still differs from its hash and stays unsaved.
 
 **Known limit:** a file someone else changes while our write runs counts as ours. That is the "drop during write" rule, limited to the duration of the write. It stays until that file next changes.
 
@@ -140,22 +176,26 @@ Keep `ARC.merge` and its per-entity handling. It already implements disk wins, a
 - D4: skip the replacement when the disk entity's hash equals the local `StaticHash`.
 - Invariant 3: replace `syncArcStaticHashes snapshot mergedArc` in `PublishWatcherSnapshot` with hash copies for replaced entities only. Copying hashes in `copyArcPreservingStaticHashes` stays.
 - D6: report the entities that had `hasInMemoryChanges` when replaced.
+- D13: on a license event, take `ARC.License` and its hash from the snapshot. Today these events count as `Unknown`, and the merge ignores them while memory has unsaved edits (`ArcMergeLibraryExtensions.fs:268`).
 
 ### IPC
 
 | Direction | Message | Purpose |
 |---|---|---|
 | Main to renderer | `ArcSyncStarted` | Show the notice and block input |
-| Main to renderer | `ArcSyncFinished { revision; changedPaths; replacedUnsaved }` | Reload affected pages and unblock input |
+| Main to renderer | `ArcSyncFinished { changedPaths; replacedUnsaved }` | Reload affected pages and unblock input |
 | Main to renderer | `ArcSyncFailed { message }` | Unblock input and show that memory is behind |
-| Renderer to main | `setArcFileInMemory(request, baseRevision)` | Refused when `baseRevision` is old or a sync is running |
+| Renderer to main | `openFile(path)`, now returning the content and `ArcRevision` together | Ties the revision to the content that was read |
+| Renderer to main | `setArcFileInMemory(request, baseRevision)` | Refused when a sync changed the file after `baseRevision`, or a sync is running |
 
 ### Renderer
 
 - **Notice:** "External changes detected, waiting…", styled like `FileWatcherNotice`.
 - **Input:** make the main content `inert` during a sync, with a typed binding. This blocks every editor without touching each one.
 - **Refused edit:** the page already shows the edit, so always reload it from main and tell the user the edit was not applied. Otherwise the next accepted edit would resend it inside the whole entity.
-- **`ArcSyncFinished`:** reload the open page if its file is in `changedPaths`. Together with phase 4b, which makes the selection of an ARC page always its file, this fixes problem 3. Adopt the new revision only **after** that reload finishes, so a stale page can never send an accepted edit.
+- **`ArcSyncFinished`:** reload the open page if a changed path and the page resolve to the same file through `resolveArcPreviewPath`. That function maps a DataMap to its parent workbook, so this covers a DataMap change with the workbook selected and the reverse. Together with phase 4b, which removes the folder selection of an ARC page, this fixes problem 3.
+- **Revision:** keep the revision from `openFile` with the page and send it with each edit (D12). The renderer adopts nothing from sync messages.
+- **Overlapping reads (optional):** drop a read result if a newer read for the page has started. Today neither `openPreview` nor `reloadPreviewAfterFileTreeUpdate` checks this. Correctness does not depend on it, because a stale result's next edit is refused. It only avoids showing old content for a moment.
 - **Double reloads:** remove ARC metadata files from `PublishFileContentChanges`. Otherwise a Save still reloads the page through `useReconcileSelectedPreview`, which can drop an edit that is still on its way to main.
 
 Notes and other text files keep their existing content stamp path.
@@ -204,8 +244,11 @@ Write failing tests first, using the temp ARC and fake watcher in `tests/Electro
 - Save, edit in memory, then deliver the own-write event: the edit survives.
 - Add with an unreadable workbook elsewhere in the ARC: the add succeeds.
 - External edit whose event arrives during a write: it loads after the write.
+- Save fails, then a retry once the cause is gone: the entity stays unsaved in between, and the retry writes the edit.
 
 The maintainer confirmed the first case in the app, so that test must fail before the fix. If it passes, it does not reproduce the bug yet. Deliver its event after the suppression window ends, as the real event does.
+
+Done: the tests are in the `ARC file sync` block and use `Vitest.Test.fails`, so CI stays green while the bugs exist. All four failed for the expected reason before the marker was added. A test goes red once its fix lands, and then becomes a plain `Vitest.test`.
 
 ### Phase 1: file comparison
 
@@ -213,14 +256,17 @@ The maintainer confirmed the first case in the app, so that test must fail befor
 - Unit tests in `tests/Electron.Core/ArcDiskState.test.fs` for add, change, unlink, case-insensitive keys and a file vanishing during the scan.
 - **Measure `scan` on a large ARC.** If 1000 entities take more than about 100 ms, stop and report before continuing, since each own write scans twice.
 
+Done: 1000 entities took 45–68 ms over five runs on a local NTFS drive under Windows, so the design stands. Network drives were not measured.
+
 ### Phase 2: one sync path
 
 - Add `ArcSyncMode`, `KnownDisk`, `RequestSync` and the two write scopes, and seed `KnownDisk` from a scan taken **before** the initial load.
-- Move every busy scope caller to the right scope. List which Git operations change the working tree, and treat any doubtful one as external.
+- Move every busy scope caller to the right scope. ARC creation keeps a plain lock. List which Git operations change the working tree, and treat any doubtful one as external.
+- Add the Save steps for D10 and D11, and restoring hashes on failure.
 - Turn `_FileEventController` into the doorbell.
-- Apply the merge changes for D4 and invariant 3.
+- Apply the merge changes for D4, D13 and invariant 3.
 - Remove the first group of the table above and rewrite the affected tests. The deferral tests (`ArcVaultHelper.test.fs:1257-1563`) go away with the code they cover.
-- Phase 0 tests one and three now pass.
+- Phase 0 tests one, three and four now pass, so change them from `Vitest.Test.fails` to `Vitest.test`. Test three opens its write through `WithBusyWritingScope`, which this phase splits.
 
 ### Phase 3: `AddArcFile`
 
@@ -228,7 +274,7 @@ The maintainer confirmed the first case in the app, so that test must fail befor
 - In `commitAddedArcFile`, set `StaticHash` from the memory copy, as the DataMap case already does (`ArcAddExtensions.fs:120`).
 - Leave the ARC-level hash alone. It covers registered identifiers and not the entity lists, and the add path calls `AddAssay` and friends without registering. The test `adds the file explorer default assay via vault add path` catches a false unsaved state if this is wrong.
 - Remove the helper and its test (`ArcVaultHelper.test.fs:1906`).
-- Phase 0 test two now passes.
+- Phase 0 test two now passes, so change it from `Vitest.Test.fails` to `Vitest.test`.
 
 ### Phase 4: delete and rename
 
@@ -257,9 +303,9 @@ Side effect: the new entity's selection can no longer be cleared by the missing-
 
 ### Phase 5: renderer
 
-- Add the IPC messages and the `baseRevision` check.
+- Add the IPC messages, the revision in the `openFile` result, `FileRevisions` and the `baseRevision` check.
 - Add the notice, `inert`, page reload, refused-edit handling and the `PublishFileContentChanges` filter.
-- Add React Testing Library tests in `.test.rtl.fs` for: a notice during a sync, no notice for an empty diff, a folder-selected entity page refreshing, a refused edit reverting the page, and the naming of replaced unsaved edits.
+- Add React Testing Library tests in `.test.rtl.fs` for: a notice during a sync, no notice for an empty diff, a refresh when a DataMap or its parent workbook changes while the other is selected, a refused edit reverting the page, and the naming of replaced unsaved edits.
 
 ### Phase 6: Git and import
 
@@ -295,7 +341,17 @@ Test observable behaviour only.
 | External delete and external add | Entity removed or added |
 | Unreadable workbook | Memory unchanged, failure shown, retried and recovered once fixed |
 | Add with unreadable workbook elsewhere | Add succeeds |
-| Edit with an old revision or during a sync | Refused and the page reverts |
+| Edit based on content from before a sync changed its file, or during a sync | Refused and the page reverts |
+| Sync that changes another file | Edits on the open page are still accepted |
+| Sync check running, then a second request and a Save | One owner at a time, the Save runs after the check, and no load overlaps it |
+| First scan of a sync fails, for example the open ARC root was removed | Failure shown, memory unchanged, the next request runs |
+| Dirty assay, external change to it, Save before its event | External version on disk and in memory, entity named in the notice |
+| Same, while another workbook is unreadable so the sync fails | Save refused and naming the file. A Save of unrelated entities still writes |
+| Save fails, then a retry | Still unsaved after the failure, and the retry writes the edit |
+| Add fails after its workbook was written, then its event | Memory and disk agree after the sync |
+| External change to a DataMap with its workbook open, and the reverse | Page reloads. The next edit and Save keep the external change |
+| Create an ARC where the target folder does not exist | Creation succeeds |
+| External license change with an unsaved assay | License in memory updated, assay edits kept |
 | Watcher down, window focus | External change loads |
 | Root rename during a sync | Result discarded |
 | Save during a sync | Refused with a clear message |
@@ -311,3 +367,4 @@ Test observable behaviour only.
 - **One bad workbook blocks every sync.** `LoadAsyncSwate` fails as a whole. This is the case today too, and it is now visible to the user. Loading only changed files could remove it later and is out of scope here.
 - **Full load per external change.** Kept for simplicity. It now runs only for real external changes.
 - **Long external operations delay sync.** A long Git or LFS operation holds the lock, and memory catches up when it ends. The tree keeps updating meanwhile.
+- **A failed Save can show the external changes notice.** Files it did write are not in `KnownDisk`, so the sync after it loads them. An edit typed into such a file during that write is lost. Accepted as rare.
