@@ -872,6 +872,169 @@ let private expectRegistrationLoadFailure
         Vitest.expect(isDestroyed ()).toBe (true)
     }
 
+/// Waits until the watcher reports that it finished loading the delivered changes.
+let private waitForWatcherIdle (loadingChanges: ResizeArray<bool>) = promise {
+    let mutable attempts = 0
+
+    while attempts < 250 && not (loadingChanges.Contains false) do
+        do! Promise.sleep 20
+        attempts <- attempts + 1
+
+    Vitest.expect(loadingChanges.Contains false).toBe (true)
+}
+
+// These pin known sync bugs. Vitest reports them as failures once a fix makes them pass. Each becomes a
+// normal test with the phase of docs/maintainer/ArcFileSyncPlan.md that fixes it.
+Vitest.describe (
+    "ARC file sync",
+    fun () ->
+        Vitest.Test.fails (
+            "an edit made after a Save survives the late watcher event of that Save",
+            fun () ->
+                withTempArc
+                    (fun arc -> arc.AddAssay(ArcAssay("SavedAssay", title = "Old title")))
+                    (fun arcPath -> promise {
+                        let! loadedArc = TestHelpers.loadArcAsync arcPath
+                        let vault = ArcVault(TestHelpers.testWindow ())
+                        vault.path <- Some arcPath
+                        vault.SetArc loadedArc
+                        do! vault.EnqueueFileTreeScan()
+
+                        vault.arc.Value.GetAssay("SavedAssay").Title <- Some "Saved title"
+
+                        match! vault.SaveArc() with
+                        | Error error -> failwith error.Message
+                        | Ok() -> ()
+
+                        vault.arc.Value.GetAssay("SavedAssay").Title <- Some "Typed after the Save"
+
+                        // Chokidar holds the event until the file is stable for 2 s. Own-write suppression ends first.
+                        do! Promise.sleep 600
+
+                        let loadingChanges = ResizeArray<bool>()
+                        let handleFileEvent = vault._FileEventController (recordingWatcherApi loadingChanges)
+                        handleFileEvent "change" (join [| arcPath; "assays/SavedAssay/isa.assay.xlsx" |])
+                        do! waitForWatcherIdle loadingChanges
+
+                        Vitest
+                            .expect(vault.arc.Value.GetAssay("SavedAssay").Title)
+                            .toEqual (Some "Typed after the Save")
+
+                        Vitest.expect(vault.arc.Value.hasInMemoryChanges ()).toBe (true)
+                    })
+        )
+
+        Vitest.Test.fails (
+            "adding a file succeeds while another workbook of the ARC is unreadable",
+            fun () ->
+                withTempArc
+                    (fun arc -> arc.AddAssay(ArcAssay("BrokenAssay")))
+                    (fun arcPath -> promise {
+                        let! loadedArc = TestHelpers.loadArcAsync arcPath
+                        let vault = ArcVault(TestHelpers.testWindow ())
+                        vault.path <- Some arcPath
+                        vault.SetArc loadedArc
+                        do! vault.EnqueueFileTreeScan()
+
+                        do!
+                            writeWatcherTextFileAsync
+                                (join [| arcPath; "assays/BrokenAssay/isa.assay.xlsx" |])
+                                "This is not a workbook."
+
+                        let request =
+                            match FileContentDTO.fromArcFile (ArcFiles.Assay(ArcAssay("AddedAssay"))) with
+                            | Some request -> request
+                            | None -> failwith "Expected an assay DTO."
+
+                        match! vault.AddArcFile request with
+                        | Error error -> failwith error.Message
+                        | Ok() -> ()
+
+                        Vitest.expect(vault.arc.Value.AssayIdentifiers |> Seq.contains "AddedAssay").toBe (true)
+
+                        let addedFolder = join [| arcPath; "assays/AddedAssay" |]
+
+                        Vitest
+                            .expect(
+                                vault.FileTreeWriter.Tree.Entries
+                                |> Seq.exists (fun entry -> PathHelpers.pathsEqual entry.path addedFolder)
+                            )
+                            .toBe (true)
+                    })
+        )
+
+        Vitest.Test.fails (
+            "an external edit whose event arrives during a write loads after the write",
+            fun () ->
+                withTempArc
+                    (fun arc -> arc.AddAssay(ArcAssay("DiskAssay", title = "Old title")))
+                    (fun arcPath -> promise {
+                        let! loadedArc = TestHelpers.loadArcAsync arcPath
+                        let vault = ArcVault(TestHelpers.testWindow ())
+                        vault.path <- Some arcPath
+                        vault.SetArc loadedArc
+
+                        let! diskArc = TestHelpers.loadArcAsync arcPath
+                        diskArc.GetAssay("DiskAssay").Title <- Some "Changed on disk"
+                        do! diskArc.UpdateAsync arcPath
+
+                        let mutable releaseWrite = ignore
+
+                        let writeGate =
+                            JS.Constructors.Promise.Create(fun resolve _ -> releaseWrite <- fun () -> resolve ())
+
+                        let writeScope = vault.WithBusyWritingScope(fun () -> writeGate)
+
+                        let loadingChanges = ResizeArray<bool>()
+                        let handleFileEvent = vault._FileEventController (recordingWatcherApi loadingChanges)
+                        handleFileEvent "change" (join [| arcPath; "assays/DiskAssay/isa.assay.xlsx" |])
+
+                        releaseWrite ()
+                        do! writeScope
+                        do! expectWatcherAssayTitle vault "Changed on disk"
+                    })
+        )
+
+        Vitest.Test.fails (
+            "a failed Save stays unsaved and its retry writes the edit",
+            fun () ->
+                withTempArc
+                    (fun arc -> arc.AddAssay(ArcAssay("SavedAssay", title = "Old title")))
+                    (fun arcPath -> promise {
+                        let! loadedArc = TestHelpers.loadArcAsync arcPath
+                        let vault = ArcVault(TestHelpers.testWindow ())
+                        vault.path <- Some arcPath
+                        vault.SetArc loadedArc
+                        do! vault.EnqueueFileTreeScan()
+
+                        vault.arc.Value.GetAssay("SavedAssay").Title <- Some "Edited title"
+
+                        // A folder in place of the workbook fails the write on every platform, as a lock by Excel does on Windows.
+                        let workbookPath = join [| arcPath; "assays/SavedAssay/isa.assay.xlsx" |]
+                        let asidePath = workbookPath + ".aside"
+                        do! renameAsync workbookPath asidePath
+                        do! mkdirWatcherDirectoryAsync workbookPath
+
+                        match! vault.SaveArc() with
+                        | Ok() -> failwith "The Save should fail while the workbook cannot be written."
+                        | Error _ -> ()
+
+                        Vitest.expect(vault.arc.Value.hasInMemoryChanges ()).toBe (true)
+
+                        do! TestHelpers.removeDirectoryAsync workbookPath
+                        do! renameAsync asidePath workbookPath
+
+                        match! vault.SaveArc() with
+                        | Error error -> failwith error.Message
+                        | Ok() -> ()
+
+                        let! savedArc = TestHelpers.loadArcAsync arcPath
+                        Vitest.expect(savedArc.GetAssay("SavedAssay").Title).toEqual (Some "Edited title")
+                        Vitest.expect(vault.arc.Value.hasInMemoryChanges ()).toBe (false)
+                    })
+        )
+)
+
 Vitest.describe (
     "watcher merge validation",
     fun () ->
