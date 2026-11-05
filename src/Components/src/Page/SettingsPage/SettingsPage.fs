@@ -19,20 +19,6 @@ module SettingsPageDefaults =
 
 module private SettingsPageHelper =
 
-    /// A label with its value. The test id sits on the value, so it holds exactly the shown text.
-    let gitExecutableRow (testId: string) (label: string) (value: string) =
-        Html.p [
-            prop.className "swt:flex swt:flex-wrap swt:gap-x-2 swt:text-sm"
-            prop.children [
-                Html.span [ prop.className "swt:font-medium"; prop.text label ]
-                Html.span [
-                    prop.testId testId
-                    prop.className "swt:break-all swt:text-base-content/70"
-                    prop.text value
-                ]
-            ]
-        ]
-
     /// The number in the input if it is a whole number inside the range.
     let tryParseInRange (minValue: int) (maxValue: int) (input: string) : int option =
         let success, value = Int32.TryParse(input.Trim())
@@ -52,6 +38,21 @@ module private SettingsPageHelper =
 
 [<Erase; Mangle(false)>]
 type SettingsPage =
+
+    /// A label with its value. The test id sits on the value, so it holds exactly the shown text.
+    [<ReactComponent>]
+    static member private GitExecutableRow(label: string, value: string, testId: string) =
+        Html.p [
+            prop.className "swt:flex swt:flex-wrap swt:gap-x-2 swt:text-sm"
+            prop.children [
+                Html.span [ prop.className "swt:font-medium"; prop.text label ]
+                Html.span [
+                    prop.testId testId
+                    prop.className "swt:break-all swt:text-base-content/70"
+                    prop.text value
+                ]
+            ]
+        ]
 
     [<ReactComponent>]
     static member private SettingColumnElement
@@ -463,20 +464,19 @@ type SettingsPage =
                 prop.testId "SettingsGitExecutable"
                 prop.className "swt:flex swt:flex-col swt:gap-2"
                 prop.children [
-                    SettingsPageHelper.gitExecutableRow "SettingsGitExecutableSource" "Source" source
+                    SettingsPage.GitExecutableRow("Source", source, "SettingsGitExecutableSource")
 
                     (match setting.PathInUse with
-                     | Some path -> SettingsPageHelper.gitExecutableRow "SettingsGitExecutablePathInUse" "In use" path
+                     | Some path -> SettingsPage.GitExecutableRow("In use", path, "SettingsGitExecutablePathInUse")
                      | None -> Html.none)
 
                     (match setting.GitVersion with
-                     | Some version ->
-                         SettingsPageHelper.gitExecutableRow "SettingsGitExecutableGitVersion" "Git" version
+                     | Some version -> SettingsPage.GitExecutableRow("Git", version, "SettingsGitExecutableGitVersion")
                      | None -> Html.none)
 
                     (match setting.GitLfsVersion with
                      | Some version ->
-                         SettingsPageHelper.gitExecutableRow "SettingsGitExecutableGitLfsVersion" "Git LFS" version
+                         SettingsPage.GitExecutableRow("Git LFS", version, "SettingsGitExecutableGitLfsVersion")
                      | None -> Html.none)
 
                     (match setting.Problem with
