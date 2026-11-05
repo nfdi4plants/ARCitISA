@@ -280,6 +280,7 @@ module FileContentDTO =
                 None
 
         match ending with
+        | None -> FileContentType.Markdown
         | Some "md" -> FileContentType.Markdown
         | Some "pdf" -> FileContentType.PDF
         | Some "html" -> FileContentType.Html
