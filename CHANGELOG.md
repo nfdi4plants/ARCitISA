@@ -16,6 +16,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### ✨ Added
+
+- The JSON import opens a dialog that lists the tables of the file with their columns and values. You choose which tables and columns to import, and whether each table becomes a new table or is appended to the table open in the editor. (by @Etschbeijer)
+- In the JSON import dialog you can import column headers only, headers with units, or headers with all values, and you can rename new tables. (by @Etschbeijer)
+- After a JSON import, the dialog lists the new and changed tables and reminds you to save the ARC. (by @Etschbeijer)
+- The JSON and template import dialogs show each table as a scrollable grid, where you can leave out rows the same way as columns. In "Headers only" mode the grid hides the row checkboxes, because that mode imports no values. When you append a table, left-out rows stay empty, so the other rows keep lining up with the table in the editor. The dialog also explains that appended rows line up by position and that columns the table in the editor already has, including Input and Output, stay as they are. (by @Etschbeijer)
 ### 🔄 Changed
 
 - Releases are now automatically created as draft. This is part of quality control. The App will first be tested and the docs updated before the release is pushed into "New update available" status. #1488 (by @Freymaurer)
@@ -39,6 +45,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### 🔄 Changed
 
+- Choosing a JSON file no longer changes the ARC right away. The ARC changes only when you confirm the import in the dialog. (by @Etschbeijer)
+- For an investigation, workflow, template or DataMap, the JSON import asks before it replaces the content of the open file. A workflow keeps its identifier, so it stays in its folder. (by @Etschbeijer)
+- The JSON import describes each JSON format and says why a file could not be read. If a file has no tables in the selected format, the message names that format. (by @Etschbeijer)
+- The template import dialog uses the same choices as the JSON import ("Create new table", "Append to active table", "Do not import", and "Headers only", "With units", "With values"). It shows the size of each template and explains each import mode. (by @Etschbeijer)
+- Import in the template dialog stays disabled while an imported template has no column or no row selected. The JSON and template import dialogs say why Import is disabled next to the button. (by @Etschbeijer)
 - New files and folders and renamed items can't use names that Windows does not allow, such as names with a colon or names like CON and AUX, so the ARC can also be downloaded and used on Windows. #1429 (by @Etschbeijer)
 - "Import files" and "Import folders" stop with a message if a name does not work on Windows, for example a name with a colon or a device name like CON or AUX, or if a name starts or ends with a space. This covers everything inside picked folders, too. #1429 (by @Etschbeijer)
 - "Import files" and "Import folders" treat upper and lower case as the same. They stop with a message if an item with the same name, ignoring case, already exists in the target folder, or if two imported items in the same folder differ only in case. The same holds for names that look alike but are stored differently, such as "Café" with a combined or a separate accent. #1429 (by @Etschbeijer)

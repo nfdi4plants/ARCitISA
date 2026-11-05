@@ -61,12 +61,14 @@ type private LazyComponents =
         (
             arcFile: ArcFiles,
             setArcFile: ArcFiles -> unit,
+            activeTableIndex: int option,
             onImportJson: (JsonImportRequest -> JS.Promise<Result<unit, exn>>) option,
-            onError: exn -> unit
+            onError: JsonImportError -> unit
         ) =
         Swate.Components.Composite.Widgets.JsonImport.JsonImport.JsonImport(
             arcFile = arcFile,
             setArcFile = setArcFile,
+            ?activeTableIndex = activeTableIndex,
             ?onImportJson = onImportJson,
             onError = onError
         )
@@ -326,7 +328,8 @@ type Main =
             ?onImportJson: JsonImportRequest -> JS.Promise<Result<unit, exn>>,
             ?onError: string -> unit,
             ?onImportPersons: unit -> JS.Promise<Person[]>,
-            ?fetchArcNodes: unit -> JS.Promise<ArcNodeTable[]>
+            ?fetchArcNodes: unit -> JS.Promise<ArcNodeTable[]>,
+            ?onJsonImportError: JsonImportError -> unit
         ) =
 
         let onError =
@@ -412,8 +415,17 @@ type Main =
                     LazyComponents.LazyJsonImportWidget(
                         arcFile,
                         setArcFile,
+                        activeTableIndex,
                         onImportJson,
-                        (fun exn -> onError exn.Message)
+                        defaultArg
+                            onJsonImportError
+                            (fun error ->
+                                onError (
+                                    match error.Details with
+                                    | Some details -> $"{error.Message} {details}"
+                                    | None -> error.Message
+                                )
+                            )
                     ),
                     "Loading JSON Import Widget..."
                 )

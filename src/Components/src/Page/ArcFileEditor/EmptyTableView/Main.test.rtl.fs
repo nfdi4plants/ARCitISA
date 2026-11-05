@@ -238,7 +238,7 @@ Vitest.test (
         Queries.openTemplates ()
         Queries.selectLeafTemplate ()
         RTL.fireEvent.click (Queries.importButton ())
-        Queries.click $"template-import-action-{leafTemplateId}-ImportAsNewTable"
+        Queries.click $"table-import-action-0-ImportAsNewTable"
 
         Queries.confirmImport ()
 

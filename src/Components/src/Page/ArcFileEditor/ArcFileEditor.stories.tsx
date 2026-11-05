@@ -179,7 +179,7 @@ export const TemplateImportedWithUnitsStaysEditable: Story = {
 
     const importDialog = await portal.findByRole('dialog', { name: /Import templates/i });
     await userEvent.click(within(importDialog).getByLabelText(/With Units/i));
-    await userEvent.click(within(importDialog).getByLabelText(/Import \(new table\)/i));
+    await userEvent.click(within(importDialog).getByLabelText(/Create new table/i));
     await userEvent.click(within(importDialog).getByRole('button', { name: /^Import$/i }));
 
     await userEvent.click(await canvas.findByRole('button', { name: STORY_TEMPLATE_NAME }));
