@@ -166,7 +166,7 @@ let Main () =
     | None ->
         Renderer.Components.LeftSidebar.Git.GitSidebarEmptyState.Main(
             title = "Open an ARC to use Git features",
-            description = "Source control becomes available after you open or download an ARC.",
+            description = "Version control becomes available after you open or download an ARC.",
             iconClassName = "swt:fluent--folder-open-24-regular",
             primaryAction = {
                 Label = "Open ARC"

@@ -1101,8 +1101,8 @@ type GitSidebar =
                                     Html.span [
                                         prop.testId "GitSidebarTitle"
                                         prop.className "swt:truncate swt:text-sm swt:font-semibold"
-                                        prop.title "Source Control"
-                                        prop.text "Source Control"
+                                        prop.title "Version Control"
+                                        prop.text "Version Control"
                                     ]
                                     let branchName =
                                         match props.Status.CurrentBranch with
@@ -1426,7 +1426,7 @@ type GitSidebar =
                         props.SubmitUpdateFromOnline,
                         testId = "GitSidebarPullButton",
                         tooltipText =
-                            "Download Changes:\n- git fetch origin\n- git merge-tree (conflict preflight)\n- git merge origin/<branch>\n- git lfs fetch origin <branch> and git lfs checkout (when Download Large Files is on)"
+                            "Download Changes:\n- git fetch origin (when the branch tracks an online branch)\n- git merge-tree (conflict preflight, when both copies have new changes)\n- git merge origin/<branch> (when the online copy is ahead)\n- git lfs fetch origin <branch> and git lfs checkout (when Download Large Files is on)"
                     )
                     GitSidebar.ActionButton(
                         "Upload Changes",
@@ -1435,7 +1435,7 @@ type GitSidebar =
                         props.SubmitPush,
                         testId = "GitSidebarPushButton",
                         tooltipText =
-                            "Upload Changes:\n- git fetch origin\n- git merge-tree (conflict preflight)\n- git merge origin/<branch> (when the online copy is ahead)\n- git lfs fetch origin <branch> and git lfs checkout (after a merge, when Download Large Files is on)\n- git lfs push --object-id origin --stdin (when there are new large files)\n- git push origin"
+                            "Upload Changes:\n- git remote add origin <address> and git fetch origin (first upload of an ARC without an online copy)\n- git fetch origin (when the branch tracks an online branch)\n- git fetch origin and git config branch.<branch>.remote and branch.<branch>.merge (when the branch has no upstream and the online branch of the same name has changes this copy lacks, then the upload stops)\n- git merge-tree (conflict preflight, when both copies have new changes)\n- git merge origin/<branch> (when the online copy is ahead)\n- git lfs fetch origin <branch> and git lfs checkout (after a merge, when Download Large Files is on)\n- git ls-remote and git push --dry-run (check the online copy and new large files)\n- git lfs push --object-id origin --stdin (when there are new large files)\n- git push origin <branch> (with --set-upstream on the first upload)"
                     )
                 ]
             ]
@@ -1493,28 +1493,30 @@ type GitSidebar =
                             prop.className "swt:grid swt:grid-cols-2 swt:gap-2 swt:@max-xs:gap-1"
                             prop.children [
                                 GitSidebar.ActionButton(
-                                    "Check for Changes",
+                                    "Fetch Changes",
                                     "swt:fluent--arrow-sync-24-regular",
                                     props.IsBusy || not props.RemoteActionsEnabled,
                                     props.SubmitFetch,
                                     testId = "GitSidebarFetchButton",
-                                    tooltipText = "Check for Changes:\n- git fetch origin"
+                                    tooltipText = "Fetch Changes:\n- git fetch origin (when the branch tracks an online branch)"
                                 )
                                 GitSidebar.ActionButton(
-                                    "Create Work Copy",
+                                    "Create Branch",
                                     "swt:fluent--branch-fork-24-regular",
                                     props.IsBusy,
                                     props.OpenCreateBranchModal,
                                     testId = "GitSidebarCreateBranchButton",
-                                    tooltipText = "Create Work Copy:\n- git checkout -b <name>"
+                                    tooltipText =
+                                        "Create Branch:\n- git checkout -b <name> <start point>\n- git branch --set-upstream-to=origin/<name> (when origin/<name> is known)\n- git branch --unset-upstream (when the start point was an online branch and origin/<name> is not known)"
                                 )
                                 GitSidebar.ActionButton(
-                                    "Switch To Work Copy",
+                                    "Switch To Branch",
                                     "swt:fluent--arrow-swap-24-regular",
                                     props.IsBusy || not props.CanSwitchBranch,
                                     props.OpenSwitchBranchModal,
                                     testId = "GitSidebarSwitchBranchButton",
-                                    tooltipText = "Switch To Work Copy:\n- git checkout <branch>"
+                                    tooltipText =
+                                        "Switch To Branch:\n- git checkout <branch>\n- git checkout -b <branch> --track origin/<branch> (for an online branch without a local copy)"
                                 )
                                 GitSidebar.ActionButton(
                                     "Clean LFS Cache",
@@ -1526,12 +1528,12 @@ type GitSidebar =
                                         "Clean LFS Cache:\n- git lfs prune --verify-remote --no-verify-unreachable --when-unverified=halt"
                                 )
                                 GitSidebar.ActionButton(
-                                    "Reduce LFS Storage",
+                                    "Deduplicate Large Files",
                                     "swt:fluent--folder-sync-24-regular",
                                     props.IsBusy,
                                     props.SubmitDedupLfsStorage,
                                     testId = "GitSidebarLfsDedupButton",
-                                    tooltipText = "Reduce LFS Storage:\n- git lfs dedup"
+                                    tooltipText = "Deduplicate Large Files:\n- git lfs dedup"
                                 )
                             ]
                         ]
