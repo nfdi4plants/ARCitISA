@@ -234,8 +234,12 @@ type SettingsPage =
 
     [<ReactComponent>]
     static member private GitDefaults
-        (gitDefaults: SettingsGitDefaults, builtIn: SettingsGitDefaults, onSave: SettingsGitDefaults -> unit)
-        =
+        (
+            gitDefaults: SettingsGitDefaults,
+            builtIn: SettingsGitDefaults,
+            onSave: SettingsGitDefaults -> unit,
+            ?gitExecutable: ReactElement
+        ) =
         let lfsInput, setLfsInput =
             React.useState (string gitDefaults.LfsAutoTrackThresholdMb)
 
@@ -303,6 +307,9 @@ type SettingsPage =
                 LayoutComponents.BoxedField(
                     "Git defaults",
                     content = [
+                        if gitExecutable.IsSome then
+                            gitExecutable.Value
+
                         SettingsPage.GitDefaultRow(
                             lfsId,
                             "Large file threshold (MB)",
@@ -547,7 +554,7 @@ type SettingsPage =
                 Html.p [
                     prop.className "swt:mt-1 swt:text-sm swt:text-base-content/70"
                     prop.text
-                        "The Git program the application runs. Leave it on automatic to use the Git found on your PATH, or choose the executable yourself. Git LFS runs through this Git, so the Git LFS version shown belongs to it."
+                        "The Git program the application runs. Leave it on automatic to use the Git found on your PATH, or choose the executable yourself. Git LFS runs through this Git, so the Git LFS version shown belongs to it. A change here applies right away and needs no Save."
                 ]
         )
 
@@ -558,11 +565,7 @@ type SettingsPage =
             ?uiScaling: int,
             ?onUIScaling: int -> unit,
             ?autoCreateNotesFolder: bool,
-            ?onAutoCreateNotesFolderChange: bool -> unit,
-            ?gitExecutable: GitExecutableSetting,
-            ?onGitExecutableChoose: unit -> unit,
-            ?onGitExecutableUseAutomatic: unit -> unit,
-            ?onGitExecutableCheckAgain: unit -> unit
+            ?onAutoCreateNotesFolderChange: bool -> unit
         ) =
         let onAutoCreateNotesFolderEnabled =
             defaultArg onAutoCreateNotesFolderEnabled ignore
@@ -590,16 +593,6 @@ type SettingsPage =
                 match uiScaling, onUIScaling with
                 | Some uiScaling, Some onUIScaling -> SettingsPage.UIScalingSetting(uiScaling, onUIScaling)
                 | _, _ -> Html.none
-
-                match gitExecutable with
-                | Some setting ->
-                    SettingsPage.GitExecutable(
-                        setting,
-                        defaultArg onGitExecutableChoose ignore,
-                        defaultArg onGitExecutableUseAutomatic ignore,
-                        defaultArg onGitExecutableCheckAgain ignore
-                    )
-                | None -> Html.none
             ]
         )
 
@@ -637,22 +630,36 @@ type SettingsPage =
         let onAutoCreateNotesFolderEnabled =
             defaultArg onAutoCreateNotesFolderEnabled ignore
 
+        let gitExecutable =
+            gitExecutable
+            |> Option.map (fun setting ->
+                SettingsPage.GitExecutable(
+                    setting,
+                    defaultArg onGitExecutableChoose ignore,
+                    defaultArg onGitExecutableUseAutomatic ignore,
+                    defaultArg onGitExecutableCheckAgain ignore
+                )
+            )
+
         LayoutComponents.Section [
             SettingsPage.General(
                 onAutoCreateNotesFolderEnabled = onAutoCreateNotesFolderEnabled,
                 ?uiScaling = uiScaling,
                 ?onUIScaling = onUIScaling,
                 ?autoCreateNotesFolder = autoCreateNotesFolder,
-                ?onAutoCreateNotesFolderChange = onAutoCreateNotesFolderChange,
-                ?gitExecutable = gitExecutable,
-                ?onGitExecutableChoose = onGitExecutableChoose,
-                ?onGitExecutableUseAutomatic = onGitExecutableUseAutomatic,
-                ?onGitExecutableCheckAgain = onGitExecutableCheckAgain
+                ?onAutoCreateNotesFolderChange = onAutoCreateNotesFolderChange
             )
 
-            match gitDefaults, gitBuiltInDefaults, onGitDefaultsSave with
-            | Some gitDefaults, Some gitBuiltInDefaults, Some onGitDefaultsSave ->
-                SettingsPage.GitDefaults(gitDefaults, gitBuiltInDefaults, onGitDefaultsSave)
+            // The Git executable leads the Git defaults. A host without Git defaults still shows it in the same box.
+            match gitDefaults, gitBuiltInDefaults, onGitDefaultsSave, gitExecutable with
+            | Some gitDefaults, Some gitBuiltInDefaults, Some onGitDefaultsSave, _ ->
+                SettingsPage.GitDefaults(
+                    gitDefaults,
+                    gitBuiltInDefaults,
+                    onGitDefaultsSave,
+                    ?gitExecutable = gitExecutable
+                )
+            | _, _, _, Some gitExecutable -> LayoutComponents.BoxedField("Git defaults", content = [ gitExecutable ])
             | _ -> Html.none
 
             SettingsPage.SearchConfig()

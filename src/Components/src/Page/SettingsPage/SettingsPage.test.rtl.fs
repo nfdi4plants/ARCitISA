@@ -166,4 +166,12 @@ Vitest.describe (
                 Vitest.expect(present "SettingsGitExecutableChoose").toBe false
                 Vitest.expect(present "SettingsGitExecutableCheckAgain").toBe false
         )
+
+        Vitest.test (
+            "shows the Git executable without Git defaults",
+            fun () ->
+                render chosen
+
+                Vitest.expect(present "SettingsGitExecutable").toBe true
+        )
 )
