@@ -362,6 +362,22 @@ type VersionControlProgressDto = {
     DisplayMessage: string option
 }
 
+/// One line of the raw output of a command that an operation runs. Kind is "command", "stdout", "stderr" or
+/// "notice". Text is redacted. A partial entry is a snapshot of a line that is still being rewritten (a progress
+/// meter). The next entry with the same CommandId and Kind replaces it.
+type VersionControlOutputEntryDto = {
+    CommandId: string
+    Kind: string
+    Text: string
+    IsPartial: bool
+}
+
+/// A batch of output entries of the operation with this id.
+type VersionControlOutputDto = {
+    OperationId: string
+    Entries: VersionControlOutputEntryDto[]
+}
+
 /// Codes the library and the host report. The renderer routes on some of them,
 /// and tests build failures with others.
 /// Each group below names its producer.
@@ -411,6 +427,15 @@ module VersionControlCodes =
     /// The library reports this warning when a picked file's content is not in the local cache.
     [<Literal>]
     let ObjectNotMaterialized = "object_not_materialized"
+
+    /// The library's code for a large-file download that did not finish after the update itself was done.
+    [<Literal>]
+    let HydrationFailed = "hydration_failed"
+
+    /// The library refuses to download or free a large file that has local edits. A batch has this code when
+    /// every failed path is such a refusal.
+    [<Literal>]
+    let LocalChanges = "local_changes"
 
     [<Literal>]
     let InvalidLfsThreshold = "invalid_lfs_threshold"
@@ -658,6 +683,7 @@ type ServiceAvailabilityDto = {
     TextDiff: bool
     ConflictResolution: bool
     ObjectMaterialization: bool
+    ObjectBatchMaterialization: bool
     StoragePolicy: bool
     Maintenance: bool
     RepositoryBrowser: bool
@@ -733,6 +759,9 @@ type ObjectPathRequestDto = {
     /// reads ignore the field.
     RefreshTree: bool option
 }
+
+/// Many objects in one materialization or dematerialization. The file tree refreshes once when anything changed.
+type ObjectPathsRequestDto = { OperationId: string; Paths: string[] }
 
 /// One synchronization: refresh, update when the target is ahead, publish unless
 /// PublishLocalRevisions is false. ExpectedTargetRevision pins an accepted update to the

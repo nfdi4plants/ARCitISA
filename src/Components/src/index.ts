@@ -54,7 +54,8 @@ export { default as TemplateBrowser } from './dist/Composite/TemplateBrowser/Tem
 export { default as TemplateCacheProvider } from './dist/Composite/TemplateBrowser/TemplateCacheProvider.fs';
 export { default as TemplateFilter } from './dist/Composite/TemplateBrowser/TemplateFilter.fs';
 export { default as TemplateImportModal } from './dist/Composite/TemplateBrowser/TemplateImportModal.fs';
-export { default as TemplateImportModalPreview } from './dist/Composite/TemplateBrowser/TemplateImportModalPreview.fs';
+export { default as ImportModeSelect } from './dist/Composite/TableImport/ImportModeSelect.fs';
+export { default as TableImportPreview } from './dist/Composite/TableImport/TableImportPreview.fs';
 export { default as TemplatesDisplay } from './dist/Composite/TemplateBrowser/TemplatesDisplay.fs';
 export { default as TemplateWidget } from './dist/Composite/Widgets/TemplateWidget.fs';
 export { default as TermSearch } from './dist/Composite/TermSearch/TermSearch.fs';

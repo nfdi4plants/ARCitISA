@@ -258,7 +258,7 @@ type PageState =
 
                 if
                     normalizedPath.EndsWith(
-                        ARCtrl.ArcPathHelper.DataMapFileName,
+                        ARCtrl.ArcPathHelper.DatamapFileName,
                         System.StringComparison.OrdinalIgnoreCase
                     )
                 then

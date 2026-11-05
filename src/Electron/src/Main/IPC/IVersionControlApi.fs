@@ -16,12 +16,83 @@ open Swate.Electron.Shared.IPCTypes.MainToRendererIpc
 open Swate.Electron.Shared.VersionControlTypes
 open VersionControlService.Abstractions
 
+/// Output is None for a call without a window. Its operations ask the library for no output.
 type private RendererBridge = {
     Progress: VersionControlProgressDto -> unit
     Started: OperationRequestDto -> unit
+    Output: (VersionControlOutputDto -> unit) option
 }
 
-let private silentBridge: RendererBridge = { Progress = ignore; Started = ignore }
+let private silentBridge: RendererBridge = {
+    Progress = ignore
+    Started = ignore
+    Output = None
+}
+
+/// Coalesces the progress of one operation. The library can report many events per second,
+/// and the renderer only needs the latest state of a phase. An event goes out at once when its
+/// phase differs from the last forwarded one or when `windowMilliseconds` have passed since
+/// the last forward. A pending event of the previous phase goes out first, because it is the
+/// final state of that phase. Any other event waits as the pending one (the latest wins) and
+/// goes out when the window ends. `Flush` sends the pending event, so the last state of the
+/// operation reaches the renderer before the result does.
+type ProgressThrottle
+    (
+        forward: VersionControlProgressDto -> unit,
+        now: unit -> float,
+        schedule: int -> (unit -> unit) -> (unit -> unit),
+        windowMilliseconds: int
+    ) =
+    let mutable lastPhase: string option = None
+    let mutable lastForwardedAt = 0.0
+    let mutable pending: VersionControlProgressDto option = None
+    let mutable cancelTimer: (unit -> unit) option = None
+
+    let send (progress: VersionControlProgressDto) =
+        pending <- None
+        cancelTimer |> Option.iter (fun cancel -> cancel ())
+        cancelTimer <- None
+        lastPhase <- Some progress.PhaseCode
+        lastForwardedAt <- now ()
+        forward progress
+
+    member _.Report(progress: VersionControlProgressDto) =
+        let elapsed = now () - lastForwardedAt
+
+        if lastPhase <> Some progress.PhaseCode then
+            pending |> Option.iter send
+            send progress
+        elif elapsed >= float windowMilliseconds then
+            send progress
+        else
+            pending <- Some progress
+
+            if cancelTimer.IsNone then
+                let remaining = windowMilliseconds - int elapsed
+
+                cancelTimer <-
+                    Some(
+                        schedule
+                            remaining
+                            (fun () ->
+                                cancelTimer <- None
+                                pending |> Option.iter send
+                            )
+                    )
+
+    member _.Flush() = pending |> Option.iter send
+
+/// The throttle of a running operation, on the real clock and timers.
+let private newProgressThrottle (forward: VersionControlProgressDto -> unit) =
+    ProgressThrottle(
+        forward,
+        (fun () -> JS.Constructors.Date.now ()),
+        (fun milliseconds callback ->
+            let timer = JS.setTimeout callback milliseconds
+            fun () -> JS.clearTimeout timer
+        ),
+        100
+    )
 
 // Tests replace this delay to avoid waiting ten seconds.
 let mutable waitForStaleLock: int -> Async<unit> = Async.Sleep
@@ -51,6 +122,7 @@ let private bridgeForWindow (window: BrowserWindow) : RendererBridge =
     {
         Progress = fun progress -> send (fun api -> api.versionControlProgress progress)
         Started = fun key -> send (fun api -> api.versionControlOperationStarted key)
+        Output = Some(fun output -> send (fun api -> api.versionControlOutput output))
     }
 
 let private tryBridgeFromEvent (event: IpcMainInvokeEvent) =
@@ -103,13 +175,23 @@ let private runTracked
     (operation: OperationContext -> Async<OperationResult<'T>>)
     : JS.Promise<OperationResult<'T>> =
     promise {
+        let throttle = newProgressThrottle bridge.Progress
+
+        // Output is not throttled here, because the library batches it. The bridge sends
+        // without an async hop, so the batches the library flushes before the operation
+        // completes reach the window before the result does.
+        let reportOutput =
+            bridge.Output
+            |> Option.map (fun send -> fun entries -> send (Mappings.output operationId entries))
+
         match
             host.TryBeginOperation(
                 operationId,
                 workspaceRoot,
                 windowId,
                 mutating,
-                fun progress -> bridge.Progress(Mappings.progress operationId progress)
+                (fun progress -> throttle.Report(Mappings.progress operationId progress)),
+                reportOutput
             )
         with
         | Error failure ->
@@ -130,6 +212,8 @@ let private runTracked
                     with error ->
                         return Failed(unexpectedFailure error)
                 finally
+                    // The last pending event goes out before the result does.
+                    throttle.Flush()
                     tracked.Complete()
             }
 
@@ -996,6 +1080,30 @@ let api (event: IpcMainInvokeEvent) : IVersionControlApi = {
                     _.ObjectMaterialization
                     "large object materialization"
                     (fun service context -> withPath request.Path (fun path -> service.Dematerialize path context)))
+                id
+    materializeObjects =
+        fun request ->
+            withMutatingSessionUsingRefreshPredicate
+                "materializeObjects"
+                event
+                request.OperationId
+                resultChangedState
+                (withService
+                    _.ObjectBatchMaterialization
+                    "large object batch materialization"
+                    (fun service context -> withPaths request.Paths (fun paths -> service.Materialize paths context)))
+                id
+    dematerializeObjects =
+        fun request ->
+            withMutatingSessionUsingRefreshPredicate
+                "dematerializeObjects"
+                event
+                request.OperationId
+                resultChangedState
+                (withService
+                    _.ObjectBatchMaterialization
+                    "large object batch materialization"
+                    (fun service context -> withPaths request.Paths (fun paths -> service.Dematerialize paths context)))
                 id
     getStoragePolicySettings =
         fun request ->

@@ -83,6 +83,8 @@ type FileItem = {
     Checkout: string option
     Downloaded: bool option
     LfsActivity: string option
+    /// Live detail next to the busy pill while LfsActivity is set, for example "3/40 45%".
+    LfsActivityDetail: string option
     Size: int64 option
     SizeFormatted: string option
     ItemType: string
@@ -127,6 +129,7 @@ module FileTree =
         Checkout = None
         Downloaded = None
         LfsActivity = None
+        LfsActivityDetail = None
         Size = None
         SizeFormatted = None
         ItemType = "node"
@@ -149,6 +152,7 @@ module FileTree =
         Checkout = None
         Downloaded = None
         LfsActivity = None
+        LfsActivityDetail = None
         Size = None
         SizeFormatted = None
         ItemType = "node"
@@ -171,6 +175,7 @@ module FileTree =
         Checkout = None
         Downloaded = None
         LfsActivity = None
+        LfsActivityDetail = None
         Size = None
         SizeFormatted = None
         ItemType = config.ItemType
@@ -232,6 +237,7 @@ module FileTree =
         Checkout = None
         Downloaded = None
         LfsActivity = None
+        LfsActivityDetail = None
         Size = None
         SizeFormatted = None
         ItemType = "empty"
@@ -333,15 +339,15 @@ module FileExplorerLogic =
             )
             acc
 
-    /// A directory can expand when its children are not loaded yet (None) or when it has children.
-    /// Some [] is a known empty directory.
-    let canExpandDirectory (item: FileItem) =
-        item.IsDirectory
-        && (
-            match item.Children with
-            | Some children -> not (List.isEmpty children)
-            | None -> true
-        )
+
+    let canExpandDirectory (item: FileItem) = item.IsDirectory
+    // I removed this, as it removed the toggle "Anchor" from an empty directory.
+    // This might be okay with default folder icons, but i prefer a consistent ui look.
+    // && (
+    //     match item.Children with
+    //     | Some children -> not (List.isEmpty children)
+    //     | None -> true
+    // )
 
     /// One visible row of the tree in display order.
     type VisibleRow = {

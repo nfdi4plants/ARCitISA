@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { ofArray } from '../../fable_modules/fable-library-ts.5.0.0-alpha.21/List.ts';
+import { listOfArray as ofArray } from '../../Util/Interop.fs.js';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, fireEvent, screen, userEvent, waitFor, within } from 'storybook/test';
 import { Example as ContextMenuExample, ContextMenu } from './ContextMenu.fs.js';

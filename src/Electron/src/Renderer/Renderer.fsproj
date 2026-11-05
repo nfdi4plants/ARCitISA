@@ -21,6 +21,7 @@
     <Compile Include="Context\FileTreeHooks.fs" />
     <Compile Include="Context\FileTreeExpansionContext.fs" />
     <Compile Include="Context\AuthStateContext.fs" />
+    <Compile Include="Context\OperationLog.fs" />
     <Compile Include="Context\GitWorkflow.fs" />
     <Compile Include="Context\GitStateContext.fs" />
     <Compile Include="Context\LfsActivityContext.fs" />

@@ -1,5 +1,7 @@
 module ElectronRenderer.FileTreeContextMenuTests
 
+open Fable.Core
+open Renderer.Context.LfsActivityContext
 open Renderer.Components.LeftSidebar.FileExplorer.Helper
 open Renderer.Components.LeftSidebar.FileExplorer.FileTreeContextMenu
 open Swate.Components.Page.FileExplorer.Types
@@ -8,6 +10,9 @@ open Swate.Electron.Shared.FileIOTypes
 open Vitest
 open Renderer.Components.LeftSidebar.FileExplorer.Types
 
+
+[<Emit("performance.now()")>]
+let private performanceNow () : float = jsNative
 
 let private createConfig () : PathActionConfig = {
     openPathInFileExplorer = fun _ -> promise { return Ok() }
@@ -31,8 +36,15 @@ let private createContextMenuConfig () : ContextMenuConfig = {
     runToggleLfsMark = fun _ _ -> promise { return Ok() }
     runDownloadLfsFile = fun _ -> promise { return Ok() }
     runFreeLocalLfsCopy = fun _ -> promise { return Ok() }
+    getFolderLargeObjects =
+        fun _ -> {
+            NeedsDownload = [||]
+            HasLocalCopy = [||]
+        }
+    runDownloadLfsFolder = ignore
+    requestFreeLfsFolder = ignore
     refreshDirectory = ignore
-    lfsActivePaths = []
+    lfsActivePaths = LfsActivePathIndex.empty
 }
 
 let private createComposedContextMenuItems config item = createContextMenuItems config None item
@@ -601,8 +613,8 @@ Vitest.describe (
             "collection-root files keep their action rules and README files offer delete",
             fun () ->
                 let labelsFor item = [|
-                    yield! renameContextMenuItems [] ignore item |> List.map _.Label
-                    yield! deleteContextMenuItems [] ignore item |> List.map _.Label
+                    yield! renameContextMenuItems LfsActivePathIndex.empty ignore item |> List.map _.Label
+                    yield! deleteContextMenuItems LfsActivePathIndex.empty ignore item |> List.map _.Label
                 |]
 
                 [ "studies", "isa.study.xlsx"; "assays", "isa.assay.xlsx" ]
@@ -635,7 +647,10 @@ Vitest.describe (
                             let requested = ResizeArray<string>()
 
                             let menuItems =
-                                deleteContextMenuItems [] (fun target -> requested.Add target.Id) item
+                                deleteContextMenuItems
+                                    LfsActivePathIndex.empty
+                                    (fun target -> requested.Add target.Id)
+                                    item
 
                             Vitest.expect(menuItems |> List.map _.Label |> List.toArray).toEqual [| "Delete" |]
                             menuItems.Head.OnClick()
@@ -674,8 +689,8 @@ Vitest.describe (
 
                 let labels = [|
                     yield! fileSystemCreateContextMenuItems (fun _ _ -> ()) item |> List.map _.Label
-                    yield! renameContextMenuItems [] ignore item |> List.map _.Label
-                    yield! deleteContextMenuItems [] ignore item |> List.map _.Label
+                    yield! renameContextMenuItems LfsActivePathIndex.empty ignore item |> List.map _.Label
+                    yield! deleteContextMenuItems LfsActivePathIndex.empty ignore item |> List.map _.Label
                 |]
 
                 Vitest.expect(labels).toEqual ([| "New File"; "New Folder"; "Rename"; "Delete" |])
@@ -895,7 +910,7 @@ Vitest.describe (
             fun () ->
                 let config = {
                     createContextMenuConfig () with
-                        lfsActivePaths = [ "Data/raw/busy.bin" ]
+                        lfsActivePaths = LfsActivePathIndex.create [ "Data/raw/busy.bin" ]
                 }
 
                 for folder in
@@ -917,7 +932,7 @@ Vitest.describe (
             fun () ->
                 let config = {
                     createContextMenuConfig () with
-                        lfsActivePaths = [ "data/raw/busy.bin" ]
+                        lfsActivePaths = LfsActivePathIndex.create [ "data/raw/busy.bin" ]
                 }
 
                 let folders = [
@@ -937,6 +952,123 @@ Vitest.describe (
         )
 
         Vitest.test (
+            "the active path index locks the active path and its ancestors but not a sibling that shares a name prefix",
+            fun () ->
+                let index = LfsActivePathIndex.create [ "Data/raw/busy.bin"; "" ]
+
+                for locked in [ "data"; "DATA/raw"; "data/raw/busy.bin"; "data/raw/" ] do
+                    Vitest.expect(LfsActivePathIndex.locksScope index locked).toBe true
+
+                for free in
+                    [
+                        "data2"
+                        "data/raw2"
+                        "data/raw/busy.bin2"
+                        "data/raw/busy.bin/inner"
+                        ""
+                        "  "
+                    ] do
+                    Vitest.expect(LfsActivePathIndex.locksScope index free).toBe false
+
+                Vitest.expect(LfsActivePathIndex.locksScope LfsActivePathIndex.empty "data").toBe false
+        )
+
+        Vitest.test (
+            "busy children and row lock checks stay fast with 2000 busy files in one folder",
+            fun () ->
+                let entries = [|
+                    for number in 1..2000 -> FileEntry.create ($"f{number}.bin", $"data/f{number}.bin", false)
+                |]
+
+                let activities =
+                    entries
+                    |> Array.map (fun entry ->
+                        let activity: LfsActivity = {
+                            Label = "Freeing"
+                            Entry = Some entry
+                        }
+
+                        entry.path, activity
+                    )
+                    |> Map.ofArray
+
+                // The listing misses the last 50 busy files.
+                let listed = entries |> Array.take 1950
+
+                let rows = [|
+                    for number in 1..60 -> createFolderItem $"d{number}" (Some $"d{number}/inner")
+                |]
+
+                let start = performanceNow ()
+
+                let index = LfsActivePathIndex.create (activities |> Map.toSeq |> Seq.map fst)
+
+                let merged =
+                    LfsActivityState.withBusyChildren (LfsActivityState.busyEntriesByParent activities) "data" listed
+
+                let lockedRows = rows |> Array.filter (isLockedByLfsActivity index)
+                let elapsed = performanceNow () - start
+
+                Vitest.expect(merged.Length).toBe 2000
+                Vitest.expect(lockedRows.Length).toBe 0
+                Vitest.expect(elapsed < 500.0).toBe true
+        )
+
+        Vitest.test (
+            "the download folder entry downloads the folder and the free folder entry frees it",
+            fun () ->
+                let downloaded = ResizeArray<string>()
+                let freed = ResizeArray<string>()
+
+                let config = {
+                    createContextMenuConfig () with
+                        getFolderLargeObjects =
+                            fun _ -> {
+                                NeedsDownload = [| "data/missing.bin" |]
+                                HasLocalCopy = [| "data/local.bin" |]
+                            }
+                        runDownloadLfsFolder = downloaded.Add
+                        requestFreeLfsFolder = freed.Add
+                }
+
+                // The first entry downloads and the second frees, the order the folder menu offers them in.
+                let items = folderLfsContextMenuItems config (createFolderItem "data" (Some "data"))
+                Vitest.expect(items.Length).toBe 2
+
+                items.[0].OnClick()
+                Vitest.expect(downloaded.ToArray()).toEqual [| "data" |]
+                Vitest.expect(freed.Count).toBe 0
+
+                items.[1].OnClick()
+                Vitest.expect(freed.ToArray()).toEqual [| "data" |]
+                Vitest.expect(downloaded.Count).toBe 1
+        )
+
+        Vitest.test (
+            "both folder entries are disabled while an LFS action runs below the folder",
+            fun () ->
+                let config = {
+                    createContextMenuConfig () with
+                        getFolderLargeObjects =
+                            fun _ -> {
+                                NeedsDownload = [| "data/raw/busy.bin" |]
+                                HasLocalCopy = [| "data/raw/local.bin" |]
+                            }
+                        lfsActivePaths = LfsActivePathIndex.create [ "data/raw/busy.bin" ]
+                }
+
+                let isDisabled (item: ContextMenuItem) = item.Disabled = Some true
+                let above = folderLfsContextMenuItems config (createFolderItem "data" (Some "data"))
+
+                let sibling =
+                    folderLfsContextMenuItems config (createFolderItem "other" (Some "other"))
+
+                Vitest.expect(above.Length).toBe 2
+                Vitest.expect(above |> List.forall isDisabled).toBe true
+                Vitest.expect(sibling |> List.exists isDisabled).toBe false
+        )
+
+        Vitest.test (
             "delete is disabled on a canonical entity workbook while an LFS action runs inside its entity folder",
             fun () ->
                 let cases = [
@@ -947,7 +1079,7 @@ Vitest.describe (
                 for workbook, busyPath in cases do
                     let config = {
                         createContextMenuConfig () with
-                            lfsActivePaths = [ busyPath ]
+                            lfsActivePaths = LfsActivePathIndex.create [ busyPath ]
                     }
 
                     let menuItems = createComposedContextMenuItems config workbook
@@ -962,7 +1094,8 @@ Vitest.describe (
             fun () ->
                 let config = {
                     createContextMenuConfig () with
-                        lfsActivePaths = [ "assays/B/dataset/big.bin"; "assays/A2/dataset/big.bin" ]
+                        lfsActivePaths =
+                            LfsActivePathIndex.create [ "assays/B/dataset/big.bin"; "assays/A2/dataset/big.bin" ]
                 }
 
                 let workbook = createFileItem "isa.assay.xlsx" (Some "assays/A/isa.assay.xlsx")
