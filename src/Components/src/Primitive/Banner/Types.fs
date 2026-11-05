@@ -34,15 +34,24 @@ type BannerEntry = {
     /// Fully qualified icon class. None uses the variant's icon.
     Icon: string option
     Actions: BannerAction[]
+    /// Some makes the banner closable by the user. The host removes the entry when it is called.
+    OnClose: (unit -> unit) option
 } with
 
     static member create
-        (key: string, message: string, ?variant: BannerVariant, ?icon: string, ?actions: BannerAction[])
-        =
+        (
+            key: string,
+            message: string,
+            ?variant: BannerVariant,
+            ?icon: string,
+            ?actions: BannerAction[],
+            ?onClose: unit -> unit
+        ) =
         {
             Key = key
             Message = message
             Variant = defaultArg variant BannerVariant.Info
             Icon = icon
             Actions = defaultArg actions [||]
+            OnClose = onClose
         }

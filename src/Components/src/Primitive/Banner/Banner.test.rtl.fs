@@ -171,4 +171,22 @@ Vitest.describe (
                 Vitest.expect(icon.classList.contains "swt:fluent--cloud-24-regular").toBe true
                 Vitest.expect(icon.className).not.toBe variantIcon
         )
+
+        Vitest.test (
+            "has a close button only with onClose, and the button calls it",
+            fun () ->
+                let calls = ref 0
+
+                RTL.render (Banner.Banner("Message", onClose = (fun () -> calls.Value <- calls.Value + 1)))
+                |> ignore
+
+                RTL.fireEvent.click (RTL.screen.getByTestId "BannerClose")
+
+                Vitest.expect(calls.Value).toBe 1
+                RTL.cleanup ()
+
+                render "Message" [| BannerAction.create ("Alpha", ignore) |]
+
+                Vitest.expect(present "BannerClose").toBe false
+        )
 )

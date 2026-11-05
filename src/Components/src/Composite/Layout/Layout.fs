@@ -533,7 +533,8 @@ type Layout =
                                                     actions = entry.Actions,
                                                     variant = entry.Variant,
                                                     ?icon = entry.Icon,
-                                                    testId = entry.Key
+                                                    testId = entry.Key,
+                                                    ?onClose = entry.OnClose
                                                 )
                                             ]
                                         )

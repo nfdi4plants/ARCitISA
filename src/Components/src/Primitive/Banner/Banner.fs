@@ -26,7 +26,8 @@ module private BannerHelper =
 
 open BannerHelper
 
-/// A notice across the full width of its container. It has no close control, so it stays until the host removes it.
+/// A notice across the full width of its container. With onClose it has a close button, which calls onClose and
+/// leaves the removal to the host. Without onClose it stays until the host removes it.
 [<Erase; Mangle(false)>]
 type Banner =
 
@@ -66,7 +67,8 @@ type Banner =
             ?variant: BannerVariant,
             ?icon: string,
             ?testId: string,
-            ?className: string
+            ?className: string,
+            ?onClose: unit -> unit
         ) : ReactElement =
         let actions = defaultArg actions [||]
         let variant = defaultArg variant BannerVariant.Info
@@ -76,7 +78,7 @@ type Banner =
             prop.testId testId
             prop.role.alert
             prop.className [
-                "swt:alert swt:flex swt:flex-wrap swt:items-center swt:gap-x-3 swt:gap-y-2 swt:w-full swt:min-w-0 swt:rounded-none swt:px-4 swt:py-2 swt:text-sm"
+                "swt:alert swt:flex swt:items-center swt:gap-x-3 swt:w-full swt:min-w-0 swt:rounded-none swt:px-4 swt:py-2 swt:text-sm"
                 variantClass variant
                 defaultArg className ""
             ]
@@ -86,29 +88,53 @@ type Banner =
                     prop.className $"swt:iconify {defaultArg icon (variantIcon variant)} swt:size-5 swt:shrink-0"
                     prop.ariaHidden true
                 ]
-                // The basis lets the actions wrap below the message when the width runs out.
+                // Only the message and the actions wrap, so the close button stays at the right edge. The basis lets
+                // the actions wrap below the message when the width runs out.
                 Html.div [
-                    prop.testId $"{testId}Message"
-                    prop.className "swt:flex-1 swt:basis-64 swt:min-w-0 swt:wrap-anywhere"
-                    prop.children (
-                        splitLines message
-                        |> Array.mapi (fun index line ->
-                            Banner.MessageLine(line, $"{testId}Line{index}", key = string index)
-                        )
-                    )
+                    prop.className
+                        "swt:flex swt:flex-1 swt:flex-wrap swt:items-center swt:gap-x-3 swt:gap-y-2 swt:min-w-0"
+                    prop.children [
+                        Html.div [
+                            prop.testId $"{testId}Message"
+                            prop.className "swt:flex-1 swt:basis-64 swt:min-w-0 swt:wrap-anywhere"
+                            prop.children (
+                                splitLines message
+                                |> Array.mapi (fun index line ->
+                                    Banner.MessageLine(line, $"{testId}Line{index}", key = string index)
+                                )
+                            )
+                        ]
+                        (if actions.Length > 0 then
+                             Html.div [
+                                 prop.testId $"{testId}Actions"
+                                 prop.className "swt:flex swt:flex-wrap swt:items-center swt:gap-2"
+                                 prop.children (
+                                     actions
+                                     |> Array.mapi (fun index action ->
+                                         Banner.ActionButton(action, $"{testId}Action{index}", key = string index)
+                                     )
+                                 )
+                             ]
+                         else
+                             Html.none)
+                    ]
                 ]
-                (if actions.Length > 0 then
-                     Html.div [
-                         prop.testId $"{testId}Actions"
-                         prop.className "swt:flex swt:flex-wrap swt:items-center swt:gap-2"
-                         prop.children (
-                             actions
-                             |> Array.mapi (fun index action ->
-                                 Banner.ActionButton(action, $"{testId}Action{index}", key = string index)
-                             )
-                         )
+                (match onClose with
+                 | Some onClose ->
+                     Html.button [
+                         prop.testId $"{testId}Close"
+                         prop.type'.button
+                         prop.className "swt:btn swt:btn-ghost swt:btn-sm swt:btn-square swt:shrink-0"
+                         prop.title "Close"
+                         prop.ariaLabel "Close"
+                         prop.onClick (fun _ -> onClose ())
+                         prop.children [
+                             Html.span [
+                                 prop.className "swt:iconify swt:fluent--dismiss-24-regular swt:size-4"
+                                 prop.ariaHidden true
+                             ]
+                         ]
                      ]
-                 else
-                     Html.none)
+                 | None -> Html.none)
             ]
         ]

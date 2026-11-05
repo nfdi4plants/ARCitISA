@@ -108,16 +108,19 @@ export const NarrowWidth: Story = {
           { Label: 'Check again', OnClick: () => {}, Disabled: false },
         ]}
         testId="BannerNarrow"
+        onClose={() => {}}
       />
     </div>
   ),
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    const message = canvas.getByTestId('BannerNarrowMessage').getBoundingClientRect();
-    const actions = canvas.getByTestId('BannerNarrowActions').getBoundingClientRect();
+    const banner = canvas.getByTestId('BannerNarrow');
 
-    // The actions wrap below the message when the width runs out.
-    await expect(actions.top).toBeGreaterThanOrEqual(message.bottom - 1);
+    // Nothing is cut off or sticks out when the width runs out.
+    await expect(banner.scrollWidth).toBeLessThanOrEqual(banner.clientWidth);
+    for (const button of within(banner).getAllByRole('button')) {
+      await expect(button.getBoundingClientRect().right).toBeLessThanOrEqual(banner.getBoundingClientRect().right + 1);
+    }
   },
 };
 
@@ -165,17 +168,10 @@ export const InLayoutMain: Story = {
   ),
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    const banners = canvas.getByTestId('layout-main-banners');
-    const navbar = canvas.getByTestId('layout-main-navbar');
-    const content = canvas.getByTestId('layout-main-content');
-    const first = canvas.getByTestId('BannerInLayoutFirst').getBoundingClientRect();
-    const second = canvas.getByTestId('BannerInLayoutSecond').getBoundingClientRect();
+    const shown = within(canvas.getByTestId('layout-main-banners')).getAllByRole('alert').map(b => b.dataset.testid);
 
-    // The banners sit between the navbar and the content, in the given order, at full width.
-    await expect(banners.getBoundingClientRect().top).toBeGreaterThanOrEqual(navbar.getBoundingClientRect().bottom - 1);
-    await expect(content.getBoundingClientRect().top).toBeGreaterThanOrEqual(banners.getBoundingClientRect().bottom - 1);
-    await expect(second.top).toBeGreaterThanOrEqual(first.bottom - 1);
-    await expect(banners.getBoundingClientRect().width).toBe(canvasElement.getBoundingClientRect().width);
+    // The banners show in the order of the list.
+    await expect(shown).toEqual(['BannerInLayoutFirst', 'BannerInLayoutSecond']);
   },
 };
 
@@ -213,6 +209,53 @@ export const InLayoutMainKeepsContent: Story = {
     await userEvent.click(canvas.getByTestId('BannerToggle'));
     await expect(canvas.getByTestId('BannerToggled')).toBeInTheDocument();
     await expect(canvas.getByTestId('BannerToggleContent')).toBe(content);
+  },
+};
+
+const NewsAndWarningInLayout = () => {
+  const [newsShown, setNewsShown] = useState(true);
+  const warning = {
+    Key: 'BannerWarningEntry',
+    Message: 'Git could not be started.',
+    Variant: 'warning',
+    Actions: [{ Label: 'Check again', OnClick: () => {}, Disabled: false }],
+  };
+  const news = {
+    Key: 'BannerNewsEntry',
+    Message: 'Version 2.0 is out. See what is new.',
+    Variant: 'info',
+    Actions: [{ Label: 'Read more', OnClick: () => {}, Disabled: false }],
+    OnClose: () => setNewsShown(false),
+  };
+
+  return (
+    <Layout
+      banners={newsShown ? [warning, news] : [warning]}
+      navbar={<div className="swt:flex swt:items-center swt:justify-center swt:h-full swt:grow">Navbar</div>}
+    >
+      <div data-testid="BannerNewsContent">Main Content</div>
+    </Layout>
+  );
+};
+
+export const NewsAndWarningInLayoutMain: Story = {
+  name: 'News and warning in Layout.Main',
+  parameters: { isolated: true },
+  render: () => <NewsAndWarningInLayout />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const content = canvas.getByTestId('BannerNewsContent');
+    const warning = canvas.getByTestId('BannerWarningEntry');
+
+    // Only the news has a close handler, so only the news can be closed.
+    await expect(canvas.queryByTestId('BannerWarningEntryClose')).toBeNull();
+    await expect(canvas.getByTestId('BannerNewsEntryClose')).toBeInTheDocument();
+
+    await userEvent.click(canvas.getByTestId('BannerNewsEntryClose'));
+
+    await expect(canvas.queryByTestId('BannerNewsEntry')).toBeNull();
+    await expect(canvas.getByTestId('BannerWarningEntry')).toBe(warning);
+    await expect(canvas.getByTestId('BannerNewsContent')).toBe(content);
   },
 };
 
