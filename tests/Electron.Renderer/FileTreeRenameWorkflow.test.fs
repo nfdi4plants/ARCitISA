@@ -394,6 +394,28 @@ Vitest.describe (
         )
 
         Vitest.test (
+            "renaming an entity folder moves the selection along when its workbook is selected",
+            fun () -> promise {
+                let renameDraft =
+                    createFolderItem "OldAssay" "assays/OldAssay" |> buildRenameDraftOrFail
+
+                let probe = createRenameWorkflowProbe ()
+
+                let config =
+                    createConfirmRenameConfig
+                        renameDraft
+                        "assays/OldAssay/isa.assay.xlsx"
+                        (Some(Renderer.Types.PageState.ArcFilePage(ArcFiles.Assay(ArcAssay.init "OldAssay"), None)))
+                        probe
+
+                RenameWorkflow.confirmRenameItem config "NewAssay"
+                do! waitUntil ((fun () -> probe.RenameRequest.IsSome && probe.Closed), 50)
+
+                Vitest.expect(probe.RenamedSelection.Value.TreePath).toEqual (Some "assays/NewAssay/isa.assay.xlsx")
+            }
+        )
+
+        Vitest.test (
             "confirmRenameItem dispatches generic renamePath and remaps generic file selection",
             fun () -> promise {
                 let renameDraft =

@@ -277,49 +277,20 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "an ARC folder's view counts as open only while its metadata is on screen",
-            fun () ->
-                let assayPage =
-                    Some(
-                        Renderer.Types.PageState.ArcFilePage(
-                            ARCtrlHelper.ArcFileDefaults.createDefaultArcFile ArcFilesDiscriminate.Assay "AssayA",
-                            None
-                        )
-                    )
-
-                let isOpen pageState selectedPath =
-                    isArcEntityFolderViewOpen pageState selectedPath "assays/AssayA"
-
-                Vitest.expect(isOpen assayPage (Some "assays/AssayA")).toBe (true)
-                // After a click on the workbook file, the workbook is the selection.
-                Vitest.expect(isOpen assayPage (Some "assays/AssayA/isa.assay.xlsx")).toBe (true)
-                // Another page replaced the metadata, for example the DataHub browser or an error.
-                Vitest.expect(isOpen (Some Renderer.Types.PageState.DataHubBrowser) (Some "assays/AssayA")).toBe (false)
-
-                Vitest
-                    .expect(isOpen (Some(Renderer.Types.PageState.ErrorPage "failed")) (Some "assays/AssayA"))
-                    .toBe (false)
-
-                Vitest.expect(isOpen None (Some "assays/AssayA")).toBe (false)
-                Vitest.expect(isOpen assayPage (Some "assays/AssayB")).toBe (false)
-                Vitest.expect(isOpen assayPage None).toBe (false)
-        )
-
-        Vitest.test (
-            "open is only offered for files and folders with ARC metadata",
+            "open is only offered for files",
             fun () ->
                 let hasOpen item =
                     openContextMenuItems (createContextMenuConfig ()) item
                     |> List.exists (fun menuItem -> menuItem.Label = "Open")
 
-                Vitest.expect(hasOpen (createFolderItem "AssayA" (Some "assays/AssayA"))).toBe (true)
+                Vitest.expect(hasOpen (createFolderItem "AssayA" (Some "assays/AssayA"))).toBe (false)
                 Vitest.expect(hasOpen (createFileItem "protocol.md" (Some "assays/AssayA/protocol.md"))).toBe (true)
                 Vitest.expect(hasOpen (createFolderItem "protocols" (Some "assays/AssayA/protocols"))).toBe (false)
                 Vitest.expect(hasOpen (createFolderItem "data" (Some "data"))).toBe (false)
         )
 
         Vitest.test (
-            "the Open item calls openItem with the folder",
+            "the Open item calls openItem with the file",
             fun () ->
                 let opened = ResizeArray<FileItem>()
 
@@ -328,7 +299,7 @@ Vitest.describe (
                         openItem = opened.Add
                 }
 
-                let item = createFolderItem "AssayA" (Some "assays/AssayA")
+                let item = createFileItem "protocol.md" (Some "assays/AssayA/protocol.md")
 
                 openContextMenuItems config item
                 |> List.find (fun menuItem -> menuItem.Label = "Open")
@@ -348,7 +319,6 @@ Vitest.describe (
                     .expect(groupedLabels menuItems)
                     .toEqual (
                         [|
-                            "Open"
                             "Import files"
                             "Import folders"
                             "Open Folder Location"

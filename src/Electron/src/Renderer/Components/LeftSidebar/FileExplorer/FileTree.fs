@@ -417,41 +417,16 @@ type FileTree =
                 console.log ($"[Renderer] Error: {fullErrorMessage}")
                 pageStateCtx.setState (Some(Renderer.Types.PageState.ErrorPage fullErrorMessage))
 
-        let withStartingView activeView =
-            function
-            | Renderer.Types.PageState.ArcFilePage(arcFile, _) ->
-                Renderer.Types.PageState.ArcFilePage(arcFile, Some activeView)
-            | pageState -> pageState
-
-        let openPreview (alwaysOpen: bool) (item: FileItem) =
+        let openPreview (item: FileItem) =
             promise {
                 match item.Path with
                 | None ->
                     errorModal.enqueue (
                         ErrorModalRequest.create ($"File '{item.Name}' has no path.", title = "Preview failed")
                     )
-                | Some path when item.IsDirectory ->
-                    let selectedPath = PathHelpers.normalizePath path
-
-                    let isAlreadyOpen =
-                        Helper.isArcEntityFolderViewOpen
-                            pageStateCtx.state
-                            fileStateCtx.state.Selection.TreePath
-                            selectedPath
-
-                    // Only folders with ARC metadata open a view, and only if it is not on screen yet. Otherwise the
-                    // click just expands or collapses the folder and keeps the selection, because the open view, such
-                    // as the Markdown editor, saves to the selected path.
-                    match Helper.tryGetArcEntityWorkbookName selectedPath with
-                    | Some _ when isAlreadyOpen && not alwaysOpen -> ()
-                    | Some workbookName ->
-                        fileStateCtx.setSelection (ArcSelection.forTreePath (Some selectedPath))
-                        let! result = openView $"{selectedPath}/{workbookName}"
-
-                        result
-                        |> Result.map (withStartingView Swate.Components.Page.ArcFileEditor.Types.ActiveView.Metadata)
-                        |> applyPreviewResult item.Name
-                    | None -> ()
+                // A click on a folder only expands or collapses it. The open page and the selection stay,
+                // because the open page, such as the Markdown editor, saves to the selected path.
+                | Some _ when item.IsDirectory -> ()
                 | Some path ->
                     let selectedPath = PathHelpers.normalizePath path
                     fileStateCtx.setSelection (ArcSelection.forTreePath (Some selectedPath))
@@ -576,7 +551,7 @@ type FileTree =
             setIsCreating = setIsDialogBusy
             applyError = applyError
             revealInTree = expansionCtx.revealPaths
-            openCreated = openPreview false
+            openCreated = openPreview
             closeCreateModal = closeDialog
         }
 
@@ -748,7 +723,7 @@ type FileTree =
         }
 
         let contextMenuConfig: ContextMenuConfig = {
-            openItem = openPreview true
+            openItem = openPreview
             arcRootPath = appStateCtx
             openCreateModal = (fun kind -> openDialog (CreateDialog kind))
             openNoteDraft = (fun () -> pageStateCtx.setState (Some Renderer.Types.PageState.NotesDraftPage))
@@ -899,7 +874,7 @@ type FileTree =
                     prop.children [
                         Swate.Components.Page.FileExplorer.FileExplorer.FileExplorer(
                             initialItems = visibleItems,
-                            onItemClick = openPreview false,
+                            onItemClick = openPreview,
                             onDirectoryExpansionChange = handleExpansionChange,
                             expandedIds = expansionCtx.expandedIds,
                             onExpandedIdsChange = expansionCtx.setExpandedIds,

@@ -83,3 +83,28 @@ Vitest.test (
         RTL.fireEvent.click (RTL.screen.getByText "Refresh folder")
         Vitest.expect(refreshed.ToArray()).toEqual [| "data" |]
 )
+
+Vitest.test (
+    "right-click on an ARC entity folder shows no Open item",
+    fun () ->
+        let items = [
+            {
+                FileTree.createFolder "AssayA" (Some "assays/AssayA") FileItemIcon.Folder with
+                    Id = "assays/AssayA"
+                    Children = None
+            }
+        ]
+
+        RTL.render (
+            FileExplorer.FileExplorer(
+                initialItems = items,
+                onContextMenu = createContextMenuItems (config (ResizeArray<string>())) None,
+                includeDefaultContextMenuItems = false
+            )
+        )
+        |> ignore
+
+        RTL.fireEvent.custom ("contextMenu", RTL.screen.getByText "AssayA", {| clientX = 10; clientY = 10 |})
+        Vitest.expect((RTL.screen.queryByText "Refresh folder").IsSome).toBe true
+        Vitest.expect((RTL.screen.queryByText "Open").IsNone).toBe true
+)
