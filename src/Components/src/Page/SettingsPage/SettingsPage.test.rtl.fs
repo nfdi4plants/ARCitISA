@@ -39,10 +39,14 @@ let private renderWith
     RTL.render (
         page (
             SettingsPage.SettingsPage(
-                ?gitExecutable = setting,
-                onGitExecutableChoose = onChoose,
-                onGitExecutableUseAutomatic = onUseAutomatic,
-                onGitExecutableCheckAgain = onCheckAgain
+                ?gitExecutable =
+                    (setting
+                     |> Option.map (fun setting -> {
+                         Setting = setting
+                         OnChoose = onChoose
+                         OnUseAutomatic = onUseAutomatic
+                         OnCheckAgain = onCheckAgain
+                     }))
             )
         )
     )

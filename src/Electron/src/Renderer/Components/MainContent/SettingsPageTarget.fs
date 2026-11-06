@@ -157,15 +157,19 @@ let SettingsPage () =
                 onAutoCreateNotesFolderEnabled = onAutoCreateNotesFolderEnabled,
                 uiScaling = uiScaling.state,
                 onUIScaling = submitUIScaling,
-                gitDefaults = toGitDefaults effectiveDefaults,
-                gitBuiltInDefaults = toGitDefaults userDefaults.state.BuiltIn,
-                onGitDefaultsSave = submitGitDefaults,
+                gitDefaults = {
+                    Current = toGitDefaults effectiveDefaults
+                    BuiltIn = toGitDefaults userDefaults.state.BuiltIn
+                    OnSave = submitGitDefaults
+                },
                 autoCreateNotesFolder = effectiveDefaults.AutoCreateNotesFolder,
                 onAutoCreateNotesFolderChange = submitAutoCreateNotesFolder,
-                gitExecutable = toGitExecutableSetting effectiveDefaults.GitExecutablePath dependencies.state,
-                onGitExecutableChoose = chooseGitExecutable,
-                onGitExecutableUseAutomatic = (fun () -> submitGitExecutablePath None),
-                onGitExecutableCheckAgain = dependencies.recheck
+                gitExecutable = {
+                    Setting = toGitExecutableSetting effectiveDefaults.GitExecutablePath dependencies.state
+                    OnChoose = chooseGitExecutable
+                    OnUseAutomatic = (fun () -> submitGitExecutablePath None)
+                    OnCheckAgain = dependencies.recheck
+                }
             )
         ]
     ]

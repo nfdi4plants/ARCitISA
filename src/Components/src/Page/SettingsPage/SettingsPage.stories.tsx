@@ -49,9 +49,11 @@ const currentGitDefaults = {
 };
 
 const gitDefaultsArgs = () => ({
-  gitDefaults: currentGitDefaults,
-  gitBuiltInDefaults: builtInGitDefaults,
-  onGitDefaultsSave: fn(),
+  gitDefaults: {
+    Current: currentGitDefaults,
+    BuiltIn: builtInGitDefaults,
+    OnSave: fn(),
+  } as any,
 });
 
 const replaceNumber = async (input: HTMLElement, value: string) => {
@@ -162,27 +164,13 @@ export const GitDefaultsSave: PropsStory = {
     await userEvent.click(canvas.getByTestId(uploadId));
     await userEvent.click(canvas.getByTestId('SettingsGitDefaultsSave'));
 
-    await waitFor(() => expect(args.onGitDefaultsSave).toHaveBeenCalledTimes(1));
-    await expect(args.onGitDefaultsSave).toHaveBeenCalledWith({
+    await waitFor(() => expect(args.gitDefaults.OnSave).toHaveBeenCalledTimes(1));
+    await expect(args.gitDefaults.OnSave).toHaveBeenCalledWith({
       LfsAutoTrackThresholdMb: 25,
       DownloadLargeFiles: false,
       DiffIndexingLimitMb: 1024,
       UploadRightAway: false,
     });
-  },
-};
-
-export const GitDefaultsIncompleteProps: PropsStory = {
-  render: renderWithProps,
-  args: {
-    gitDefaults: currentGitDefaults,
-    onGitDefaultsSave: fn(),
-  },
-  play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-
-    await expect(canvas.getByTestId('SettingsAutoCreateNotesFolder')).toBeInTheDocument();
-    await expect(canvas.queryByTestId('SettingsGitDefaultsSection')).toBeNull();
   },
 };
 
@@ -198,10 +186,12 @@ type GitExecutableSetting = {
 };
 
 const gitExecutableArgs = (setting: GitExecutableSetting) => ({
-  gitExecutable: setting as any,
-  onGitExecutableChoose: fn(),
-  onGitExecutableUseAutomatic: fn(),
-  onGitExecutableCheckAgain: fn(),
+  gitExecutable: {
+    Setting: setting,
+    OnChoose: fn(),
+    OnUseAutomatic: fn(),
+    OnCheckAgain: fn(),
+  } as any,
 });
 
 export const GitExecutableAutomatic: PropsStory = {
@@ -226,9 +216,9 @@ export const GitExecutableAutomatic: PropsStory = {
     await expect(canvas.getByTestId(`${gitExecutableId}CheckAgain`)).toBeEnabled();
 
     await userEvent.click(canvas.getByTestId(`${gitExecutableId}Choose`));
-    await expect(args.onGitExecutableChoose).toHaveBeenCalledTimes(1);
+    await expect(args.gitExecutable.OnChoose).toHaveBeenCalledTimes(1);
     await userEvent.click(canvas.getByTestId(`${gitExecutableId}CheckAgain`));
-    await expect(args.onGitExecutableCheckAgain).toHaveBeenCalledTimes(1);
+    await expect(args.gitExecutable.OnCheckAgain).toHaveBeenCalledTimes(1);
   },
 };
 
@@ -248,7 +238,7 @@ export const GitExecutableChosenPath: PropsStory = {
     await expect(canvas.getByTestId(`${gitExecutableId}PathInUse`)).toHaveTextContent('/opt/tools/git/bin/git');
 
     await userEvent.click(canvas.getByTestId(`${gitExecutableId}UseAutomatic`));
-    await expect(args.onGitExecutableUseAutomatic).toHaveBeenCalledTimes(1);
+    await expect(args.gitExecutable.OnUseAutomatic).toHaveBeenCalledTimes(1);
   },
 };
 

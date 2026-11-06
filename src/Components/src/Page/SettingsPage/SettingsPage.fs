@@ -617,28 +617,18 @@ type SettingsPage =
             ?onAutoCreateNotesFolderEnabled: unit -> unit,
             ?uiScaling: int,
             ?onUIScaling: int -> unit,
-            ?gitDefaults: SettingsGitDefaults,
-            ?gitBuiltInDefaults: SettingsGitDefaults,
-            ?onGitDefaultsSave: SettingsGitDefaults -> unit,
+            ?gitDefaults: GitDefaultsSection,
             ?autoCreateNotesFolder: bool,
             ?onAutoCreateNotesFolderChange: bool -> unit,
-            ?gitExecutable: GitExecutableSetting,
-            ?onGitExecutableChoose: unit -> unit,
-            ?onGitExecutableUseAutomatic: unit -> unit,
-            ?onGitExecutableCheckAgain: unit -> unit
+            ?gitExecutable: GitExecutableField
         ) =
         let onAutoCreateNotesFolderEnabled =
             defaultArg onAutoCreateNotesFolderEnabled ignore
 
         let gitExecutable =
             gitExecutable
-            |> Option.map (fun setting ->
-                SettingsPage.GitExecutable(
-                    setting,
-                    defaultArg onGitExecutableChoose ignore,
-                    defaultArg onGitExecutableUseAutomatic ignore,
-                    defaultArg onGitExecutableCheckAgain ignore
-                )
+            |> Option.map (fun field ->
+                SettingsPage.GitExecutable(field.Setting, field.OnChoose, field.OnUseAutomatic, field.OnCheckAgain)
             )
 
         LayoutComponents.Section [
@@ -651,16 +641,16 @@ type SettingsPage =
             )
 
             // The Git executable leads the Git defaults. A host without Git defaults still shows it in the same box.
-            match gitDefaults, gitBuiltInDefaults, onGitDefaultsSave, gitExecutable with
-            | Some gitDefaults, Some gitBuiltInDefaults, Some onGitDefaultsSave, _ ->
+            match gitDefaults, gitExecutable with
+            | Some gitDefaults, _ ->
                 SettingsPage.GitDefaults(
-                    gitDefaults,
-                    gitBuiltInDefaults,
-                    onGitDefaultsSave,
+                    gitDefaults.Current,
+                    gitDefaults.BuiltIn,
+                    gitDefaults.OnSave,
                     ?gitExecutable = gitExecutable
                 )
-            | _, _, _, Some gitExecutable -> LayoutComponents.BoxedField("Git defaults", content = [ gitExecutable ])
-            | _ -> Html.none
+            | None, Some gitExecutable -> LayoutComponents.BoxedField("Git defaults", content = [ gitExecutable ])
+            | None, None -> Html.none
 
             SettingsPage.SearchConfig()
 
