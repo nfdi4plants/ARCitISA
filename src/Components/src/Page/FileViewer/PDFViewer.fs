@@ -1,4 +1,4 @@
-module Renderer.Components.MainContent.PDFViewer
+namespace Swate.Components.Page.FileViewer
 
 open Feliz
 open Fable.Core.JsInterop
@@ -7,6 +7,9 @@ open Swate.Components.Primitive
 open Swate.Components.Primitive.LoadingSpinner
 
 module private PDFData =
+
+    [<Emit("atob($0).length")>]
+    let byteLength (base64Content: string) : int = jsNative
 
     [<Emit("new Uint8Array([...atob($0)].map(c => c.charCodeAt(0)))")>]
     let fromBase64 (value: string) : obj = jsNative
@@ -17,10 +20,10 @@ module private PDFData =
     [<Emit("URL.revokeObjectURL($0)")>]
     let revokeUrl (url: string) : unit = jsNative
 
-type DisplayPDF =
-    [<ReactComponent>]
-    static member Main(filehtml) =
-
+[<Erase; Mangle(false)>]
+type PDFViewer =
+    [<ReactComponent(true)>]
+    static member Main(filehtml, _path: string) =
         let pdfUrl, setPdfUrl = React.useState<string option> (None)
 
         React.useEffect (

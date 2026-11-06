@@ -407,6 +407,9 @@
     <Compile Include="Page\FileExplorer\FileExplorerItem.fs" />
     <Compile Include="Page\FileExplorer\FileExplorer.fs" />
     <Compile Include="Page\FileExplorer\FileExplorer.test.rtl.fs" />
+    <Compile Include="Page\FileViewer\HtmlViewer.fs" />
+    <Compile Include="Page\FileViewer\ImageViewer.fs" />
+    <Compile Include="Page\FileViewer\PDFViewer.fs" />
     <Compile Include="Page\DataHubBrowser\Types.fs" />
     <Compile Include="Page\DataHubBrowser\MockData.fs" />
     <Compile Include="Page\DataHubBrowser\Model.fs" />

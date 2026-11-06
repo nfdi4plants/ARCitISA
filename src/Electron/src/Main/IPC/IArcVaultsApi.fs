@@ -2,6 +2,7 @@ module Main.IPC.ArcVaultsApi
 
 open System
 open Fable.Core
+open Fable.Core.JsInterop
 open Fable.Electron
 open Fable.Electron.Main
 open Swate.Components.Shared
@@ -1203,7 +1204,19 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
                             match absolutePath with
                             | Error pathError -> return Error pathError
                             | Ok path ->
-                                let! dto = Main.ArcVaultHelper.readFileForPreviewAsync path relativePath
+                                let fileType = FileContentDTO.inferFileTypeFromPath relativePath
+
+                                let! content =
+                                    match fileType with
+                                    | FileContentType.PDF
+                                    | FileContentType.PNG
+                                    | FileContentType.JPG
+                                    | FileContentType.SVG
+                                    | FileContentType.GIF
+                                    | FileContentType.Html -> Main.Bindings.Filesystem.readFileBase64Async path
+                                    | _ -> ARCtrl.FileSystemHelper.readFileTextAsync path
+
+                                let dto = FileContentDTO.create fileType content relativePath
 
                                 return Ok dto
                         with e ->
