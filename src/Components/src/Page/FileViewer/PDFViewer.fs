@@ -1,4 +1,4 @@
-module Swate.Components.Page.PDFViewer
+namespace Swate.Components.Page.FileViewer
 
 open Feliz
 open Fable.Core.JsInterop
@@ -20,13 +20,11 @@ module private PDFData =
     [<Emit("URL.revokeObjectURL($0)")>]
     let revokeUrl (url: string) : unit = jsNative
 
-type DisplayPDF =
+[<Erase; Mangle(false)>]
+type PDFViewer =
     [<ReactComponent>]
-    static member Main(filehtml, path: string) =
-
+    static member Main(filehtml, _path: string) =
         let pdfUrl, setPdfUrl = React.useState<string option> (None)
-        let failedPdfUrl, setFailedPdfUrl = React.useState<string option> (None)
-        let fileSize = PDFData.byteLength filehtml / 1024
 
         React.useEffect (
             (fun () ->
@@ -44,40 +42,8 @@ type DisplayPDF =
             prop.className "swt:w-full"
             prop.children [
                 match pdfUrl with
-                | Some url ->
-                    Html.iframe [
-                        prop.src url
-                        prop.className "swt:w-full swt:h-full"
-                        prop.onError (fun (_: Browser.Types.Event) -> setFailedPdfUrl (Some url))
-                    ]
+                | Some url -> Html.iframe [ prop.src url; prop.className "swt:w-full swt:h-full" ]
 
                 | None -> LoadingSpinner.LoadingSpinner("Loading PDF", size = DaisyuiSize.XL)
-
-                if pdfUrl |> Option.exists (fun url -> failedPdfUrl = Some url) then
-                    Html.div [
-                        prop.role.alert
-                        prop.className "swt:badge swt:badge-error swt:text-error-content"
-                        prop.text "This file is broken or corrupted."
-                    ]
-
-                Html.div [
-                    prop.className "swt:w-full swt:max-w-full swt:rounded swt:bg-base-200 swt:p-3"
-                    prop.children [
-                        Html.p [
-                            prop.className "swt:font-bold swt:text-lg"
-                            prop.text "Metadata"
-                        ]
-                        Html.pre [
-                            prop.className "swt:overflow-auto swt:whitespace-pre-wrap"
-                            prop.text (
-                                String.concat "\n" [
-                                    $"File: {path}"
-                                    "MIME type: application/pdf"
-                                    $"File size: {fileSize} kB"
-                                ]
-                            )
-                        ]
-                    ]
-                ]
             ]
         ]
