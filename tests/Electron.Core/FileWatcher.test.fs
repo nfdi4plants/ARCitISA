@@ -370,6 +370,7 @@ Vitest.describe (
                                 5000
                                 (fun () -> vault.fileWatcherState = FileWatcherState.Running)
 
+                        // The writer job adds the entry before it bumps the version, so the wait covers both.
                         do!
                             waitUntil
                                 "the revalidated tree"
