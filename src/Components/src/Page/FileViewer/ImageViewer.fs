@@ -26,7 +26,7 @@ module private ImageMetadata =
 
 [<Erase; Mangle(false)>]
 type ImageViewer =
-    [<ReactComponent>]
+    [<ReactComponent(true)>]
     static member Main(filetype: string, base64Content: string, path: string) =
         let imageUrl = "data:" + filetype + ";base64," + base64Content
         let failedImageUrl, setFailedImageUrl = React.useState<string option> (None)
@@ -77,6 +77,7 @@ type ImageViewer =
                                 prop.text "This file is broken or corrupted."
                             ]
                     ]
+
                 ]
                 Html.div [
                     prop.className "swt:w-full swt:max-w-full swt:rounded swt:bg-base-200 swt:p-3"

@@ -10,7 +10,7 @@ module private HtmlData =
 
 [<Erase; Mangle(false)>]
 type HtmlViewer =
-    [<ReactComponent>]
+    [<ReactComponent(true)>]
     static member Main(base64Content: string, path: string) =
         let htmlContent = "data:text/html;base64," + base64Content
         let failedHtmlUrl, setFailedHtmlUrl = React.useState<string option> (None)
@@ -51,6 +51,7 @@ type HtmlViewer =
                             )
                         ]
                     ]
+
                 ]
 
             ]

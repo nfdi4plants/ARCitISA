@@ -22,7 +22,7 @@ module private PDFData =
 
 [<Erase; Mangle(false)>]
 type PDFViewer =
-    [<ReactComponent>]
+    [<ReactComponent(true)>]
     static member Main(filehtml, _path: string) =
         let pdfUrl, setPdfUrl = React.useState<string option> (None)
 
