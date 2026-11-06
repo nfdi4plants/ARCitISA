@@ -96,16 +96,52 @@ module ArcAddExtensions =
         match arcFile with
         | ArcFiles.Assay assay ->
             workingArc.TryGetAssay assay.Identifier
-            |> Option.iter (fun sourceAssay -> targetArc.AddAssay(sourceAssay.Copy()))
+            |> Option.iter (fun sourceAssay ->
+                let copy = sourceAssay.Copy()
+                copy.StaticHash <- copy.GetLightHashCode()
+
+                copy.Datamap
+                |> Option.iter (fun dataMap -> dataMap.StaticHash <- cleanDataMapStaticHash dataMap)
+
+                targetArc.AddAssay(copy)
+            )
         | ArcFiles.Study(study, _) ->
             workingArc.TryGetStudy study.Identifier
-            |> Option.iter (fun sourceStudy -> targetArc.AddStudy(sourceStudy.Copy()))
+            |> Option.iter (fun sourceStudy ->
+                let copy = sourceStudy.Copy()
+                copy.StaticHash <- copy.GetLightHashCode()
+
+                copy.Datamap
+                |> Option.iter (fun dataMap -> dataMap.StaticHash <- cleanDataMapStaticHash dataMap)
+
+                targetArc.AddStudy(copy)
+            )
         | ArcFiles.Run run ->
             workingArc.TryGetRun run.Identifier
-            |> Option.iter (fun sourceRun -> targetArc.AddRun(sourceRun.Copy()))
+            |> Option.iter (fun sourceRun ->
+                let copy = sourceRun.Copy()
+                copy.StaticHash <- copy.GetLightHashCode()
+                // The add wrote the CWL description and inputs, so they count as saved too.
+                WorkflowPayloads.baselineRunPayload copy
+
+                copy.Datamap
+                |> Option.iter (fun dataMap -> dataMap.StaticHash <- cleanDataMapStaticHash dataMap)
+
+                targetArc.AddRun(copy)
+            )
         | ArcFiles.Workflow workflow ->
             workingArc.TryGetWorkflow workflow.Identifier
-            |> Option.iter (fun sourceWorkflow -> targetArc.AddWorkflow(sourceWorkflow.Copy()))
+            |> Option.iter (fun sourceWorkflow ->
+                let copy = sourceWorkflow.Copy()
+                copy.StaticHash <- copy.GetLightHashCode()
+                // The add wrote the CWL description, so it counts as saved too.
+                WorkflowPayloads.baselineWorkflowPayload copy
+
+                copy.Datamap
+                |> Option.iter (fun dataMap -> dataMap.StaticHash <- cleanDataMapStaticHash dataMap)
+
+                targetArc.AddWorkflow(copy)
+            )
         | ArcFiles.DataMap(Some parentInfo, _) ->
             workingArc.TryGetDataMap parentInfo
             |> Option.iter (fun dataMap ->

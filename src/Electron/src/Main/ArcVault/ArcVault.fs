@@ -121,7 +121,8 @@ module ArcVaultExtensions =
             | _ -> promise { return Error(arcNotOpenError ()) }
 
         /// Adds a new ARC entity through ARCtrl's scoped add path as an own write.
-        /// Static hashes are resynced from disk afterwards.
+        /// The ARC in memory is not reloaded, so an unreadable workbook elsewhere does not fail the add.
+        /// The new entity gets its clean static hash when it is committed to memory.
         member this.AddArcFile(request: FileContentDTO) : Fable.Core.JS.Promise<Result<unit, exn>> = promise {
             match this.path, this.arc with
             | Some _, Some _ ->
@@ -141,42 +142,25 @@ module ArcVaultExtensions =
                                     match! arcLocal.TryAddArcFileAsync(arcPath, arcFile) with
                                     | Error errors -> return Error(exn (PathHelpers.formatContractErrors errors))
                                     | Ok _ ->
-                                        match! ARC.LoadAsyncSwate arcPath with
-                                        | Ok persistedArc ->
-                                            baselineArcStaticHashes persistedArc
-                                            syncAddedArcFileFromPersisted persistedArc arcLocal arcFile
-                                            syncArcStaticHashes persistedArc arcLocal
-                                            this.RefreshHasUnsavedArcChangesFlag()
+                                        this.RefreshHasUnsavedArcChangesFlag()
 
-                                            // The watcher reports the new file late, or never when it is down. The nearest loaded
-                                            // folder is reconciled now, which loads a new entity folder through the zone rule.
-                                            let addedRelativePath =
-                                                match arcFile with
-                                                | ArcFiles.DataMap(Some parentInfo, _) ->
-                                                    Some(DatamapParentInfo.toPath parentInfo)
-                                                | _ -> arcFile.TryGetRelativePath()
+                                        // The watcher reports the new file late, or never when it is down. The nearest loaded
+                                        // folder is reconciled now, which loads a new entity folder through the zone rule.
+                                        let addedRelativePath =
+                                            match arcFile with
+                                            | ArcFiles.DataMap(Some parentInfo, _) ->
+                                                Some(DatamapParentInfo.toPath parentInfo)
+                                            | _ -> arcFile.TryGetRelativePath()
 
-                                            match addedRelativePath with
-                                            | Some relativePath ->
-                                                match
-                                                    PathHelpers.tryGetParentPath (join [| arcPath; relativePath |])
-                                                with
-                                                | Some parentDirectory ->
-                                                    do! this.EnqueueFileTreeDirectoryReconcile parentDirectory
-                                                | None -> ()
+                                        match addedRelativePath with
+                                        | Some relativePath ->
+                                            match PathHelpers.tryGetParentPath (join [| arcPath; relativePath |]) with
+                                            | Some parentDirectory ->
+                                                do! this.EnqueueFileTreeDirectoryReconcile parentDirectory
                                             | None -> ()
+                                        | None -> ()
 
-                                            return Ok()
-                                        | Error loadErrors ->
-                                            this.RefreshHasUnsavedArcChangesFlag()
-
-                                            return
-                                                Error(
-                                                    exn (
-                                                        "Added ARC file, but could not reload the persisted hash baseline: "
-                                                        + (PathHelpers.formatContractErrors loadErrors)
-                                                    )
-                                                )
+                                        return Ok()
                                 | _ -> return Error(arcNotOpenError ())
                             }
                         )

@@ -908,7 +908,7 @@ Vitest.describe (
                     })
         )
 
-        Vitest.Test.fails (
+        Vitest.test (
             "adding a file succeeds while another workbook of the ARC is unreadable",
             fun () ->
                 withTempArc
@@ -944,6 +944,94 @@ Vitest.describe (
                                 |> Seq.exists (fun entry -> PathHelpers.pathsEqual entry.path addedFolder)
                             )
                             .toBe (true)
+                    })
+        )
+
+        Vitest.test (
+            "an added entity shows no unsaved changes and a sync leaves it alone",
+            fun () ->
+                withSyncVault
+                    (fun arc -> arc.AddAssay(ArcAssay("DiskAssay")))
+                    (fun vault arcPath -> promise {
+                        let request =
+                            match FileContentDTO.fromArcFile (ArcFiles.Assay(ArcAssay("AddedAssay"))) with
+                            | Some request -> request
+                            | None -> failwith "Expected an assay DTO."
+
+                        match! vault.AddArcFile request with
+                        | Error error -> failwith error.Message
+                        | Ok() -> ()
+
+                        Vitest.expect(vault.hasUnsavedArcChanges).toBe false
+
+                        let loadCalls = ref 0
+                        let realLoad = vault.SnapshotLoad
+
+                        vault.SnapshotLoad <-
+                            fun path ->
+                                loadCalls.Value <- loadCalls.Value + 1
+                                realLoad path
+
+                        let loadingChanges = ResizeArray<bool>()
+
+                        let handleFileEvent =
+                            vault._FileEventController (recordingWatcherApi loadingChanges)
+
+                        handleFileEvent "add" (join [| arcPath; "assays/AddedAssay/isa.assay.xlsx" |])
+                        do! waitForWatcherIdle loadingChanges
+
+                        Vitest.expect(loadCalls.Value).toBe 0
+                        Vitest.expect(vault.arc.Value.AssayIdentifiers |> Seq.contains "AddedAssay").toBe true
+                        Vitest.expect(vault.hasUnsavedArcChanges).toBe false
+                    })
+        )
+
+        Vitest.test (
+            "a failed add leaves memory and disk in agreement after the sync",
+            fun () ->
+                withSyncVault
+                    (fun arc -> arc.AddAssay(ArcAssay("DiskAssay")))
+                    (fun vault arcPath -> promise {
+                        // A folder at the path of a later contract fails the add after the workbook was written.
+                        do!
+                            mkdirWatcherDirectoryAsync (
+                                join [|
+                                    arcPath
+                                    "assays"
+                                    "FailedAssay"
+                                    "dataset"
+                                    ".gitkeep"
+                                |]
+                            )
+
+                        let request =
+                            match FileContentDTO.fromArcFile (ArcFiles.Assay(ArcAssay("FailedAssay"))) with
+                            | Some request -> request
+                            | None -> failwith "Expected an assay DTO."
+
+                        match! vault.AddArcFile request with
+                        | Error _ -> ()
+                        | Ok() -> failwith "Expected the add to fail."
+
+                        // The own-write scope starts a sync when it ends. It loads the workbook the failed add left on disk.
+                        do!
+                            TestHelpers.waitForCondition
+                                "the sync loaded the workbook"
+                                (fun () -> vault.arc.Value.AssayIdentifiers |> Seq.contains "FailedAssay")
+
+                        Vitest.expect(vault.arc.Value.GetAssay("FailedAssay").hasInMemoryChanges ()).toBe false
+
+                        let loadCalls = ref 0
+                        let realLoad = vault.SnapshotLoad
+
+                        vault.SnapshotLoad <-
+                            fun path ->
+                                loadCalls.Value <- loadCalls.Value + 1
+                                realLoad path
+
+                        do! vault.RequestSync true
+
+                        Vitest.expect(loadCalls.Value).toBe 0
                     })
         )
 
@@ -1950,34 +2038,6 @@ Vitest.describe (
                 window.title <- "Descriptor-preserving title"
 
                 Vitest.expect(writtenTitle).toBe ("Descriptor-preserving title")
-        )
-
-        Vitest.test (
-            "DataMap add synchronization preserves the persisted static-hash baseline",
-            fun () ->
-                let parentInfo = DatamapParentInfo.create "DataMapAssay" DataMapParent.Assay
-                let persistedDataMap = Datamap.init ()
-                persistedDataMap.StaticHash <- 123
-                let persistedAssay = ArcAssay("DataMapAssay")
-                persistedAssay.Datamap <- Some persistedDataMap
-                let persistedArc = ARC("PersistedArc")
-                persistedArc.AddAssay persistedAssay
-
-                let localDataMap = Datamap.init ()
-                localDataMap.StaticHash <- 456
-                let localAssay = ArcAssay("DataMapAssay")
-                localAssay.Datamap <- Some localDataMap
-                let localArc = ARC("LocalArc")
-                localArc.AddAssay localAssay
-
-                syncAddedArcFileFromPersisted
-                    persistedArc
-                    localArc
-                    (ArcFiles.DataMap(Some parentInfo, persistedDataMap))
-
-                Vitest.expect(persistedDataMap.StaticHash).toBe (123)
-                Vitest.expect(persistedArc.GetAssay("DataMapAssay").Datamap.Value.StaticHash).toBe (123)
-                Vitest.expect(localArc.GetAssay("DataMapAssay").Datamap.Value.StaticHash).toBe (123)
         )
 
         Vitest.test (

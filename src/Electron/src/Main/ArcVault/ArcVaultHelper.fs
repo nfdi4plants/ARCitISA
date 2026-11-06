@@ -40,27 +40,6 @@ let private setDataMapByParentInfo (arc: ARC) (dmpi: DatamapParentInfo) (dm: Dat
     with e ->
         Error(exn $"Failed to set datamap on ARC: {e.Message}")
 
-/// Replaces the just-added ARC entity with the disk round-tripped version.
-/// This keeps lossy serialization details from becoming immediate unsaved changes.
-let syncAddedArcFileFromPersisted (source: ARC) (target: ARC) (arcFile: ArcFiles) : unit =
-    match arcFile with
-    | ArcFiles.Assay assay ->
-        source.TryGetAssay assay.Identifier
-        |> Option.iter (fun sourceAssay -> target.SetAssay(assay.Identifier, sourceAssay))
-    | ArcFiles.Study(study, _) ->
-        source.TryGetStudy study.Identifier
-        |> Option.iter (fun sourceStudy -> target.SetStudy(study.Identifier, sourceStudy))
-    | ArcFiles.Workflow workflow ->
-        source.TryGetWorkflow workflow.Identifier
-        |> Option.iter (fun sourceWorkflow -> target.SetWorkflow(workflow.Identifier, sourceWorkflow))
-    | ArcFiles.Run run ->
-        source.TryGetRun run.Identifier
-        |> Option.iter (fun sourceRun -> target.SetRun(run.Identifier, sourceRun))
-    | ArcFiles.DataMap(Some parentInfo, _) ->
-        source.TryGetDataMap parentInfo
-        |> Option.iter (fun persistedDataMap -> target.TrySetDataMap(parentInfo, Some persistedDataMap) |> ignore)
-    | _ -> ()
-
 /// This function should only be used for partial updates to an ARC based on a file content DTO.
 let updateARCByFileContentDTO (oldArc: ARC) (dto: FileContentDTO) : Result<ARC, exn> =
     let arcfile = FileContentDTO.toArcFile dto
