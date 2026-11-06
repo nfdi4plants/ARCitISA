@@ -42,11 +42,7 @@ type PDFViewer =
             prop.className "swt:w-full"
             prop.children [
                 match pdfUrl with
-                | Some url ->
-                    Html.iframe [
-                        prop.src url
-                        prop.className "swt:w-full swt:h-full"
-                    ]
+                | Some url -> Html.iframe [ prop.src url; prop.className "swt:w-full swt:h-full" ]
 
                 | None -> LoadingSpinner.LoadingSpinner("Loading PDF", size = DaisyuiSize.XL)
             ]

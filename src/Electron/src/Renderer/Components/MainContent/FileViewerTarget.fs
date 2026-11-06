@@ -7,8 +7,7 @@ open Swate.Electron.Shared.FileIOTypes
 [<ReactComponent>]
 let FileViewerTarget (pageState: PageState) =
     match pageState with
-    | PageState.PDFPage(content, path) ->
-        Swate.Components.Page.FileViewer.PDFViewer.Main(content, path)
+    | PageState.PDFPage(content, path) -> Swate.Components.Page.FileViewer.PDFViewer.Main(content, path)
     | PageState.ImagePage(fileType, content, path) ->
         let mimeType =
             match fileType with
@@ -19,6 +18,5 @@ let FileViewerTarget (pageState: PageState) =
             | _ -> "application/octet-stream"
 
         Swate.Components.Page.FileViewer.ImageViewer.Main(mimeType, content, path)
-    | PageState.HtmlPage(content, path) ->
-        Swate.Components.Page.FileViewer.HtmlViewer.Main(content, path)
+    | PageState.HtmlPage(content, path) -> Swate.Components.Page.FileViewer.HtmlViewer.Main(content, path)
     | _ -> Html.div [ prop.text "Unsupported file type." ]

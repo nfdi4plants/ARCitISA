@@ -64,7 +64,9 @@ type ImageViewer =
                             prop.alt "Image preview"
                             prop.className "swt:max-h-full swt:max-w-full swt:object-contain"
                             prop.onLoad (fun event ->
-                                setDimensions (Some(ImageMetadata.naturalWidth event, ImageMetadata.naturalHeight event))
+                                setDimensions (
+                                    Some(ImageMetadata.naturalWidth event, ImageMetadata.naturalHeight event)
+                                )
                             )
                             prop.onError (fun (_: Browser.Types.Event) -> setFailedImageUrl (Some imageUrl))
                         ]
