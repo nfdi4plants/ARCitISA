@@ -16,7 +16,8 @@ let private broadcast (dto: UserDefaultsDto) =
         Main.WindowSend.send<IUserDefaultsRendererApi> window (fun api -> api.userDefaultsChanged dto)
     )
 
-/// The API over a given store. A successful update broadcasts the new values to every window.
+/// The API over a given store. A successful update broadcasts the new values to every window. A changed
+/// Git executable path reaches the library at once and replaces a running dependency check.
 let createApi (store: Main.UserDefaults.IUserDefaultsStore) : IUserDefaultsApi = {
     getUserDefaults = fun () -> promise { return toDto store }
     setUserDefaults =
@@ -25,7 +26,13 @@ let createApi (store: Main.UserDefaults.IUserDefaultsStore) : IUserDefaultsApi =
             | Error message -> return Error message
             | Ok _ ->
                 let dto = toDto store
+                let previousPath = Main.VersionControl.GitExecutableSetting.get ()
+                Main.VersionControl.GitExecutableSetting.set dto.Effective.GitExecutablePath
                 broadcast dto
+
+                if previousPath <> dto.Effective.GitExecutablePath then
+                    Main.VersionControl.DependencyState.restart ()
+
                 return Ok dto
         }
 }

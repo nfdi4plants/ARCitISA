@@ -441,6 +441,26 @@ type ErrorModalProvider =
         ]
 
     [<ReactComponent>]
+    static member private LongDetailsEntryContent() =
+        let errorModal = useErrorModalCtx ()
+
+        // Enough lines to pass the height limit of the details block.
+        let enqueueLongDetails () =
+            let details =
+                Array.init 120 (fun index -> $"Log line {index + 1} of the failed operation")
+                |> String.concat "\n"
+
+            errorModal.enqueue (
+                ErrorModalRequest.create ("The operation failed.", title = "Operation failed", details = details)
+            )
+
+        Html.button [
+            prop.className "swt:btn swt:btn-primary"
+            prop.text "Show Long Details"
+            prop.onClick (fun _ -> enqueueLongDetails ())
+        ]
+
+    [<ReactComponent>]
     static member SingleEntry() =
         ErrorModalProvider.ErrorModalProvider(ErrorModalProvider.EntryContent(true, false, false))
 
@@ -459,3 +479,7 @@ type ErrorModalProvider =
     [<ReactComponent>]
     static member ProviderScopedQueueEntry() =
         ErrorModalProvider.ErrorModalProvider(ErrorModalProvider.ProviderScopedEntryContent(), scopeId = "arc-a")
+
+    [<ReactComponent>]
+    static member LongDetailsEntry() =
+        ErrorModalProvider.ErrorModalProvider(ErrorModalProvider.LongDetailsEntryContent())

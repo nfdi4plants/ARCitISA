@@ -24,13 +24,15 @@ let runToggleLfsMark (relativePath: string) (markAsLfs: bool) : JS.Promise<Resul
     return toUnitResult result
 }
 
-/// The caller picks the operation id, so it can follow the progress of the action.
+/// The caller picks the operation id, so it can follow the progress of the action. Both single file
+/// actions always refresh the tree. The library answers NoOp when the file is already in the requested
+/// state, and the file explorer may still show the old state then.
 let runFreeLocalLfsCopy (operationId: string) (relativePath: string) : JS.Promise<Result<unit, string>> = promise {
     let! result =
-        Renderer.VersionControlApiClient.dematerializeObject {
+        Renderer.VersionControlApiClient.dematerializeObjects {
             OperationId = operationId
-            Path = PathHelpers.normalizeSeparators relativePath
-            RefreshTree = None
+            Paths = [| PathHelpers.normalizeSeparators relativePath |]
+            AlwaysRefreshTree = true
         }
 
     return toUnitResult result
@@ -38,10 +40,10 @@ let runFreeLocalLfsCopy (operationId: string) (relativePath: string) : JS.Promis
 
 let runDownloadLfsFile (operationId: string) (relativePath: string) : JS.Promise<Result<unit, string>> = promise {
     let! result =
-        Renderer.VersionControlApiClient.materializeObject {
+        Renderer.VersionControlApiClient.materializeObjects {
             OperationId = operationId
-            Path = PathHelpers.normalizeSeparators relativePath
-            RefreshTree = None
+            Paths = [| PathHelpers.normalizeSeparators relativePath |]
+            AlwaysRefreshTree = true
         }
 
     return toUnitResult result
@@ -191,12 +193,13 @@ let folderFailureText
     : string * string option =
     let header = $"Not every file in '{folderName}' was processed."
 
-    // An entry can span several lines, so a blank line separates the entries.
+    // An entry can span several lines, so a blank line separates the entries. The heading line lets the reader tell
+    // the entries from other details.
     let technical =
         if failure.Details.Length = 0 then
             None
         else
-            Some(System.String.Join("\n\n", failure.Details))
+            Some("Failed files\n" + System.String.Join("\n\n", failure.Details))
 
     if failure.AffectedPaths.Length > 0 && failure.Details.Length > 0 then
         let listed = [|
@@ -225,6 +228,7 @@ let runDownloadLfsFiles (operationId: string) (relativePaths: string[]) : JS.Pro
         Renderer.VersionControlApiClient.materializeObjects {
             OperationId = operationId
             Paths = relativePaths |> Array.map PathHelpers.normalizeSeparators
+            AlwaysRefreshTree = false
         }
 
     return toBatchResult result
@@ -236,6 +240,7 @@ let runFreeLocalLfsCopies (operationId: string) (relativePaths: string[]) : JS.P
         Renderer.VersionControlApiClient.dematerializeObjects {
             OperationId = operationId
             Paths = relativePaths |> Array.map PathHelpers.normalizeSeparators
+            AlwaysRefreshTree = false
         }
 
     return toBatchResult result

@@ -108,6 +108,27 @@ let private renderOperation
     =
     RTL.render (operationElement runStatus steps log) |> ignore
 
+let private lastLogOf (title: string) (lines: (string * string) list) : GitSidebarLastLog = {
+    Title = title
+    Log = logOf 0 lines
+}
+
+let private lastLogElement (runStatus: GitSidebarRunStatus) (lastLog: GitSidebarLastLog option) =
+    GitSidebar.Main(
+        status = status,
+        changedFiles = [||],
+        branchOptions = [||],
+        callbacks = callbacks,
+        downloadLargeFiles = true,
+        lfsAutoTrackThresholdMb = 1,
+        diffIndexingLimitMb = 1024,
+        runStatus = runStatus,
+        ?lastLog = lastLog
+    )
+
+let private renderWithLastLog (runStatus: GitSidebarRunStatus) (lastLog: GitSidebarLastLog option) =
+    RTL.render (lastLogElement runStatus lastLog) |> ignore
+
 /// jsdom has no layout, so the height of an element is a getter that the test replaces on the element.
 [<Emit("Object.defineProperty($0, $1, { get: $2, configurable: true })")>]
 let private measure (element: HTMLElement) (name: string) (height: unit -> float) : unit = jsNative
@@ -242,6 +263,60 @@ Vitest.test (
 )
 
 Vitest.test (
+    "an idle sidebar unfolds and folds the last log with its title and lines",
+    fun () ->
+        let lastLog =
+            lastLogOf "Pull demo-arc 14:32" [
+                "command", "git fetch origin"
+                "stderr", "fatal: no remote"
+            ]
+
+        renderWithLastLog GitSidebarRunStatus.Idle (Some lastLog)
+
+        Vitest.expect(RTL.screen.queryByTestId "GitSidebarLastLogPanel" |> Option.isNone).toBe true
+
+        RTL.fireEvent.click (RTL.screen.getByTestId "GitSidebarShowLastLog")
+
+        let panel = RTL.screen.getByTestId "GitSidebarLastLogPanel"
+        Vitest.expect(panel.textContent.Contains "Pull demo-arc 14:32").toBe true
+        Vitest.expect(panel.textContent.Contains "git fetch origin").toBe true
+        Vitest.expect(panel.textContent.Contains "fatal: no remote").toBe true
+
+        RTL.fireEvent.click (RTL.screen.getByTestId "GitSidebarShowLastLog")
+
+        Vitest.expect(RTL.screen.queryByTestId "GitSidebarLastLogPanel" |> Option.isNone).toBe true
+)
+
+Vitest.test (
+    "no last log button renders while an operation runs, without a last log or for a last log without lines",
+    fun () ->
+        let lastLog = lastLogOf "Pull demo-arc 14:32" [ "stdout", "done" ]
+
+        let progress =
+            GitSidebarRunStatus.Progress {
+                Method = Some "pull"
+                Stage = None
+                ProgressPercent = Some 33.0
+            }
+
+        for runStatus in [ GitSidebarRunStatus.Busy "Pulling"; progress ] do
+            renderWithLastLog runStatus (Some lastLog)
+
+            Vitest.expect(RTL.screen.queryByTestId "GitSidebarShowLastLog" |> Option.isNone).toBe true
+
+            RTL.cleanup ()
+
+        renderWithLastLog GitSidebarRunStatus.Idle None
+
+        Vitest.expect(RTL.screen.queryByTestId "GitSidebarShowLastLog" |> Option.isNone).toBe true
+
+        RTL.cleanup ()
+        renderWithLastLog GitSidebarRunStatus.Idle (Some(lastLogOf "Pull demo-arc 14:32" []))
+
+        Vitest.expect(RTL.screen.queryByTestId "GitSidebarShowLastLog" |> Option.isNone).toBe true
+)
+
+Vitest.test (
     "the step list renders one entry per step for two or more steps",
     fun () ->
         renderOperation
@@ -340,6 +415,21 @@ Vitest.test (
         RTL.screen.getByTestId "GitSidebarProgressBar" |> ignore
         Vitest.expect(RTL.screen.queryByTestId "GitSidebarBusyHeadline" |> Option.isNone).toBe true
         RTL.screen.getByTestId "GitSidebarLogPanel" |> ignore
+)
+
+Vitest.test (
+    "an open last log panel stays open when the sidebar turns busy without a notice",
+    fun () ->
+        let lastLog = Some(lastLogOf "Pull demo-arc 14:32" [ "stdout", "done" ])
+
+        let result = RTL.render (lastLogElement GitSidebarRunStatus.Idle lastLog)
+
+        RTL.fireEvent.click (RTL.screen.getByTestId "GitSidebarShowLastLog")
+        RTL.screen.getByTestId "GitSidebarLastLogPanel" |> ignore
+
+        result.rerender (lastLogElement GitSidebarRunStatus.BusyWithoutNotice lastLog)
+
+        RTL.screen.getByTestId "GitSidebarLastLogPanel" |> ignore
 )
 
 Vitest.test (
@@ -527,6 +617,31 @@ Vitest.test (
         Vitest
             .expect(written.Value)
             .toEqual (Some "3 earlier lines were left out\n$ git fetch origin\nReceiving objects: 100%")
+    }
+)
+
+Vitest.test (
+    "the last log copy button writes the title above the lines to the clipboard",
+    fun () -> promise {
+        let written = ref None
+        recordingClipboard written
+
+        renderWithLastLog
+            GitSidebarRunStatus.Idle
+            (Some(
+                lastLogOf "Pull demo-arc 14:32" [
+                    "command", "git fetch origin"
+                    "stderr", "fatal: no remote"
+                ]
+            ))
+
+        RTL.fireEvent.click (RTL.screen.getByTestId "GitSidebarShowLastLog")
+        RTL.fireEvent.click (RTL.screen.getByTestId "GitSidebarCopyLastLog")
+
+        do!
+            RTL.waitFor (fun () ->
+                Vitest.expect(written.Value).toEqual (Some "Pull demo-arc 14:32\n$ git fetch origin\nfatal: no remote")
+            )
     }
 )
 

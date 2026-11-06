@@ -129,12 +129,6 @@ module private GitSidebarInternal =
         |> List.choose id
         |> String.concat " | "
 
-    let omittedLinesText (omitted: int) =
-        if omitted = 1 then
-            "1 earlier line was left out"
-        else
-            $"{omitted} earlier lines were left out"
-
     /// Command lines are bold and notices are muted. A stderr line keeps the text color of the panel and has a
     /// warning stripe at its left edge, because the warning color as text has too little contrast on the light panel.
     /// Every line reserves the stripe so the text of all kinds starts at the same place.
@@ -144,12 +138,6 @@ module private GitSidebarInternal =
         | "stderr" -> "swt:border-warning"
         | "notice" -> "swt:border-transparent swt:italic swt:opacity-70"
         | _ -> "swt:border-transparent"
-
-    let logLineText (line: GitSidebarLogLine) =
-        if line.Kind = "command" then
-            "$ " + line.Text
-        else
-            line.Text
 
     /// The lines of one log. A title names the task when a viewer shows the logs of several tasks.
     type LogSection = {
@@ -168,13 +156,9 @@ module private GitSidebarInternal =
     let logCopyText (sections: LogSection[]) : string =
         sections
         |> Array.map (fun section ->
-            [
-                yield! section.Title |> Option.toList
-                if section.Log.Omitted > 0 then
-                    omittedLinesText section.Log.Omitted
-                yield! section.Log.Lines |> Array.map logLineText
-            ]
-            |> String.concat "\n"
+            match section.Title with
+            | Some title -> title + "\n" + GitSidebarLog.toText section.Log
+            | None -> GitSidebarLog.toText section.Log
         )
         |> String.concat "\n\n"
 
@@ -283,7 +267,7 @@ module private GitSidebarInternal =
                 Html.div [
                     prop.testId $"{panelTestId}Omitted-{sectionIndex}"
                     prop.className "swt:italic swt:opacity-70"
-                    prop.text (omittedLinesText section.Log.Omitted)
+                    prop.text (GitSidebarLog.omittedText section.Log.Omitted)
                 ]
             else
                 Html.none
@@ -295,7 +279,7 @@ module private GitSidebarInternal =
                 Html.div [
                     prop.key (section.Log.Omitted + lineIndex)
                     prop.className ("swt:whitespace-pre swt:border-l-2 swt:pl-1.5 " + logLineClassName line.Kind)
-                    prop.text (logLineText line)
+                    prop.text (GitSidebarLog.lineText line)
                 ]
             )
 
@@ -483,6 +467,8 @@ type private LogViewerProps = {
     PanelTestId: string
     PanelLabel: string
     CopyTestId: string
+    /// The noun in the toggle text, as in "Show logs".
+    Subject: string
 }
 
 [<Erase; Mangle(false)>]
@@ -566,7 +552,14 @@ type GitSidebar =
                                 "swt:iconify swt:fluent--chevron-right-24-regular swt:size-4"
                         )
                     ]
-                    Html.span [ prop.text (if isOpen then "Hide logs" else "Show logs") ]
+                    Html.span [
+                        prop.text (
+                            if isOpen then
+                                $"Hide {props.Subject}"
+                            else
+                                $"Show {props.Subject}"
+                        )
+                    ]
                 ]
             ]
 
@@ -656,7 +649,8 @@ type GitSidebar =
             ?backgroundActivities: GitSidebarBackgroundActivity[],
             ?busyHeadlineOverride: string,
             ?operationSteps: GitSidebarStep[],
-            ?operationLog: GitSidebarLog
+            ?operationLog: GitSidebarLog,
+            ?lastLog: GitSidebarLastLog
         ) =
         let runStatus = defaultArg runStatus GitSidebarRunStatus.Idle
 
@@ -678,6 +672,7 @@ type GitSidebar =
                         PanelTestId = "GitSidebarLogPanel"
                         PanelLabel = "Operation logs"
                         CopyTestId = "GitSidebarCopyLogs"
+                        Subject = "logs"
                     }
                 )
             | _ -> Html.none
@@ -709,8 +704,37 @@ type GitSidebar =
                         PanelTestId = "GitSidebarBackgroundLogPanel"
                         PanelLabel = "Background activity logs"
                         CopyTestId = "GitSidebarBackgroundCopyLogs"
+                        Subject = "logs"
                     }
                 )
+
+        // The last log appears only while no operation of this sidebar runs, so it never competes with the live log.
+        let lastLogView =
+            match runStatus, lastLog with
+            | (GitSidebarRunStatus.Idle | GitSidebarRunStatus.BusyWithoutNotice), Some lastLog when
+                lastLog.Log.Lines.Length > 0
+                ->
+                Html.div [
+                    prop.className "swt:min-w-0 swt:px-3 swt:pt-3 swt:@max-xs:px-2"
+                    prop.children [
+                        GitSidebar.LogViewer(
+                            {
+                                Sections = [|
+                                    {
+                                        Title = Some lastLog.Title
+                                        Log = lastLog.Log
+                                    }
+                                |]
+                                ShowTestId = "GitSidebarShowLastLog"
+                                PanelTestId = "GitSidebarLastLogPanel"
+                                PanelLabel = "Last Git log"
+                                CopyTestId = "GitSidebarCopyLastLog"
+                                Subject = "last log"
+                            }
+                        )
+                    ]
+                ]
+            | _ -> Html.none
 
         let cancelButton =
             onCancelOperation
@@ -925,6 +949,8 @@ type GitSidebar =
                     ]
                 ]
             | None -> Html.none
+
+            lastLogView
         ]
 
     [<ReactComponent>]
@@ -2310,7 +2336,8 @@ type GitSidebar =
             ?backgroundActivities: GitSidebarBackgroundActivity[],
             ?busyHeadlineOverride: string,
             ?operationSteps: GitSidebarStep[],
-            ?operationLog: GitSidebarLog
+            ?operationLog: GitSidebarLog,
+            ?lastLog: GitSidebarLastLog
         ) =
 
         let runStatus = defaultArg runStatus GitSidebarRunStatus.Idle
@@ -2756,7 +2783,8 @@ type GitSidebar =
                     ?backgroundActivities = backgroundActivities,
                     ?busyHeadlineOverride = busyHeadlineOverride,
                     ?operationSteps = operationSteps,
-                    ?operationLog = operationLog
+                    ?operationLog = operationLog,
+                    ?lastLog = lastLog
                 )
 
                 GitSidebar.BranchStatusDetails(branchHeaderProps)

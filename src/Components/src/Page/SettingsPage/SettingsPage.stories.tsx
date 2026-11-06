@@ -49,9 +49,11 @@ const currentGitDefaults = {
 };
 
 const gitDefaultsArgs = () => ({
-  gitDefaults: currentGitDefaults,
-  gitBuiltInDefaults: builtInGitDefaults,
-  onGitDefaultsSave: fn(),
+  gitDefaults: {
+    Current: currentGitDefaults,
+    BuiltIn: builtInGitDefaults,
+    OnSave: fn(),
+  } as any,
 });
 
 const replaceNumber = async (input: HTMLElement, value: string) => {
@@ -162,8 +164,8 @@ export const GitDefaultsSave: PropsStory = {
     await userEvent.click(canvas.getByTestId(uploadId));
     await userEvent.click(canvas.getByTestId('SettingsGitDefaultsSave'));
 
-    await waitFor(() => expect(args.onGitDefaultsSave).toHaveBeenCalledTimes(1));
-    await expect(args.onGitDefaultsSave).toHaveBeenCalledWith({
+    await waitFor(() => expect(args.gitDefaults.OnSave).toHaveBeenCalledTimes(1));
+    await expect(args.gitDefaults.OnSave).toHaveBeenCalledWith({
       LfsAutoTrackThresholdMb: 25,
       DownloadLargeFiles: false,
       DiffIndexingLimitMb: 1024,
@@ -172,17 +174,107 @@ export const GitDefaultsSave: PropsStory = {
   },
 };
 
-export const GitDefaultsIncompleteProps: PropsStory = {
+const gitExecutableId = 'SettingsGitExecutable';
+
+type GitExecutableSetting = {
+  ChosenPath?: string;
+  PathInUse?: string;
+  GitVersion?: string;
+  GitLfsVersion?: string;
+  Problem?: string;
+  IsChecking: boolean;
+};
+
+const gitExecutableArgs = (setting: GitExecutableSetting) => ({
+  gitExecutable: {
+    Setting: setting,
+    OnChoose: fn(),
+    OnUseAutomatic: fn(),
+    OnCheckAgain: fn(),
+  } as any,
+});
+
+export const GitExecutableAutomatic: PropsStory = {
   render: renderWithProps,
-  args: {
-    gitDefaults: currentGitDefaults,
-    onGitDefaultsSave: fn(),
+  args: gitExecutableArgs({
+    PathInUse: '/usr/bin/git',
+    GitVersion: '2.47.1',
+    GitLfsVersion: '3.6.1',
+    IsChecking: false,
+  }),
+  play: async ({ canvasElement, args }) => {
+    const canvas = within(canvasElement);
+
+    await expect(canvas.getByTestId(`${gitExecutableId}PathInUse`)).toHaveTextContent('/usr/bin/git');
+    await expect(canvas.getByTestId(`${gitExecutableId}GitVersion`)).toHaveTextContent('2.47.1');
+    await expect(canvas.getByTestId(`${gitExecutableId}GitLfsVersion`)).toHaveTextContent('3.6.1');
+    await expect(canvas.queryByTestId(`${gitExecutableId}Problem`)).toBeNull();
+    await expect(canvas.queryByTestId(`${gitExecutableId}Checking`)).toBeNull();
+
+    // Without a chosen path there is nothing to switch back from.
+    await expect(canvas.queryByTestId(`${gitExecutableId}UseAutomatic`)).toBeNull();
+    await expect(canvas.getByTestId(`${gitExecutableId}CheckAgain`)).toBeEnabled();
+
+    await userEvent.click(canvas.getByTestId(`${gitExecutableId}Choose`));
+    await expect(args.gitExecutable.OnChoose).toHaveBeenCalledTimes(1);
+    await userEvent.click(canvas.getByTestId(`${gitExecutableId}CheckAgain`));
+    await expect(args.gitExecutable.OnCheckAgain).toHaveBeenCalledTimes(1);
   },
+};
+
+export const GitExecutableChosenPath: PropsStory = {
+  render: renderWithProps,
+  args: gitExecutableArgs({
+    ChosenPath: '/opt/tools/git/bin/git',
+    PathInUse: '/opt/tools/git/bin/git',
+    GitVersion: '2.45.0',
+    GitLfsVersion: '3.5.1',
+    IsChecking: false,
+  }),
+  play: async ({ canvasElement, args }) => {
+    const canvas = within(canvasElement);
+
+    await expect(canvas.getByTestId(`${gitExecutableId}Source`)).toHaveTextContent('/opt/tools/git/bin/git');
+    await expect(canvas.getByTestId(`${gitExecutableId}PathInUse`)).toHaveTextContent('/opt/tools/git/bin/git');
+
+    await userEvent.click(canvas.getByTestId(`${gitExecutableId}UseAutomatic`));
+    await expect(args.gitExecutable.OnUseAutomatic).toHaveBeenCalledTimes(1);
+  },
+};
+
+export const GitExecutableProblem: PropsStory = {
+  render: renderWithProps,
+  args: gitExecutableArgs({
+    ChosenPath: '/opt/tools/git/bin/git',
+    Problem: 'The program could not be started.',
+    IsChecking: false,
+  }),
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
 
-    await expect(canvas.getByTestId('SettingsAutoCreateNotesFolder')).toBeInTheDocument();
-    await expect(canvas.queryByTestId('SettingsGitDefaultsSection')).toBeNull();
+    await expect(canvas.getByTestId(`${gitExecutableId}Problem`)).toHaveTextContent(
+      'The program could not be started.',
+    );
+    // Versions and the path in use are unknown, so their rows stay out.
+    await expect(canvas.queryByTestId(`${gitExecutableId}PathInUse`)).toBeNull();
+    await expect(canvas.queryByTestId(`${gitExecutableId}GitVersion`)).toBeNull();
+    await expect(canvas.queryByTestId(`${gitExecutableId}GitLfsVersion`)).toBeNull();
+  },
+};
+
+export const GitExecutableChecking: PropsStory = {
+  render: renderWithProps,
+  args: gitExecutableArgs({
+    ChosenPath: '/opt/tools/git/bin/git',
+    PathInUse: '/opt/tools/git/bin/git',
+    IsChecking: true,
+  }),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    await expect(canvas.getByTestId(`${gitExecutableId}Checking`)).toBeInTheDocument();
+    await expect(canvas.getByTestId(`${gitExecutableId}CheckAgain`)).toBeDisabled();
+    await expect(canvas.getByTestId(`${gitExecutableId}Choose`)).toBeEnabled();
   },
 };
 

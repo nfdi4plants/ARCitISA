@@ -138,7 +138,6 @@ type private FakeDiffClient() =
         finalizeConflict = fun _ -> never "finalizeConflict"
         cancelConflict = fun _ -> never "cancelConflict"
         listObjects = fun _ -> never "listObjects"
-        materializeObject = fun _ -> never "materializeObject"
         materializeObjects = fun _ -> never "materializeObjects"
         pruneStorage = fun _ -> never "pruneStorage"
         deduplicateStorage = fun _ -> never "deduplicateStorage"
@@ -2587,10 +2586,11 @@ Vitest.describe (
                         Version = version
                         Compatible = compatible
                         Remediation = remediation
+                        ProbeExecutablePath = None
                     }
 
                 let message =
-                    Renderer.Components.LeftSidebar.Git.GitSidebarPanel.dependencyProblemMessage
+                    Renderer.Context.VersionControlDependencyContext.dependencyProblemMessage
 
                 let lineCount (text: string option) =
                     text |> Option.map (fun value -> value.Split('\n').Length)
@@ -2644,6 +2644,31 @@ Vitest.describe (
                         |]
                     )
                     .toEqual (None)
+        )
+
+        Vitest.test (
+            "The dependency problem of a missing git is one line without the Git LFS lines",
+            fun () ->
+                let status (name: string) (remediation: string) : DependencyStatusDto = {
+                    Component = name
+                    Installed = false
+                    Version = None
+                    Compatible = false
+                    Remediation = Some remediation
+                    ProbeExecutablePath = None
+                }
+
+                let message =
+                    Renderer.Context.VersionControlDependencyContext.dependencyProblemMessage [|
+                        status "git" "install git"
+                        status "git-lfs" "install git-lfs"
+                        status "git-lfs-configuration" "configure the filter"
+                    |]
+
+                Vitest.expect(message.Value.Split('\n').Length).toBe (1)
+                Vitest.expect(message.Value.Contains "install git").toBe (true)
+                Vitest.expect(message.Value.Contains "git-lfs").toBe (false)
+                Vitest.expect(message.Value.Contains "configure the filter").toBe (false)
         )
 
         Vitest.test (

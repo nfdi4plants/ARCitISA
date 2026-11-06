@@ -67,12 +67,6 @@ let cancelConflict (dto: CancelConflictRequestDto) = call (fun () -> api.cancelC
 
 let listObjects (dto: OperationRequestDto) = call (fun () -> api.listObjects dto)
 
-let materializeObject (dto: ObjectPathRequestDto) =
-    call (fun () -> api.materializeObject dto)
-
-let dematerializeObject (dto: ObjectPathRequestDto) =
-    call (fun () -> api.dematerializeObject dto)
-
 let materializeObjects (dto: ObjectPathsRequestDto) =
     call (fun () -> api.materializeObjects dto)
 

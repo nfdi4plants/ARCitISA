@@ -18,6 +18,23 @@ type OperationLog = {
     Omitted: int
 }
 
+/// The name of an operation and the ARC it works on, decided when the operation starts.
+type OperationLogName = {
+    Label: string
+    ArcName: string option
+}
+
+/// The log of an operation that ended, kept so the user can read it after the operation is gone.
+type FinishedOperationLog = {
+    /// The name of the operation.
+    Label: string
+    /// The folder name of the ARC that was open, None without an ARC.
+    ArcName: string option
+    /// Date.now () when the operation ended.
+    FinishedAt: float
+    Log: OperationLog
+}
+
 [<Literal>]
 let MaxLines = 2000
 
@@ -83,3 +100,62 @@ let append (entries: VersionControlOutputEntryDto[]) (log: OperationLog) : Opera
             Lines = lines.ToArray()
             Omitted = log.Omitted + dropped
         }
+
+/// The log for the sidebar. A log without lines is None, so the notice offers no "Show logs" button for it.
+let toSidebarLog (log: OperationLog) : Swate.Components.Page.GitSidebarTypes.GitSidebarLog option =
+    if log.Lines.Length = 0 then
+        None
+    else
+        let lines =
+            log.Lines
+            |> Array.map (fun line ->
+                let mapped: Swate.Components.Page.GitSidebarTypes.GitSidebarLogLine = {
+                    Kind = line.Kind
+                    Text = line.Text
+                }
+
+                mapped
+            )
+
+        let mapped: Swate.Components.Page.GitSidebarTypes.GitSidebarLog = { Lines = lines; Omitted = log.Omitted }
+
+        Some mapped
+
+/// The log as plain text, the same text the sidebar copies. None for a log without lines.
+let tryText (log: OperationLog) : string option =
+    toSidebarLog log
+    |> Option.map Swate.Components.Page.GitSidebarTypes.GitSidebarLog.toText
+
+/// The log as the text of an error's technical details. A heading line in front lets the reader tell the log from
+/// other details. None for a log without lines.
+let tryDetails (log: OperationLog) : string option =
+    tryText log |> Option.map (fun text -> "Git output\n" + text)
+
+/// The last finished log for the sidebar. The title starts with the operation name and ends with the local time of
+/// the end, with the ARC name between them when there is one. A log without lines is None.
+let toSidebarLastLog (lastLog: FinishedOperationLog) : Swate.Components.Page.GitSidebarTypes.GitSidebarLastLog option =
+    toSidebarLog lastLog.Log
+    |> Option.map (fun log ->
+        let finishedAt =
+            System.DateTimeOffset.FromUnixTimeMilliseconds(int64 lastLog.FinishedAt).LocalDateTime.ToString("HH:mm")
+
+        let title =
+            [ Some lastLog.Label; lastLog.ArcName; Some finishedAt ]
+            |> List.choose id
+            |> String.concat " · "
+
+        let mapped: Swate.Components.Page.GitSidebarTypes.GitSidebarLastLog = { Title = title; Log = log }
+
+        mapped
+    )
+
+/// The log that ended later. With only one of them, that one. On a tie the first wins.
+let newest (first: FinishedOperationLog option) (second: FinishedOperationLog option) : FinishedOperationLog option =
+    match first, second with
+    | Some firstLog, Some secondLog ->
+        if secondLog.FinishedAt > firstLog.FinishedAt then
+            second
+        else
+            first
+    | Some _, None -> first
+    | None, _ -> second

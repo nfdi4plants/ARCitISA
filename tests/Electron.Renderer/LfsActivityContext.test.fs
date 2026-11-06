@@ -4,6 +4,7 @@ open Browser.Dom
 open Fable.Core
 open Fable.Core.JsInterop
 open Feliz
+open Swate.Components.Page.FileExplorer.Types
 open Renderer.Context.LfsActivityContext
 open Swate.Components.Shared
 open Swate.Electron.Shared.FileIOTypes
@@ -48,9 +49,9 @@ let private ProviderHarness (arcRootPath: string option, showProbe: bool, onCont
         )
     )
 
-type private Deferred = {
-    pending: JS.Promise<Result<unit, string>>
-    resolve: Result<unit, string> -> unit
+type private Deferred<'error> = {
+    pending: JS.Promise<Result<unit, 'error>>
+    resolve: Result<unit, 'error> -> unit
 }
 
 let private deferred () =
@@ -236,9 +237,9 @@ Vitest.describe (
 
                     root.render (ProviderHarness(Some "C:/arc", false, onController))
                     do! Promise.sleep 0
-                    action.resolve (Error "network down")
+                    action.resolve (Error(GitLfsActionFailure.ofMessage "network down"))
                     let! result = running
-                    Vitest.expect(result).toEqual (Error "network down")
+                    Vitest.expect(result).toEqual (Error(GitLfsActionFailure.ofMessage "network down"))
 
                     latest <- None
                     root.render (ProviderHarness(Some "C:/arc", true, onController))
@@ -342,9 +343,9 @@ Vitest.describe (
                     Vitest.expect(busyLabel "b.bin").toEqual (Some "Downloading")
                     Vitest.expect(batchCalls).toBe (1)
 
-                    batch.resolve (Error "disk full")
+                    batch.resolve (Error(GitLfsActionFailure.ofMessage "disk full"))
                     let! result = running
-                    Vitest.expect(result).toEqual (Error "disk full")
+                    Vitest.expect(result).toEqual (Error(GitLfsActionFailure.ofMessage "disk full"))
                     do! waitFor (fun () -> busyLabel "a.bin" = None && busyLabel "c.bin" = None)
 
                     Vitest.expect(busyLabel "b.bin").toEqual (Some "Downloading")
@@ -404,14 +405,22 @@ let private RunningLogsProbe (onLogs: LfsRunningLogs -> unit) =
     React.useEffect ((fun () -> onLogs logs), [| box logs |])
     Html.none
 
-/// The provider for the ARC of the argument with a probe for the controller and one for the running actions.
+[<ReactComponent>]
+let private LastLogProbe (onLastLog: Renderer.Context.OperationLog.FinishedOperationLog option -> unit) =
+    let lastLog = useLfsLastLogCtx ()
+    React.useEffect ((fun () -> onLastLog lastLog), [| box lastLog |])
+    Html.none
+
+/// The provider for the ARC of the argument with a probe for the controller, one for the running actions and one
+/// for the last log.
 [<ReactComponent>]
 let private ArcHarness
     (
         arcRootPath: string option,
         onController: LfsActivityController -> unit,
         onActions: LfsRunningAction[] -> unit,
-        onRender: unit -> unit
+        onRender: unit -> unit,
+        onLastLog: Renderer.Context.OperationLog.FinishedOperationLog option -> unit
     ) =
     Renderer.Context.AppStateContext.AppStateCtx.Provider(
         arcRootPath,
@@ -419,18 +428,20 @@ let private ArcHarness
             React.Fragment [
                 ControllerProbe onController
                 RunningActionsProbe(onActions, onRender)
+                LastLogProbe onLastLog
             ]
         )
     )
 
-/// Mounts the provider with a probe for the controller, one for the running actions and one for their logs. The
-/// test reaches the listener that the provider registered on the IPC bridge to send it progress events.
-/// actionRenders counts the renders of the running actions probe.
+/// Mounts the provider with a probe for the controller, one for the running actions, one for their logs and one for
+/// the last log. The test reaches the listener that the provider registered on the IPC bridge to send it progress
+/// events. actionRenders counts the renders of the running actions probe.
 let private withRunningState
     (body:
         (unit -> LfsActivityController)
             -> (unit -> LfsRunningAction[])
             -> (unit -> LfsRunningLogs)
+            -> (unit -> Renderer.Context.OperationLog.FinishedOperationLog option)
             -> (unit -> int)
             -> (VersionControlProgress -> unit)
             -> (VersionControlOutput -> unit)
@@ -443,6 +454,10 @@ let private withRunningState
         let controller: LfsActivityController option ref = ref None
         let actions: LfsRunningAction[] ref = ref [||]
         let logs: LfsRunningLogs ref = ref LfsRunningLogs.empty
+
+        let lastLog: Renderer.Context.OperationLog.FinishedOperationLog option ref =
+            ref None
+
         let actionRenders = ref 0
 
         let progressListener: (VersionControlProgress -> unit) option ref = ref None
@@ -464,6 +479,7 @@ let private withRunningState
                                 (fun () -> actionRenders.Value <- actionRenders.Value + 1)
                             )
                             RunningLogsProbe(fun l -> logs.Value <- l)
+                            LastLogProbe(fun l -> lastLog.Value <- l)
                         ]
                     )
                 )
@@ -481,6 +497,7 @@ let private withRunningState
                     (fun () -> controller.Value.Value)
                     (fun () -> actions.Value)
                     (fun () -> logs.Value)
+                    (fun () -> lastLog.Value)
                     (fun () -> actionRenders.Value)
                     (fun progress -> progressListener.Value.Value progress)
                     (fun output -> outputListener.Value.Value output)
@@ -498,7 +515,7 @@ let private withRunningActions
             -> (VersionControlOutput -> unit)
             -> JS.Promise<unit>)
     =
-    withRunningState (fun controller actions _ _ sendProgress sendOutput ->
+    withRunningState (fun controller actions _ _ _ sendProgress sendOutput ->
         body controller actions sendProgress sendOutput
     )
 
@@ -578,9 +595,9 @@ Vitest.describe (
 
                     do! waitFor (fun () -> actions().Length = 1)
 
-                    work.resolve (Error "network down")
+                    work.resolve (Error(GitLfsActionFailure.ofMessage "network down"))
                     let! result = running
-                    Vitest.expect(result).toEqual (Error "network down")
+                    Vitest.expect(result).toEqual (Error(GitLfsActionFailure.ofMessage "network down"))
 
                     do! waitFor (fun () -> actions().Length = 0)
 
@@ -605,7 +622,8 @@ Vitest.describe (
                         arcRootPath,
                         (fun c -> controller.Value <- Some c),
                         (fun a -> actions.Value <- a),
-                        (fun () -> renders.Value <- renders.Value + 1)
+                        (fun () -> renders.Value <- renders.Value + 1),
+                        ignore
                     )
 
                 try
@@ -661,7 +679,7 @@ Vitest.describe (
         Vitest.test (
             "output of a tracked action is appended to the log of that action",
             fun () ->
-                withRunningState (fun controller actions logs _ _ sendOutput -> promise {
+                withRunningState (fun controller actions logs _ _ _ sendOutput -> promise {
                     let work = deferred ()
                     let running = controller().track (runningAction "op-a") (fun () -> work.pending)
                     let other = controller().track (runningAction "op-b") (fun () -> work.pending)
@@ -687,7 +705,7 @@ Vitest.describe (
         Vitest.test (
             "output of an unknown operation id is ignored",
             fun () ->
-                withRunningState (fun controller actions logs _ _ sendOutput -> promise {
+                withRunningState (fun controller actions logs _ _ _ sendOutput -> promise {
                     let work = deferred ()
                     let running = controller().track (runningAction "op-a") (fun () -> work.pending)
 
@@ -711,7 +729,7 @@ Vitest.describe (
         Vitest.test (
             "the log goes away when the work settles and later output does not bring it back",
             fun () ->
-                withRunningState (fun controller actions logs _ _ sendOutput -> promise {
+                withRunningState (fun controller actions logs _ _ _ sendOutput -> promise {
                     let work = deferred ()
                     let running = controller().track (runningAction "op-a") (fun () -> work.pending)
 
@@ -733,7 +751,7 @@ Vitest.describe (
         Vitest.test (
             "a batch of output leaves the running actions reference-equal and does not render their readers",
             fun () ->
-                withRunningState (fun controller actions logs actionRenders _ sendOutput -> promise {
+                withRunningState (fun controller actions logs _ actionRenders _ sendOutput -> promise {
                     let work = deferred ()
                     let running = controller().track (runningAction "op-a") (fun () -> work.pending)
 
@@ -753,6 +771,250 @@ Vitest.describe (
                     work.resolve (Ok())
                     let! _ = running
                     ()
+                })
+        )
+)
+
+/// Mounts ArcHarness on a root that the test renders again to switch the ARC. The test reaches the output listener
+/// that the provider registered on the IPC bridge.
+let private withArcSwitch
+    (body:
+        (string -> unit)
+            -> (unit -> LfsActivityController)
+            -> (unit -> LfsRunningAction[])
+            -> (unit -> Renderer.Context.OperationLog.FinishedOperationLog option)
+            -> (VersionControlOutput -> unit)
+            -> JS.Promise<unit>)
+    =
+    promise {
+        let container = document.createElement ("div") :?> Browser.Types.HTMLDivElement
+        document.body.appendChild container |> ignore
+        let root = ReactDOM.createRoot container
+        let controller: LfsActivityController option ref = ref None
+        let actions: LfsRunningAction[] ref = ref [||]
+
+        let lastLog: Renderer.Context.OperationLog.FinishedOperationLog option ref =
+            ref None
+
+        let outputListener: (VersionControlOutput -> unit) option ref = ref None
+
+        installVersionControlBridge ignore (fun listener -> outputListener.Value <- listener)
+
+        let harness arcRootPath =
+            ArcHarness(
+                Some arcRootPath,
+                (fun c -> controller.Value <- Some c),
+                (fun a -> actions.Value <- a),
+                ignore,
+                (fun l -> lastLog.Value <- l)
+            )
+
+        try
+            root.render (harness "C:/arc-a")
+            do! waitFor (fun () -> controller.Value.IsSome && outputListener.Value.IsSome)
+
+            do!
+                body
+                    (fun arcRootPath -> root.render (harness arcRootPath))
+                    (fun () -> controller.Value.Value)
+                    (fun () -> actions.Value)
+                    (fun () -> lastLog.Value)
+                    (fun output -> outputListener.Value.Value output)
+        finally
+            root.unmount ()
+            container.remove ()
+    }
+
+Vitest.describe (
+    "LfsActivityCtxProvider last log across an ARC switch",
+    fun () ->
+        Vitest.test (
+            "the file tree last log stays when the ARC changes",
+            fun () ->
+                withArcSwitch (fun switchTo controller actions lastLog sendOutput -> promise {
+                    let work = deferred ()
+                    let running = controller().track (runningAction "op-a") (fun () -> work.pending)
+
+                    do! waitFor (fun () -> actions().Length = 1)
+
+                    sendOutput (outputFor "op-a" [ "first" ])
+                    work.resolve (Ok())
+                    let! _ = running
+                    do! waitFor (fun () -> lastLog().IsSome)
+
+                    let before = lastLog ()
+                    let controllerBefore = controller ()
+
+                    switchTo "C:/arc-b"
+                    do! waitFor (fun () -> not (obj.ReferenceEquals(controller (), controllerBefore)))
+                    do! Promise.sleep 20
+
+                    Vitest.expect(obj.ReferenceEquals(lastLog (), before)).toBe true
+                })
+        )
+
+        Vitest.test (
+            "an action that ends after the ARC changed keeps the ARC name of the ARC it started in",
+            fun () ->
+                withArcSwitch (fun switchTo controller actions lastLog sendOutput -> promise {
+                    let work = deferred ()
+                    let running = controller().track (runningAction "op-a") (fun () -> work.pending)
+
+                    do! waitFor (fun () -> actions().Length = 1)
+
+                    sendOutput (outputFor "op-a" [ "first" ])
+
+                    switchTo "C:/arc-b"
+                    do! waitFor (fun () -> actions().Length = 0)
+
+                    work.resolve (Ok())
+                    let! _ = running
+                    do! waitFor (fun () -> lastLog().IsSome)
+
+                    Vitest.expect(lastLog().Value.ArcName).toEqual (Some(PathHelpers.getFileName "C:/arc-a"))
+                })
+        )
+)
+
+Vitest.describe (
+    "LfsActivityCtxProvider failure details and last log",
+    fun () ->
+        Vitest.test (
+            "a tracked action that fails after output returns the text of that output as the details",
+            fun () ->
+                withRunningState (fun controller actions logs _ _ _ sendOutput -> promise {
+                    let work = deferred ()
+                    let running = controller().track (runningAction "op-a") (fun () -> work.pending)
+
+                    do! waitFor (fun () -> actions().Length = 1)
+
+                    sendOutput (outputFor "op-a" [ "first"; "second" ])
+                    do! waitFor (fun () -> logs().ContainsKey "op-a")
+
+                    let details = Renderer.Context.OperationLog.tryDetails (logs().["op-a"])
+                    Vitest.expect(details.IsSome).toBe true
+
+                    work.resolve (Error(GitLfsActionFailure.ofMessage "network down"))
+                    let! result = running
+
+                    Vitest
+                        .expect(result)
+                        .toEqual (
+                            Error {
+                                GitLfsActionFailure.ofMessage "network down" with
+                                    Details = details
+                            }
+                        )
+                })
+        )
+
+        Vitest.test (
+            "a tracked action whose work fails with details after output returns those details followed by the output text",
+            fun () ->
+                withRunningState (fun controller actions logs _ _ _ sendOutput -> promise {
+                    let work = deferred ()
+                    let running = controller().track (runningAction "op-a") (fun () -> work.pending)
+
+                    do! waitFor (fun () -> actions().Length = 1)
+
+                    sendOutput (outputFor "op-a" [ "first"; "second" ])
+                    do! waitFor (fun () -> logs().ContainsKey "op-a")
+
+                    let outputText = Renderer.Context.OperationLog.tryDetails (logs().["op-a"])
+                    Vitest.expect(outputText.IsSome).toBe true
+
+                    let failure = {
+                        GitLfsActionFailure.ofMessage "network down" with
+                            Details = Some "a.bin: connection reset"
+                    }
+
+                    work.resolve (Error failure)
+                    let! result = running
+
+                    Vitest
+                        .expect(result)
+                        .toEqual (
+                            Error {
+                                failure with
+                                    Details = Some("a.bin: connection reset\n\n" + outputText.Value)
+                            }
+                        )
+                })
+        )
+
+        Vitest.test (
+            "a tracked action that fails without output returns no details",
+            fun () ->
+                withRunningState (fun controller actions _ _ _ _ _ -> promise {
+                    let work = deferred ()
+                    let running = controller().track (runningAction "op-a") (fun () -> work.pending)
+
+                    do! waitFor (fun () -> actions().Length = 1)
+
+                    work.resolve (Error(GitLfsActionFailure.ofMessage "network down"))
+                    let! result = running
+
+                    match result with
+                    | Error failure -> Vitest.expect(failure.Details).toEqual None
+                    | Ok() -> failwith "Expected the tracked action to fail."
+                })
+        )
+
+        Vitest.test (
+            "an action with output stores its label, ARC name and lines as the last log when it ends",
+            fun () ->
+                withRunningState (fun controller actions logs lastLog _ _ sendOutput -> promise {
+                    let work = deferred ()
+                    let action = runningAction "op-a"
+                    let running = controller().track action (fun () -> work.pending)
+
+                    do! waitFor (fun () -> actions().Length = 1)
+
+                    sendOutput (outputFor "op-a" [ "first"; "second" ])
+                    do! waitFor (fun () -> logs().ContainsKey "op-a")
+
+                    Vitest.expect(lastLog ()).toEqual None
+
+                    let before = Fable.Core.JS.Constructors.Date.now ()
+                    work.resolve (Ok())
+                    let! _ = running
+                    do! waitFor (fun () -> lastLog().IsSome)
+
+                    let finished = lastLog().Value
+                    Vitest.expect(finished.Label).toBe (LfsRunningAction.label action)
+                    Vitest.expect(finished.ArcName).toEqual (Some(PathHelpers.getFileName "C:/arc"))
+                    Vitest.expect(finished.FinishedAt >= before).toBe true
+                    Vitest.expect(finished.Log.Lines |> Array.map _.Text).toEqual [| "first"; "second" |]
+                })
+        )
+
+        Vitest.test (
+            "an action without output leaves the previous last log unchanged",
+            fun () ->
+                withRunningState (fun controller actions logs lastLog _ _ sendOutput -> promise {
+                    let work = deferred ()
+                    let running = controller().track (runningAction "op-a") (fun () -> work.pending)
+
+                    do! waitFor (fun () -> actions().Length = 1)
+
+                    sendOutput (outputFor "op-a" [ "first" ])
+                    do! waitFor (fun () -> logs().ContainsKey "op-a")
+
+                    work.resolve (Ok())
+                    let! _ = running
+                    do! waitFor (fun () -> lastLog().IsSome && actions().Length = 0)
+
+                    let previous = lastLog ()
+                    let quietWork = deferred ()
+                    let quiet = controller().track (runningAction "op-b") (fun () -> quietWork.pending)
+
+                    do! waitFor (fun () -> actions().Length = 1)
+
+                    quietWork.resolve (Ok())
+                    let! _ = quiet
+                    do! waitFor (fun () -> actions().Length = 0)
+
+                    Vitest.expect(obj.ReferenceEquals(lastLog (), previous)).toBe true
                 })
         )
 )

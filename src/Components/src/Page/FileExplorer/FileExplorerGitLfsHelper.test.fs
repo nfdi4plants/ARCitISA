@@ -112,3 +112,29 @@ Vitest.describe (
                 Vitest.expect(items |> List.forall isDisabled).toBe true
         )
 )
+
+Vitest.describe (
+    "downloadLfsFile",
+    fun () ->
+        Vitest.test (
+            "keeps the details of a failed download and wraps its message with the file name",
+            fun () -> promise {
+                let item = lfsFile true
+
+                let failure = {
+                    GitLfsActionFailure.ofMessage "network down" with
+                        Details = Some "git lfs fetch output"
+                }
+
+                let! reported =
+                    Promise.create (fun resolve _ ->
+                        downloadLfsFile resolve (fun _ -> promise { return Error failure }) item
+                    )
+
+                Vitest.expect(reported.IsSome).toBe true
+                Vitest.expect(reported.Value.Details).toEqual failure.Details
+                Vitest.expect(reported.Value.Message.Contains item.Name).toBe true
+                Vitest.expect(reported.Value.Message.Contains failure.Message).toBe true
+            }
+        )
+)

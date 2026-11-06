@@ -10,6 +10,7 @@ open Swate.Components.Primitive.LayoutComponents
 open Swate.Components.Composite.ThemeSelector
 open Swate.Components.Composite.ThemeSelector.Context
 open Swate.Components.Composite.TermSearch
+open Swate.Components.PageComponents.SettingsPage.Types
 open Swate.Components.Util.UserOS
 
 module SettingsPageDefaults =
@@ -37,6 +38,21 @@ module private SettingsPageHelper =
 
 [<Erase; Mangle(false)>]
 type SettingsPage =
+
+    /// A label with its value. The test id sits on the value, so it holds exactly the shown text.
+    [<ReactComponent>]
+    static member private GitExecutableRow(label: string, value: string, testId: string) =
+        Html.p [
+            prop.className "swt:flex swt:flex-wrap swt:gap-x-2 swt:text-sm"
+            prop.children [
+                Html.span [ prop.className "swt:font-medium"; prop.text label ]
+                Html.span [
+                    prop.testId testId
+                    prop.className "swt:break-all swt:text-base-content/70"
+                    prop.text value
+                ]
+            ]
+        ]
 
     [<ReactComponent>]
     static member private SettingColumnElement
@@ -218,8 +234,12 @@ type SettingsPage =
 
     [<ReactComponent>]
     static member private GitDefaults
-        (gitDefaults: SettingsGitDefaults, builtIn: SettingsGitDefaults, onSave: SettingsGitDefaults -> unit)
-        =
+        (
+            gitDefaults: SettingsGitDefaults,
+            builtIn: SettingsGitDefaults,
+            onSave: SettingsGitDefaults -> unit,
+            ?gitExecutable: ReactElement
+        ) =
         let lfsInput, setLfsInput =
             React.useState (string gitDefaults.LfsAutoTrackThresholdMb)
 
@@ -287,6 +307,9 @@ type SettingsPage =
                 LayoutComponents.BoxedField(
                     "Git defaults",
                     content = [
+                        if gitExecutable.IsSome then
+                            gitExecutable.Value
+
                         SettingsPage.GitDefaultRow(
                             lfsId,
                             "Large file threshold (MB)",
@@ -435,6 +458,107 @@ type SettingsPage =
         )
 
     [<ReactComponent>]
+    static member private GitExecutable
+        (setting: GitExecutableSetting, onChoose: unit -> unit, onUseAutomatic: unit -> unit, onCheckAgain: unit -> unit) =
+        let source =
+            match setting.ChosenPath with
+            | Some path -> path
+            | None -> "Automatic (Git found on PATH)"
+
+        SettingsPage.SettingColumnElement(
+            "Git executable",
+            Html.div [
+                prop.testId "SettingsGitExecutable"
+                prop.className "swt:flex swt:flex-col swt:gap-2"
+                prop.children [
+                    SettingsPage.GitExecutableRow("Source", source, "SettingsGitExecutableSource")
+
+                    (match setting.PathInUse with
+                     | Some path -> SettingsPage.GitExecutableRow("In use", path, "SettingsGitExecutablePathInUse")
+                     | None -> Html.none)
+
+                    (match setting.GitVersion with
+                     | Some version -> SettingsPage.GitExecutableRow("Git", version, "SettingsGitExecutableGitVersion")
+                     | None -> Html.none)
+
+                    (match setting.GitLfsVersion with
+                     | Some version ->
+                         SettingsPage.GitExecutableRow("Git LFS", version, "SettingsGitExecutableGitLfsVersion")
+                     | None -> Html.none)
+
+                    (match setting.Problem with
+                     | Some problem ->
+                         Html.div [
+                             prop.testId "SettingsGitExecutableProblem"
+                             prop.className "swt:alert swt:alert-warning swt:min-w-0 swt:px-3 swt:py-2 swt:text-sm"
+                             prop.children [
+                                 Html.span [
+                                     prop.className "swt:iconify swt:fluent--warning-24-regular swt:size-4 swt:shrink-0"
+                                     prop.ariaHidden true
+                                 ]
+                                 Html.span [
+                                     prop.className "swt:min-w-0 swt:wrap-anywhere"
+                                     prop.text problem
+                                 ]
+                             ]
+                         ]
+                     | None -> Html.none)
+
+                    (if setting.IsChecking then
+                         Html.span [
+                             prop.testId "SettingsGitExecutableChecking"
+                             prop.className "swt:flex swt:items-center swt:gap-2 swt:text-sm"
+                             prop.children [
+                                 Html.span [
+                                     prop.className "swt:loading swt:loading-spinner swt:loading-xs"
+                                 ]
+                                 Html.span "Checking..."
+                             ]
+                         ]
+                     else
+                         Html.none)
+
+                    Html.div [
+                        prop.className "swt:flex swt:flex-wrap swt:items-center swt:gap-2"
+                        prop.children [
+                            Html.button [
+                                prop.testId "SettingsGitExecutableChoose"
+                                prop.type'.button
+                                prop.className "swt:btn swt:btn-sm"
+                                prop.text "Choose..."
+                                prop.onClick (fun _ -> onChoose ())
+                            ]
+                            (if setting.ChosenPath.IsSome then
+                                 Html.button [
+                                     prop.testId "SettingsGitExecutableUseAutomatic"
+                                     prop.type'.button
+                                     prop.className "swt:btn swt:btn-sm"
+                                     prop.text "Use automatic"
+                                     prop.onClick (fun _ -> onUseAutomatic ())
+                                 ]
+                             else
+                                 Html.none)
+                            Html.button [
+                                prop.testId "SettingsGitExecutableCheckAgain"
+                                prop.type'.button
+                                prop.className "swt:btn swt:btn-sm"
+                                prop.disabled setting.IsChecking
+                                prop.text "Check again"
+                                prop.onClick (fun _ -> onCheckAgain ())
+                            ]
+                        ]
+                    ]
+                ]
+            ],
+            description =
+                Html.p [
+                    prop.className "swt:mt-1 swt:text-sm swt:text-base-content/70"
+                    prop.text
+                        "The Git program the application runs. Leave it on automatic to use the Git found on your PATH, or choose the executable yourself. Git LFS runs through this Git, so the Git LFS version shown belongs to it. A change here applies right away and needs no Save."
+                ]
+        )
+
+    [<ReactComponent>]
     static member private General
         (
             ?onAutoCreateNotesFolderEnabled: unit -> unit,
@@ -493,14 +617,19 @@ type SettingsPage =
             ?onAutoCreateNotesFolderEnabled: unit -> unit,
             ?uiScaling: int,
             ?onUIScaling: int -> unit,
-            ?gitDefaults: SettingsGitDefaults,
-            ?gitBuiltInDefaults: SettingsGitDefaults,
-            ?onGitDefaultsSave: SettingsGitDefaults -> unit,
+            ?gitDefaults: GitDefaultsSection,
             ?autoCreateNotesFolder: bool,
-            ?onAutoCreateNotesFolderChange: bool -> unit
+            ?onAutoCreateNotesFolderChange: bool -> unit,
+            ?gitExecutable: GitExecutableField
         ) =
         let onAutoCreateNotesFolderEnabled =
             defaultArg onAutoCreateNotesFolderEnabled ignore
+
+        let gitExecutable =
+            gitExecutable
+            |> Option.map (fun field ->
+                SettingsPage.GitExecutable(field.Setting, field.OnChoose, field.OnUseAutomatic, field.OnCheckAgain)
+            )
 
         LayoutComponents.Section [
             SettingsPage.General(
@@ -511,10 +640,17 @@ type SettingsPage =
                 ?onAutoCreateNotesFolderChange = onAutoCreateNotesFolderChange
             )
 
-            match gitDefaults, gitBuiltInDefaults, onGitDefaultsSave with
-            | Some gitDefaults, Some gitBuiltInDefaults, Some onGitDefaultsSave ->
-                SettingsPage.GitDefaults(gitDefaults, gitBuiltInDefaults, onGitDefaultsSave)
-            | _ -> Html.none
+            // The Git executable leads the Git defaults. A host without Git defaults still shows it in the same box.
+            match gitDefaults, gitExecutable with
+            | Some gitDefaults, _ ->
+                SettingsPage.GitDefaults(
+                    gitDefaults.Current,
+                    gitDefaults.BuiltIn,
+                    gitDefaults.OnSave,
+                    ?gitExecutable = gitExecutable
+                )
+            | None, Some gitExecutable -> LayoutComponents.BoxedField("Git defaults", content = [ gitExecutable ])
+            | None, None -> Html.none
 
             SettingsPage.SearchConfig()
 

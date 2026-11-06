@@ -232,6 +232,7 @@ let dependencyStatus (status: DependencyStatus) : DependencyStatusDto = {
     Version = status.Version
     Compatible = status.Compatible
     Remediation = status.Remediation
+    ProbeExecutablePath = status.ProbeExecutablePath
 }
 
 let repositoryLocation (location: RepositoryLocation) : RepositoryLocationDto = {
@@ -246,7 +247,6 @@ let serviceAvailability (session: WorkspaceSession) : ServiceAvailabilityDto = {
     TextDiff = session.TextDiff.IsSome
     ConflictResolution = session.ConflictResolution.IsSome
     ObjectMaterialization = session.ObjectMaterialization.IsSome
-    ObjectBatchMaterialization = session.ObjectBatchMaterialization.IsSome
     StoragePolicy = session.StoragePolicy.IsSome
     Maintenance = session.Maintenance.IsSome
     RepositoryBrowser = session.RepositoryBrowser.IsSome

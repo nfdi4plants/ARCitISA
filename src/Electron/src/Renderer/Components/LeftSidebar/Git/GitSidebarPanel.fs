@@ -4,50 +4,6 @@ open Browser.Dom
 open Feliz
 open Renderer.Components.Helper.ArcVaultHelper
 open Swate.Components.Primitive.ErrorModal.Context
-open Swate.Components.Primitive.ErrorModal.Types
-open Swate.Electron.Shared.VersionControlTypes
-
-let mutable private dependencyCheckStarted = false
-
-/// The message shown when a version control dependency is missing or too old. The
-/// library decides what is required (Git 2.42, Git LFS 3.7 and the LFS filter
-/// configuration) and says how to fix it. Its remediation text starts with the cause when a
-/// version check failed.
-let dependencyProblemMessage (statuses: DependencyStatusDto[]) : string option =
-    // The library reports the filter configuration as installed when the filter is set up, whatever
-    // the state of git-lfs itself. A problem of the configuration is only worth a line of its own
-    // while git-lfs works. Otherwise the line of git-lfs says what to do first.
-    let gitLfsWorks =
-        statuses
-        |> Array.tryFind (fun status -> status.Component = "git-lfs")
-        |> Option.forall (fun status -> status.Installed && status.Compatible)
-
-    let problems =
-        statuses
-        |> Array.filter (fun status -> not status.Installed || not status.Compatible)
-        |> Array.choose (fun status ->
-            let remediation =
-                status.Remediation
-                |> Option.map (fun text -> $" {text}")
-                |> Option.defaultValue ""
-
-            if status.Component = "git-lfs-configuration" then
-                if gitLfsWorks then
-                    Some $"Git LFS is installed but not set up.{remediation}"
-                else
-                    None
-            elif not status.Installed then
-                Some $"{status.Component} was not found or could not be run.{remediation}"
-            else
-                match status.Version with
-                | Some version -> Some $"{version} is not supported.{remediation}"
-                | None -> Some $"{status.Component} is not supported.{remediation}"
-        )
-
-    if problems.Length = 0 then
-        None
-    else
-        Some(String.concat "\n" problems)
 
 /// Remote transfer operations run cancellable git processes, so the cancel button is offered for all of them.
 let private isCancellableBusyOperation (busyOperation: Renderer.Context.GitWorkflow.GitBusyOperation) =
@@ -57,36 +13,6 @@ let private isCancellableBusyOperation (busyOperation: Renderer.Context.GitWorkf
     | Renderer.Context.GitWorkflow.GitBusyOperation.PushingToRemote
     | Renderer.Context.GitWorkflow.GitBusyOperation.CloningRepository _ -> true
     | _ -> false
-
-let private activityVerb (kind: Renderer.Context.LfsActivityContext.LfsActionKind) =
-    match kind with
-    | Renderer.Context.LfsActivityContext.LfsActionKind.Download -> "Downloading"
-    | Renderer.Context.LfsActivityContext.LfsActionKind.Free -> "Freeing"
-
-/// The log for the sidebar. A log without lines is None, so the notice offers no "Show logs" button for it.
-let sidebarLog
-    (log: Renderer.Context.OperationLog.OperationLog)
-    : Swate.Components.Page.GitSidebarTypes.GitSidebarLog option =
-    if log.Lines.Length = 0 then
-        None
-    else
-        let lines =
-            log.Lines
-            |> Array.map (fun line ->
-                let mapped: Swate.Components.Page.GitSidebarTypes.GitSidebarLogLine = {
-                    Kind = line.Kind
-                    Text = line.Text
-                }
-
-                mapped
-            )
-
-        let mapped: Swate.Components.Page.GitSidebarTypes.GitSidebarLog = { Lines = lines; Omitted = log.Omitted }
-
-        Some mapped
-
-let private activityLabel (action: Renderer.Context.LfsActivityContext.LfsRunningAction) =
-    $"{activityVerb action.Kind} {Swate.Components.Shared.PathHelpers.getFileName action.Target}"
 
 /// One background item per running file tree action. The label names the kind and the folder or file. The detail
 /// and the percent come from the progress that the action reported, the same text as on the file tree row. The
@@ -98,10 +24,13 @@ let backgroundActivityItems
     actions
     |> Array.map (fun action ->
         let item: Swate.Components.Page.GitSidebarTypes.GitSidebarBackgroundActivity = {
-            Label = activityLabel action
+            Label = Renderer.Context.LfsActivityContext.LfsRunningAction.label action
             Detail = Renderer.Context.LfsActivityContext.LfsRunningAction.progressText action
             ProgressPercent = Renderer.Context.LfsActivityContext.LfsRunningAction.progressPercent action
-            Log = logs |> Map.tryFind action.OperationId |> Option.bind sidebarLog
+            Log =
+                logs
+                |> Map.tryFind action.OperationId
+                |> Option.bind Renderer.Context.OperationLog.toSidebarLog
         }
 
         item
@@ -144,7 +73,7 @@ let waitingHeadline
         actions
         |> Array.tryFind (fun action -> action.StartedAt < startedAt)
         |> Option.map (fun action ->
-            let label = activityLabel action
+            let label = Renderer.Context.LfsActivityContext.LfsRunningAction.label action
             $"Waits for {label.Substring(0, 1).ToLowerInvariant()}{label.Substring 1} to finish"
         )
     | _ -> None
@@ -177,7 +106,12 @@ let Main () =
 
     // The log changes with every batch of output. A sidebar render for something else keeps the mapped lines.
     let operationLog =
-        React.useMemo ((fun () -> sidebarLog gitStateCtx.state.CurrentLog), [| box gitStateCtx.state.CurrentLog |])
+        React.useMemo (
+            (fun () -> Renderer.Context.OperationLog.toSidebarLog gitStateCtx.state.CurrentLog),
+            [| box gitStateCtx.state.CurrentLog |]
+        )
+
+    let lastLog = Renderer.Context.LastGitLog.useLastGitLog ()
 
     // The dialog resets its name and owner state when the prompt object changes. The model keeps
     // the same prompt object between unrelated updates, so a re-render of the panel keeps them.
@@ -214,38 +148,6 @@ let Main () =
 
     let onOpenArcError =
         createErrorModalCallback errorCtx.enqueue "Error opening ARC" appStateCtx
-
-    React.useEffectOnce (fun () ->
-        if not dependencyCheckStarted then
-            dependencyCheckStarted <- true
-
-            Renderer.VersionControlApiClient.checkDependencies {
-                OperationId = Renderer.VersionControlApiClient.newOperationId ()
-            }
-            |> Promise.map (fun result ->
-                let statuses =
-                    match result with
-                    | Ok(OperationResultDto.Succeeded outcome)
-                    | Ok(OperationResultDto.PartiallySucceeded(outcome, _)) -> outcome.Value
-                    | _ -> [||]
-
-                match result, dependencyProblemMessage statuses with
-                | _, Some message ->
-                    errorCtx.enqueue (ErrorModalRequest.create (message, title = "Version control dependencies"))
-                | Ok(OperationResultDto.Failed failure), None
-                | Ok(OperationResultDto.PartiallySucceeded(_, failure)), None ->
-                    errorCtx.enqueue (
-                        ErrorModalRequest.create (
-                            Renderer.Context.GitWorkflow.failureMessage failure,
-                            title = "Could not verify Git installation"
-                        )
-                    )
-                | Error message, None ->
-                    errorCtx.enqueue (ErrorModalRequest.create (message, title = "Could not verify Git installation"))
-                | _ -> ()
-            )
-            |> ignore
-    )
 
     let remoteActionsEnabled = authState.UsableActiveUser().IsSome
 
@@ -312,6 +214,7 @@ let Main () =
             backgroundActivities = backgroundActivities,
             operationSteps = gitStateCtx.state.CurrentSteps,
             ?operationLog = operationLog,
+            ?lastLog = lastLog,
             ?busyHeadlineOverride =
                 waitingHeadline
                     gitStateCtx.state.BusyOperation

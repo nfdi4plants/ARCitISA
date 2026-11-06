@@ -3,10 +3,14 @@ module Renderer.Components.MainContent.SettingsPageTarget
 open System
 open Feliz
 open Renderer.Components.Helper.ArcVaultHelper
+open Renderer.Context.VersionControlDependencyContext
 open Swate.Components.Page.GitSidebarTypes
+open Swate.Components.PageComponents.SettingsPage
+open Swate.Components.PageComponents.SettingsPage.Types
 open Swate.Components.Primitive.ErrorModal.Context
 open Swate.Electron.Shared.IPCTypes
 open Swate.Electron.Shared.IPCTypes.MainToRendererIpc
+open Swate.Electron.Shared.VersionControlTypes
 
 let private toGitDefaults (values: UserDefaultValuesDto) : SettingsGitDefaults = {
     LfsAutoTrackThresholdMb = values.LfsAutoTrackThresholdMb
@@ -14,6 +18,30 @@ let private toGitDefaults (values: UserDefaultValuesDto) : SettingsGitDefaults =
     DiffIndexingLimitMb = values.DiffIndexingLimitMb
     UploadRightAway = values.UploadRightAway
 }
+
+/// The Git executable field. The saved defaults hold the chosen path. The main process owns the
+/// dependency check, so everything else in the field comes from its latest state.
+/// A Git that could not run is not in use, so its path stays out of the field. The Source line still
+/// shows it as the chosen path.
+let toGitExecutableSetting
+    (chosenPath: string option)
+    (state: VersionControlDependencyStateDto option)
+    : GitExecutableSetting =
+    let statusOf (name: string) =
+        state
+        |> Option.bind (fun state -> state.Statuses |> Array.tryFind (fun status -> status.Component = name))
+
+    let git = statusOf "git"
+    let gitLfs = statusOf "git-lfs"
+
+    {
+        ChosenPath = chosenPath
+        PathInUse = git |> Option.filter _.Installed |> Option.bind _.ProbeExecutablePath
+        GitVersion = git |> Option.bind _.Version
+        GitLfsVersion = gitLfs |> Option.bind _.Version
+        Problem = state |> Option.bind stateProblemMessage
+        IsChecking = state |> Option.exists _.IsChecking
+    }
 
 [<ReactComponent(true)>]
 let SettingsPage () =
@@ -102,6 +130,25 @@ let SettingsPage () =
                 AutoCreateNotesFolder = isEnabled
         }
 
+    let dependencies = useVersionControlDependencyCtx ()
+
+    // The main process checks the dependencies again after it saved a new path.
+    let submitGitExecutablePath (path: string option) =
+        submitUserDefaults {
+            effectiveDefaults with
+                GitExecutablePath = path
+        }
+
+    let chooseGitExecutable () =
+        promise {
+            match! Api.ipcArcVaultApi.pickExecutable () with
+            | Error error when isPickCancelled error -> ()
+            | Error error ->
+                createErrorModalCallback errorModal.enqueue "Could not pick Git executable" None error.Message
+            | Ok path -> submitGitExecutablePath (Some path)
+        }
+        |> Promise.start
+
     Html.div [
         prop.className "swt:size-full swt:min-w-0 swt:min-h-0 swt:overflow-y-auto"
         prop.testId "main-content-settings-page"
@@ -110,11 +157,19 @@ let SettingsPage () =
                 onAutoCreateNotesFolderEnabled = onAutoCreateNotesFolderEnabled,
                 uiScaling = uiScaling.state,
                 onUIScaling = submitUIScaling,
-                gitDefaults = toGitDefaults effectiveDefaults,
-                gitBuiltInDefaults = toGitDefaults userDefaults.state.BuiltIn,
-                onGitDefaultsSave = submitGitDefaults,
+                gitDefaults = {
+                    Current = toGitDefaults effectiveDefaults
+                    BuiltIn = toGitDefaults userDefaults.state.BuiltIn
+                    OnSave = submitGitDefaults
+                },
                 autoCreateNotesFolder = effectiveDefaults.AutoCreateNotesFolder,
-                onAutoCreateNotesFolderChange = submitAutoCreateNotesFolder
+                onAutoCreateNotesFolderChange = submitAutoCreateNotesFolder,
+                gitExecutable = {
+                    Setting = toGitExecutableSetting effectiveDefaults.GitExecutablePath dependencies.state
+                    OnChoose = chooseGitExecutable
+                    OnUseAutomatic = (fun () -> submitGitExecutablePath None)
+                    OnCheckAgain = dependencies.recheck
+                }
             )
         ]
     ]
