@@ -84,7 +84,7 @@ module ArcDeleteHelper =
                     )
             | Ok diskArc ->
                 baselineArcStaticHashes diskArc
-                // The IPC delete path suppresses watcher ARC merges, so apply the same unlink event explicitly.
+                // The delete runs as an external operation and the sync at its end loads later, so apply the same unlink event now.
                 let mergedArc =
                     ARC.merge arcLocal diskArc [
                         {

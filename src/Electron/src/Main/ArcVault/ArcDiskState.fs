@@ -95,3 +95,26 @@ let diff (known: ArcDiskSnapshot) (current: ArcDiskSnapshot) : ArcDiskChange lis
         if not (current |> Map.containsKey key) then
             yield Removed file.RelativePath
 ]
+
+/// The known snapshot after an own write. Only entries that differ between the scans around the write move,
+/// so a file that already differed from the known snapshot before the write still loads in the next sync.
+let acknowledge (known: ArcDiskSnapshot) (pre: ArcDiskSnapshot) (post: ArcDiskSnapshot) : ArcDiskSnapshot =
+    let withWritten =
+        post
+        |> Map.fold
+            (fun state key file ->
+                match pre |> Map.tryFind key with
+                | Some preFile when preFile.Fingerprint = file.Fingerprint -> state
+                | _ -> state |> Map.add key file
+            )
+            known
+
+    pre
+    |> Map.fold
+        (fun state key _ ->
+            if post |> Map.containsKey key then
+                state
+            else
+                state |> Map.remove key
+        )
+        withWritten

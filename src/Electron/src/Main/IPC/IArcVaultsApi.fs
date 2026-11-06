@@ -685,9 +685,9 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
                                 publisher.Report progress
 
                             return!
-                                IPCHelper.withExclusiveBusyWriting
-                                    vault
-                                    (fun () ->
+                                vault.TryWithExclusiveExternalOperationScope(
+                                    false,
+                                    fun () ->
                                         FileImportCoordinator.run
                                             vault.window
                                             request.requestId
@@ -747,11 +747,7 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
                                                                         (Some finalizingImport)
                                                                 | _ -> ()
                                                             )
-                                                            (fun () ->
-                                                                vault.TryTriggerArcInMemoryMergeOnFileWatcherEvents(
-                                                                    importedEvents |> Seq.toList
-                                                                )
-                                                            )
+                                                            (fun () -> vault.SyncWithinExternalOperation false)
                                                         |> Promise.catch Error
 
                                                     vault.ReleaseImportedFileEventsAfterImport(importToken, result)
@@ -771,7 +767,7 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
                                                 finally
                                                     publisher.Stop()
                                             })
-                                    )
+                                )
                         })
             with e ->
                 return Error(exn $"Could not import items: {e.Message}")
@@ -1020,36 +1016,43 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
                             | ArcFileSystemHelper.DeletePathRoute.ArcEntity normalizedRelativePath ->
                                 match vault.arc with
                                 | None -> return Error(arcNotOpenError ())
-                                | Some arcLocal ->
+                                | Some _ ->
+                                    // An external operation: the sync at the end of the scope brings every file
+                                    // that ARCtrl changed, such as cross references, into memory.
                                     return!
-                                        IPCHelper.withBusyWritingScope
-                                            vault
-                                            (fun () -> promise {
-                                                match!
-                                                    ArcDeleteHelper.deleteArcEntityAsync
-                                                        arcPath
-                                                        normalizedRelativePath
-                                                        arcLocal
-                                                with
-                                                | Error deleteError -> return Error deleteError
-                                                | Ok outcome ->
-                                                    let nextArc, partialError =
-                                                        match outcome with
-                                                        | Deleted arc -> arc, None
-                                                        | PartiallyDeleted(arc, error) -> arc, Some error
+                                        vault.WithExternalOperationScope(
+                                            false,
+                                            fun () -> promise {
+                                                // A sync can have replaced the ARC while this call waited for the vault.
+                                                match vault.path, vault.arc with
+                                                | Some arcPath, Some arcLocal ->
+                                                    match!
+                                                        ArcDeleteHelper.deleteArcEntityAsync
+                                                            arcPath
+                                                            normalizedRelativePath
+                                                            arcLocal
+                                                    with
+                                                    | Error deleteError -> return Error deleteError
+                                                    | Ok outcome ->
+                                                        let nextArc, partialError =
+                                                            match outcome with
+                                                            | Deleted arc -> arc, None
+                                                            | PartiallyDeleted(arc, error) -> arc, Some error
 
-                                                    vault.SetArc nextArc
-                                                    vault.RefreshHasUnsavedArcChangesFlag()
-                                                    // The watcher reports this late, so the zone folder is reconciled here.
-                                                    do!
-                                                        reconcileParentsOfRelativePaths vault [
-                                                            entityFolderOf normalizedRelativePath
-                                                        ]
+                                                        vault.SetArc nextArc
+                                                        vault.RefreshHasUnsavedArcChangesFlag()
+                                                        // The watcher reports this late, so the zone folder is reconciled here.
+                                                        do!
+                                                            reconcileParentsOfRelativePaths vault [
+                                                                entityFolderOf normalizedRelativePath
+                                                            ]
 
-                                                    match partialError with
-                                                    | None -> return Ok()
-                                                    | Some error -> return Error error
-                                            })
+                                                        match partialError with
+                                                        | None -> return Ok()
+                                                        | Some error -> return Error error
+                                                | _ -> return Error(arcNotOpenError ())
+                                            }
+                                        )
                             | ArcFileSystemHelper.DeletePathRoute.DataMap normalizedDataMapPath ->
                                 match vault.arc, DatamapParentInfo.tryFromPath normalizedDataMapPath with
                                 | None, _ -> return Error(arcNotOpenError ())
@@ -1059,29 +1062,37 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
                                             exn
                                                 "ARCitISA could not determine which assay, study, run, or workflow the selected DataMap belongs to. Refresh the File Explorer and try again."
                                         )
-                                | Some arc, Some parentInfo ->
+                                | Some _, Some parentInfo ->
                                     return!
-                                        IPCHelper.withBusyWritingScope
-                                            vault
-                                            (fun () -> promise {
-                                                match! arc.TryDeleteDataMapAsync(arcPath, parentInfo) with
-                                                | Error deleteError -> return Error deleteError
-                                                | Ok() ->
-                                                    vault.RefreshHasUnsavedArcChangesFlag()
+                                        vault.WithOwnWriteScope(
+                                            false,
+                                            fun () -> promise {
+                                                // A sync can have replaced the ARC while this call waited for the vault.
+                                                match vault.path, vault.arc with
+                                                | Some arcPath, Some arc ->
+                                                    match! arc.TryDeleteDataMapAsync(arcPath, parentInfo) with
+                                                    | Error deleteError -> return Error deleteError
+                                                    | Ok() ->
+                                                        vault.RefreshHasUnsavedArcChangesFlag()
 
-                                                    let absoluteDataMapPath =
-                                                        Main.Bindings.Path.join [| arcPath; normalizedDataMapPath |]
+                                                        let absoluteDataMapPath =
+                                                            Main.Bindings.Path.join [|
+                                                                arcPath
+                                                                normalizedDataMapPath
+                                                            |]
 
-                                                    match
-                                                        Swate.Components.Shared.PathHelpers.tryGetParentPath
-                                                            absoluteDataMapPath
-                                                    with
-                                                    | Some parentDirectory ->
-                                                        do! vault.EnqueueFileTreeDirectoryReconcile parentDirectory
-                                                    | None -> ()
+                                                        match
+                                                            Swate.Components.Shared.PathHelpers.tryGetParentPath
+                                                                absoluteDataMapPath
+                                                        with
+                                                        | Some parentDirectory ->
+                                                            do! vault.EnqueueFileTreeDirectoryReconcile parentDirectory
+                                                        | None -> ()
 
-                                                    return Ok()
-                                            })
+                                                        return Ok()
+                                                | _ -> return Error(arcNotOpenError ())
+                                            }
+                                        )
                             | ArcFileSystemHelper.DeletePathRoute.Rejected message -> return Error(exn message)
                         })
             with e ->
@@ -1105,29 +1116,46 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
                             else
                                 match vault.arc with
                                 | None -> return Error(arcNotOpenError ())
-                                | Some arcLocal ->
+                                | Some _ ->
                                     return!
-                                        IPCHelper.withBusyWritingScope
-                                            vault
-                                            (fun () -> promise {
-                                                match!
-                                                    ArcRenameHelper.renameArcEntityAsync arcPath request arcLocal
-                                                with
-                                                | Error renameError -> return Error renameError
-                                                | Ok renamedArc ->
-                                                    vault.SetArc renamedArc
-                                                    vault.RefreshHasUnsavedArcChangesFlag()
+                                        vault.RunOwnWrite(
+                                            false,
+                                            true,
+                                            fun diskState -> promise {
+                                                match diskState with
+                                                | UnsyncedFiles(_, syncError) ->
+                                                    return
+                                                        Error(
+                                                            exn
+                                                                $"Could not rename because the ARC files could not be loaded: {syncError.Message}"
+                                                        )
+                                                | DiskMatchesMemory ->
+                                                    // A sync can have replaced the ARC while this call waited for the vault.
+                                                    match vault.path, vault.arc with
+                                                    | Some arcPath, Some arcLocal ->
+                                                        match!
+                                                            ArcRenameHelper.renameArcEntityAsync
+                                                                arcPath
+                                                                request
+                                                                arcLocal
+                                                        with
+                                                        | Error renameError -> return Error renameError
+                                                        | Ok renamedArc ->
+                                                            vault.SetArc renamedArc
+                                                            vault.RefreshHasUnsavedArcChangesFlag()
 
-                                                    // The watcher reports this late. The zone folder shows the new
-                                                    // entity folder, and the zone rule loads its direct children.
-                                                    do!
-                                                        reconcileParentsOfRelativePaths vault [
-                                                            request.relativePath
-                                                            entityFolderOf request.relativePath
-                                                        ]
+                                                            // The watcher reports this late. The zone folder shows the new
+                                                            // entity folder, and the zone rule loads its direct children.
+                                                            do!
+                                                                reconcileParentsOfRelativePaths vault [
+                                                                    request.relativePath
+                                                                    entityFolderOf request.relativePath
+                                                                ]
 
-                                                    return Ok()
-                                            })
+                                                            return Ok()
+                                                    | _ -> return Error(arcNotOpenError ())
+                                            }
+                                        )
                         })
             with e ->
                 return Error e
@@ -1194,11 +1222,12 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
                         | Error pathError -> return Error pathError
                         | Ok absolutePath ->
                             // The shared scope counts nesting, so a write that overlaps a
-                            // version control operation does not clear the busy flag under it.
+                            // version control operation does not release the vault under it.
+                            // A structural file written here, such as a license, reaches memory through the sync.
                             return!
-                                IPCHelper.withBusyWritingScope
-                                    vault
-                                    (fun () -> promise {
+                                vault.WithExternalOperationScope(
+                                    false,
+                                    fun () -> promise {
                                         match request.fileType with
                                         | FileContentType.FileContentTypeIsPlainTextVariant ->
                                             let directoryPath = path.dirname absolutePath
@@ -1219,10 +1248,10 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
                                         | _ ->
                                             return
                                                 Error(
-                                                    exn
-                                                        $"Unsupported file content type for writing: {request.fileType}"
+                                                    exn $"Unsupported file content type for writing: {request.fileType}"
                                                 )
-                                    })
+                                    }
+                                )
             with e ->
                 return Error e
         }

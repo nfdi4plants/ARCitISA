@@ -148,33 +148,6 @@ let swatelogfn id fmt =
 let swatefailfn id fmt =
     Printf.kprintf (fun s -> failwith ("[ARCitISA-" + string id + "] " + s)) fmt
 
-/// Serializes ARC merge operations through a single FIFO owner. Individual operation failures
-/// reject their caller's promise without terminating the queue processor.
-type internal ArcMergeQueue(windowId: int) =
-
-    let mailbox =
-        MailboxProcessor.Start(fun inbox ->
-            let rec processNext () = async {
-                let! operation = inbox.Receive()
-                do! operation () |> Async.AwaitPromise
-                return! processNext ()
-            }
-
-            processNext ()
-        )
-
-    member _.Enqueue<'T>(operation: unit -> JS.Promise<'T>) : JS.Promise<'T> =
-        JS.Constructors.Promise.Create(fun resolve reject ->
-            mailbox.Post(fun () -> promise {
-                try
-                    let! result = operation ()
-                    resolve result
-                with error ->
-                    swatelogfn windowId "Queued ARC merge failed: %s" error.Message
-                    reject error
-            })
-        )
-
 type OpenArcRootRenamePlan = {
     SourcePath: string
     TargetPath: string

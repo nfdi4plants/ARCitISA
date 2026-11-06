@@ -14,6 +14,7 @@ open Main.Bindings.Filesystem
 open Main.Bindings.Path
 open Main.ArcMerge
 open Main.ArcVaultHelper
+open Main.ArcDiskState
 open Main.FileImportCoordinator
 open Swate.Components.Shared
 open Swate.Electron.Shared.IPCTypes
@@ -87,9 +88,14 @@ type internal ImportedPathLease = {
     mutable Timer: int option
 }
 
-let private startFileWatcherOwnWriteArcMergeSuppression suppressionMs currentTimeout onElapsed =
-    currentTimeout |> Option.iter Fable.Core.JS.clearTimeout
-    Fable.Core.JS.setTimeout onElapsed suppressionMs
+/// Who owns the files of the vault. Own writes and syncs exclude everything else. External operations can overlap each other.
+type ArcSyncMode =
+    | Idle
+    /// A scan is looking for changes. Edits are accepted and no notice shows.
+    | Checking
+    | Syncing
+    | OwnWrite
+    | ExternalOperation of depth: int
 
 /// <summary>
 /// Represents a vault window in the application, optionally associated with a file path.
@@ -97,12 +103,8 @@ let private startFileWatcherOwnWriteArcMergeSuppression suppressionMs currentTim
 /// <param name="path">Can be None if not opened ARC.</param>
 type ArcVault(window: BrowserWindow) =
 
-    let fileWatcherOwnWriteArcMergeSuppressionMs = 500
-    let arcMergeQueue = ArcMergeQueue(window.id)
-    let mutable busyWritingDepth = 0
-    let mutable writeGeneration = 0
-    let mutable watcherDeferralCount = 0
-    let mutable watcherEpoch = 0
+    let mutable syncMode = ArcSyncMode.Idle
+    let ownerWaiters = ResizeArray<unit -> unit>()
 
     let mutable arcPath: string option = None
     let mutable fileWatcherStateValue = FileWatcherState.Stopped
@@ -185,7 +187,6 @@ type ArcVault(window: BrowserWindow) =
 
     /// Identifies the current watcher instance. Listeners capture it and drop events once it has changed.
     member val internal FileWatcherToken: int = 0 with get, set
-    member val internal FileWatcherEventHandler: (string -> string -> unit) option = None with get, set
     /// Events that arrive while the ARC is initializing. They run after the initial tree snapshot is installed.
     member val internal BufferedFileWatcherEvents: ResizeArray<unit -> unit> = ResizeArray() with get
     /// True from the end of initialization until the buffered events are flushed. Events keep buffering meanwhile.
@@ -237,16 +238,11 @@ type ArcVault(window: BrowserWindow) =
 
     member val fileWatcherReloadArcTimeout: int option = None with get, set
     member val fileWatcherPendingEvents: ResizeArray<ArcVaultFileSystemEvent> = ResizeArray() with get
-    member val fileWatcherPendingArcMergeEvents: ResizeArray<ArcVaultFileSystemEvent> = ResizeArray() with get
-    /// The barrier stays None outside tests. The watcher path awaits it between snapshot loading and the final eligibility check.
-    member val internal WatcherMergeBarrier: (unit -> Fable.Core.JS.Promise<unit>) option = None with get, set
     /// Imported paths (lowercased absolute) mapped to the import that claimed them, and the latest claim wins.
     /// Chokidar creation events for these paths update the tree but must not re-merge the import.
     member val internal importedPathOwners: Dictionary<string, int> = Dictionary() with get
     member val internal importedPathLeases: Dictionary<int, ImportedPathLease> = Dictionary() with get
     member val internal nextImportToken: int = 0 with get, set
-    member val private isBusyWritingValue: bool = false with get, set
-    member val private fileWatcherOwnWriteArcMergeSuppressionTimeout: int option = None with get, set
     member val activeFileImport: ActiveFileImport option = None with get, set
     member val isWaitingForImportCleanup = false with get, set
     /// True only while an ARC is being opened or initially created in this vault.
@@ -254,70 +250,46 @@ type ArcVault(window: BrowserWindow) =
     member val isWaitingForOperationsOnClose = false with get, set
     member val isOperationCloseApproved = false with get, set
 
-    /// Runs ARC merges sequentially so every operation observes the result of the preceding merge.
-    member this.EnqueueArcMerge<'T>(operation: unit -> Fable.Core.JS.Promise<'T>) : Fable.Core.JS.Promise<'T> =
-        arcMergeQueue.Enqueue operation
+    member internal this.SyncMode
+        with get () = syncMode
+        and set value = syncMode <- value
 
-    /// Counts entries into write scopes. Only WithBusyWritingScope increments it.
-    /// A nested scope increments it again. Comparing it before and after an await detects a write that started and finished in between.
-    member this.WriteGeneration = writeGeneration
+    /// Runs the retry when the current owner releases the vault. The retry runs in the tick of the release, so no other caller can get in between.
+    member internal this.WaitForOwnerRelease(retry: unit -> unit) = ownerWaiters.Add retry
 
-    member internal this.IncrementWatcherDeferralCount() =
-        watcherDeferralCount <- watcherDeferralCount + 1
-        watcherDeferralCount
+    /// Ends the current ownership and lets the waiting callers try again in order.
+    member internal this.ReleaseOwnership() =
+        syncMode <- ArcSyncMode.Idle
+        let waiting = ownerWaiters.ToArray()
+        ownerWaiters.Clear()
 
-    member internal this.ResetWatcherDeferralCount() = watcherDeferralCount <- 0
+        for retry in waiting do
+            retry ()
 
-    member internal this.HasReachedWatcherDeferralLimit = watcherDeferralCount >= 3
+    /// True while an own write, an external operation or a sync owns the vault. A running check does not count.
+    member this.isBusyWriting =
+        match syncMode with
+        | ArcSyncMode.OwnWrite
+        | ArcSyncMode.ExternalOperation _
+        | ArcSyncMode.Syncing -> true
+        | ArcSyncMode.Idle
+        | ArcSyncMode.Checking -> false
 
-    /// Counts pending-state resets. The watcher controller and ARC merge compare it with a captured value.
-    member internal this.WatcherEpoch = watcherEpoch
+    /// The file versions memory was last in sync with. None until a load or a first scan set it, which only a vault opened without Startup sees.
+    member val internal KnownDisk: ArcDiskSnapshot option = None with get, set
+    /// A sync was asked for while it could not run.
+    member val internal SyncRequested = false with get, set
+    member val internal SyncRequestAnnounces = false with get, set
+    /// Changes when the root of the vault changes or the vault closes. A running check or sync compares it after each await and discards its result if it moved.
+    member val internal RootToken = 0 with get, set
 
-    member internal this.IncrementWatcherEpoch() = watcherEpoch <- watcherEpoch + 1
+    /// Scans the structural files. Tests replace it to gate or fail a scan.
+    member val internal DiskScan: bool -> string -> Fable.Core.JS.Promise<ArcDiskSnapshot> =
+        ArcDiskState.scan with get, set
 
-    /// Indicates whether the vault is currently busy writing changes to disk.
-    /// When a write finishes, watcher ARC merges stay suppressed briefly to cover delayed own-write events.
-    member this.isBusyWriting
-        with get () = this.isBusyWritingValue
-        and private set value =
-            let wasBusyWriting = this.isBusyWritingValue
-            this.isBusyWritingValue <- value
-
-            if wasBusyWriting && not value then
-                this.fileWatcherOwnWriteArcMergeSuppressionTimeout <-
-                    startFileWatcherOwnWriteArcMergeSuppression
-                        fileWatcherOwnWriteArcMergeSuppressionMs
-                        this.fileWatcherOwnWriteArcMergeSuppressionTimeout
-                        (fun () -> this.fileWatcherOwnWriteArcMergeSuppressionTimeout <- None)
-                    |> Some
-
-    /// Marks this vault busy until the supplied promise settles, including nested writes.
-    /// The increment and the flag update sit before the promise builder, paired with the finally
-    /// that undoes them. Fable.Promise runs the body in the calling tick, so the placement is for
-    /// readability. What matters is that the flag is set before the caller yields, because the
-    /// entry guards (WriteArc and its siblings, withExclusiveBusyWriting) read it right after a
-    /// scope opens.
-    member this.WithBusyWritingScope<'T>(operation: unit -> Fable.Core.JS.Promise<'T>) : Fable.Core.JS.Promise<'T> =
-        busyWritingDepth <- busyWritingDepth + 1
-        writeGeneration <- writeGeneration + 1
-
-        if busyWritingDepth = 1 then
-            this.isBusyWriting <- true
-
-        promise {
-            try
-                return! operation ()
-            finally
-                busyWritingDepth <- busyWritingDepth - 1
-
-                if busyWritingDepth = 0 then
-                    this.isBusyWriting <- false
-        }
-
-    /// Indicates whether a captured watcher event is eligible to update the in-memory ARC.
-    member this.IsFileWatcherArcMergeEligible =
-        not this.isBusyWritingValue
-        && this.fileWatcherOwnWriteArcMergeSuppressionTimeout.IsNone
+    /// Loads the ARC for a sync. Tests replace it to gate a load or count loads.
+    member val internal SnapshotLoad: string -> Fable.Core.JS.Promise<Result<ARC, string[]>> =
+        (fun arcPath -> ARC.LoadAsyncSwate arcPath) with get, set
 
     /// Indicates whether a close confirmation dialog is currently open.
     member val isCloseRequestPending: bool = false with get, set

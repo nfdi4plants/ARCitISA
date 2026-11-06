@@ -15,11 +15,6 @@ open Swate.Electron.Shared.FileIOTypes
 let eventNameEquals (expected: Chokidar.Events) (actual: string) =
     String.Equals(actual, expected.ToString(), StringComparison.OrdinalIgnoreCase)
 
-/// Whether the path exists with exactly its name, so a case-only rename counts as gone. The directory is listed
-/// only when the path exists.
-let existsSyncWithExactName (path: string) =
-    existsSync path && Array.contains (basename path) (readdirSync (dirname path))
-
 /// Builds an ARC-root-relative watcher event from the raw chokidar payload.
 let buildWatcherEvent (arcPath: string) (eventName: string) (path: string) =
     let normalizedPath = PathHelpers.normalizePath path
@@ -87,95 +82,6 @@ let createImportedWatcherEvents arcPath targetRelativePath (plannedPaths: Planne
         )
 
     Array.append (buildEvents Chokidar.Events.AddDir true folderPaths) (buildEvents Chokidar.Events.Add false filePaths)
-
-/// An admitted unlink for a recreated file becomes a change. An add or change for a file that is
-/// missing at merge time is dropped, because the file is either mid-replacement (an add follows)
-/// or deleted (a real unlink follows), and converting it would remove an entity together with
-/// unsaved edits on it.
-/// An unlink-dir event stays admitted because toArcMergeEvents expands it to canonical files.
-/// TryApplyWatcherArcMergeIfEligible then checks each file against disk.
-let normalizeAgainstDisk (events: ArcVaultFileSystemEvent list) =
-    events
-    |> List.choose (fun event ->
-        if isAbsolute event.RelativePath then
-            Some event
-        elif
-            eventNameEquals Chokidar.Events.Unlink event.EventName
-            && existsSyncWithExactName event.AbsolutePath
-        then
-            Some {
-                event with
-                    EventName = Chokidar.Events.Change.ToString()
-            }
-        elif
-            (eventNameEquals Chokidar.Events.Add event.EventName
-             || eventNameEquals Chokidar.Events.Change event.EventName)
-            && not (existsSync event.AbsolutePath)
-        then
-            None
-        else
-            Some event
-    )
-
-/// Converts raw filesystem events into ARC merge events. Unlink-dir events expand to possible canonical files.
-let toArcMergeEvents (events: ArcVaultFileSystemEvent list) =
-    events
-    |> List.collect (fun event ->
-        if eventNameEquals Chokidar.Events.Add event.EventName then
-            [
-                {
-                    EventName = EventName.Add
-                    Path = event.RelativePath
-                }
-            ]
-        elif eventNameEquals Chokidar.Events.Change event.EventName then
-            [
-                {
-                    EventName = EventName.Change
-                    Path = event.RelativePath
-                }
-            ]
-        elif eventNameEquals Chokidar.Events.Unlink event.EventName then
-            [
-                {
-                    EventName = EventName.Unlink
-                    Path = event.RelativePath
-                }
-            ]
-        elif eventNameEquals Chokidar.Events.UnlinkDir event.EventName then
-            event.RelativePath
-            |> ArcEntityPathRules.buildFallbackUnlinkPaths
-            |> List.map (fun path -> {
-                EventName = EventName.Unlink
-                Path = path
-            })
-        else
-            []
-    )
-
-/// Always queues a watcher event for the file tree. The ARC merge queue only gets events that expand to at least one
-/// merge event, so a batch of directory additions never loads the ARC. UnlinkDir expands to canonical paths and stays eligible.
-let queueFileWatcherEvent
-    isArcMergeEligible
-    arcPath
-    (pendingEvents: ResizeArray<ArcVaultFileSystemEvent>)
-    (pendingArcMergeEvents: ResizeArray<ArcVaultFileSystemEvent>)
-    eventName
-    changedPath
-    =
-    match arcPath with
-    | Some rootPath ->
-        let watcherEvent = buildWatcherEvent rootPath eventName changedPath
-        pendingEvents.Add watcherEvent
-
-        // The eligibility check runs once per event and before the expansion check, because it updates the
-        // import marks of the event's path.
-        if
-            isArcMergeEligible watcherEvent
-            && not (toArcMergeEvents [ watcherEvent ]).IsEmpty
-        then
-            pendingArcMergeEvents.Add watcherEvent
-    | None -> ()
 
 /// The directories a batch of watcher events marks dirty, without duplicates. The parent of every event path is
 /// dirty. An added directory is dirty too, because its children are new. A removed directory only dirties its parent.

@@ -172,3 +172,36 @@ Vitest.describe (
                     })
         )
 )
+
+Vitest.describe (
+    "ArcDiskState acknowledge",
+    fun () ->
+        Vitest.test (
+            "an own write moves only the entries that changed between the scans around it",
+            fun () ->
+                let known =
+                    snapshotOf false [
+                        assayPath, 10., 1.
+                        studyPath, 20., 1.
+                        "LICENSE", 5., 1.
+                    ]
+
+                // The assay was written, the license was removed by the write and the study differed before it.
+                let pre =
+                    snapshotOf false [
+                        assayPath, 10., 1.
+                        studyPath, 21., 2.
+                        "LICENSE", 5., 1.
+                    ]
+
+                let post = snapshotOf false [ assayPath, 12., 3.; studyPath, 21., 2. ]
+
+                let acknowledged = acknowledge known pre post
+
+                Vitest
+                    .expect(acknowledged |> Map.find (PathKey.ofPath false assayPath))
+                    .toEqual (post |> Map.find (PathKey.ofPath false assayPath))
+
+                Vitest.expect(diff acknowledged post).toEqual [ Changed studyPath ]
+        )
+)

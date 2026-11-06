@@ -7,6 +7,7 @@ open Main.ArcVaultState
 open Main.ArcVaultLargeObjects
 open Main.ArcVaultFileTree
 open Main.ArcVaultFileWatcher
+open Main.ArcVaultSync
 open Main.ArcVaultTypes
 open Main.FileImportAuthorization
 open Main.IPC.FileSystemIO
@@ -57,12 +58,6 @@ let private assertAssayHasNoEmbeddedDatamap arcPath identifier = promise {
     | Error errors -> return failwith (PathHelpers.formatContractErrors errors)
 }
 
-let private watcherEvent arcPath eventName relativePath : ArcVaultFileSystemEvent = {
-    EventName = eventName
-    RelativePath = relativePath
-    AbsolutePath = join [| arcPath; relativePath |]
-}
-
 let private renameRequest relativePath newName : RenamePathRequest = {
     relativePath = relativePath
     newName = newName
@@ -110,7 +105,7 @@ Vitest.describe (
     fun () ->
 
         Vitest.test (
-            "watcher ARC merge handles add, change, and unlink events while preserving dirty local state",
+            "the ARC sync handles added, changed, and removed files while preserving dirty local state",
             fun () ->
                 withTempArc
                     (fun arc -> arc.AddAssay(ArcAssay("ExistingAssay", title = "Initial title")))
@@ -122,41 +117,37 @@ Vitest.describe (
                         vault.path <- Some arcPath
                         vault.SetArc loadedArc
                         vault.RefreshHasUnsavedArcChangesFlag()
+                        do! TestHelpers.seedKnownDisk vault
 
                         let! diskArcForAdd = loadArcAsync arcPath
                         diskArcForAdd.AddAssay(ArcAssay("DiskAssay", title = "Added on disk"))
                         do! diskArcForAdd.UpdateAsync arcPath
 
-                        do!
-                            vault.TriggerArcInMemoryMergeOnFileWatcherEvents [
-                                watcherEvent arcPath "add" "assays/DiskAssay/isa.assay.xlsx"
-                            ]
+                        do! vault.RequestSync true
 
                         let afterAdd = vault.arc.Value
                         Vitest.expect(afterAdd.ContainsAssay("DiskAssay")).toBe (true)
                         Vitest.expect(afterAdd.Title).toEqual (Some "Unsaved local investigation title")
 
+                        do! Promise.sleep 20
                         let! diskArcForChange = loadArcAsync arcPath
                         diskArcForChange.GetAssay("DiskAssay").Title <- Some "Changed on disk"
                         do! diskArcForChange.UpdateAsync arcPath
 
-                        do!
-                            vault.TriggerArcInMemoryMergeOnFileWatcherEvents [
-                                watcherEvent arcPath "change" "assays/DiskAssay/isa.assay.xlsx"
-                            ]
+                        do! vault.RequestSync true
 
                         let afterChange = vault.arc.Value
                         Vitest.expect(afterChange.GetAssay("DiskAssay").Title).toEqual (Some "Changed on disk")
                         Vitest.expect(afterChange.Title).toEqual (Some "Unsaved local investigation title")
 
-                        let! diskArcForDelete = loadArcAsync arcPath
-                        diskArcForDelete.RemoveAssay("ExistingAssay")
-                        do! diskArcForDelete.UpdateAsync arcPath
+                        do! Promise.sleep 20
 
                         do!
-                            vault.TriggerArcInMemoryMergeOnFileWatcherEvents [
-                                watcherEvent arcPath "unlink" "assays/ExistingAssay/isa.assay.xlsx"
-                            ]
+                            rmAsync
+                                (join [| arcPath; "assays"; "ExistingAssay" |])
+                                (RmOptions(recursive = true, force = true))
+
+                        do! vault.RequestSync true
 
                         let afterDelete = vault.arc.Value
                         Vitest.expect(afterDelete.ContainsAssay("ExistingAssay")).toBe (false)
@@ -166,7 +157,7 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "explicit ARC merge reports reload failures and preserves the in-memory ARC",
+            "a failed sync preserves the in-memory ARC and a later sync loads the fixed file",
             fun () ->
                 withTempArc
                     ignore
@@ -177,19 +168,26 @@ Vitest.describe (
                         let vault = ArcVault(testWindow ())
                         vault.path <- Some arcPath
                         vault.SetArc loadedArc
+                        do! TestHelpers.seedKnownDisk vault
 
                         let investigationPath = join [| arcPath; "isa.investigation.xlsx" |]
-                        do! writeFileAsync investigationPath "not an XLSX workbook" TextEncoding.Utf8
+                        let! diskArc = loadArcAsync arcPath
+                        diskArc.Title <- Some "Fixed on disk"
+                        do! Promise.sleep 20
+                        do! diskArc.UpdateAsync arcPath
+                        let! fixedBytes = readFileBufferAsync investigationPath
 
-                        match!
-                            vault.TryTriggerArcInMemoryMergeOnFileWatcherEvents [
-                                watcherEvent arcPath "change" "isa.investigation.xlsx"
-                            ]
-                        with
-                        | Ok() -> return failwith "Expected malformed ARC content to fail synchronization."
-                        | Error error ->
-                            Vitest.expect(error.Message.Length > 0).toBe (true)
-                            Vitest.expect(vault.arc.Value.Title).toEqual (Some "Unsaved in-memory title")
+                        do! Promise.sleep 20
+                        do! writeFileAsync investigationPath "not an XLSX workbook" TextEncoding.Utf8
+                        do! vault.RequestSync true
+
+                        Vitest.expect(vault.arc.Value.Title).toEqual (Some "Unsaved in-memory title")
+
+                        do! Promise.sleep 20
+                        do! TestHelpers.writeBufferAsync investigationPath fixedBytes
+                        do! vault.RequestSync true
+
+                        Vitest.expect(vault.arc.Value.Title).toEqual (Some "Fixed on disk")
                     })
         )
 

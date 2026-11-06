@@ -157,6 +157,106 @@ module InMemoryChangesExtensions =
                 syncDataMapStaticHash sourceRun.Datamap targetRun.Datamap
             )
 
+    /// The static hashes of an ARC by identifier, so they survive an edit that replaces an entity object.
+    type ArcStaticHashes = {
+        Arc: int
+        License: int option
+        Studies: Map<string, int * int option>
+        Assays: Map<string, int * int option>
+        Workflows: Map<string, int * int option>
+        Runs: Map<string, int * int option>
+    }
+
+    let private captureEntityHashes
+        (entities: seq<'Entity>)
+        (getIdentifier: 'Entity -> string)
+        (getStaticHash: 'Entity -> int)
+        (getDataMap: 'Entity -> Datamap option)
+        =
+        entities
+        |> Seq.map (fun entity ->
+            getIdentifier entity, (getStaticHash entity, getDataMap entity |> Option.map (fun dm -> dm.StaticHash))
+        )
+        |> Map.ofSeq
+
+    let captureArcStaticHashes (arc: ARC) : ArcStaticHashes = {
+        Arc = arc.StaticHash
+        License = arc.License |> Option.map (fun license -> license.StaticHash)
+        Studies =
+            captureEntityHashes
+                arc.Studies
+                (fun (e: ArcStudy) -> e.Identifier)
+                (fun e -> e.StaticHash)
+                (fun e -> e.Datamap)
+        Assays =
+            captureEntityHashes
+                arc.Assays
+                (fun (e: ArcAssay) -> e.Identifier)
+                (fun e -> e.StaticHash)
+                (fun e -> e.Datamap)
+        Workflows =
+            captureEntityHashes
+                arc.Workflows
+                (fun (e: ArcWorkflow) -> e.Identifier)
+                (fun e -> e.StaticHash)
+                (fun e -> e.Datamap)
+        Runs =
+            captureEntityHashes arc.Runs (fun (e: ArcRun) -> e.Identifier) (fun e -> e.StaticHash) (fun e -> e.Datamap)
+    }
+
+    let private restoreEntityHashes
+        (entities: seq<'Entity>)
+        (saved: Map<string, int * int option>)
+        (getIdentifier: 'Entity -> string)
+        (setStaticHash: 'Entity -> int -> unit)
+        (getDataMap: 'Entity -> Datamap option)
+        =
+        for entity in entities do
+            match saved |> Map.tryFind (getIdentifier entity) with
+            | None -> ()
+            | Some(hash, savedDataMapHash) ->
+                setStaticHash entity hash
+
+                match getDataMap entity, savedDataMapHash with
+                | Some dataMap, Some dataMapHash -> dataMap.StaticHash <- dataMapHash
+                | _ -> ()
+
+    /// Restores the hashes captured before GetUpdateContracts moved them. An entity without a captured hash stays as it is.
+    let restoreArcStaticHashes (saved: ArcStaticHashes) (arc: ARC) : unit =
+        arc.StaticHash <- saved.Arc
+
+        match arc.License, saved.License with
+        | Some license, Some hash -> license.StaticHash <- hash
+        | _ -> ()
+
+        restoreEntityHashes
+            arc.Studies
+            saved.Studies
+            (fun (e: ArcStudy) -> e.Identifier)
+            (fun e hash -> e.StaticHash <- hash)
+            (fun e -> e.Datamap)
+
+        restoreEntityHashes
+            arc.Assays
+            saved.Assays
+            (fun (e: ArcAssay) -> e.Identifier)
+            (fun e hash -> e.StaticHash <- hash)
+            (fun e -> e.Datamap)
+
+        restoreEntityHashes
+            arc.Workflows
+            saved.Workflows
+            (fun (e: ArcWorkflow) -> e.Identifier)
+            (fun e hash -> e.StaticHash <- hash)
+            (fun e -> e.Datamap)
+
+        restoreEntityHashes
+            arc.Runs
+            saved.Runs
+            (fun (e: ArcRun) -> e.Identifier)
+            (fun e hash -> e.StaticHash <- hash)
+            (fun e -> e.Datamap)
+
     /// Copies ARC and preserves static hashes so unchanged entities are not treated as newly created.
     let copyArcPreservingStaticHashes (arc: ARC) : ARC =
         let copiedArc = arc.Copy()

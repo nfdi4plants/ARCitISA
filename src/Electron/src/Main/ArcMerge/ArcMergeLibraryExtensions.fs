@@ -27,7 +27,22 @@ module ArcMergeHelper =
     }
 
     let private cloneDataMapOption (dataMap: Datamap option) : Datamap option =
-        dataMap |> Option.map DataMapCopyWorkaround.copy
+        dataMap
+        |> Option.map (fun source ->
+            let clone = DataMapCopyWorkaround.copy source
+            clone.StaticHash <- source.StaticHash
+            clone
+        )
+
+    let private cloneDataMapWithCleanHash (source: Datamap) : Datamap =
+        let clone = DataMapCopyWorkaround.copy source
+        clone.StaticHash <- cleanDataMapStaticHash source
+        clone
+
+    let private copyLicense (license: License) : License =
+        let clone = License(license.Type, license.Content, license.Path)
+        clone.StaticHash <- license.GetHashCode()
+        clone
 
     let internal parseFileEvents (events: FileEvent list) : ParsedFileEvent list =
         events
@@ -73,7 +88,6 @@ module ArcMergeHelper =
         arcLocal.Contacts <- remoteSnapshot.Contacts
         arcLocal.Comments <- remoteSnapshot.Comments
         arcLocal.Remarks <- remoteSnapshot.Remarks
-        arcLocal.License <- remoteSnapshot.License
 
     let private tryFindEntityIndex id getIdentifier entities =
         entities |> Seq.tryFindIndex (fun entity -> getIdentifier entity = id)
@@ -92,30 +106,41 @@ module ArcMergeHelper =
         (copyEntity: 'entity -> 'entity)
         (getDataMap: 'entity -> Datamap option)
         (setDataMap: 'entity -> Datamap option -> unit)
+        (getLightHash: 'entity -> int)
+        (getStaticHash: 'entity -> int)
+        (setStaticHash: 'entity -> int -> unit)
         =
-        let copyEntityPreservingDataMapLabels sourceEntity =
+        // The disk copy carries the hashes of the disk content, so it counts as saved.
+        let copyEntityFromDisk sourceEntity =
             let targetEntity = copyEntity sourceEntity
 
             match getDataMap sourceEntity, getDataMap targetEntity with
-            | Some source, Some target -> DataMapCopyWorkaround.preserveLabels source target
+            | Some source, Some target ->
+                DataMapCopyWorkaround.preserveLabels source target
+                target.StaticHash <- cleanDataMapStaticHash source
             | _ -> ()
 
+            setStaticHash targetEntity (getLightHash sourceEntity)
             targetEntity
 
         match tryGetRemote id with
         | None -> ()
         | Some remoteEntity ->
             match tryFindLocalIndex id with
-            | None -> addLocal (copyEntityPreservingDataMapLabels remoteEntity)
+            | None -> addLocal (copyEntityFromDisk remoteEntity)
             | Some idx ->
-                let discCopy = copyEntityPreservingDataMapLabels remoteEntity
+                let localEntity = getLocal idx
 
-                if not hasDataMapEvent then
-                    let preservedDataMap = getLocal idx |> getDataMap |> cloneDataMapOption
+                // A touched file with identical content keeps the local edits.
+                if getLightHash remoteEntity <> getStaticHash localEntity then
+                    let discCopy = copyEntityFromDisk remoteEntity
 
-                    setDataMap discCopy preservedDataMap
+                    if not hasDataMapEvent then
+                        let preservedDataMap = localEntity |> getDataMap |> cloneDataMapOption
 
-                setLocal idx discCopy
+                        setDataMap discCopy preservedDataMap
+
+                    setLocal idx discCopy
 
     let private applyEntityUnlink (id: string) (containsLocal: string -> bool) (removeLocal: string -> unit) =
         if containsLocal id then
@@ -130,7 +155,11 @@ module ArcMergeHelper =
         =
         match tryGetLocal id, tryGetRemote id with
         | Some localEntity, Some remoteEntity ->
-            remoteEntity |> getDataMap |> cloneDataMapOption |> setDataMap localEntity
+            match getDataMap localEntity, getDataMap remoteEntity with
+            | Some localDataMap, Some remoteDataMap when cleanDataMapStaticHash remoteDataMap = localDataMap.StaticHash ->
+                ()
+            | _, Some remoteDataMap -> setDataMap localEntity (Some(cloneDataMapWithCleanHash remoteDataMap))
+            | _, None -> setDataMap localEntity None
         | _ -> ()
 
     let private applyDataMapUnlink
@@ -150,8 +179,12 @@ module ArcMergeHelper =
         (eventName: EventName)
         : unit =
         match entityRef, eventName with
-        | ArcEntityRef.Investigation, (EventName.Add | EventName.Change) -> copyInvestigationFields arcLocal arcRemote
+        | ArcEntityRef.Investigation, (EventName.Add | EventName.Change) ->
+            if arcRemote.GetLightHashCode() <> arcLocal.StaticHash then
+                copyInvestigationFields arcLocal arcRemote
+                arcLocal.StaticHash <- arcRemote.GetLightHashCode()
         | ArcEntityRef.Investigation, EventName.Unlink -> ()
+        | ArcEntityRef.License, _ -> arcLocal.License <- arcRemote.License |> Option.map copyLicense
         | ArcEntityRef.Assay id, (EventName.Add | EventName.Change) ->
             applyEntityAddOrChange
                 id
@@ -167,6 +200,9 @@ module ArcMergeHelper =
                 (fun (assay: ArcAssay) -> assay.Copy())
                 (fun (assay: ArcAssay) -> assay.Datamap)
                 (fun (assay: ArcAssay) dataMap -> assay.Datamap <- dataMap)
+                (fun (assay: ArcAssay) -> assay.GetLightHashCode())
+                (fun (assay: ArcAssay) -> assay.StaticHash)
+                (fun (assay: ArcAssay) hash -> assay.StaticHash <- hash)
         | ArcEntityRef.Assay id, EventName.Unlink ->
             applyEntityUnlink id (fun id -> arcLocal.ContainsAssay(id)) (fun id -> arcLocal.RemoveAssay(id))
         | ArcEntityRef.AssayDataMap id, (EventName.Add | EventName.Change) ->
@@ -196,6 +232,9 @@ module ArcMergeHelper =
                 (fun (study: ArcStudy) -> study.Copy())
                 (fun (study: ArcStudy) -> study.Datamap)
                 (fun (study: ArcStudy) dataMap -> study.Datamap <- dataMap)
+                (fun (study: ArcStudy) -> study.GetLightHashCode())
+                (fun (study: ArcStudy) -> study.StaticHash)
+                (fun (study: ArcStudy) hash -> study.StaticHash <- hash)
         | ArcEntityRef.Study id, EventName.Unlink ->
             applyEntityUnlink id (fun id -> arcLocal.ContainsStudy(id)) (fun id -> arcLocal.RemoveStudy(id))
         | ArcEntityRef.StudyDataMap id, (EventName.Add | EventName.Change) ->
@@ -226,6 +265,9 @@ module ArcMergeHelper =
                 )
                 (fun (run: ArcRun) -> run.Datamap)
                 (fun (run: ArcRun) dataMap -> run.Datamap <- dataMap)
+                (fun (run: ArcRun) -> run.GetLightHashCode())
+                (fun (run: ArcRun) -> run.StaticHash)
+                (fun (run: ArcRun) hash -> run.StaticHash <- hash)
         | ArcEntityRef.Run id, EventName.Unlink ->
             applyEntityUnlink id (fun id -> arcLocal.ContainsRun(id)) (fun id -> arcLocal.DeleteRun(id))
         | ArcEntityRef.RunDataMap id, (EventName.Add | EventName.Change) ->
@@ -259,6 +301,9 @@ module ArcMergeHelper =
                 )
                 (fun (workflow: ArcWorkflow) -> workflow.Datamap)
                 (fun (workflow: ArcWorkflow) dataMap -> workflow.Datamap <- dataMap)
+                (fun (workflow: ArcWorkflow) -> workflow.GetLightHashCode())
+                (fun (workflow: ArcWorkflow) -> workflow.StaticHash)
+                (fun (workflow: ArcWorkflow) hash -> workflow.StaticHash <- hash)
         | ArcEntityRef.Workflow id, EventName.Unlink ->
             applyEntityUnlink id (fun id -> arcLocal.ContainsWorkflow(id)) (fun id -> arcLocal.DeleteWorkflow(id))
         | ArcEntityRef.WorkflowDataMap id, (EventName.Add | EventName.Change) ->

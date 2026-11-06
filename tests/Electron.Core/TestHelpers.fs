@@ -254,3 +254,33 @@ let loadWholeTreeAsync (root: string) (caseInsensitive: bool) : JS.Promise<Index
 
     return tree
 }
+
+/// Sets the known disk versions of a vault to the current files, as a load does. A test makes its external change afterwards.
+let seedKnownDisk (vault: ArcVault) : JS.Promise<unit> = promise {
+    let! snapshot = vault.DiskScan vault.isCaseInsensitive vault.path.Value
+    vault.KnownDisk <- Some snapshot
+}
+
+[<Import("utimes", "fs/promises")>]
+let private utimes (_path: string) (_atime: float) (_mtime: float) : JS.Promise<unit> = jsNative
+
+/// Moves the modified time of a file forward without changing its content.
+let touchFileAsync (path: string) : JS.Promise<unit> = promise {
+    let later: float = emitJsExpr () "Date.now() / 1000 + 5"
+    do! utimes path later later
+}
+
+/// Polls until the condition holds, up to five seconds.
+let waitForCondition (description: string) (condition: unit -> bool) : JS.Promise<unit> = promise {
+    let mutable attempts = 0
+
+    while attempts < 250 && not (condition ()) do
+        do! Promise.sleep 20
+        attempts <- attempts + 1
+
+    if not (condition ()) then
+        failwithf "Timed out waiting for: %s." description
+}
+
+[<Import("writeFile", "fs/promises")>]
+let writeBufferAsync (_path: string) (_data: obj) : JS.Promise<unit> = jsNative

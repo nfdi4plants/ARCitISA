@@ -8,6 +8,7 @@ open Main.ArcVaultState
 open Main.ArcVaultLargeObjects
 open Main.ArcVaultFileTree
 open Main.ArcVaultFileWatcher
+open Main.ArcVaultSync
 open Main.ArcVaultTypes
 open Main.Bindings.Filesystem
 open Main.Bindings.Path
@@ -910,7 +911,7 @@ Vitest.describe (
                         let api = Main.IPC.ArcVaultsApi.api (TestHelpers.ipcEvent 85)
                         let! _ = api.loadDirectory "assays/A1/dataset"
                         let gate, release = TestHelpers.deferred ()
-                        let write = vault.WithBusyWritingScope(fun () -> gate)
+                        let write = vault.WithExternalOperationScope(false, fun () -> gate)
 
                         do!
                             writeAsync (

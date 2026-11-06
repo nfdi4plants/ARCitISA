@@ -311,9 +311,9 @@ let private withMutatingSessionUsingRefreshPredicate
         | Error error -> return Error error
         | Ok(vault, arcPath) ->
             return!
-                withBusyWritingScope
-                    vault
-                    (fun () -> promise {
+                vault.WithExternalOperationScope(
+                    true,
+                    fun () -> promise {
                         let! result = withSession operationName event operationId true operation mapValue
 
                         if shouldRefresh result then
@@ -321,7 +321,8 @@ let private withMutatingSessionUsingRefreshPredicate
                             vault.InvalidateLargeObjectIndex()
 
                         return result
-                    })
+                    }
+                )
     }
 
 /// Same as withSession, with the vault marked busy for the duration and the file tree
@@ -655,9 +656,9 @@ let api (event: IpcMainInvokeEvent) : IVersionControlApi = {
                 }
 
                 return!
-                    withBusyWritingScope
-                        vault
-                        (fun () -> promise {
+                    vault.WithExternalOperationScope(
+                        true,
+                        fun () -> promise {
                             let! bound =
                                 runTracked
                                     host
@@ -713,7 +714,8 @@ let api (event: IpcMainInvokeEvent) : IVersionControlApi = {
                                 vault.InvalidateLargeObjectIndex()
 
                             return result
-                        })
+                        }
+                    )
         }
     cancelOperation =
         fun key -> promise {

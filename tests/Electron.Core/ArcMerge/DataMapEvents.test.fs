@@ -2,6 +2,7 @@ module ElectronCore.ArcMerge.DataMapEventsTests
 
 open ARCtrl
 open Main.ArcMerge
+open Main.ARCtrlExtensions
 open Vitest
 
 let private datamapEvent name folder id = {
@@ -168,5 +169,24 @@ Vitest.describe (
                     ARC.merge arcLocal (arcLocal.Copy()) [ datamapEvent EventName.Unlink "workflows" "My Workflow" ]
 
                 Vitest.expect(merged.Workflows.[0].Datamap.IsNone).toBe (true)
+        )
+
+        Vitest.test (
+            "change event on assay datamap: a touched file with the content of the local baseline keeps the local DataMap",
+            fun () ->
+                let arcLocal, arcRemote = MockData.createTwoCleanCopies ()
+                let remoteDataMap = DataMap.init ()
+                remoteDataMap.DataContexts.Add(DataContext(Label = Some "Base label"))
+                arcRemote.Assays.[0].DataMap <- Some remoteDataMap
+                let localDataMap = DataMap.init ()
+                localDataMap.DataContexts.Add(DataContext(Label = Some "Base label"))
+                localDataMap.StaticHash <- cleanDataMapStaticHash remoteDataMap
+                arcLocal.Assays.[0].DataMap <- Some localDataMap
+                arcLocal.Assays.[0].DataMap.Value.DataContexts.[0].Label <- Some "Local label"
+
+                let merged =
+                    ARC.merge arcLocal arcRemote [ datamapEvent EventName.Change "assays" "My Assay" ]
+
+                Vitest.expect(merged.Assays.[0].DataMap.Value.DataContexts.[0].Label).toEqual (Some "Local label")
         )
 )

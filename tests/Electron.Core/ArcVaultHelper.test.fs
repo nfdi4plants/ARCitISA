@@ -11,6 +11,7 @@ open Main.ArcVaultState
 open Main.ArcVaultLargeObjects
 open Main.ArcVaultFileTree
 open Main.ArcVaultFileWatcher
+open Main.ArcVaultSync
 open Main.ArcVaultHelper
 open Main.ArcVaultTypes
 open Main.Bindings.Filesystem
@@ -67,26 +68,6 @@ let private writeWatcherTextFileAsync (filePath: string) (content: string) =
 let private recordingWatcherApi (loadingChanges: ResizeArray<bool>) : IArcFileWatcherApi = {
     IsLoadingChanges = fun isLoading -> loadingChanges.Add isLoading
 }
-
-type private WatcherLoadingCall = {
-    IsLoading: bool
-    PendingEvents: int
-    PendingArcMergeEvents: int
-}
-
-let private recordingWatcherApiWithPendingState
-    (vault: ArcVault)
-    (loadingCalls: ResizeArray<WatcherLoadingCall>)
-    : IArcFileWatcherApi =
-    {
-        IsLoadingChanges =
-            fun isLoading ->
-                loadingCalls.Add {
-                    IsLoading = isLoading
-                    PendingEvents = vault.fileWatcherPendingEvents.Count
-                    PendingArcMergeEvents = vault.fileWatcherPendingArcMergeEvents.Count
-                }
-    }
 
 let private nowMs () : float = emitJsExpr () "Date.now()"
 
@@ -149,9 +130,9 @@ let private runFileImport
     (vault: ArcVault)
     (requestId, operation: Main.Bindings.Abort.IAbortSignal -> JS.Promise<Result<ImportExternalFilesResult, exn>>)
     =
-    Main.IPC.IPCHelper.withExclusiveBusyWriting
-        vault
-        (fun () ->
+    vault.TryWithExclusiveExternalOperationScope(
+        false,
+        fun () ->
             FileImportCoordinator.run
                 vault.window
                 requestId
@@ -159,30 +140,59 @@ let private runFileImport
                 (fun () -> vault.activeFileImport)
                 (fun value -> vault.activeFileImport <- value)
                 operation
-        )
+    )
 
 Vitest.describe (
-    "ArcVault merge queue",
+    "ArcVault write scopes",
     fun () ->
         Vitest.test (
-            "nested busy scopes release the flag with the outermost scope",
+            "nested external operation scopes release the vault with the outermost scope",
             fun () -> promise {
                 let vault = ArcVault(TestHelpers.testWindow ())
 
                 do!
-                    Main.IPC.IPCHelper.withBusyWritingScope
-                        vault
-                        (fun () -> promise {
+                    vault.WithExternalOperationScope(
+                        false,
+                        fun () -> promise {
                             Vitest.expect(vault.isBusyWriting).toBe true
 
                             do!
-                                vault.WithBusyWritingScope(fun () -> promise {
-                                    Vitest.expect(vault.isBusyWriting).toBe true
-                                })
+                                vault.WithExternalOperationScope(
+                                    false,
+                                    fun () -> promise { Vitest.expect(vault.isBusyWriting).toBe true }
+                                )
 
                             Vitest.expect(vault.isBusyWriting).toBe true
-                        })
+                        }
+                    )
 
+                Vitest.expect(vault.isBusyWriting).toBe false
+            }
+        )
+
+        Vitest.test (
+            "overlapping external operations release the vault with the last one",
+            fun () -> promise {
+                let vault = ArcVault(TestHelpers.testWindow ())
+                let mutable releaseOuter: unit -> unit = ignore
+                let mutable releaseInner: unit -> unit = ignore
+
+                let outerGate =
+                    JS.Constructors.Promise.Create(fun resolve _ -> releaseOuter <- (fun () -> resolve ()))
+
+                let innerGate =
+                    JS.Constructors.Promise.Create(fun resolve _ -> releaseInner <- (fun () -> resolve ()))
+
+                let outer = vault.WithExternalOperationScope(false, fun () -> outerGate)
+                let inner = vault.WithExternalOperationScope(false, fun () -> innerGate)
+                Vitest.expect(vault.isBusyWriting).toBe true
+
+                releaseOuter ()
+                do! outer
+                Vitest.expect(vault.isBusyWriting).toBe true
+
+                releaseInner ()
+                do! inner
                 Vitest.expect(vault.isBusyWriting).toBe false
             }
         )
@@ -562,90 +572,26 @@ Vitest.describe (
                 let mutable operationStarted = false
 
                 do!
-                    vault.WithBusyWritingScope(fun () -> promise {
-                        match!
-                            runFileImport
-                                vault
-                                ("blocked-import",
-                                 fun _ ->
-                                     operationStarted <- true
-                                     JS.Constructors.Promise.resolve (Ok(ImportExternalFilesResult.Completed [||])))
-                        with
-                        | Ok _ -> return failwith "Expected the import to be rejected while the vault is busy."
-                        | Error error ->
-                            Vitest.expect(error.Message).toContain ("still saving")
-                            Vitest.expect(operationStarted).toBe (false)
-                            Vitest.expect(vault.isBusyWriting).toBe (true)
-                    })
-
-                Vitest.expect(vault.isBusyWriting).toBe (false)
-            }
-        )
-
-        Vitest.test (
-            "runs overlapping merges sequentially so the second observes the first result",
-            fun () -> promise {
-                let vault = ArcVault(TestHelpers.testWindow ())
-                let executionOrder = ResizeArray<string>()
-                let mutable mergeResult = 0
-                let mutable releaseFirstMerge = ignore
-
-                let firstMergeGate =
-                    JS.Constructors.Promise.Create(fun resolve _ -> releaseFirstMerge <- fun () -> resolve ())
-
-                let firstMerge =
-                    vault.EnqueueArcMerge(fun () -> promise {
-                        executionOrder.Add "first-start"
-                        do! firstMergeGate
-                        mergeResult <- 1
-                        executionOrder.Add "first-end"
-                    })
-
-                let secondMerge =
-                    vault.EnqueueArcMerge(fun () -> promise {
-                        executionOrder.Add "second-start"
-                        Vitest.expect(mergeResult).toBe (1)
-                        mergeResult <- 2
-                        executionOrder.Add "second-end"
-                    })
-
-                releaseFirstMerge ()
-                do! firstMerge
-                do! secondMerge
-
-                Vitest
-                    .expect(executionOrder.ToArray())
-                    .toEqual (
-                        [|
-                            "first-start"
-                            "first-end"
-                            "second-start"
-                            "second-end"
-                        |]
+                    vault.WithExternalOperationScope(
+                        false,
+                        fun () -> promise {
+                            match!
+                                runFileImport
+                                    vault
+                                    ("blocked-import",
+                                     fun _ ->
+                                         operationStarted <- true
+                                         JS.Constructors.Promise.resolve (Ok(ImportExternalFilesResult.Completed [||])))
+                            with
+                            | Ok _ -> return failwith "Expected the import to be rejected while the vault is busy."
+                            | Error error ->
+                                Vitest.expect(error.Message).toContain ("still saving")
+                                Vitest.expect(operationStarted).toBe (false)
+                                Vitest.expect(vault.isBusyWriting).toBe (true)
+                        }
                     )
 
-                Vitest.expect(mergeResult).toBe (2)
-            }
-        )
-
-        Vitest.test (
-            "continues processing after a merge operation fails",
-            fun () -> promise {
-                let vault = ArcVault(TestHelpers.testWindow ())
-                let mutable continued = false
-
-                let failedMerge =
-                    vault.EnqueueArcMerge(fun () -> promise { return raise (exn "Expected merge failure") })
-
-                try
-                    do! failedMerge
-                with error ->
-                    Vitest.expect(error.Message).toContain ("Expected merge failure")
-
-                do! Promise.sleep 0
-                let followingMerge = vault.EnqueueArcMerge(fun () -> promise { continued <- true })
-                do! followingMerge
-                Vitest.expect(continued).toBe (true)
+                Vitest.expect(vault.isBusyWriting).toBe (false)
             }
         )
 
@@ -883,12 +829,38 @@ let private waitForWatcherIdle (loadingChanges: ResizeArray<bool>) = promise {
     Vitest.expect(loadingChanges.Contains false).toBe (true)
 }
 
-// These pin known sync bugs. Vitest reports them as failures once a fix makes them pass. Each becomes a
-// normal test with the phase of docs/maintainer/ArcFileSyncPlan.md that fixes it.
+/// A temp ARC with a loaded vault whose known disk versions are set, so an external change shows as a difference.
+let private withSyncVault (seed: ARC -> unit) (body: ArcVault -> string -> JS.Promise<unit>) =
+    withTempArc
+        seed
+        (fun arcPath -> promise {
+            let! loadedArc = TestHelpers.loadArcAsync arcPath
+            let vault = ArcVault(TestHelpers.testWindow ())
+            vault.path <- Some arcPath
+            vault.SetArc loadedArc
+            do! TestHelpers.seedKnownDisk vault
+            do! body vault arcPath
+        })
+
+/// Writes a new title of an assay to its workbook, as a program outside the app does.
+let private changeAssayOnDisk (arcPath: string) (identifier: string) (title: string) = promise {
+    // The size of the workbook can stay the same, so the modified time has to differ.
+    do! Promise.sleep 20
+    let! diskArc = TestHelpers.loadArcAsync arcPath
+    diskArc.GetAssay(identifier).Title <- Some title
+    do! diskArc.UpdateAsync arcPath
+}
+
+let private readWorkbookTitleAsync (arcPath: string) (identifier: string) = promise {
+    let! diskArc = TestHelpers.loadArcAsync arcPath
+    return diskArc.GetAssay(identifier).Title
+}
+
+// The pinned test stays an expected failure until the phase of docs/maintainer/ArcFileSyncPlan.md that fixes it.
 Vitest.describe (
     "ARC file sync",
     fun () ->
-        Vitest.Test.fails (
+        Vitest.test (
             "an edit made after a Save survives the late watcher event of that Save",
             fun () ->
                 withTempArc
@@ -899,6 +871,14 @@ Vitest.describe (
                         vault.path <- Some arcPath
                         vault.SetArc loadedArc
                         do! vault.EnqueueFileTreeScan()
+
+                        let loadCalls = ref 0
+                        let realLoad = vault.SnapshotLoad
+
+                        vault.SnapshotLoad <-
+                            fun path ->
+                                loadCalls.Value <- loadCalls.Value + 1
+                                realLoad path
 
                         vault.arc.Value.GetAssay("SavedAssay").Title <- Some "Saved title"
 
@@ -924,6 +904,7 @@ Vitest.describe (
                             .toEqual (Some "Typed after the Save")
 
                         Vitest.expect(vault.arc.Value.hasInMemoryChanges ()).toBe (true)
+                        Vitest.expect(loadCalls.Value).toBe 0
                     })
         )
 
@@ -966,7 +947,7 @@ Vitest.describe (
                     })
         )
 
-        Vitest.Test.fails (
+        Vitest.test (
             "an external edit whose event arrives during a write loads after the write",
             fun () ->
                 withTempArc
@@ -976,17 +957,16 @@ Vitest.describe (
                         let vault = ArcVault(TestHelpers.testWindow ())
                         vault.path <- Some arcPath
                         vault.SetArc loadedArc
+                        do! TestHelpers.seedKnownDisk vault
 
-                        let! diskArc = TestHelpers.loadArcAsync arcPath
-                        diskArc.GetAssay("DiskAssay").Title <- Some "Changed on disk"
-                        do! diskArc.UpdateAsync arcPath
+                        do! changeAssayOnDisk arcPath "DiskAssay" "Changed on disk"
 
                         let mutable releaseWrite = ignore
 
                         let writeGate =
-                            JS.Constructors.Promise.Create(fun resolve _ -> releaseWrite <- fun () -> resolve ())
+                            JS.Constructors.Promise.Create(fun resolve _ -> releaseWrite <- fun () -> resolve (Ok()))
 
-                        let writeScope = vault.WithBusyWritingScope(fun () -> writeGate)
+                        let writeScope = vault.WithOwnWriteScope(false, fun () -> writeGate)
 
                         let loadingChanges = ResizeArray<bool>()
 
@@ -996,12 +976,12 @@ Vitest.describe (
                         handleFileEvent "change" (join [| arcPath; "assays/DiskAssay/isa.assay.xlsx" |])
 
                         releaseWrite ()
-                        do! writeScope
+                        let! _ = writeScope
                         do! expectWatcherAssayTitle vault "Changed on disk"
                     })
         )
 
-        Vitest.Test.fails (
+        Vitest.test (
             "a failed Save stays unsaved and its retry writes the edit",
             fun () ->
                 withTempArc
@@ -1039,165 +1019,508 @@ Vitest.describe (
                         Vitest.expect(vault.arc.Value.hasInMemoryChanges ()).toBe (false)
                     })
         )
+
+        Vitest.test (
+            "an external change to an entity with unsaved edits replaces those edits",
+            fun () ->
+                withSyncVault
+                    (fun arc -> arc.AddAssay(ArcAssay("DiskAssay", title = "Old title")))
+                    (fun vault arcPath -> promise {
+                        vault.arc.Value.GetAssay("DiskAssay").Title <- Some "Local edit"
+                        vault.RefreshHasUnsavedArcChangesFlag()
+                        do! changeAssayOnDisk arcPath "DiskAssay" "Disk title"
+
+                        do! vault.RequestSync true
+
+                        Vitest.expect(vault.arc.Value.GetAssay("DiskAssay").Title).toEqual (Some "Disk title")
+                        Vitest.expect(vault.arc.Value.hasInMemoryChanges ()).toBe false
+                    })
+        )
+
+        Vitest.test (
+            "an external change to another entity keeps the local edits",
+            fun () ->
+                withSyncVault
+                    (fun arc ->
+                        arc.AddAssay(ArcAssay("EditedAssay", title = "Old title"))
+                        arc.AddAssay(ArcAssay("OtherAssay", title = "Old title"))
+                    )
+                    (fun vault arcPath -> promise {
+                        vault.arc.Value.GetAssay("EditedAssay").Title <- Some "Local edit"
+                        vault.RefreshHasUnsavedArcChangesFlag()
+                        do! changeAssayOnDisk arcPath "OtherAssay" "Disk title"
+
+                        do! vault.RequestSync true
+
+                        Vitest.expect(vault.arc.Value.GetAssay("OtherAssay").Title).toEqual (Some "Disk title")
+                        Vitest.expect(vault.arc.Value.GetAssay("EditedAssay").Title).toEqual (Some "Local edit")
+                        Vitest.expect(vault.arc.Value.GetAssay("EditedAssay").hasInMemoryChanges ()).toBe true
+                        Vitest.expect(vault.arc.Value.GetAssay("OtherAssay").hasInMemoryChanges ()).toBe false
+                    })
+        )
+
+        Vitest.test (
+            "a touched file with identical content keeps the local edits",
+            fun () ->
+                withSyncVault
+                    (fun arc -> arc.AddAssay(ArcAssay("DiskAssay", title = "Old title")))
+                    (fun vault arcPath -> promise {
+                        vault.arc.Value.GetAssay("DiskAssay").Title <- Some "Local edit"
+                        vault.RefreshHasUnsavedArcChangesFlag()
+
+                        do! TestHelpers.touchFileAsync (join [| arcPath; "assays/DiskAssay/isa.assay.xlsx" |])
+
+                        do! vault.RequestSync true
+
+                        Vitest.expect(vault.arc.Value.GetAssay("DiskAssay").Title).toEqual (Some "Local edit")
+                        Vitest.expect(vault.arc.Value.hasInMemoryChanges ()).toBe true
+                    })
+        )
+
+        Vitest.test (
+            "an unreadable workbook leaves memory unchanged and recovers once it is fixed",
+            fun () ->
+                withSyncVault
+                    (fun arc -> arc.AddAssay(ArcAssay("DiskAssay", title = "Old title")))
+                    (fun vault arcPath -> promise {
+                        let workbookPath = join [| arcPath; "assays/DiskAssay/isa.assay.xlsx" |]
+                        do! changeAssayOnDisk arcPath "DiskAssay" "Disk title"
+                        let! changedBytes = readFileBufferAsync workbookPath
+
+                        do! writeWatcherTextFileAsync workbookPath "This is not a workbook."
+                        do! vault.RequestSync true
+
+                        Vitest.expect(vault.arc.Value.GetAssay("DiskAssay").Title).toEqual (Some "Old title")
+
+                        do! Promise.sleep 20
+                        do! TestHelpers.writeBufferAsync workbookPath changedBytes
+                        do! vault.RequestSync true
+
+                        Vitest.expect(vault.arc.Value.GetAssay("DiskAssay").Title).toEqual (Some "Disk title")
+                    })
+        )
+
+        Vitest.test (
+            "a running check holds back a second request and a Save, and no load overlaps the Save",
+            fun () ->
+                withSyncVault
+                    (fun arc -> arc.AddAssay(ArcAssay("DiskAssay", title = "Old title")))
+                    (fun vault arcPath -> promise {
+                        let scanCalls = ref 0
+                        let mutable releaseScan = ignore
+
+                        let scanGate =
+                            JS.Constructors.Promise.Create(fun resolve _ -> releaseScan <- fun () -> resolve ())
+
+                        let realScan = vault.DiskScan
+
+                        vault.DiskScan <-
+                            fun caseInsensitive path -> promise {
+                                scanCalls.Value <- scanCalls.Value + 1
+
+                                if scanCalls.Value = 1 then
+                                    do! scanGate
+
+                                return! realScan caseInsensitive path
+                            }
+
+                        let loadCalls = ref 0
+                        let realLoad = vault.SnapshotLoad
+
+                        vault.SnapshotLoad <-
+                            fun path ->
+                                loadCalls.Value <- loadCalls.Value + 1
+                                realLoad path
+
+                        let firstRequest = vault.RequestSync true
+                        let secondRequest = vault.RequestSync true
+                        vault.arc.Value.GetAssay("DiskAssay").Title <- Some "Local edit"
+                        vault.RefreshHasUnsavedArcChangesFlag()
+
+                        let saveFinished = ref false
+
+                        let save = promise {
+                            let! result = vault.SaveArc()
+                            saveFinished.Value <- true
+                            return result
+                        }
+
+                        do! Promise.sleep 100
+                        Vitest.expect(saveFinished.Value).toBe false
+
+                        releaseScan ()
+                        do! firstRequest
+                        do! secondRequest
+
+                        match! save with
+                        | Error error -> failwith error.Message
+                        | Ok() -> ()
+
+                        Vitest.expect(loadCalls.Value).toBe 0
+                        let! savedArc = TestHelpers.loadArcAsync arcPath
+                        Vitest.expect(savedArc.GetAssay("DiskAssay").Title).toEqual (Some "Local edit")
+                    })
+        )
+
+        Vitest.test (
+            "a failed first scan leaves memory unchanged and the next request runs",
+            fun () ->
+                withSyncVault
+                    (fun arc -> arc.AddAssay(ArcAssay("DiskAssay", title = "Old title")))
+                    (fun vault arcPath -> promise {
+                        do! changeAssayOnDisk arcPath "DiskAssay" "Disk title"
+
+                        let realScan = vault.DiskScan
+
+                        vault.DiskScan <- fun _ _ -> promise { return raise (exn "Scan failed once.") }
+
+                        do! vault.RequestSync true
+
+                        Vitest.expect(vault.SyncMode = ArcSyncMode.Idle).toBe true
+                        Vitest.expect(vault.arc.Value.GetAssay("DiskAssay").Title).toEqual (Some "Old title")
+
+                        vault.DiskScan <- realScan
+                        do! vault.RequestSync true
+
+                        Vitest.expect(vault.arc.Value.GetAssay("DiskAssay").Title).toEqual (Some "Disk title")
+                    })
+        )
+
+        Vitest.test (
+            "a Save with an undetected external change to its own file keeps the external version",
+            fun () ->
+                withSyncVault
+                    (fun arc -> arc.AddAssay(ArcAssay("DiskAssay", title = "Old title")))
+                    (fun vault arcPath -> promise {
+                        vault.arc.Value.GetAssay("DiskAssay").Title <- Some "Local edit"
+                        vault.RefreshHasUnsavedArcChangesFlag()
+                        do! changeAssayOnDisk arcPath "DiskAssay" "External title"
+
+                        match! vault.SaveArc() with
+                        | Error error -> failwith error.Message
+                        | Ok() -> ()
+
+                        let! savedArc = TestHelpers.loadArcAsync arcPath
+                        Vitest.expect(savedArc.GetAssay("DiskAssay").Title).toEqual (Some "External title")
+                        Vitest.expect(vault.arc.Value.GetAssay("DiskAssay").Title).toEqual (Some "External title")
+                        Vitest.expect(vault.arc.Value.hasInMemoryChanges ()).toBe false
+                    })
+        )
+
+        Vitest.test (
+            "a Save is refused when its file changed on disk and the sync fails",
+            fun () ->
+                withSyncVault
+                    (fun arc ->
+                        arc.AddAssay(ArcAssay("AssayA", title = "Old title"))
+                        arc.AddAssay(ArcAssay("AssayB", title = "Old title"))
+                    )
+                    (fun vault arcPath -> promise {
+                        vault.arc.Value.GetAssay("AssayA").Title <- Some "Local edit"
+                        vault.RefreshHasUnsavedArcChangesFlag()
+                        do! changeAssayOnDisk arcPath "AssayA" "External title"
+                        do! Promise.sleep 20
+                        let brokenPath = join [| arcPath; "assays/AssayB/isa.assay.xlsx" |]
+                        let! brokenBytes = readFileBufferAsync brokenPath
+                        do! writeWatcherTextFileAsync brokenPath "This is not a workbook."
+
+                        match! vault.SaveArc() with
+                        | Ok() -> failwith "The Save should be refused."
+                        | Error error -> Vitest.expect(error.Message).toContain "assays/AssayA/isa.assay.xlsx"
+
+                        Vitest.expect(vault.arc.Value.GetAssay("AssayA").Title).toEqual (Some "Local edit")
+                        Vitest.expect(vault.arc.Value.hasInMemoryChanges ()).toBe true
+
+                        do! TestHelpers.writeBufferAsync brokenPath brokenBytes
+                        let! diskAssayA = readWorkbookTitleAsync arcPath "AssayA"
+                        Vitest.expect(diskAssayA).toEqual (Some "External title")
+                    })
+        )
+
+        Vitest.test (
+            "a Save of unrelated entities still writes when the sync fails",
+            fun () ->
+                withSyncVault
+                    (fun arc ->
+                        arc.AddAssay(ArcAssay("AssayA", title = "Old title"))
+                        arc.AddAssay(ArcAssay("AssayB", title = "Old title"))
+                    )
+                    (fun vault arcPath -> promise {
+                        vault.arc.Value.GetAssay("AssayA").Title <- Some "Local edit"
+                        vault.RefreshHasUnsavedArcChangesFlag()
+                        let brokenPath = join [| arcPath; "assays/AssayB/isa.assay.xlsx" |]
+                        let! brokenBytes = readFileBufferAsync brokenPath
+                        do! writeWatcherTextFileAsync brokenPath "This is not a workbook."
+
+                        match! vault.SaveArc() with
+                        | Error error -> failwith error.Message
+                        | Ok() -> ()
+
+                        do! TestHelpers.writeBufferAsync brokenPath brokenBytes
+                        let! diskAssayA = readWorkbookTitleAsync arcPath "AssayA"
+                        Vitest.expect(diskAssayA).toEqual (Some "Local edit")
+                    })
+        )
+
+        Vitest.test (
+            "a Save during a sync is refused",
+            fun () ->
+                withSyncVault
+                    (fun arc -> arc.AddAssay(ArcAssay("DiskAssay", title = "Old title")))
+                    (fun vault arcPath -> promise {
+                        do! changeAssayOnDisk arcPath "DiskAssay" "Disk title"
+                        let loadStarted = ref false
+                        let mutable releaseLoad = ignore
+
+                        let loadGate =
+                            JS.Constructors.Promise.Create(fun resolve _ -> releaseLoad <- fun () -> resolve ())
+
+                        let realLoad = vault.SnapshotLoad
+
+                        vault.SnapshotLoad <-
+                            fun path -> promise {
+                                loadStarted.Value <- true
+                                do! loadGate
+                                return! realLoad path
+                            }
+
+                        let sync = vault.RequestSync true
+                        do! TestHelpers.waitForCondition "the load started" (fun () -> loadStarted.Value)
+
+                        match! vault.SaveArc() with
+                        | Ok() -> failwith "The Save should be refused while the sync loads."
+                        | Error error -> Vitest.expect(error.Message).toContain "loading external changes"
+
+                        releaseLoad ()
+                        do! sync
+                        Vitest.expect(vault.arc.Value.GetAssay("DiskAssay").Title).toEqual (Some "Disk title")
+                    })
+        )
+
+        Vitest.test (
+            "a sync discards its result when the vault closes during the load",
+            fun () ->
+                withSyncVault
+                    (fun arc -> arc.AddAssay(ArcAssay("DiskAssay", title = "Old title")))
+                    (fun vault arcPath -> promise {
+                        do! changeAssayOnDisk arcPath "DiskAssay" "Disk title"
+                        let knownBefore = vault.KnownDisk
+                        let loadStarted = ref false
+                        let mutable releaseLoad = ignore
+
+                        let loadGate =
+                            JS.Constructors.Promise.Create(fun resolve _ -> releaseLoad <- fun () -> resolve ())
+
+                        let realLoad = vault.SnapshotLoad
+
+                        vault.SnapshotLoad <-
+                            fun path -> promise {
+                                loadStarted.Value <- true
+                                do! loadGate
+                                return! realLoad path
+                            }
+
+                        let sync = vault.RequestSync true
+                        do! TestHelpers.waitForCondition "the load started" (fun () -> loadStarted.Value)
+
+                        vault.ClearPendingFileWatcherState()
+                        releaseLoad ()
+                        do! sync
+
+                        Vitest.expect(vault.arc.Value.GetAssay("DiskAssay").Title).toEqual (Some "Old title")
+                        Vitest.expect(vault.KnownDisk = knownBefore).toBe true
+                    })
+        )
+
+        Vitest.test (
+            "an external license change reaches memory and keeps the local edits",
+            fun () ->
+                withSyncVault
+                    (fun arc ->
+                        arc.AddAssay(ArcAssay("DiskAssay", title = "Old title"))
+                        arc.SetLicenseFulltext("old license")
+                    )
+                    (fun vault arcPath -> promise {
+                        vault.arc.Value.GetAssay("DiskAssay").Title <- Some "Local edit"
+                        vault.RefreshHasUnsavedArcChangesFlag()
+
+                        do! Promise.sleep 20
+                        do! writeWatcherTextFileAsync (join [| arcPath; "LICENSE" |]) "a new license text"
+
+                        do! vault.RequestSync true
+
+                        Vitest.expect(vault.arc.Value.License.Value.Content).toBe "a new license text"
+                        Vitest.expect(vault.arc.Value.GetAssay("DiskAssay").Title).toEqual (Some "Local edit")
+                        Vitest.expect(vault.arc.Value.hasInMemoryChanges ()).toBe true
+                    })
+        )
+
+        Vitest.test (
+            "window focus request loads an external change while no watcher runs",
+            fun () ->
+                withSyncVault
+                    (fun arc -> arc.AddAssay(ArcAssay("DiskAssay", title = "Old title")))
+                    (fun vault arcPath -> promise {
+                        Vitest.expect(vault.watcher.IsNone).toBe true
+                        do! changeAssayOnDisk arcPath "DiskAssay" "Disk title"
+
+                        Vitest.expect(vault.CanRequestSyncOnFocus).toBe true
+                        do! vault.RequestSync true
+
+                        Vitest.expect(vault.arc.Value.GetAssay("DiskAssay").Title).toEqual (Some "Disk title")
+                    })
+        )
+
+        Vitest.test (
+            "a Git-like external operation that changes a workbook reaches memory",
+            fun () ->
+                withSyncVault
+                    (fun arc -> arc.AddAssay(ArcAssay("DiskAssay", title = "Old title")))
+                    (fun vault arcPath ->
+                        vault.WithExternalOperationScope(
+                            true,
+                            fun () -> changeAssayOnDisk arcPath "DiskAssay" "Disk title"
+                        )
+                        |> Promise.map (fun () ->
+                            Vitest.expect(vault.arc.Value.GetAssay("DiskAssay").Title).toEqual (Some "Disk title")
+                        )
+                    )
+        )
+
+        Vitest.test (
+            "a sync inside a shared external operation waits for the last operation to end",
+            fun () ->
+                withSyncVault
+                    (fun arc -> arc.AddAssay(ArcAssay("DiskAssay", title = "Old title")))
+                    (fun vault arcPath -> promise {
+                        do! changeAssayOnDisk arcPath "DiskAssay" "Disk title"
+                        let mutable releaseOuter = ignore
+
+                        let outerGate =
+                            JS.Constructors.Promise.Create(fun resolve _ -> releaseOuter <- fun () -> resolve ())
+
+                        let outer = vault.WithExternalOperationScope(false, (fun () -> outerGate))
+
+                        do!
+                            vault.WithExternalOperationScope(
+                                false,
+                                fun () -> promise {
+                                    match! vault.SyncWithinExternalOperation false with
+                                    | Error error -> failwith error.Message
+                                    | Ok() -> ()
+
+                                    Vitest
+                                        .expect(vault.arc.Value.GetAssay("DiskAssay").Title)
+                                        .toEqual (Some "Old title")
+                                }
+                            )
+
+                        Vitest.expect(vault.isBusyWriting).toBe true
+                        releaseOuter ()
+                        do! outer
+                        Vitest.expect(vault.isBusyWriting).toBe false
+                        Vitest.expect(vault.arc.Value.GetAssay("DiskAssay").Title).toEqual (Some "Disk title")
+                    })
+        )
+
+        Vitest.test (
+            "a Save waiting for a sync writes the merged state and not the state from before",
+            fun () ->
+                withSyncVault
+                    (fun arc -> arc.AddAssay(ArcAssay("DiskAssay", title = "Old title")))
+                    (fun vault arcPath -> promise {
+                        vault.arc.Value.GetAssay("DiskAssay").Title <- Some "Local edit"
+                        vault.RefreshHasUnsavedArcChangesFlag()
+                        do! changeAssayOnDisk arcPath "DiskAssay" "External title"
+
+                        let scanCalls = ref 0
+                        let mutable releaseScan = ignore
+
+                        let scanGate =
+                            JS.Constructors.Promise.Create(fun resolve _ -> releaseScan <- fun () -> resolve ())
+
+                        let realScan = vault.DiskScan
+
+                        vault.DiskScan <-
+                            fun caseInsensitive path -> promise {
+                                scanCalls.Value <- scanCalls.Value + 1
+
+                                if scanCalls.Value = 1 then
+                                    do! scanGate
+
+                                return! realScan caseInsensitive path
+                            }
+
+                        let sync = vault.RequestSync true
+                        let save = vault.SaveArc()
+                        releaseScan ()
+                        do! sync
+
+                        match! save with
+                        | Error error -> failwith error.Message
+                        | Ok() -> ()
+
+                        let! diskTitle = readWorkbookTitleAsync arcPath "DiskAssay"
+                        Vitest.expect(diskTitle).toEqual (Some "External title")
+                        Vitest.expect(vault.arc.Value.GetAssay("DiskAssay").Title).toEqual (Some "External title")
+                    })
+        )
+
+        Vitest.test (
+            "a rename after an undetected external edit keeps that edit",
+            fun () ->
+                withTempArc
+                    (fun arc -> arc.AddAssay(ArcAssay("AssayA", title = "Old title")))
+                    (fun arcPath -> promise {
+                        let windowId = 8800
+                        let vault = TestHelpers.registerVault windowId arcPath
+                        let! loadedArc = TestHelpers.loadArcAsync arcPath
+                        vault.SetArc loadedArc
+                        do! TestHelpers.seedKnownDisk vault
+                        do! changeAssayOnDisk arcPath "AssayA" "External title"
+
+                        try
+                            let api = Main.IPC.ArcVaultsApi.api (TestHelpers.ipcEvent windowId)
+
+                            let! renamed =
+                                api.renamePath {
+                                    relativePath = "assays/AssayA"
+                                    newName = "AssayB"
+                                }
+
+                            Vitest.expect(renamed.IsOk).toBe true
+                            Vitest.expect(vault.arc.Value.GetAssay("AssayB").Title).toEqual (Some "External title")
+
+                            match! vault.SaveArc() with
+                            | Error error -> failwith error.Message
+                            | Ok() -> ()
+
+                            let! diskTitle = readWorkbookTitleAsync arcPath "AssayB"
+                            Vitest.expect(diskTitle).toEqual (Some "External title")
+                        finally
+                            ARC_VAULTS.Vaults.Remove windowId |> ignore
+                            resetElectronMock ()
+                    })
+        )
 )
 
 Vitest.describe (
     "watcher merge validation",
     fun () ->
         Vitest.test (
-            "a write that starts while the watcher merge waits in the queue defers it",
+            "an external folder delete removes the entity and a restored file keeps the other",
             fun () ->
-                withTempArc
-                    (fun arc -> arc.AddAssay(ArcAssay("DiskAssay", title = "Old title")))
-                    (fun arcPath -> promise {
-                        let! loadedArc = TestHelpers.loadArcAsync arcPath
-                        let vault = ArcVault(TestHelpers.testWindow ())
-                        vault.path <- Some arcPath
-                        vault.SetArc loadedArc
-
-                        let! diskArc = TestHelpers.loadArcAsync arcPath
-                        diskArc.GetAssay("DiskAssay").Title <- Some "Changed on disk"
-                        do! diskArc.UpdateAsync arcPath
-
-                        let mutable watcherMergeBarrierCalled = false
-
-                        vault.WatcherMergeBarrier <-
-                            Some(fun () ->
-                                watcherMergeBarrierCalled <- true
-                                promise { return () }
-                            )
-
-                        let mutable releaseFirstMerge = ignore
-
-                        let firstMergeGate =
-                            JS.Constructors.Promise.Create(fun resolve _ -> releaseFirstMerge <- fun () -> resolve ())
-
-                        let firstMerge = vault.EnqueueArcMerge(fun () -> firstMergeGate)
-
-                        let watcherEvents = [
-                            watcherEvent arcPath "change" "assays/DiskAssay/isa.assay.xlsx"
-                        ]
-
-                        let watcherMerge = vault.TryApplyWatcherArcMergeIfEligible watcherEvents
-
-                        let mutable releaseWrite = ignore
-
-                        let writeGate =
-                            JS.Constructors.Promise.Create(fun resolve _ -> releaseWrite <- fun () -> resolve ())
-
-                        let writeScope = vault.WithBusyWritingScope(fun () -> writeGate)
-                        releaseFirstMerge ()
-                        do! firstMerge
-
-                        match! watcherMerge with
-                        | WatcherMergeOutcome.Deferred -> ()
-                        | _ -> return failwith "The watcher merge should defer while the write is busy."
-
-                        Vitest.expect(watcherMergeBarrierCalled).toBe (false)
-                        Vitest.expect(vault.arc.Value.GetAssay("DiskAssay").Title).toEqual (Some "Old title")
-
-                        releaseWrite ()
-                        do! writeScope
-                        do! Promise.sleep 600
-
-                        vault.WatcherMergeBarrier <- None
-
-                        match! vault.TryApplyWatcherArcMergeIfEligible watcherEvents with
-                        | WatcherMergeOutcome.Applied -> ()
-                        | _ -> return failwith "The watcher merge should apply after the write suppression ends."
-
-                        Vitest.expect(vault.arc.Value.GetAssay("DiskAssay").Title).toEqual (Some "Changed on disk")
-                    })
-        )
-
-        Vitest.test (
-            "a write that starts and ends while the snapshot loads defers it even after suppression",
-            fun () ->
-                withTempArc
-                    (fun arc -> arc.AddAssay(ArcAssay("DiskAssay", title = "Old title")))
-                    (fun arcPath -> promise {
-                        let! loadedArc = TestHelpers.loadArcAsync arcPath
-                        let vault = ArcVault(TestHelpers.testWindow ())
-                        vault.path <- Some arcPath
-                        vault.SetArc loadedArc
-
-                        let! diskArc = TestHelpers.loadArcAsync arcPath
-                        diskArc.GetAssay("DiskAssay").Title <- Some "Changed on disk"
-                        do! diskArc.UpdateAsync arcPath
-
-                        vault.WatcherMergeBarrier <-
-                            Some(fun () -> promise {
-                                do! vault.WithBusyWritingScope(fun () -> promise { return () })
-
-                                let mutable attempts = 0
-
-                                while not vault.IsFileWatcherArcMergeEligible && attempts < 200 do
-                                    do! Promise.sleep 20
-                                    attempts <- attempts + 1
-
-                                if not vault.IsFileWatcherArcMergeEligible then
-                                    return failwith "Watcher merge eligibility did not return after 200 polls."
-                            })
-
-                        match!
-                            vault.TryApplyWatcherArcMergeIfEligible [
-                                watcherEvent arcPath "change" "assays/DiskAssay/isa.assay.xlsx"
-                            ]
-                        with
-                        | WatcherMergeOutcome.Deferred -> ()
-                        | _ -> return failwith "The watcher merge should defer after the write generation changes."
-
-                        Vitest.expect(vault.arc.Value.GetAssay("DiskAssay").Title).toEqual (Some "Old title")
-                        Vitest.expect(vault.IsFileWatcherArcMergeEligible).toBe (true)
-                    })
-        )
-
-        Vitest.test (
-            "an unlink admitted before a write that recreated the file merges as a change",
-            fun () ->
-                withTempArc
-                    (fun arc -> arc.AddAssay(ArcAssay("DiskAssay", title = "Old title")))
-                    (fun arcPath -> promise {
-                        let! loadedArc = TestHelpers.loadArcAsync arcPath
-                        let vault = ArcVault(TestHelpers.testWindow ())
-                        vault.path <- Some arcPath
-                        vault.SetArc loadedArc
-
-                        let! diskArc = TestHelpers.loadArcAsync arcPath
-                        diskArc.GetAssay("DiskAssay").Title <- Some "Changed on disk"
-                        do! diskArc.UpdateAsync arcPath
-
-                        match!
-                            vault.TryApplyWatcherArcMergeIfEligible [
-                                watcherEvent arcPath "unlink" "assays/DiskAssay/isa.assay.xlsx"
-                            ]
-                        with
-                        | WatcherMergeOutcome.Applied -> ()
-                        | _ -> return failwith "The recreated assay should apply as a change."
-
-                        Vitest.expect(vault.arc.Value.ContainsAssay("DiskAssay")).toBe (true)
-                        Vitest.expect(vault.arc.Value.GetAssay("DiskAssay").Title).toEqual (Some "Changed on disk")
-                    })
-        )
-
-        Vitest.test (
-            "a stale directory delete keeps the entity whose canonical file came back and drops the one that did not",
-            fun () ->
-                withTempArc
+                withSyncVault
                     (fun arc ->
                         arc.AddAssay(ArcAssay("A1"))
                         arc.AddAssay(ArcAssay("A2"))
                     )
-                    (fun arcPath -> promise {
-                        let! loadedArc = TestHelpers.loadArcAsync arcPath
-                        let vault = ArcVault(TestHelpers.testWindow ())
-                        vault.path <- Some arcPath
-                        vault.SetArc loadedArc
-
+                    (fun vault arcPath -> promise {
                         let a1Folder = join [| arcPath; "assays"; "A1" |]
                         let a2Folder = join [| arcPath; "assays"; "A2" |]
                         do! rmAsync a1Folder (RmOptions(recursive = true, force = true))
                         do! rmAsync a2Folder (RmOptions(recursive = true, force = true))
+                        do! Promise.sleep 20
 
                         let persistedArc = ARC("WatcherMergeValidationArc")
                         persistedArc.AddAssay(ArcAssay("A1"))
@@ -1208,128 +1531,11 @@ Vitest.describe (
 
                         do! mkdirWatcherDirectoryAsync a2Folder
 
-                        match!
-                            vault.TryApplyWatcherArcMergeIfEligible [
-                                watcherEvent arcPath "unlinkDir" "assays/A1"
-                                watcherEvent arcPath "unlinkDir" "assays/A2"
-                            ]
-                        with
-                        | WatcherMergeOutcome.Applied -> ()
-                        | _ -> return failwith "The stale directory deletes should apply."
+                        do! vault.RequestSync true
 
                         Vitest.expect(vault.arc.Value.ContainsAssay("A1")).toBe (true)
                         Vitest.expect(vault.arc.Value.ContainsAssay("A2")).toBe (false)
                     })
-        )
-
-        Vitest.test (
-            "a change for a file that is missing at merge time is dropped",
-            fun () ->
-                withTempArc
-                    (fun arc -> arc.AddAssay(ArcAssay("DiskAssay", title = "Persisted title")))
-                    (fun arcPath -> promise {
-                        let! loadedArc = TestHelpers.loadArcAsync arcPath
-                        let vault = ArcVault(TestHelpers.testWindow ())
-                        vault.path <- Some arcPath
-                        vault.SetArc loadedArc
-
-                        vault.arc.Value.GetAssay("DiskAssay").Title <- Some "Unsaved title"
-
-                        let assayFile = join [| arcPath; "assays"; "DiskAssay"; "isa.assay.xlsx" |]
-                        do! rmAsync assayFile (RmOptions(force = true))
-
-                        match!
-                            vault.TryApplyWatcherArcMergeIfEligible [
-                                watcherEvent arcPath "change" "assays/DiskAssay/isa.assay.xlsx"
-                            ]
-                        with
-                        | WatcherMergeOutcome.Applied -> ()
-                        | _ -> return failwith "The missing-file change should apply with an empty ARC batch."
-
-                        Vitest.expect(vault.arc.Value.ContainsAssay("DiskAssay")).toBe (true)
-                        Vitest.expect(vault.arc.Value.GetAssay("DiskAssay").Title).toEqual (Some "Unsaved title")
-                    })
-        )
-
-        Vitest.test (
-            "normalizeAgainstDisk keeps directory deletes and drops missing-file changes",
-            fun () -> promise {
-                let! rootPath = TestHelpers.createTempDirectoryAsync "swate-watcher-normalize-"
-
-                try
-                    let existingDirectory = join [| rootPath; "existing-directory" |]
-                    let existingFile = join [| rootPath; "existing-file.txt" |]
-                    let missingFile = join [| rootPath; "missing-file.txt" |]
-                    do! mkdirWatcherDirectoryAsync existingDirectory
-                    do! writeWatcherTextFileAsync existingFile "existing"
-
-                    let directoryDelete = watcherEvent rootPath "unlinkDir" "existing-directory"
-                    let missingChange = watcherEvent rootPath "change" "missing-file.txt"
-                    let existingUnlink = watcherEvent rootPath "unlink" "existing-file.txt"
-
-                    let absoluteEvent: ArcVaultFileSystemEvent = {
-                        EventName = "change"
-                        RelativePath = existingFile
-                        AbsolutePath = existingFile
-                    }
-
-                    let normalized =
-                        WatcherHelpers.normalizeAgainstDisk [
-                            directoryDelete
-                            missingChange
-                            existingUnlink
-                            absoluteEvent
-                        ]
-
-                    Vitest.expect(normalized |> List.exists (fun event -> event = directoryDelete)).toBe (true)
-                    Vitest.expect(normalized |> List.exists (fun event -> event = missingChange)).toBe (false)
-
-                    let existingFileEvent =
-                        normalized
-                        |> List.find (fun event -> event.RelativePath = existingUnlink.RelativePath)
-
-                    Vitest.expect(existingFileEvent.EventName).toBe ("change")
-                    Vitest.expect(normalized |> List.exists (fun event -> event = absoluteEvent)).toBe (true)
-
-                    do! TestHelpers.removeDirectoryAsync rootPath
-                with error ->
-                    do! TestHelpers.removeDirectoryAsync rootPath
-                    return raise error
-            }
-        )
-
-        Vitest.test (
-            "normalizeAgainstDisk keeps case-only rename unlinks",
-            fun () -> promise {
-                let! rootPath = TestHelpers.createTempDirectoryAsync "swate-watcher-case-rename-"
-
-                try
-                    let oldFilePath = join [| rootPath; "sample_metadata_neg.csv" |]
-                    let newFilePath = join [| rootPath; "Sample_Metadata_NEG.csv" |]
-                    let existingFilePath = join [| rootPath; "existing-file.txt" |]
-                    do! writeWatcherTextFileAsync oldFilePath "renamed"
-                    do! writeWatcherTextFileAsync existingFilePath "existing"
-                    do! renameAsync oldFilePath newFilePath
-
-                    let caseOnlyUnlink = watcherEvent rootPath "unlink" "sample_metadata_neg.csv"
-                    let existingUnlink = watcherEvent rootPath "unlink" "existing-file.txt"
-
-                    let normalized =
-                        WatcherHelpers.normalizeAgainstDisk [ caseOnlyUnlink; existingUnlink ]
-
-                    Vitest.expect(normalized |> List.exists (fun event -> event = caseOnlyUnlink)).toBe (true)
-
-                    let existingFileEvent =
-                        normalized
-                        |> List.find (fun event -> event.RelativePath = existingUnlink.RelativePath)
-
-                    Vitest.expect(existingFileEvent.EventName).toBe ("change")
-
-                    do! TestHelpers.removeDirectoryAsync rootPath
-                with error ->
-                    do! TestHelpers.removeDirectoryAsync rootPath
-                    return raise error
-            }
         )
 
         Vitest.test (
@@ -1363,315 +1569,90 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "a snapshot loaded before a rename is not published",
+            "a snapshot loaded before the state reset is not published",
             fun () ->
-                withTempArc
+                withSyncVault
                     (fun arc -> arc.AddAssay(ArcAssay("DiskAssay", title = "Old title")))
-                    (fun arcPath -> promise {
-                        let! loadedArc = TestHelpers.loadArcAsync arcPath
-                        let vault = ArcVault(TestHelpers.testWindow ())
-                        vault.path <- Some arcPath
-                        vault.SetArc loadedArc
+                    (fun vault arcPath -> promise {
+                        do! changeAssayOnDisk arcPath "DiskAssay" "Disk title"
+                        let loadStarted = ref false
+                        let mutable releaseLoad = ignore
 
-                        vault.WatcherMergeBarrier <-
-                            Some(fun () ->
-                                vault.ClearPendingFileWatcherState()
-                                promise { return () }
-                            )
+                        let loadGate =
+                            JS.Constructors.Promise.Create(fun resolve _ -> releaseLoad <- fun () -> resolve ())
 
-                        match!
-                            vault.TryApplyWatcherArcMergeIfEligible [
-                                watcherEvent arcPath "change" "assays/DiskAssay/isa.assay.xlsx"
-                            ]
-                        with
-                        | WatcherMergeOutcome.Deferred -> ()
-                        | _ -> return failwith "The watcher merge should defer after the pending state reset."
+                        let realLoad = vault.SnapshotLoad
+
+                        vault.SnapshotLoad <-
+                            fun path -> promise {
+                                loadStarted.Value <- true
+                                do! loadGate
+                                return! realLoad path
+                            }
+
+                        let sync = vault.RequestSync true
+                        do! TestHelpers.waitForCondition "the load started" (fun () -> loadStarted.Value)
+
+                        vault.ClearPendingFileWatcherState()
+                        releaseLoad ()
+                        do! sync
 
                         Vitest.expect(vault.arc.Value.GetAssay("DiskAssay").Title).toEqual (Some "Old title")
                     })
         )
 
         Vitest.test (
-            "the import merge inside a busy scope still applies",
+            "the reload waits for an open write scope and loads the change after it",
             fun () ->
-                withTempArc
+                withSyncVault
                     (fun arc -> arc.AddAssay(ArcAssay("DiskAssay", title = "Old title")))
-                    (fun arcPath -> promise {
-                        let! loadedArc = TestHelpers.loadArcAsync arcPath
-                        let vault = ArcVault(TestHelpers.testWindow ())
-                        vault.path <- Some arcPath
-                        vault.SetArc loadedArc
+                    (fun vault arcPath -> promise {
+                        do! changeAssayOnDisk arcPath "DiskAssay" "Changed on disk"
 
-                        let! diskArc = TestHelpers.loadArcAsync arcPath
-                        diskArc.GetAssay("DiskAssay").Title <- Some "Changed on disk"
-                        do! diskArc.UpdateAsync arcPath
+                        let loadCalls = ref 0
+                        let realLoad = vault.SnapshotLoad
 
-                        do!
-                            vault.WithBusyWritingScope(fun () -> promise {
-                                match!
-                                    vault.TryTriggerArcInMemoryMergeOnFileWatcherEvents [
-                                        watcherEvent arcPath "change" "assays/DiskAssay/isa.assay.xlsx"
-                                    ]
-                                with
-                                | Ok() ->
-                                    Vitest
-                                        .expect(vault.arc.Value.GetAssay("DiskAssay").Title)
-                                        .toEqual (Some "Changed on disk")
-                                | Error mergeError -> return raise mergeError
-                            })
-                    })
-        )
-
-        Vitest.test (
-            "the reload keeps admitted events while a write runs and merges them after it",
-            fun () ->
-                withTempArc
-                    (fun arc -> arc.AddAssay(ArcAssay("DiskAssay", title = "Old title")))
-                    (fun arcPath -> promise {
-                        let! loadedArc = TestHelpers.loadArcAsync arcPath
-                        let vault = ArcVault(TestHelpers.testWindow ())
-                        vault.path <- Some arcPath
-                        vault.SetArc loadedArc
-
-                        let! diskArc = TestHelpers.loadArcAsync arcPath
-                        diskArc.GetAssay("DiskAssay").Title <- Some "Changed on disk"
-                        do! diskArc.UpdateAsync arcPath
+                        vault.SnapshotLoad <-
+                            fun path ->
+                                loadCalls.Value <- loadCalls.Value + 1
+                                realLoad path
 
                         let loadingChanges = ResizeArray<bool>()
 
                         let handleFileEvent =
                             vault._FileEventController (recordingWatcherApi loadingChanges)
 
-                        let assayPath = join [| arcPath; "assays/DiskAssay/isa.assay.xlsx" |]
-                        handleFileEvent "change" assayPath
-
-                        let mutable releaseWrite = ignore
-
-                        let writeGate =
-                            JS.Constructors.Promise.Create(fun resolve _ -> releaseWrite <- fun () -> resolve ())
-
-                        let writeScope = vault.WithBusyWritingScope(fun () -> writeGate)
-
-                        do! Promise.sleep 700
-                        Vitest.expect(vault.arc.Value.GetAssay("DiskAssay").Title).toEqual (Some "Old title")
-
-                        Vitest
-                            .expect(
-                                vault.fileWatcherPendingArcMergeEvents
-                                |> Seq.exists (fun event -> event.RelativePath = "assays/DiskAssay/isa.assay.xlsx")
-                            )
-                            .toBe (true)
-
-                        releaseWrite ()
-                        do! writeScope
-                        do! expectWatcherAssayTitle vault "Changed on disk"
-
-                        // The merge publishes before the callback applies the tree batch and clears the loading flag.
-                        let mutable flagAttempts = 0
-
-                        while flagAttempts < 250
-                              && (loadingChanges.Count = 0 || loadingChanges.[loadingChanges.Count - 1]) do
-                            do! Promise.sleep 20
-                            flagAttempts <- flagAttempts + 1
-
-                        Vitest.expect(vault.fileWatcherPendingEvents.Count).toBe (0)
-                        Vitest.expect(vault.fileWatcherPendingArcMergeEvents.Count).toBe (0)
-                        Vitest.expect(loadingChanges.[loadingChanges.Count - 1]).toBe (false)
-                    })
-        )
-
-        Vitest.test (
-            "a deferred reload keeps the tree batch and retries",
-            fun () ->
-                withTempArc
-                    (fun arc -> arc.AddAssay(ArcAssay("DiskAssay", title = "Old title")))
-                    (fun arcPath -> promise {
-                        let! loadedArc = TestHelpers.loadArcAsync arcPath
-                        let vault = ArcVault(TestHelpers.testWindow ())
-                        vault.path <- Some arcPath
-                        vault.SetArc loadedArc
-
-                        let! diskArc = TestHelpers.loadArcAsync arcPath
-                        diskArc.GetAssay("DiskAssay").Title <- Some "Changed on disk"
-                        do! diskArc.UpdateAsync arcPath
-
-                        let mutable releaseMergeQueue = ignore
-
-                        let mergeQueueGate =
-                            JS.Constructors.Promise.Create(fun resolve _ -> releaseMergeQueue <- fun () -> resolve ())
-
-                        let queuedMerge = vault.EnqueueArcMerge(fun () -> mergeQueueGate)
-                        let loadingChanges = ResizeArray<bool>()
-
-                        let handleFileEvent =
-                            vault._FileEventController (recordingWatcherApi loadingChanges)
-
-                        let handlerLoadingCallCount = loadingChanges.Count
-                        let assayPath = join [| arcPath; "assays/DiskAssay/isa.assay.xlsx" |]
-                        handleFileEvent "change" assayPath
-
-                        do! Promise.sleep 600
-
-                        let mutable releaseWrite = ignore
-
-                        let writeGate =
-                            JS.Constructors.Promise.Create(fun resolve _ -> releaseWrite <- fun () -> resolve ())
-
-                        let writeScope = vault.WithBusyWritingScope(fun () -> writeGate)
-                        releaseMergeQueue ()
-                        do! queuedMerge
-                        do! Promise.sleep 100
-
-                        Vitest.expect(vault.fileWatcherPendingArcMergeEvents.Count > 0).toBe (true)
-                        Vitest.expect(vault.fileWatcherPendingEvents.Count > 0).toBe (true)
-
-                        let falseRecordedSinceHandler =
-                            loadingChanges
-                            |> Seq.skip handlerLoadingCallCount
-                            |> Seq.exists (fun isLoading -> not isLoading)
-
-                        Vitest.expect(falseRecordedSinceHandler).toBe (false)
-
-                        releaseWrite ()
-                        do! writeScope
-                        do! expectWatcherAssayTitle vault "Changed on disk"
-
-                        Vitest.expect(vault.fileWatcherPendingEvents.Count).toBe (0)
-                        Vitest.expect(vault.fileWatcherPendingArcMergeEvents.Count).toBe (0)
-                    })
-        )
-
-        Vitest.test (
-            "a deferred batch is merged when an overlapping reload applies",
-            fun () ->
-                withTempArc
-                    (fun arc -> arc.AddAssay(ArcAssay("DiskAssay", title = "Old title")))
-                    (fun arcPath -> promise {
-                        let! loadedArc = TestHelpers.loadArcAsync arcPath
-                        let vault = ArcVault(TestHelpers.testWindow ())
-                        vault.path <- Some arcPath
-                        vault.SetArc loadedArc
-
-                        let! diskArc = TestHelpers.loadArcAsync arcPath
-                        diskArc.GetAssay("DiskAssay").Title <- Some "Changed on disk"
-                        do! diskArc.UpdateAsync arcPath
-
-                        let assayPath = join [| arcPath; "assays/DiskAssay/isa.assay.xlsx" |]
-                        let loadingCalls = ResizeArray<WatcherLoadingCall>()
-                        let mutable handleFileEvent: string -> string -> unit = fun _ _ -> ()
-                        let mutable barrierCallCount = 0
-
-                        handleFileEvent <-
-                            vault._FileEventController (recordingWatcherApiWithPendingState vault loadingCalls)
-
-                        vault.WatcherMergeBarrier <-
-                            Some(fun () -> promise {
-                                if barrierCallCount = 0 then
-                                    barrierCallCount <- barrierCallCount + 1
-                                    handleFileEvent "change" assayPath
-                                    let secondHandlerStartedAt = nowMs ()
-                                    do! vault.WithBusyWritingScope(fun () -> promise { return () })
-
-                                    let mutable attempts = 0
-
-                                    while attempts < 150
-                                          && (not vault.IsFileWatcherArcMergeEligible
-                                              || nowMs () - secondHandlerStartedAt < 1100.) do
-                                        do! Promise.sleep 20
-                                        attempts <- attempts + 1
-
-                                    if
-                                        not vault.IsFileWatcherArcMergeEligible
-                                        || nowMs () - secondHandlerStartedAt < 1100.
-                                    then
-                                        return failwith "The overlapping reload did not pass the suppression window."
-                                else
-                                    ()
-                            })
-
-                        handleFileEvent "change" assayPath
-
-                        let mutable attempts = 0
-
-                        while attempts < 300
-                              && (loadingCalls.Count = 0 || loadingCalls.[loadingCalls.Count - 1].IsLoading) do
-                            do! Promise.sleep 20
-                            attempts <- attempts + 1
-
-                        if loadingCalls.Count = 0 then
-                            return failwith "The watcher controller did not report a loading state."
-
-                        let falseWithPendingEvents =
-                            loadingCalls
-                            |> Seq.exists (fun call ->
-                                not call.IsLoading && (call.PendingEvents > 0 || call.PendingArcMergeEvents > 0)
-                            )
-
-                        Vitest.expect(barrierCallCount > 0).toBe (true)
-                        Vitest.expect(loadingCalls.[loadingCalls.Count - 1].IsLoading).toBe (false)
-                        Vitest.expect(falseWithPendingEvents).toBe (false)
-                        Vitest.expect(vault.fileWatcherPendingEvents.Count).toBe (0)
-                        Vitest.expect(vault.fileWatcherPendingArcMergeEvents.Count).toBe (0)
-                        Vitest.expect(vault.fileWatcherReloadArcTimeout).toEqual (None)
-                        Vitest.expect(vault.arc.Value.GetAssay("DiskAssay").Title).toEqual (Some "Changed on disk")
-                    })
-        )
-
-        Vitest.test (
-            "a busy reload with nothing pending finishes",
-            fun () ->
-                withTempArc
-                    (fun arc -> arc.AddAssay(ArcAssay("DiskAssay", title = "Old title")))
-                    (fun arcPath -> promise {
-                        let! loadedArc = TestHelpers.loadArcAsync arcPath
-                        let vault = ArcVault(TestHelpers.testWindow ())
-                        vault.path <- Some arcPath
-                        vault.SetArc loadedArc
-
-                        let loadingChanges = ResizeArray<bool>()
-
-                        let handleFileEvent =
-                            vault._FileEventController (recordingWatcherApi loadingChanges)
-
-                        let mutable releaseWrite = ignore
-
-                        let writeGate =
-                            JS.Constructors.Promise.Create(fun resolve _ -> releaseWrite <- fun () -> resolve ())
-
-                        let writeScope = vault.WithBusyWritingScope(fun () -> writeGate)
                         handleFileEvent "change" (join [| arcPath; "assays/DiskAssay/isa.assay.xlsx" |])
 
-                        // The handler admitted the event to the tree list. Dropping it makes the reload fire
-                        // with nothing pending while the write is still open.
-                        vault.fileWatcherPendingEvents.Clear()
-                        vault.fileWatcherPendingArcMergeEvents.Clear()
+                        let mutable releaseWrite = ignore
+
+                        let writeGate =
+                            JS.Constructors.Promise.Create(fun resolve _ -> releaseWrite <- fun () -> resolve (Ok()))
+
+                        let writeScope = vault.WithOwnWriteScope(false, fun () -> writeGate)
 
                         do! Promise.sleep 700
-
-                        Vitest.expect(loadingChanges.Count > 0).toBe (true)
-                        Vitest.expect(loadingChanges.[loadingChanges.Count - 1]).toBe (false)
-                        Vitest.expect(vault.fileWatcherReloadArcTimeout).toEqual (None)
+                        Vitest.expect(vault.arc.Value.GetAssay("DiskAssay").Title).toEqual (Some "Old title")
+                        Vitest.expect(loadCalls.Value).toBe 0
 
                         releaseWrite ()
-                        do! writeScope
+                        let! _ = writeScope
+                        do! expectWatcherAssayTitle vault "Changed on disk"
+
+                        do! waitForWatcherIdle loadingChanges
+                        Vitest.expect(vault.fileWatcherPendingEvents.Count).toBe (0)
+                        Vitest.expect(loadingChanges.[loadingChanges.Count - 1]).toBe (false)
                     })
         )
 
         Vitest.test (
-            "a reload deferred three times during a write publishes the tree and merges the ARC after it",
+            "an event during an open write scope publishes the tree at once and loads the ARC after the write",
             fun () ->
-                withTempArc
+                withSyncVault
                     (fun arc -> arc.AddAssay(ArcAssay("DiskAssay", title = "Old title")))
-                    (fun arcPath -> promise {
-                        let! loadedArc = TestHelpers.loadArcAsync arcPath
-                        let vault = ArcVault(TestHelpers.testWindow ())
-                        vault.path <- Some arcPath
-                        vault.SetArc loadedArc
+                    (fun vault arcPath -> promise {
                         do! vault.EnqueueFileTreeScan()
-
-                        let! diskArc = TestHelpers.loadArcAsync arcPath
-                        diskArc.GetAssay("DiskAssay").Title <- Some "Changed on disk"
-                        do! diskArc.UpdateAsync arcPath
+                        do! changeAssayOnDisk arcPath "DiskAssay" "Changed on disk"
 
                         let treeEntryPath = join [| arcPath; "watcher-deferred-tree.txt" |]
                         do! writeWatcherTextFileAsync treeEntryPath "tree entry"
@@ -1681,21 +1662,17 @@ Vitest.describe (
                         let handleFileEvent =
                             vault._FileEventController (recordingWatcherApi loadingChanges)
 
-                        let assayPath = join [| arcPath; "assays/DiskAssay/isa.assay.xlsx" |]
-                        handleFileEvent "change" assayPath
+                        handleFileEvent "change" (join [| arcPath; "assays/DiskAssay/isa.assay.xlsx" |])
                         handleFileEvent "add" treeEntryPath
 
                         let mutable releaseWrite = ignore
 
                         let writeGate =
-                            JS.Constructors.Promise.Create(fun resolve _ -> releaseWrite <- fun () -> resolve ())
+                            JS.Constructors.Promise.Create(fun resolve _ -> releaseWrite <- fun () -> resolve (Ok()))
 
-                        let writeScope = vault.WithBusyWritingScope(fun () -> writeGate)
+                        let writeScope = vault.WithOwnWriteScope(false, fun () -> writeGate)
 
                         try
-                            let waitStartedAt = nowMs ()
-                            let mutable attempts = 0
-
                             // Watcher events carry normalized paths, so the tree key uses forward slashes.
                             let treeHasEntry () =
                                 let expectedKey = PathHelpers.normalizePath treeEntryPath
@@ -1703,109 +1680,13 @@ Vitest.describe (
                                 vault.FileTreeWriter.Tree.Entries
                                 |> Seq.exists (fun entry -> PathHelpers.normalizePath entry.path = expectedKey)
 
-                            let fallbackPublished () =
-                                vault.HasReachedWatcherDeferralLimit
-                                && treeHasEntry ()
-                                && vault.fileWatcherPendingArcMergeEvents.Count > 0
-
-                            while attempts < 80
-                                  && (nowMs () - waitStartedAt < 2300.0 || not (fallbackPublished ())) do
-                                do! Promise.sleep 50
-                                attempts <- attempts + 1
-
-                            Vitest.expect(vault.HasReachedWatcherDeferralLimit).toBe (true)
-                            Vitest.expect(treeHasEntry ()).toBe (true)
-                            Vitest.expect(vault.fileWatcherPendingArcMergeEvents.Count > 0).toBe (true)
+                            do! TestHelpers.waitForCondition "the tree shows the new file" treeHasEntry
                             Vitest.expect(vault.arc.Value.GetAssay("DiskAssay").Title).toEqual (Some "Old title")
                         finally
                             releaseWrite ()
 
-                        do! writeScope
+                        let! _ = writeScope
                         do! expectWatcherAssayTitle vault "Changed on disk"
-
-                        Vitest.expect(vault.HasReachedWatcherDeferralLimit).toBe (false)
-                        Vitest.expect(vault.fileWatcherPendingArcMergeEvents.Count).toBe (0)
-                    })
-        )
-
-        Vitest.test (
-            "a reload whose batch went stale finishes",
-            fun () ->
-                withTempArc
-                    (fun arc -> arc.AddAssay(ArcAssay("DiskAssay", title = "Old title")))
-                    (fun arcPath -> promise {
-                        let! loadedArc = TestHelpers.loadArcAsync arcPath
-                        let vault = ArcVault(TestHelpers.testWindow ())
-                        vault.path <- Some arcPath
-                        vault.SetArc loadedArc
-
-                        let! diskArc = TestHelpers.loadArcAsync arcPath
-                        diskArc.GetAssay("DiskAssay").Title <- Some "Changed on disk"
-                        do! diskArc.UpdateAsync arcPath
-
-                        let loadingChanges = ResizeArray<bool>()
-
-                        let handleFileEvent =
-                            vault._FileEventController (recordingWatcherApi loadingChanges)
-
-                        vault.WatcherMergeBarrier <-
-                            Some(fun () ->
-                                vault.ClearPendingFileWatcherState()
-                                promise { return () }
-                            )
-
-                        handleFileEvent "change" (join [| arcPath; "assays/DiskAssay/isa.assay.xlsx" |])
-
-                        let mutable attempts = 0
-
-                        while attempts < 250
-                              && (loadingChanges.Count = 0 || loadingChanges.[loadingChanges.Count - 1]) do
-                            do! Promise.sleep 20
-                            attempts <- attempts + 1
-
-                        Vitest.expect(loadingChanges.[loadingChanges.Count - 1]).toBe (false)
-                        Vitest.expect(vault.fileWatcherPendingEvents.Count).toBe (0)
-                        Vitest.expect(vault.fileWatcherPendingArcMergeEvents.Count).toBe (0)
-                        Vitest.expect(vault.arc.Value.GetAssay("DiskAssay").Title).toEqual (Some "Old title")
-                    })
-        )
-
-        Vitest.test (
-            "a watcher event for an ARC structure file an import created does not queue an ARC merge",
-            fun () ->
-                withTempArc
-                    ignore
-                    (fun arcPath -> promise {
-                        let! loadedArc = TestHelpers.loadArcAsync arcPath
-                        let vault = ArcVault(TestHelpers.testWindow ())
-                        vault.path <- Some arcPath
-                        vault.SetArc loadedArc
-
-                        vault.ClaimImportedFileEvents(
-                            vault.StartImport(),
-                            WatcherHelpers.createImportedWatcherEvents arcPath "assays" {
-                                FolderPaths = [| "AssayB" |]
-                                FilePaths = [| "AssayB/isa.assay.xlsx" |]
-                            }
-                        )
-
-                        let loadingChanges = ResizeArray<bool>()
-
-                        let handleFileEvent =
-                            vault._FileEventController (recordingWatcherApi loadingChanges)
-
-                        try
-                            handleFileEvent "addDir" (join [| arcPath; "assays/AssayB" |])
-                            handleFileEvent "add" (join [| arcPath; "assays/AssayB/isa.assay.xlsx" |])
-
-                            Vitest.expect(vault.fileWatcherPendingArcMergeEvents.Count).toBe (0)
-                            Vitest.expect(vault.fileWatcherPendingEvents.Count).toBe (2)
-
-                            handleFileEvent "add" (join [| arcPath; "assays/AssayC/isa.assay.xlsx" |])
-
-                            Vitest.expect(vault.fileWatcherPendingArcMergeEvents.Count).toBe (1)
-                        finally
-                            vault.ClearPendingFileWatcherState()
                     })
         )
 
@@ -3789,7 +3670,7 @@ Vitest.describe (
                     let writeGate =
                         JS.Constructors.Promise.Create(fun resolve _ -> releaseWrite <- fun () -> resolve ())
 
-                    let writeScope = vault.WithBusyWritingScope(fun () -> writeGate)
+                    let writeScope = vault.WithExternalOperationScope(false, fun () -> writeGate)
 
                     // This is the exact lifecycle point guarded by the initialization close bypass.
                     Vitest.expect(vault.isInitializingArc).toBe (true)
@@ -4902,19 +4783,12 @@ Vitest.describe (
                             AbsolutePath = join [| arcPath; "isa.investigation.xlsx" |]
                         }
 
-                        vault.fileWatcherPendingArcMergeEvents.Add {
-                            EventName = "change"
-                            RelativePath = "isa.investigation.xlsx"
-                            AbsolutePath = join [| arcPath; "isa.investigation.xlsx" |]
-                        }
-
                         try
                             match! vault.RenameOpenArcRoot "renamed-arc-watcher" with
                             | Error error -> failwith error.Message
                             | Ok _ ->
                                 Vitest.expect(vault.fileWatcherReloadArcTimeout).toEqual (None)
                                 Vitest.expect(vault.fileWatcherPendingEvents.Count).toBe (0)
-                                Vitest.expect(vault.fileWatcherPendingArcMergeEvents.Count).toBe (0)
                         finally
                             vault.fileWatcherReloadArcTimeout |> Option.iter Fable.Core.JS.clearTimeout
                     })
@@ -4970,7 +4844,7 @@ Vitest.describe (
                         let writeGate =
                             JS.Constructors.Promise.Create(fun resolve _ -> releaseWrite <- fun () -> resolve ())
 
-                        let writeScope = vault.WithBusyWritingScope(fun () -> writeGate)
+                        let writeScope = vault.WithExternalOperationScope(false, fun () -> writeGate)
 
                         match! vault.RenameOpenArcRoot "renamed-arc-busy" with
                         | Ok _ -> failwith "Expected the ARC root rename to wait for the running write."
@@ -5560,7 +5434,7 @@ Vitest.describe (
                         let busyGate =
                             JS.Constructors.Promise.Create(fun resolve _ -> releaseBusy.Value <- fun () -> resolve ())
 
-                        let busyScope = vault.WithBusyWritingScope(fun () -> busyGate)
+                        let busyScope = vault.WithExternalOperationScope(false, fun () -> busyGate)
 
                         match! api.pickAbsolutePaths FileSystemItemKind.Folder with
                         | Error error ->
@@ -5600,7 +5474,7 @@ Vitest.describe (
                                     releaseBusy.Value <- fun () -> resolve ()
                                 )
 
-                            let busyScope = vault.WithBusyWritingScope(fun () -> busyGate)
+                            let busyScope = vault.WithExternalOperationScope(false, fun () -> busyGate)
 
                             match! api.tryImportExternalFiles request with
                             | Error error -> Vitest.expect(error.Message).toContain ("still saving another change")
