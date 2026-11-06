@@ -22,6 +22,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - In the JSON import dialog you can import column headers only, headers with units, or headers with all values, and you can rename new tables. (by @Etschbeijer)
 - After a JSON import, the dialog lists the new and changed tables and reminds you to save the ARC. (by @Etschbeijer)
 - The JSON and template import dialogs show each table as a scrollable grid, where you can leave out rows the same way as columns. In "Headers only" mode the grid hides the row checkboxes, because that mode imports no values. When you append a table, left-out rows stay empty, so the other rows keep lining up with the table in the editor. The dialog also explains that appended rows line up by position and that columns the table in the editor already has, including Input and Output, stay as they are. (by @Etschbeijer)
+- Image and Html files are now supported and are directly displayed in the App. Common types such as .png, .jp(e)g, .gif, ect. are now supported. Below the imgae is a small box with sufficient metadata and if the image is corrupted, the user is advised with a badge. (by @Rookabu)
+- Files with no ending are treated as markdown files which makes them editable with the markdown editor. This comes in handy especially if the user creates are new file in the app and forgets the ending. Before that, a corrupted and unusable file got created. (by @Rookabu)
+
 ### 🔄 Changed
 
 - Releases are now automatically created as draft. This is part of quality control. The App will first be tested and the docs updated before the release is pushed into "New update available" status. #1488 (by @Freymaurer)

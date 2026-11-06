@@ -86,6 +86,9 @@ export { default as ValidationPackageBrowser } from './dist/Page/ValidationPacka
 
 export { Viewer as GitMergeConflictViewer } from './dist/Page/GitComparison/GitMergeConflictViewer.fs';
 export { TitleStack, HeaderRow, PanelShell, SectionCard } from './dist/Page/GitComparison/GitComparisonView.fs';
+export { default as HtmlViewer } from './dist/Page/FileViewer/HtmlViewer.fs';
+export { default as ImageViewer } from './dist/Page/FileViewer/ImageViewer.fs';
+export { default as PDFViewer } from './dist/Page/FileViewer/PDFViewer.fs';
 
 // -- Metadata --
 export { default as ArcFileMetadata } from './dist/Page/Metadata/ArcFileMetadata.fs';
