@@ -423,7 +423,7 @@ type FileTree =
                 Renderer.Types.PageState.ArcFilePage(arcFile, Some activeView)
             | pageState -> pageState
 
-        let openPreview (alwaysOpen: bool) (item: FileItem) =
+        let openPreview (item: FileItem) =
             promise {
                 match item.Path with
                 | None ->
@@ -433,17 +433,7 @@ type FileTree =
                 | Some path when item.IsDirectory ->
                     let selectedPath = PathHelpers.normalizePath path
 
-                    let isAlreadyOpen =
-                        Helper.isArcEntityFolderViewOpen
-                            pageStateCtx.state
-                            fileStateCtx.state.Selection.TreePath
-                            selectedPath
-
-                    // Only folders with ARC metadata open a view, and only if it is not on screen yet. Otherwise the
-                    // click just expands or collapses the folder and keeps the selection, because the open view, such
-                    // as the Markdown editor, saves to the selected path.
                     match Helper.tryGetArcEntityWorkbookName selectedPath with
-                    | Some _ when isAlreadyOpen && not alwaysOpen -> ()
                     | Some workbookName ->
                         fileStateCtx.setSelection (ArcSelection.forTreePath (Some selectedPath))
                         let! result = openView $"{selectedPath}/{workbookName}"
@@ -572,6 +562,13 @@ type FileTree =
         let applyFileSystemCreateError errorMessage =
             errorModal.enqueue (ErrorModalRequest.create (errorMessage, title = "Could not create file or folder"))
 
+        let createConfig applyError : FileTreeCreateWorkflow.CreateConfig = {
+            setIsCreating = setIsDialogBusy
+            applyError = applyError
+            revealInTree = expansionCtx.revealPath
+            closeCreateModal = closeDialog
+        }
+
         let reloadPreviewByPath (path: string) : JS.Promise<Result<unit, string>> = promise {
             let! openResult = openView path
 
@@ -659,29 +656,10 @@ type FileTree =
                 match tryBuildArcCreateDraft kind identifier existingPaths with
                 | Error errorMessage -> applyCreateError errorMessage
                 | Ok draft ->
-                    setIsDialogBusy true
-
-                    promise {
-                        let! createResult = ArcFileApiHelper.addArcFileAndOpen draft.ArcFile
-
-                        match createResult with
-                        | Error exn ->
-                            setIsDialogBusy false
-                            applyCreateError exn.Message
-                        | Ok createdArcFileDto ->
-                            let selectedPath = PathHelpers.normalizePath createdArcFileDto.path
-                            fileStateCtx.setSelection (ArcSelection.forTreePath (Some selectedPath))
-
-                            let pageState = Renderer.Types.PageState.fromFileContentDTO createdArcFileDto
-                            pageStateCtx.setState (Some pageState)
-
-                            closeDialog ()
-                    }
-                    |> Promise.catch (fun exn ->
-                        setIsDialogBusy false
-                        applyCreateError exn.Message
-                    )
-                    |> Promise.start
+                    FileTreeCreateWorkflow.createArcEntry
+                        (createConfig applyCreateError)
+                        Api.ipcArcVaultApi.addArcFile
+                        draft
 
         let createFileSystemItem (name: string) =
             if not isDialogBusy then
@@ -691,55 +669,24 @@ type FileTree =
                     match draft.Parent.Path |> Option.map PathHelpers.normalizeCanonicalRelativePath with
                     | None -> applyFileSystemCreateError "Could not resolve the selected folder path."
                     | Some parentPath ->
-                        setIsDialogBusy true
-
-                        promise {
-                            let! createResult =
-                                Api.ipcArcVaultApi.createFileSystemItem {
-                                    parentPath = parentPath
-                                    name = name
-                                    kind = draft.Kind
-                                }
-
-                            match createResult with
-                            | Error exn -> applyFileSystemCreateError exn.Message
-                            | Ok createdPath ->
-                                let selectedPath = PathHelpers.normalizePath createdPath
-                                fileStateCtx.setSelection (ArcSelection.forTreePath (Some selectedPath))
-
-                                match draft.Kind with
-                                | FileSystemItemKind.File ->
-                                    let! openResult = Api.ipcArcVaultApi.openFile selectedPath
-
-                                    match openResult with
-                                    | Ok dto ->
-                                        let pageState = Renderer.Types.PageState.fromFileContentDTO dto
-                                        pageStateCtx.setState (Some pageState)
-                                    | Error _ ->
-                                        let dto = FileContentDTO.create FileContentType.PlainText "" selectedPath
-
-                                        let pageState = Renderer.Types.PageState.fromFileContentDTO dto
-                                        pageStateCtx.setState (Some pageState)
-                                | FileSystemItemKind.Folder -> pageStateCtx.setState None
-
-                                closeDialog ()
-                        }
-                        |> Promise.catch (fun exn -> applyFileSystemCreateError exn.Message)
-                        |> Promise.map (fun _ -> setIsDialogBusy false)
-                        |> Promise.start
+                        FileTreeCreateWorkflow.createFileSystemItem
+                            (createConfig applyFileSystemCreateError)
+                            Api.ipcArcVaultApi.createFileSystemItem
+                            {
+                                parentPath = parentPath
+                                name = name
+                                kind = draft.Kind
+                            }
 
         let createDataMap (parentInfo: DatamapParentInfo) =
-            promise {
-                match!
-                    ArcFileApiHelper.withArcFileRequest
-                        (ArcFiles.DataMap(Some parentInfo, Datamap.init ()))
-                        Api.ipcArcVaultApi.addArcFile
-                with
-                | Error exn -> applyCreateError exn.Message
-                | Ok _ -> ()
-            }
-            |> Promise.catch (fun exn -> applyCreateError exn.Message)
-            |> Promise.start
+            FileTreeCreateWorkflow.createDataMap
+                {
+                    createConfig applyCreateError with
+                        setIsCreating = ignore
+                        closeCreateModal = ignore
+                }
+                Api.ipcArcVaultApi.addArcFile
+                parentInfo
 
         let tryFindDataMapItemByPath path =
             Renderer.Context.FileTreeStore.tryFind fileStateCtx.fileTreeStore.Snapshot path
@@ -781,8 +728,17 @@ type FileTree =
             | Error errorMessage -> return Error errorMessage
         }
 
+        let importExternalPaths (kind: FileSystemItemKind) (targetRelativePath: string) = promise {
+            let! result = fileStateCtx.importExternalPaths kind targetRelativePath
+
+            Helper.importRevealPath result targetRelativePath
+            |> Option.iter expansionCtx.revealPath
+
+            return result |> Result.map ignore
+        }
+
         let contextMenuConfig: ContextMenuConfig = {
-            openItem = openPreview true
+            openItem = openPreview
             arcRootPath = appStateCtx
             openCreateModal = (fun kind -> openDialog (CreateDialog kind))
             openNoteDraft = (fun () -> pageStateCtx.setState (Some Renderer.Types.PageState.NotesDraftPage))
@@ -794,7 +750,7 @@ type FileTree =
             pathActionConfig = {
                 openPathInFileExplorer = Api.ipcArcVaultApi.showPathInFileExplorer
                 openPathWithDefaultApplication = Api.ipcArcVaultApi.openPathWithDefaultApplication
-                importExternalPaths = fileStateCtx.importExternalPaths
+                importExternalPaths = importExternalPaths
                 enqueueError = errorModal.enqueue
             }
             enqueueError = errorModal.enqueue
@@ -933,7 +889,11 @@ type FileTree =
                     prop.children [
                         Swate.Components.Page.FileExplorer.FileExplorer.FileExplorer(
                             initialItems = visibleItems,
-                            onItemClick = openPreview false,
+                            onItemClick =
+                                (fun item ->
+                                    if not item.IsDirectory then
+                                        openPreview item
+                                ),
                             onDirectoryExpansionChange = handleExpansionChange,
                             expandedIds = expansionCtx.expandedIds,
                             onExpandedIdsChange = expansionCtx.setExpandedIds,

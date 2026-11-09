@@ -171,16 +171,13 @@ let tryGetArcEntityWorkbookName (folderPath: string) =
         |> Option.map PathHelpers.getFileName
     )
 
-let isArcEntityFolderViewOpen
-    (pageState: Renderer.Types.PageState option)
-    (selectedTreePath: string option)
-    (folderPath: string)
-    =
-    match pageState, selectedTreePath, tryGetArcEntityWorkbookName folderPath with
-    | Some(Renderer.Types.PageState.ArcFilePage _), Some selectedPath, Some workbookName ->
-        PathHelpers.pathsEqual selectedPath folderPath
-        || PathHelpers.pathsEqual selectedPath $"{PathHelpers.normalizePath folderPath}/{workbookName}"
-    | _ -> false
+let importRevealPath
+    (result: Result<ImportExternalFilesResult option, exn>)
+    (targetRelativePath: string)
+    : string option =
+    match result with
+    | Ok(Some ImportExternalFilesResult.Completed) -> Some targetRelativePath
+    | _ -> None
 
 /// Builds the row of an entry in one record. Entry paths are already normalized, so nothing normalizes them again.
 let createItem
