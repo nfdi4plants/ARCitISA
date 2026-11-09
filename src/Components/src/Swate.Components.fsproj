@@ -137,6 +137,9 @@
     <Compile Include="Primitive\LoadingSpinner\LoadingSpinner.fs" />
     <Compile Include="Primitive\Blankslate\Types.fs" />
     <Compile Include="Primitive\Blankslate\Blankslate.fs" />
+    <Compile Include="Primitive\Banner\Types.fs" />
+    <Compile Include="Primitive\Banner\Banner.fs" />
+    <Compile Include="Primitive\Banner\Banner.test.rtl.fs" />
     <Compile Include="Primitive\Popover\Context.fs" />
     <Compile Include="Primitive\Popover\Popover.fs" />
     <Compile Include="Primitive\Select\Types.fs" />
@@ -347,7 +350,9 @@
     <Compile Include="Page\Changelog\Changelog.test.rtl.fs" />
     <Compile Include="Page\Changelog\Changelog.sample.fs" />
     <Compile Include="Page\GitSidebar\GitDefaults.fs" />
+    <Compile Include="Page\SettingsPage\Types.fs" />
     <Compile Include="Page\SettingsPage\SettingsPage.fs" />
+    <Compile Include="Page\SettingsPage\SettingsPage.test.rtl.fs" />
     <Compile Include="Page\Metadata\FormComponents\Helpers.fs" />
     <Compile Include="Page\Metadata\FormComponents\InputSequence.fs" />
     <Compile Include="Page\Metadata\FormComponents\TextInput.fs" />

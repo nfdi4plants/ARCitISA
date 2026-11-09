@@ -26,8 +26,8 @@ type ContextMenuConfig = {
     pathActionConfig: PathActionConfig
     enqueueError: ErrorModalRequest -> unit
     runToggleLfsMark: string -> bool -> JS.Promise<Result<unit, string>>
-    runDownloadLfsFile: string -> JS.Promise<Result<unit, string>>
-    runFreeLocalLfsCopy: string -> JS.Promise<Result<unit, string>>
+    runDownloadLfsFile: string -> JS.Promise<Result<unit, GitLfsActionFailure>>
+    runFreeLocalLfsCopy: string -> JS.Promise<Result<unit, GitLfsActionFailure>>
     getFolderLargeObjects: string -> Renderer.Context.LargeObjectStore.FolderLargeObjects
     runDownloadLfsFolder: string -> unit
     requestFreeLfsFolder: string -> unit

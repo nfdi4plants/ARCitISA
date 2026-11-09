@@ -45,9 +45,11 @@
     <Compile Include="VersionControl\ProviderComposition.fs" />
     <Compile Include="VersionControl\VersionControlSettings.fs" />
     <Compile Include="Services\Settings\UserDefaults.fs" />
+    <Compile Include="VersionControl\GitExecutableSetting.fs" />
     <Compile Include="VersionControl\VersionControlRuntime.fs" />
     <Compile Include="VersionControl\Mappings.fs" />
     <Compile Include="VersionControl\WorkspaceSessionHost.fs" />
+    <Compile Include="VersionControl\DependencyState.fs" />
     <Compile Include="VersionControl\TextDiffHandles.fs" />
     <Compile Include="IndexedFileTree.fs" />
     <Compile Include="Git\LargeObjectIndex.fs" />

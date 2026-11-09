@@ -54,7 +54,10 @@ let private createErrorReporter
     (title: string)
     =
     function
-    | Some msg -> enqueueErrorModal (ErrorModalRequest.create (msg, title = title, ?scopeId = arcScopeId))
+    | Some(failure: GitLfsActionFailure) ->
+        enqueueErrorModal (
+            ErrorModalRequest.create (failure.Message, title = title, ?details = failure.Details, ?scopeId = arcScopeId)
+        )
     | None -> ()
 
 let private createLfsAction title action enqueueErrorModal arcScopeId runAction =

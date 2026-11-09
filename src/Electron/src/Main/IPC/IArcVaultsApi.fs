@@ -503,6 +503,48 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
             with e ->
                 return Error(exn $"Could not pick directory: {e.Message}")
         }
+    pickExecutable =
+        fun () -> promise {
+            try
+                let isWindows = Main.Bindings.Node.processPlatform () = "win32"
+
+                // The usual Git locations of the other systems, such as /usr/bin and /opt/homebrew/bin,
+                // sit in folders that the dialog hides unless it shows hidden files.
+                let properties =
+                    if isWindows then
+                        [|
+                            Enums.Dialog.ShowOpenDialog.Options.Properties.OpenFile
+                        |]
+                    else
+                        [|
+                            Enums.Dialog.ShowOpenDialog.Options.Properties.OpenFile
+                            Enums.Dialog.ShowOpenDialog.Options.Properties.ShowHiddenFiles
+                        |]
+
+                // Only Windows tells executables apart by extension. Other systems mark them with a
+                // permission bit, which a filter cannot express.
+                let filters =
+                    if isWindows then
+                        [|
+                            FileFilter("Executable", [| "exe"; "com" |])
+                            FileFilter("All files", [| "*" |])
+                        |]
+                    else
+                        [||]
+
+                let window = dialogParentFromIpcEvent event
+
+                let! result = dialog.showOpenDialog (?window = window, properties = properties, filters = filters)
+
+                if result.canceled then
+                    return Error(exn "Cancelled")
+                elif result.filePaths.Length <> 1 then
+                    return Error(exn "Not exactly one path")
+                else
+                    return Ok(result.filePaths |> Array.exactlyOne)
+            with e ->
+                return Error(exn $"Could not pick executable: {e.Message}")
+        }
     pickAbsolutePaths =
         fun kind -> promise {
             try

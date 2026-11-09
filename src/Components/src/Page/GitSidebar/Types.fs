@@ -57,6 +57,33 @@ type GitSidebarLog = {
     Omitted: int
 }
 
+module GitSidebarLog =
+    /// The sentence that tells how many of the oldest lines the log no longer holds.
+    let omittedText (omitted: int) : string =
+        if omitted = 1 then
+            "1 earlier line was left out"
+        else
+            $"{omitted} earlier lines were left out"
+
+    /// The text of one line. A command line starts with "$ ".
+    let lineText (line: GitSidebarLogLine) : string =
+        if line.Kind = "command" then
+            "$ " + line.Text
+        else
+            line.Text
+
+    /// The plain text of a log: the omitted sentence when lines were dropped, then one text line per log line.
+    let toText (log: GitSidebarLog) : string =
+        [
+            if log.Omitted > 0 then
+                omittedText log.Omitted
+            yield! log.Lines |> Array.map lineText
+        ]
+        |> String.concat "\n"
+
+/// The log of the last operation that ended. Title names the operation and where and when it ran.
+type GitSidebarLastLog = { Title: string; Log: GitSidebarLog }
+
 [<RequireQualifiedAccess>]
 type GitSidebarRunStatus =
     | Idle

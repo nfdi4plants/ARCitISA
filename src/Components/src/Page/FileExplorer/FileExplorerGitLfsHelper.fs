@@ -14,7 +14,7 @@ let private downloadFolderLabel = "Download all LFS files"
 let private freeFolderLabel = "Free all local LFS copies"
 
 let toggleLfsMark
-    (setError: string option -> unit)
+    (setError: GitLfsActionFailure option -> unit)
     (runToggle: string -> bool -> JS.Promise<Result<unit, string>>)
     : (FileItem -> bool -> unit) =
     fun item markAsLfs ->
@@ -23,22 +23,25 @@ let toggleLfsMark
             | None -> ()
             | Some relativePath ->
                 if System.String.IsNullOrWhiteSpace relativePath then
-                    setError (Some "Cannot mark ARC root as a Git LFS file.")
+                    setError (Some(GitLfsActionFailure.ofMessage "Cannot mark ARC root as a Git LFS file."))
                 else
                     match GitLfsRules.tryGetToggleBlockedReason relativePath item.Size markAsLfs with
-                    | Some blockedReason -> setError (Some blockedReason)
+                    | Some blockedReason -> setError (Some(GitLfsActionFailure.ofMessage blockedReason))
                     | None ->
                         let! result = runToggle relativePath markAsLfs
 
                         match result with
                         | Ok _ -> setError None
-                        | Error msg -> setError (Some $"Git LFS update failed for '{item.Name}': {msg}")
+                        | Error msg ->
+                            setError (
+                                Some(GitLfsActionFailure.ofMessage $"Git LFS update failed for '{item.Name}': {msg}")
+                            )
         }
         |> Promise.start
 
 let private runLfsFileAction
-    (setError: string option -> unit)
-    (runAction: string -> JS.Promise<Result<unit, string>>)
+    (setError: GitLfsActionFailure option -> unit)
+    (runAction: string -> JS.Promise<Result<unit, GitLfsActionFailure>>)
     (rootError: string)
     (canRun: FileItem -> bool)
     (blockedMessage: FileItem -> string)
@@ -48,20 +51,27 @@ let private runLfsFileAction
         promise {
             match item.Path with
             | None -> ()
-            | Some path when System.String.IsNullOrWhiteSpace path -> setError (Some rootError)
+            | Some path when System.String.IsNullOrWhiteSpace path ->
+                setError (Some(GitLfsActionFailure.ofMessage rootError))
             | Some _ when not (FileItemHelper.isLfs item) ->
-                setError (Some $"'{item.Name}' is not marked as a Git LFS file.")
-            | Some _ when not (canRun item) -> setError (Some(blockedMessage item))
+                setError (Some(GitLfsActionFailure.ofMessage $"'{item.Name}' is not marked as a Git LFS file."))
+            | Some _ when not (canRun item) -> setError (Some(GitLfsActionFailure.ofMessage (blockedMessage item)))
             | Some path ->
                 match! runAction path with
                 | Ok _ -> setError None
-                | Error msg -> setError (Some(failureMessage item msg))
+                | Error failure ->
+                    setError (
+                        Some {
+                            failure with
+                                Message = failureMessage item failure.Message
+                        }
+                    )
         }
         |> Promise.start
 
 let freeLocalLfsCopy
-    (setError: string option -> unit)
-    (runCleanup: string -> JS.Promise<Result<unit, string>>)
+    (setError: GitLfsActionFailure option -> unit)
+    (runCleanup: string -> JS.Promise<Result<unit, GitLfsActionFailure>>)
     : FileItem -> unit =
     runLfsFileAction
         setError
@@ -72,8 +82,8 @@ let freeLocalLfsCopy
         (fun item msg -> $"Git LFS cleanup failed for '{item.Name}': {msg}")
 
 let downloadLfsFile
-    (setError: string option -> unit)
-    (runDownload: string -> JS.Promise<Result<unit, string>>)
+    (setError: GitLfsActionFailure option -> unit)
+    (runDownload: string -> JS.Promise<Result<unit, GitLfsActionFailure>>)
     : FileItem -> unit =
     runLfsFileAction
         setError

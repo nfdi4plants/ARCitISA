@@ -12,9 +12,6 @@ open Swate.Components.Primitive.ErrorModal.Context
 open Swate.Electron.Shared.VersionControlTypes
 
 module DataHubBrowserHelper =
-    let isCancelError (error: exn) =
-        String.Equals(error.Message, "Cancelled", StringComparison.OrdinalIgnoreCase)
-
     let toRepositoryFolderName (projectInfo: ExploreProjectDto) =
         projectInfo.path_with_namespace.Split('/')
         |> Array.tryLast
@@ -69,12 +66,15 @@ let DataHubBrowserTarget () =
     let isCloneBusy = gitStateCtx.state.BusyOperation.IsSome
     let runStatus = Renderer.Context.GitWorkflow.currentRunStatus gitStateCtx.state
 
+    // The same last Git log as in the Git sidebar. It lets the user read the output of a clone that failed.
+    let lastLog = Renderer.Context.LastGitLog.useLastGitLog ()
+
     let cloneAndOpenRepo (projectInfo: ExploreProjectDto) =
         promise {
             let! destinationResult = Api.ipcArcVaultApi.pickDirectory ()
 
             match destinationResult with
-            | Error error when DataHubBrowserHelper.isCancelError error -> ()
+            | Error error when isPickCancelled error -> ()
             | Error error -> onArcError $"Could not pick download folder: {error.Message}"
             | Ok destinationFolder ->
                 let targetPath =
@@ -106,6 +106,7 @@ let DataHubBrowserTarget () =
                 ?runStatus = runStatus,
                 ?errorNotice = gitStateCtx.state.ErrorNotice,
                 ?warningNotice = gitStateCtx.state.WarningNotice,
+                ?lastLog = lastLog,
                 busyTestId = "DataHubCloneProgressNotice",
                 errorTestId = "DataHubCloneErrorNotice",
                 ?onCancelOperation =

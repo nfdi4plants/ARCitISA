@@ -142,7 +142,6 @@ let private sessionInfo: WorkspaceSessionInfoDto = {
         TextDiff = true
         ConflictResolution = true
         ObjectMaterialization = true
-        ObjectBatchMaterialization = true
         StoragePolicy = true
         Maintenance = true
         RepositoryBrowser = true
@@ -234,6 +233,16 @@ let private outputOf operationId (lines: (string * string) list) : VersionContro
             IsPartial = false
         })
         |> List.toArray
+}
+
+let private finishedLog label : Renderer.Context.OperationLog.FinishedOperationLog = {
+    Label = label
+    ArcName = Some "earlier-arc"
+    FinishedAt = 1.0
+    Log =
+        Renderer.Context.OperationLog.append
+            (outputOf "earlier-1" [ "stdout", "earlier line" ]).Entries
+            Renderer.Context.OperationLog.empty
 }
 
 let private sidebarStep label detail percent isCurrent : GitSidebarStep = {
@@ -363,7 +372,6 @@ let private defaultDependencies: GitDependencies = {
     finalizeConflict = fun _ -> unexpectedPromise "finalizeConflict"
     cancelConflict = fun _ -> unexpectedPromise "cancelConflict"
     listObjects = fun _ -> unexpectedPromise "listObjects"
-    materializeObject = fun _ -> unexpectedPromise "materializeObject"
     materializeObjects = fun _ -> unexpectedPromise "materializeObjects"
     pruneStorage = fun _ -> unexpectedPromise "pruneStorage"
     deduplicateStorage = fun _ -> unexpectedPromise "deduplicateStorage"
@@ -1412,6 +1420,48 @@ Vitest.describe (
                 Vitest.expect(reportedErrors.Count).toBe (1)
                 Vitest.expect(reportedErrors[0].Title).toBe ("Could not refresh Git state")
                 Vitest.expect(reportedErrors[0].Message).toBe ("remote status failed")
+            }
+        )
+
+        Vitest.test (
+            "RefreshCompleted reports the output of the failed refresh as the log of the error",
+            fun () -> promise {
+                let reportedErrors = ResizeArray<GitErrorNotification>()
+
+                let deps = {
+                    defaultDependencies with
+                        reportError = reportedErrors.Add
+                }
+
+                let refreshing, _ = update defaultDependencies ignore RefreshRequested runningState
+
+                let withOutput, _ =
+                    update
+                        defaultDependencies
+                        ignore
+                        (OperationOutputReceived(
+                            outputOf "op-1" [
+                                "command", "git fetch"
+                                "stderr", "fatal: unable to access the remote"
+                            ]
+                        ))
+                        refreshing
+
+                let _, cmd =
+                    update
+                        deps
+                        ignore
+                        (RefreshCompleted(withOutput.RefreshRequestId, Error "remote status failed"))
+                        withOutput
+
+                let! _ = collectMessages cmd
+
+                Vitest.expect(reportedErrors.Count).toBe (1)
+
+                Vitest.expect(reportedErrors[0].Log.Lines |> Array.map _.Text).toEqual [|
+                    "git fetch"
+                    "fatal: unable to access the remote"
+                |]
             }
         )
 
@@ -3292,6 +3342,102 @@ Vitest.describe (
         )
 
         Vitest.test (
+            "WriteCompleted reports the output of the failed write as the log of the error",
+            fun () -> promise {
+                let reportedErrors = ResizeArray<GitErrorNotification>()
+
+                let deps = {
+                    defaultDependencies with
+                        reportError = reportedErrors.Add
+                }
+
+                let writeRequest = Push GitUpdateAcceptance.RequirePreview
+
+                let started, _ =
+                    update defaultDependencies ignore (WriteRequested writeRequest) runningState
+
+                let withOutput, _ =
+                    update
+                        defaultDependencies
+                        ignore
+                        (OperationOutputReceived(
+                            outputOf "op-1" [
+                                "command", "git push"
+                                "stderr", "remote rejected the push"
+                            ]
+                        ))
+                        started
+
+                let _, cmd =
+                    update
+                        deps
+                        ignore
+                        (WriteCompleted(
+                            withOutput.ArcSessionId,
+                            withOutput.WriteRequestId,
+                            writeRequest,
+                            Error "remote rejected the push"
+                        ))
+                        withOutput
+
+                let! _ = collectMessages cmd
+
+                Vitest.expect(reportedErrors.Count).toBe (1)
+
+                Vitest.expect(reportedErrors[0].Log.Lines |> Array.map _.Text).toEqual [|
+                    "git push"
+                    "remote rejected the push"
+                |]
+            }
+        )
+
+        Vitest.test (
+            "an error that is no failure of the running operation reports no log",
+            fun () -> promise {
+                let reportedErrors = ResizeArray<GitErrorNotification>()
+
+                let deps = {
+                    defaultDependencies with
+                        reportError = reportedErrors.Add
+                }
+
+                let started, _ =
+                    update
+                        defaultDependencies
+                        ignore
+                        (WriteRequested(Push GitUpdateAcceptance.RequirePreview))
+                        runningState
+
+                let withOutput, _ =
+                    update
+                        defaultDependencies
+                        ignore
+                        (OperationOutputReceived(outputOf "op-1" [ "command", "git push" ]))
+                        started
+
+                Vitest.expect(withOutput.CurrentLog.Lines.Length).toBe 1
+
+                let _, cmd =
+                    update
+                        deps
+                        ignore
+                        (SelectChangeCompleted(
+                            withOutput.PageLoadRequestId,
+                            "A.txt",
+                            ignore,
+                            Error "The change could not be opened."
+                        ))
+                        withOutput
+
+                let! _ = collectMessages cmd
+
+                Vitest.expect(reportedErrors.Count).toBe (1)
+                Vitest.expect(reportedErrors[0].Message).toBe ("The change could not be opened.")
+                Vitest.expect(reportedErrors[0].Log.Lines.Length).toBe 0
+            }
+        )
+
+        Vitest.test (
             "WriteCompleted with a cancellation failure shows a warning notice instead of an error",
             fun () -> promise {
                 let canceled =
@@ -3786,6 +3932,331 @@ Vitest.describe (
                 Vitest.expect(ended.CurrentLog.Lines.Length).toBe 0
                 Vitest.expect(ended.CurrentSteps.Length).toBe 0
                 Vitest.expect(ended.CurrentStepPhases).toEqual [||]
+        )
+
+        Vitest.test (
+            "a write labels its log with the busy notice of its operation",
+            fun () ->
+                let started, _ =
+                    update
+                        defaultDependencies
+                        ignore
+                        (WriteRequested(Push GitUpdateAcceptance.RequirePreview))
+                        runningState
+
+                Vitest.expect(started.CurrentLogName.IsSome).toBe true
+
+                Vitest
+                    .expect(started.CurrentLogName |> Option.map _.Label)
+                    .toEqual (busyNoticeFromOperation started.BusyOperation.Value)
+
+                let committing, _ =
+                    update
+                        defaultDependencies
+                        ignore
+                        (WriteRequested(CommitAll(prepareCommitAll runningState "msg")))
+                        runningState
+
+                Vitest
+                    .expect(committing.CurrentLogName |> Option.map _.Label)
+                    .toEqual (busyNoticeFromOperation committing.BusyOperation.Value)
+        )
+
+        Vitest.test (
+            "a save keeps the name of its log when its phase changes",
+            fun () ->
+                let started, _ =
+                    update
+                        defaultDependencies
+                        ignore
+                        (WriteRequested(PrimarySave(prepareCommitAll runningState "msg")))
+                        runningState
+
+                Vitest.expect(started.CurrentLogName.IsSome).toBe true
+
+                let afterPhase, _ =
+                    update
+                        defaultDependencies
+                        ignore
+                        (WritePhaseChanged(
+                            started.ArcSessionId,
+                            started.WriteRequestId,
+                            GitBusyOperation.PushingToRemote
+                        ))
+                        started
+
+                Vitest.expect(afterPhase.BusyOperation).toEqual (Some GitBusyOperation.PushingToRemote)
+                Vitest.expect(afterPhase.CurrentLogName.IsSome).toBe true
+                Vitest.expect(afterPhase.CurrentLogName).toEqual started.CurrentLogName
+        )
+
+        Vitest.test (
+            "a clone that ends after output keeps the folder of the clone target as the ARC name",
+            fun () ->
+                let cloneRequest = {
+                    OperationId = "clone-op"
+                    ProviderLocation = "https://gitlab.example/carol/new-arc.git"
+                    DisplayName = Some "new-arc"
+                    TargetPath = "C:/data/new-arc"
+                    TargetRef = None
+                    MaterializeAllObjects = false
+                }
+
+                let writeRequest = Clone(cloneRequest, ignore)
+
+                let cloning, _ =
+                    update defaultDependencies ignore (WriteRequested writeRequest) runningState
+
+                let withOutput, _ =
+                    update
+                        defaultDependencies
+                        ignore
+                        (OperationOutputReceived(outputOf "op-1" [ "stderr", "fatal: repository not found" ]))
+                        cloning
+
+                let ended, _ =
+                    update
+                        defaultDependencies
+                        ignore
+                        (WriteCompleted(
+                            withOutput.ArcSessionId,
+                            withOutput.WriteRequestId,
+                            writeRequest,
+                            Error "not found"
+                        ))
+                        withOutput
+
+                Vitest.expect(ended.LastLog.IsSome).toBe true
+                Vitest.expect(ended.LastLog.Value.ArcName).toEqual (Some "new-arc")
+        )
+
+        Vitest.test (
+            "a write that ends after output keeps the output as the last log",
+            fun () ->
+                let apply state message =
+                    fst (update defaultDependencies ignore message state)
+
+                let before = JS.Constructors.Date.now ()
+                let writeRequest = Push GitUpdateAcceptance.RequirePreview
+                let started = apply runningState (WriteRequested writeRequest)
+
+                let withOutput =
+                    apply started (OperationOutputReceived(outputOf "op-1" [ "command", "git push"; "stdout", "done" ]))
+
+                let ended =
+                    apply
+                        withOutput
+                        (WriteCompleted(
+                            withOutput.ArcSessionId,
+                            withOutput.WriteRequestId,
+                            writeRequest,
+                            Error "rejected"
+                        ))
+
+                let last = ended.LastLog.Value
+
+                Vitest.expect(last.Label).toBe started.CurrentLogName.Value.Label
+                Vitest.expect(last.ArcName).toEqual (Some "arc")
+                Vitest.expect(last.FinishedAt >= before).toBe true
+                Vitest.expect(last.Log.Lines |> Array.map _.Text).toEqual [| "git push"; "done" |]
+                Vitest.expect(ended.CurrentLog.Lines.Length).toBe 0
+                Vitest.expect(ended.CurrentLogName).toEqual None
+        )
+
+        Vitest.test (
+            "a write that succeeds after output keeps the output as the last log",
+            fun () ->
+                let apply state message =
+                    fst (update defaultDependencies ignore message state)
+
+                let writeRequest = Push GitUpdateAcceptance.RequirePreview
+                let started = apply runningState (WriteRequested writeRequest)
+
+                let withOutput =
+                    apply started (OperationOutputReceived(outputOf "op-1" [ "command", "git push"; "stdout", "done" ]))
+
+                let ended =
+                    apply
+                        withOutput
+                        (WriteCompleted(
+                            withOutput.ArcSessionId,
+                            withOutput.WriteRequestId,
+                            writeRequest,
+                            Ok(
+                                Completed(
+                                    UnitSuccess {
+                                        Refresh = refreshed cleanStatus
+                                        PageChange = GitPageChange.NoChange
+                                        SelectedChangePath = None
+                                        Warning = None
+                                        Partial = None
+                                        Published = None
+                                        ObjectsMissing = None
+                                    }
+                                )
+                            )
+                        ))
+
+                Vitest.expect(ended.ErrorNotice).toEqual None
+                Vitest.expect(ended.BusyOperation).toEqual None
+                Vitest.expect(ended.LastLog.IsSome).toBe true
+                Vitest.expect(ended.LastLog.Value.Label).toBe started.CurrentLogName.Value.Label
+                Vitest.expect(ended.LastLog.Value.Log.Lines |> Array.map _.Text).toEqual [| "git push"; "done" |]
+                Vitest.expect(ended.CurrentLog.Lines.Length).toBe 0
+                Vitest.expect(ended.CurrentLogName).toEqual None
+        )
+
+        Vitest.test (
+            "a refresh with output that ends leaves the last log unchanged",
+            fun () ->
+                let apply state message =
+                    fst (update defaultDependencies ignore message state)
+
+                let earlier = finishedLog "Earlier operation"
+
+                let refreshing =
+                    apply
+                        {
+                            runningState with
+                                LastLog = Some earlier
+                        }
+                        RefreshRequested
+
+                Vitest.expect(refreshing.CurrentLogName).toEqual None
+
+                let withOutput =
+                    apply refreshing (OperationOutputReceived(outputOf "op-1" [ "stdout", "line" ]))
+
+                Vitest.expect(withOutput.CurrentLog.Lines.Length).toBe 1
+
+                let ended =
+                    apply withOutput (RefreshCompleted(withOutput.RefreshRequestId, Error "failed"))
+
+                Vitest.expect(ended.LastLog).toEqual (Some earlier)
+        )
+
+        Vitest.test (
+            "an operation that ends without output keeps the previous last log",
+            fun () ->
+                let apply state message =
+                    fst (update defaultDependencies ignore message state)
+
+                let earlier = finishedLog "Earlier operation"
+                let writeRequest = Push GitUpdateAcceptance.RequirePreview
+
+                let started =
+                    apply
+                        {
+                            runningState with
+                                LastLog = Some earlier
+                        }
+                        (WriteRequested writeRequest)
+
+                let ended =
+                    apply
+                        started
+                        (WriteCompleted(started.ArcSessionId, started.WriteRequestId, writeRequest, Error "rejected"))
+
+                Vitest.expect(ended.LastLog).toEqual (Some earlier)
+        )
+
+        Vitest.test (
+            "opening another ARC keeps the last log",
+            fun () ->
+                let earlier = finishedLog "Earlier operation"
+
+                let next, _ =
+                    update defaultDependencies ignore (ArcPathChanged(Some "C:/other-arc")) {
+                        runningState with
+                            LastLog = Some earlier
+                    }
+
+                Vitest.expect(next.CurrentArcPath).toEqual (Some "C:/other-arc")
+                Vitest.expect(next.LastLog).toEqual (Some earlier)
+        )
+
+        Vitest.test (
+            "opening another ARC while an operation runs keeps its output as the last log",
+            fun () ->
+                let busy = {
+                    runningState with
+                        BusyOperation = Some GitBusyOperation.CommittingAllChanges
+                        CurrentLogName =
+                            busyNoticeFromOperation GitBusyOperation.CommittingAllChanges
+                            |> Option.map (fun label ->
+                                let name: Renderer.Context.OperationLog.OperationLogName = {
+                                    Label = label
+                                    ArcName = Some "arc"
+                                }
+
+                                name
+                            )
+                        CurrentOperation = Some { OperationId = "op-1" }
+                        CurrentLog =
+                            Renderer.Context.OperationLog.append
+                                (outputOf "op-1" [ "stdout", "committing" ]).Entries
+                                Renderer.Context.OperationLog.empty
+                }
+
+                let next, _ =
+                    update defaultDependencies ignore (ArcPathChanged(Some "C:/other-arc")) busy
+
+                Vitest.expect(next.CurrentArcPath).toEqual (Some "C:/other-arc")
+                Vitest.expect(next.LastLog.IsSome).toBe true
+
+                let lines = next.LastLog.Value.Log.Lines
+
+                Vitest.expect(lines.Length).toBe 2
+                Vitest.expect(lines[0].Text).toBe "committing"
+                Vitest.expect(lines[1].Kind).toBe "notice"
+        )
+
+        Vitest.test (
+            "failureMessage names the first five affected paths of a path_not_found failure",
+            fun () ->
+                let paths = [| for index in 1..7 -> $"data/file{index}.txt" |]
+                let instructions = "Select existing files and try again."
+
+                let failure =
+                    makeFailure
+                        NotFound
+                        VersionControlCodes.PathNotFound
+                        "Some selected paths do not exist."
+                        (Some {
+                            Code = VersionControlCodes.Recovery.RemoveIndexLock
+                            Instructions = Some instructions
+                        })
+                        paths
+
+                let message = failureMessage failure
+
+                for path in paths[0..4] do
+                    Vitest.expect(message).toContain ($"'{path}'")
+
+                Vitest.expect(message).not.toContain (paths[5])
+                Vitest.expect(message).not.toContain (paths[6])
+                Vitest.expect(message).toContain ("2 more")
+                Vitest.expect(message.StartsWith failure.Message).toBe true
+                Vitest.expect(message.EndsWith instructions).toBe true
+        )
+
+        Vitest.test (
+            "failureMessage ignores the affected paths of a failure with another code",
+            fun () ->
+                let instructions = "Retry the action."
+
+                let failure =
+                    makeFailure
+                        Concurrency
+                        VersionControlCodes.PreconditionFailed
+                        "The state changed."
+                        (Some {
+                            Code = VersionControlCodes.Recovery.RemoveIndexLock
+                            Instructions = Some instructions
+                        })
+                        [| "data/file1.txt"; "data/file2.txt" |]
+
+                Vitest.expect(failureMessage failure).toBe ($"{failure.Message} {instructions}")
         )
 
         Vitest.test (
@@ -5498,7 +5969,7 @@ Vitest.describe (
                                         |]
                                     )
                             }
-                        materializeObject =
+                        materializeObjects =
                             fun _ ->
                                 materializeCalls <- materializeCalls + 1
                                 promise { return Ok(succeeded ()) }
@@ -5614,7 +6085,7 @@ Vitest.describe (
                                         |]
                                     )
                             }
-                        materializeObject =
+                        materializeObjects =
                             fun _ ->
                                 materializeCalls <- materializeCalls + 1
                                 promise { return Ok(succeeded ()) }
@@ -7468,6 +7939,37 @@ Vitest.describe (
         )
 
         Vitest.test (
+            "A large-file download that failed after an update keeps the git-lfs output out of the warning and the offer",
+            fun () -> promise {
+                let gitLfsOutput =
+                    "error transferring \"cd285a1ff124\": [0] remote missing object cd285a1ff124"
+
+                let partial =
+                    makeFailure
+                        ProviderError
+                        VersionControlCodes.HydrationFailed
+                        $"Large-object hydration failed after a successful update: {gitLfsOutput}"
+                        (Some {
+                            Code = VersionControlCodes.Recovery.RetryMaterialization
+                            Instructions = None
+                        })
+                        [||]
+
+                let! _, finished = runPullWithPartial partial
+
+                let offerMessage =
+                    match finished.PendingRecovery with
+                    | Some(GitPendingRecovery.RetryMaterialization message) -> message
+                    | _ -> failwith "Expected the download offer."
+
+                Vitest.expect(offerMessage.Contains gitLfsOutput).toBe false
+                Vitest.expect(finished.PendingConfirmation.Value.Message.Contains gitLfsOutput).toBe false
+                Vitest.expect(finished.WarningNotice.IsSome).toBe true
+                Vitest.expect(finished.WarningNotice.Value.Contains gitLfsOutput).toBe false
+            }
+        )
+
+        Vitest.test (
             "A removed index lock offers the download of the large files",
             fun () -> promise {
                 let partial = lockedPartial VersionControlCodes.HydrationFailed
@@ -7599,7 +8101,7 @@ Vitest.describe (
                                         |]
                                     )
                             }
-                        materializeObject = fun _ -> promise { return Ok(OperationResultDto.Failed failure) }
+                        materializeObjects = fun _ -> promise { return Ok(OperationResultDto.Failed failure) }
                 }
 
                 let requested, requestCmd =
@@ -7985,10 +8487,10 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "Download now requests a path that git-lfs wrote while the lock stopped the checkout, next to the missing ones",
+            "Download now requests a path that git-lfs wrote while the lock stopped the checkout, next to the missing ones, in one call",
             fun () -> promise {
                 let status = statusWithChanges [| "stale.bin", FileChangeKindDto.Modified |]
-                let requested = ResizeArray<string>()
+                let requests = ResizeArray<ObjectPathsRequestDto>()
 
                 let deps = {
                     (withRefresh status defaultDependencies) with
@@ -8003,9 +8505,9 @@ Vitest.describe (
                                         |]
                                     )
                             }
-                        materializeObject =
+                        materializeObjects =
                             fun request ->
-                                requested.Add request.Path
+                                requests.Add request
                                 promise { return Ok(succeeded ()) }
                 }
 
@@ -8018,7 +8520,9 @@ Vitest.describe (
                 | [| WriteCompleted(_, _, RetryMaterialization, Ok(Completed _)) |] -> ()
                 | _ -> failwith "Expected the download to complete."
 
-                Vitest.expect(requested.ToArray()).toEqual [| "stale.bin"; "missing.bin" |]
+                Vitest.expect(requests.Count).toBe 1
+                Vitest.expect(requests[0].Paths).toEqual [| "stale.bin"; "missing.bin" |]
+                Vitest.expect(requests[0].AlwaysRefreshTree).toBe true
             }
         )
 
@@ -8028,7 +8532,9 @@ Vitest.describe (
                 let status = statusWithChanges [| "edited.bin", FileChangeKindDto.Modified |]
 
                 let refusal =
-                    makeFailure ProviderError VersionControlCodes.LocalChanges "'edited.bin' has local changes." None [||]
+                    makeFailure ProviderError VersionControlCodes.LocalChanges "1 of 2 paths failed" None [|
+                        "edited.bin"
+                    |]
 
                 let deps = {
                     (withRefresh status defaultDependencies) with
@@ -8042,14 +8548,8 @@ Vitest.describe (
                                         |]
                                     )
                             }
-                        materializeObject =
-                            fun request -> promise {
-                                return
-                                    if request.Path = "edited.bin" then
-                                        Ok(OperationResultDto.Failed refusal)
-                                    else
-                                        Ok(succeeded ())
-                            }
+                        materializeObjects =
+                            fun _ -> promise { return Ok(OperationResultDto.PartiallySucceeded(operation (), refusal)) }
                 }
 
                 let requested, retryCmd =
@@ -8070,12 +8570,14 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "Download now skips a pending path that the library refuses for a local edit and downloads the others",
+            "Download now asks for every pending path in one call and skips the one that the library refuses for a local edit",
             fun () -> promise {
                 let refusal =
-                    makeFailure ProviderError VersionControlCodes.LocalChanges "'edited.bin' has local changes." None [||]
+                    makeFailure ProviderError VersionControlCodes.LocalChanges "1 of 2 paths failed" None [|
+                        "edited.bin"
+                    |]
 
-                let requested = ResizeArray<string>()
+                let requests = ResizeArray<ObjectPathsRequestDto>()
 
                 let deps = {
                     (withRefresh cleanStatus defaultDependencies) with
@@ -8089,17 +8591,10 @@ Vitest.describe (
                                         |]
                                     )
                             }
-                        materializeObject =
+                        materializeObjects =
                             fun request ->
-                                requested.Add request.Path
-
-                                promise {
-                                    return
-                                        if request.Path = "edited.bin" then
-                                            Ok(OperationResultDto.Failed refusal)
-                                        else
-                                            Ok(succeeded ())
-                                }
+                                requests.Add request
+                                promise { return Ok(OperationResultDto.PartiallySucceeded(operation (), refusal)) }
                 }
 
                 let running, retryCmd =
@@ -8115,7 +8610,149 @@ Vitest.describe (
 
                 let! _ = collectMessages finalCmd
 
-                Vitest.expect(requested.ToArray()).toEqual [| "edited.bin"; "missing.bin" |]
+                Vitest.expect(requests.Count).toBe 1
+                Vitest.expect(requests[0].Paths).toEqual [| "edited.bin"; "missing.bin" |]
+                Vitest.expect(finalState.ErrorNotice).toEqual None
+            }
+        )
+
+        Vitest.test (
+            "Download now treats a refusal of every requested path as a success",
+            fun () -> promise {
+                let refusal =
+                    makeFailure ProviderError VersionControlCodes.LocalChanges "'edited.bin' has local changes." None [|
+                        "edited.bin"
+                    |]
+
+                let deps = {
+                    (withRefresh cleanStatus defaultDependencies) with
+                        listObjects = fun _ -> promise { return Ok(succeeded [| objectState "edited.bin" false |]) }
+                        materializeObjects = fun _ -> promise { return Ok(OperationResultDto.Failed refusal) }
+                }
+
+                let running, retryCmd =
+                    update deps ignore (WriteRequested RetryMaterialization) runningState
+
+                let! completion = collectMessages retryCmd
+
+                let finalState, finalCmd =
+                    match completion with
+                    | [| WriteCompleted(_, _, RetryMaterialization, Ok(Completed _)) |] ->
+                        update deps ignore completion[0] running
+                    | _ -> failwith "Expected the download to complete."
+
+                let! _ = collectMessages finalCmd
+
+                Vitest.expect(finalState.ErrorNotice).toEqual None
+            }
+        )
+
+        Vitest.test (
+            "Download now reports the failure of a partial result that is no refusal",
+            fun () -> promise {
+                let failure =
+                    makeFailure ProviderError "lfs_pull_failed" "1 of 2 paths failed: no space" None [| "missing.bin" |]
+
+                let deps = {
+                    (withRefresh cleanStatus defaultDependencies) with
+                        listObjects =
+                            fun _ -> promise {
+                                return
+                                    Ok(
+                                        succeeded [|
+                                            objectState "other.bin" false
+                                            objectState "missing.bin" false
+                                        |]
+                                    )
+                            }
+                        materializeObjects =
+                            fun _ -> promise { return Ok(OperationResultDto.PartiallySucceeded(operation (), failure)) }
+                }
+
+                let _, retryCmd =
+                    update deps ignore (WriteRequested RetryMaterialization) runningState
+
+                let! completion = collectMessages retryCmd
+
+                match completion with
+                | [| WriteCompleted(_, _, RetryMaterialization, Error _) |] -> ()
+                | _ -> failwith "Expected the partial failure to be reported."
+            }
+        )
+
+        Vitest.test (
+            "Download now keeps the failure text and drops the library's download instruction",
+            fun () -> promise {
+                let libraryInstruction = "Materialize the path again."
+
+                let failure =
+                    makeFailure
+                        ProviderError
+                        "lfs_pull_failed"
+                        "1 of 2 paths failed: the remote does not have missing.bin."
+                        (Some {
+                            Code = VersionControlCodes.Recovery.RetryMaterialization
+                            Instructions = Some libraryInstruction
+                        })
+                        [| "missing.bin" |]
+
+                let deps = {
+                    (withRefresh cleanStatus defaultDependencies) with
+                        listObjects =
+                            fun _ -> promise {
+                                return
+                                    Ok(
+                                        succeeded [|
+                                            objectState "other.bin" false
+                                            objectState "missing.bin" false
+                                        |]
+                                    )
+                            }
+                        materializeObjects =
+                            fun _ -> promise { return Ok(OperationResultDto.PartiallySucceeded(operation (), failure)) }
+                }
+
+                let _, retryCmd =
+                    update deps ignore (WriteRequested RetryMaterialization) runningState
+
+                let! completion = collectMessages retryCmd
+
+                match completion with
+                | [| WriteCompleted(_, _, RetryMaterialization, Error message) |] ->
+                    Vitest.expect(message.Contains failure.Message).toBe true
+                    Vitest.expect(message.Contains libraryInstruction).toBe false
+                | _ -> failwith "Expected the partial failure to be reported."
+            }
+        )
+
+        Vitest.test (
+            "Download now makes no call when nothing is missing or stale",
+            fun () -> promise {
+                let mutable materializeCalls = 0
+
+                let deps = {
+                    (withRefresh cleanStatus defaultDependencies) with
+                        listObjects = fun _ -> promise { return Ok(succeeded [| objectState "present.bin" true |]) }
+                        materializeObjects =
+                            fun _ ->
+                                materializeCalls <- materializeCalls + 1
+                                promise { return Ok(succeeded ()) }
+                }
+
+                let running, retryCmd =
+                    update deps ignore (WriteRequested RetryMaterialization) runningState
+
+                let! completion = collectMessages retryCmd
+
+                let finalState, finalCmd =
+                    match completion with
+                    | [| WriteCompleted(_, _, RetryMaterialization, Ok(Completed _)) |] ->
+                        update deps ignore completion[0] running
+                    | _ -> failwith "Expected the download to complete."
+
+                let! _ = collectMessages finalCmd
+
+                Vitest.expect(materializeCalls).toBe 0
                 Vitest.expect(finalState.ErrorNotice).toEqual None
             }
         )
@@ -8729,7 +9366,7 @@ Vitest.describe (
                         [||]
 
                 let mutable materializedPaths = ResizeArray<string>()
-                let mutable refreshTreeValues = ResizeArray<bool option>()
+                let mutable refreshTreeValues = ResizeArray<bool>()
 
                 let deps = {
                     (withRefresh cleanStatus defaultDependencies) with
@@ -8765,10 +9402,10 @@ Vitest.describe (
                                         |]
                                     )
                             }
-                        materializeObject =
+                        materializeObjects =
                             fun request ->
-                                materializedPaths.Add request.Path
-                                refreshTreeValues.Add request.RefreshTree
+                                materializedPaths.AddRange request.Paths
+                                refreshTreeValues.Add request.AlwaysRefreshTree
                                 promise { return Ok(succeeded ()) }
                 }
 
@@ -8818,7 +9455,7 @@ Vitest.describe (
 
                 Vitest.expect(recoveryState.Status.CurrentBranch).toEqual (Some "main")
                 Vitest.expect(materializedPaths |> Seq.toArray).toEqual ([| "large.bin"; "small.txt" |])
-                Vitest.expect(refreshTreeValues |> Seq.toArray).toEqual ([| Some false; Some true |])
+                Vitest.expect(refreshTreeValues |> Seq.toArray).toEqual ([| true |])
             }
         )
 
@@ -9009,7 +9646,7 @@ Vitest.describe (
                                 callOrder <- callOrder @ [ "finalize" ]
                                 finalized <- true
                                 promise { return Ok(succeeded (Some "rev")) }
-                        materializeObject =
+                        materializeObjects =
                             fun request ->
                                 if not finalized then
                                     failwith "Materialization ran before conflict finalization."
@@ -9047,8 +9684,8 @@ Vitest.describe (
                 let! _ = collectMessages finishCmd
 
                 Vitest.expect(resolveRequest.Value.Resolution).toEqual (ConflictResolutionDto.PickCandidate "target")
-                Vitest.expect(materializeRequest.Value.Path).toBe "data/big.bin"
-                Vitest.expect(materializeRequest.Value.RefreshTree).toEqual (Some true)
+                Vitest.expect(materializeRequest.Value.Paths).toEqual [| "data/big.bin" |]
+                Vitest.expect(materializeRequest.Value.AlwaysRefreshTree).toBe true
                 Vitest.expect(callOrder).toEqual [ "resolve"; "finalize"; "materialize" ]
                 Vitest.expect(nextState.WarningNotice).toEqual None
             }
@@ -9097,12 +9734,12 @@ Vitest.describe (
                                 else
                                     finalized <- true
                                     promise { return Ok(succeeded (Some "rev")) }
-                        materializeObject =
+                        materializeObjects =
                             fun request ->
                                 if not finalized then
                                     failwith "Materialization ran before conflict finalization."
 
-                                materializedPaths.Add request.Path
+                                materializedPaths.AddRange request.Paths
                                 promise { return Ok(succeeded ()) }
                 }
 
@@ -9223,12 +9860,12 @@ Vitest.describe (
                             fun _ ->
                                 finalized <- true
                                 promise { return Ok(succeeded (Some "rev")) }
-                        materializeObject =
+                        materializeObjects =
                             fun request ->
                                 if not finalized then
                                     failwith "Materialization ran before conflict finalization."
 
-                                materializedPaths.Add request.Path
+                                materializedPaths.AddRange request.Paths
                                 promise { return Error "The local cache is unavailable." }
                 }
 
@@ -9292,6 +9929,149 @@ Vitest.describe (
                 Vitest
                     .expect(finalState.WarningNotice)
                     .toEqual (Some "Could not download 'first.bin'. Use Download LFS file to try again.")
+            }
+        )
+
+        Vitest.test (
+            "Finalization names the path that the library reports as failed, not the first requested one",
+            fun () -> promise {
+                let conflict =
+                    (conflictedStatus [| "warning.bin"; "partial.bin" |]).ActiveConflictSession.Value
+
+                let warningHandle = {
+                    SessionId = conflict.Handle.SessionId
+                    Version = "2"
+                }
+
+                let partialHandle = {
+                    SessionId = conflict.Handle.SessionId
+                    Version = "3"
+                }
+
+                let partialFailure =
+                    makeFailure
+                        Conflict
+                        "object_materialization_failed"
+                        "The selected object could not be restored."
+                        (Some {
+                            Code = VersionControlCodes.Recovery.RetryMaterialization
+                            Instructions = None
+                        })
+                        [| "partial.bin" |]
+
+                let downloadFailure =
+                    makeFailure ProviderError "lfs_pull_failed" "1 of 2 paths failed: no space" None [| "partial.bin" |]
+
+                let warning = {
+                    Code = VersionControlCodes.ObjectNotMaterialized
+                    Message = "The selected file holds a pointer."
+                }
+
+                let mutable finalized = false
+                let materializeRequests = ResizeArray<ObjectPathsRequestDto>()
+
+                let deps = {
+                    defaultDependencies with
+                        resolveConflict =
+                            fun request ->
+                                if request.Path = "warning.bin" then
+                                    promise {
+                                        return
+                                            Ok(
+                                                succeededWithWarnings [| warning |] {
+                                                    RefreshedHandle = warningHandle
+                                                    RemainingItems = [| conflict.Items[1] |]
+                                                }
+                                            )
+                                    }
+                                else
+                                    promise {
+                                        return
+                                            Ok(
+                                                OperationResultDto.PartiallySucceeded(
+                                                    operation {
+                                                        RefreshedHandle = partialHandle
+                                                        RemainingItems = [||]
+                                                    },
+                                                    partialFailure
+                                                )
+                                            )
+                                    }
+                        getStatus = fun _ -> promise { return Ok(succeeded cleanStatus) }
+                        loadConflictPage = fun _ _ path -> promise { return Ok(conflictPage path) }
+                        finalizeConflict =
+                            fun _ ->
+                                finalized <- true
+                                promise { return Ok(succeeded (Some "rev")) }
+                        materializeObjects =
+                            fun request ->
+                                if not finalized then
+                                    failwith "Materialization ran before conflict finalization."
+
+                                materializeRequests.Add request
+
+                                promise {
+                                    return Ok(OperationResultDto.PartiallySucceeded(operation (), downloadFailure))
+                                }
+                }
+
+                let state = {
+                    runningState with
+                        ActiveConflict = Some conflict
+                        DownloadLargeFiles = true
+                }
+
+                let warningRequest = {
+                    Path = "warning.bin"
+                    Handle = conflict.Handle
+                    WorkspaceVersion = "v1"
+                    Resolution = ConflictResolutionDto.PickCandidate useOnlineCandidateId
+                }
+
+                let stateAfterWarningRequest, warningCmd =
+                    update deps ignore (ConfirmMergeResolutionRequested warningRequest) state
+
+                let! warningMessages = collectMessages warningCmd
+
+                let stateAfterWarning, warningFinishCmd =
+                    match warningMessages with
+                    | [| ConfirmMergeResolutionCompleted(_, Ok _) |] ->
+                        update deps ignore warningMessages[0] stateAfterWarningRequest
+                    | _ -> failwith "Expected the first pick to complete."
+
+                let! _ = collectMessages warningFinishCmd
+                Vitest.expect(stateAfterWarning.PendingMaterializations).toEqual [ ("warning.bin", false) ]
+
+                let partialRequest = {
+                    Path = "partial.bin"
+                    Handle = warningHandle
+                    WorkspaceVersion = "v1"
+                    Resolution = ConflictResolutionDto.PickCandidate useOnlineCandidateId
+                }
+
+                let stateAfterPartialRequest, partialCmd =
+                    update deps ignore (ConfirmMergeResolutionRequested partialRequest) stateAfterWarning
+
+                let! partialMessages = collectMessages partialCmd
+
+                let finalState, partialFinishCmd =
+                    match partialMessages with
+                    | [| ConfirmMergeResolutionCompleted(_, Ok outcome) |] ->
+                        Vitest.expect(outcome.Finalized).toBe true
+                        update deps ignore partialMessages[0] stateAfterPartialRequest
+                    | _ -> failwith "Expected the second pick to complete."
+
+                let! _ = collectMessages partialFinishCmd
+
+                Vitest.expect(materializeRequests.Count).toBe 1
+                Vitest.expect(materializeRequests[0].Paths).toEqual [| "warning.bin"; "partial.bin" |]
+                Vitest.expect(materializeRequests[0].AlwaysRefreshTree).toBe true
+
+                Vitest
+                    .expect(finalState.WarningNotice)
+                    .toEqual (
+                        Some "Could not restore 'partial.bin' from the local cache. Use Download LFS file to try again."
+                    )
             }
         )
 
@@ -9463,9 +10243,9 @@ Vitest.describe (
                             fun _ ->
                                 finalized <- true
                                 promise { return Ok(succeeded (Some "rev")) }
-                        materializeObject =
+                        materializeObjects =
                             fun request ->
-                                materializedPaths.Add request.Path
+                                materializedPaths.AddRange request.Paths
                                 promise { return Error "The local cache is unavailable." }
                 }
 
@@ -9563,7 +10343,7 @@ Vitest.describe (
                             }
                         getStatus = fun _ -> promise { return Ok(succeeded cleanStatus) }
                         finalizeConflict = fun _ -> promise { return Ok(succeeded (Some "rev")) }
-                        materializeObject =
+                        materializeObjects =
                             fun _ ->
                                 materializeCalls <- materializeCalls + 1
                                 promise { return Ok(succeeded ()) }
@@ -9762,7 +10542,7 @@ Vitest.describe (
                                 }
                         getStatus = fun _ -> promise { return Ok(succeeded cleanStatus) }
                         finalizeConflict = fun _ -> promise { return Ok(succeeded (Some "rev")) }
-                        materializeObject =
+                        materializeObjects =
                             fun _ ->
                                 materializeCalls <- materializeCalls + 1
                                 promise { return Ok(succeeded ()) }
@@ -9879,6 +10659,7 @@ Vitest.describe (
                         Version = Some "2.0"
                         Compatible = true
                         Remediation = None
+                        ProbeExecutablePath = None
                     }
                     {
                         Component = "git-lfs"
@@ -9886,6 +10667,7 @@ Vitest.describe (
                         Version = Some "3.0"
                         Compatible = true
                         Remediation = None
+                        ProbeExecutablePath = None
                     }
                     {
                         Component = "git-lfs-configuration"
@@ -9893,6 +10675,7 @@ Vitest.describe (
                         Version = None
                         Compatible = false
                         Remediation = Some "run git lfs install"
+                        ProbeExecutablePath = None
                     }
                 |]
 
@@ -10553,6 +11336,7 @@ Vitest.describe (
                                                 Version = None
                                                 Compatible = true
                                                 Remediation = None
+                                                ProbeExecutablePath = None
                                             }
                                         )
                                 }

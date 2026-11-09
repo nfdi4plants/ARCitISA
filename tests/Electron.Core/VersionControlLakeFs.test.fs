@@ -466,17 +466,17 @@ Vitest.describe (
                         let! objects = api.listObjects (request "lakefs-list-objects")
 
                         let! materialize =
-                            api.materializeObject {
+                            api.materializeObjects {
                                 OperationId = "lakefs-materialize"
-                                Path = "data.txt"
-                                RefreshTree = None
+                                Paths = [| "data.txt" |]
+                                AlwaysRefreshTree = false
                             }
 
                         let! dematerialize =
-                            api.dematerializeObject {
+                            api.dematerializeObjects {
                                 OperationId = "lakefs-dematerialize"
-                                Path = "data.txt"
-                                RefreshTree = None
+                                Paths = [| "data.txt" |]
+                                AlwaysRefreshTree = false
                             }
 
                         let! getPolicy = api.getStoragePolicySettings (request "lakefs-get-policy")
@@ -503,8 +503,8 @@ Vitest.describe (
                         let! repositoryUrl = api.getRepositoryWebUrl (request "lakefs-repository-url")
 
                         expectServiceUnavailable "listObjects" objects
-                        expectServiceUnavailable "materializeObject" materialize
-                        expectServiceUnavailable "dematerializeObject" dematerialize
+                        expectServiceUnavailable "materializeObjects" materialize
+                        expectServiceUnavailable "dematerializeObjects" dematerialize
 
                         // These calls use the session host settings, so lakeFS answers them without a provider storage-policy service.
                         let policy = expectDtoValue "getStoragePolicySettings" getPolicy
@@ -548,32 +548,6 @@ Vitest.describe (
                         Vitest.expect(outcome.Warnings).toEqual [||]
                         Vitest.expect(outcome.AffectedPaths).toEqual [||]
                         Vitest.expect(outcome.Value.ActiveConflictSession).toEqual None
-                    })
-            }
-        )
-
-        Vitest.test (
-            "batch materialization on a lakeFS vault answers service_unavailable",
-            TestOptions(timeout = 120000, skip = not (integrationEnabled ())),
-            fun () -> promise {
-                return!
-                    withFixture (fun fixture -> promise {
-                        let! api = bindWorkspaceViaClone fixture 68 "lakefs-batch-materialize-clone"
-
-                        let! materialize =
-                            api.materializeObjects {
-                                OperationId = "lakefs-materialize-objects"
-                                Paths = [| "data.txt" |]
-                            }
-
-                        let! dematerialize =
-                            api.dematerializeObjects {
-                                OperationId = "lakefs-dematerialize-objects"
-                                Paths = [| "data.txt" |]
-                            }
-
-                        expectServiceUnavailable "materializeObjects" materialize
-                        expectServiceUnavailable "dematerializeObjects" dematerialize
                     })
             }
         )

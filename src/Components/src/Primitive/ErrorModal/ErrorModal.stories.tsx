@@ -6,6 +6,7 @@ import {
   BatchEntry,
   ScopedQueueEntry,
   ProviderScopedQueueEntry,
+  LongDetailsEntry,
 } from "./Provider.fs.js";
 
 const meta = {
@@ -135,5 +136,35 @@ export const ProviderScopeDismissKeepsExplicitOtherArcEntries: Story = {
     });
 
     expect(await screen.findByText("Explicit other ARC error")).toBeInTheDocument();
+  }
+};
+
+export const LongTechnicalDetailsScroll: Story = {
+  render: () => <LongDetailsEntry />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    await userEvent.click(canvas.getByRole("button"));
+
+    const dialog = await screen.findByRole("dialog");
+    const details = dialog.querySelector("details");
+    expect(details).not.toBeNull();
+    expect(details!.open).toBe(false);
+
+    await userEvent.click(details!.querySelector("summary")!);
+
+    await waitFor(() => {
+      expect(details!.open).toBe(true);
+    });
+
+    const pre = details!.querySelector("pre")!;
+
+    await waitFor(() => {
+      expect(pre.scrollHeight).toBeGreaterThan(pre.clientHeight);
+    });
+
+    // The block is only scrollable when the browser moves it.
+    pre.scrollTop = pre.scrollHeight;
+    expect(pre.scrollTop).toBeGreaterThan(0);
   }
 };

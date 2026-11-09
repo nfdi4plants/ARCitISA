@@ -99,7 +99,6 @@ module private Helper =
             finalizeConflict = Renderer.VersionControlApiClient.finalizeConflict
             cancelConflict = Renderer.VersionControlApiClient.cancelConflict
             listObjects = Renderer.VersionControlApiClient.listObjects
-            materializeObject = Renderer.VersionControlApiClient.materializeObject
             materializeObjects = Renderer.VersionControlApiClient.materializeObjects
             pruneStorage = Renderer.VersionControlApiClient.pruneStorage
             deduplicateStorage = Renderer.VersionControlApiClient.deduplicateStorage
@@ -177,7 +176,11 @@ let GitStateCtxProvider (children: ReactElement) =
         React.useCallback (
             (fun (notification: GitErrorNotification) ->
                 errorModalCtxRef.current.enqueue (
-                    ErrorModalRequest.create (notification.Message, title = notification.Title)
+                    ErrorModalRequest.create (
+                        notification.Message,
+                        title = notification.Title,
+                        ?details = OperationLog.tryDetails notification.Log
+                    )
                 )
             ),
             [||]

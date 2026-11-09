@@ -424,6 +424,10 @@ module VersionControlCodes =
     [<Literal>]
     let BaseContentNotFound = "base_content_not_found"
 
+    /// The library's code for a selected path that exists neither in the workspace nor, for a commit, in HEAD.
+    [<Literal>]
+    let PathNotFound = "path_not_found"
+
     /// The library reports this warning when a picked file's content is not in the local cache.
     [<Literal>]
     let ObjectNotMaterialized = "object_not_materialized"
@@ -432,7 +436,7 @@ module VersionControlCodes =
     [<Literal>]
     let HydrationFailed = "hydration_failed"
 
-    /// The library refuses to download or free a large file that has local edits. A batch has this code when
+    /// The library refuses to download or free a large file that has local edits. A call has this code when
     /// every failed path is such a refusal.
     [<Literal>]
     let LocalChanges = "local_changes"
@@ -667,6 +671,20 @@ type DependencyStatusDto = {
     Version: string option
     Compatible: bool
     Remediation: string option
+    /// The Git executable the check ran or tried to run, as an absolute path when it could be resolved.
+    ProbeExecutablePath: string option
+}
+
+/// What the main process knows about the version control dependencies. Statuses and Failure hold the
+/// result of the latest finished check. A check that is running replaces them when it ends.
+type VersionControlDependencyStateDto = {
+    /// The components of the latest check. Empty before the first check ends or when it failed outright.
+    Statuses: DependencyStatusDto[]
+    /// Why the latest check could not report every component. None when it reported all of them.
+    Failure: string option
+    IsChecking: bool
+    /// Epoch milliseconds at which the latest check ended. None before the first check ends.
+    CheckedAt: float option
 }
 
 type RepositoryLocationDto = {
@@ -683,7 +701,6 @@ type ServiceAvailabilityDto = {
     TextDiff: bool
     ConflictResolution: bool
     ObjectMaterialization: bool
-    ObjectBatchMaterialization: bool
     StoragePolicy: bool
     Maintenance: bool
     RepositoryBrowser: bool
@@ -749,19 +766,14 @@ type RestorePathsRequestDto = {
     ExpectedWorkspaceVersion: string
 }
 
-type ObjectPathRequestDto = {
+/// The objects of one materialization or dematerialization, one file or many.
+type ObjectPathsRequestDto = {
     OperationId: string
-    Path: string
-    /// How the file tree is refreshed after a materialization or a dematerialization. None
-    /// refreshes when the result changed state. Some true always refreshes. Some false skips
-    /// the refresh when the result is Succeeded and keeps it for a partial or failed result,
-    /// because earlier objects of a loop may have changed files on disk. Diff and content
-    /// reads ignore the field.
-    RefreshTree: bool option
+    Paths: string[]
+    /// True refreshes the file tree after the call whatever the result. False refreshes it only
+    /// when the result changed state.
+    AlwaysRefreshTree: bool
 }
-
-/// Many objects in one materialization or dematerialization. The file tree refreshes once when anything changed.
-type ObjectPathsRequestDto = { OperationId: string; Paths: string[] }
 
 /// One synchronization: refresh, update when the target is ahead, publish unless
 /// PublishLocalRevisions is false. ExpectedTargetRevision pins an accepted update to the

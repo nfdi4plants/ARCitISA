@@ -24,6 +24,8 @@
     <Compile Include="FileTreeFreeLfsModal.test.rtl.fs" />
     <Compile Include="GitLfsHelper.test.fs" />
     <Compile Include="GitSidebarPanel.test.fs" />
+    <Compile Include="VersionControlDependencyBanner.test.fs" />
+    <Compile Include="SettingsPageTarget.test.fs" />
     <Compile Include="GitWorkflow.test.fs" />
     <Compile Include="GitDiffPageWorkflow.test.fs" />
     <Compile Include="GitWorkflowUnitResult.test.fs" />

@@ -7,6 +7,7 @@ open System
 open System.Collections.Generic
 open Fable.Core
 open Feliz
+open Swate.Components.Page.FileExplorer.Types
 open Swate.Components.Shared
 open Swate.Electron.Shared.FileIOTypes
 open Swate.Electron.Shared.IPCTypes.MainToRendererIpc
@@ -175,6 +176,15 @@ type LfsRunningAction = {
 
 module LfsRunningAction =
 
+    /// The name of the action in the Git sidebar, for example "Downloading raw-data".
+    let label (action: LfsRunningAction) : string =
+        let verb =
+            match action.Kind with
+            | LfsActionKind.Download -> "Downloading"
+            | LfsActionKind.Free -> "Freeing"
+
+        $"{verb} {PathHelpers.getFileName action.Target}"
+
     /// Applies one progress event. A meter of the transfer or checkout step sets StepPercent. Every other event
     /// clears it, because the step that it measured is over. A count event also sets Count. The action comes
     /// back as the same instance when the event changes nothing, so the caller can skip the state update.
@@ -331,19 +341,24 @@ type LfsActivityController = {
     run:
         string
             -> FileEntry option
-            -> (string -> JS.Promise<Result<unit, string>>)
+            -> (string -> JS.Promise<Result<unit, GitLfsActionFailure>>)
             -> string
-            -> JS.Promise<Result<unit, string>>
+            -> JS.Promise<Result<unit, GitLfsActionFailure>>
     /// `runAll label targets action` marks every target path busy that is not busy yet, runs the action once,
     /// and clears exactly the paths it marked. A path that is already busy stays with its owner.
     runAll:
         string
             -> (string * FileEntry option)[]
-            -> (unit -> JS.Promise<Result<unit, string>>)
-            -> JS.Promise<Result<unit, string>>
+            -> (unit -> JS.Promise<Result<unit, GitLfsActionFailure>>)
+            -> JS.Promise<Result<unit, GitLfsActionFailure>>
     /// `track action work` lists the action as running until work settles. The progress of the action's
-    /// operation id is kept with it, see LfsRunningActionsCtx.
-    track: LfsRunningAction -> (unit -> JS.Promise<Result<unit, string>>) -> JS.Promise<Result<unit, string>>
+    /// operation id is kept with it, see LfsRunningActionsCtx. When work fails, the output that the action sent
+    /// until then is appended to the Details of the failure, after the details that work gave. Without an ARC
+    /// the result of work comes back unchanged.
+    track:
+        LfsRunningAction
+            -> (unit -> JS.Promise<Result<unit, GitLfsActionFailure>>)
+            -> JS.Promise<Result<unit, GitLfsActionFailure>>
 }
 
 let LfsActivityCtx =
@@ -373,6 +388,14 @@ let LfsRunningLogsCtx = React.createContext<LfsRunningLogs> LfsRunningLogs.empty
 
 [<Hook>]
 let useLfsRunningLogsCtx () = React.useContext LfsRunningLogsCtx
+
+/// The log of the last file tree action that sent output and ended. The value survives an ARC switch and is gone
+/// with the window. The readers use LastGitLog.useLastGitLog, which compares it with the log of the Git workflow.
+let LfsLastLogCtx =
+    React.createContext<OperationLog.FinishedOperationLog option> None
+
+[<Hook>]
+let useLfsLastLogCtx () = React.useContext LfsLastLogCtx
 
 let private toScopeId (arcRootPath: string option) =
     arcRootPath
@@ -405,6 +428,9 @@ let LfsActivityCtxProvider (children: ReactElement) =
         logsRef.current <- next
         setLogsState next
 
+    let lastLog, setLastLog =
+        React.useState<OperationLog.FinishedOperationLog option> None
+
     // Each action keeps the numbers and the output of its own operation id and ignores every other operation.
     // An event that changes no number does not touch the state.
     Renderer.IpcReceiver.useProxyReceiver<IVersionControlRendererApi> (
@@ -435,7 +461,7 @@ let LfsActivityCtxProvider (children: ReactElement) =
     let run
         (label: string)
         (entry: FileEntry option)
-        (action: string -> JS.Promise<Result<unit, string>>)
+        (action: string -> JS.Promise<Result<unit, GitLfsActionFailure>>)
         (path: string)
         =
         promise {
@@ -454,7 +480,7 @@ let LfsActivityCtxProvider (children: ReactElement) =
     let runAll
         (label: string)
         (targets: (string * FileEntry option)[])
-        (action: unit -> JS.Promise<Result<unit, string>>)
+        (action: unit -> JS.Promise<Result<unit, GitLfsActionFailure>>)
         =
         promise {
             match scopeIdRef.current with
@@ -484,7 +510,7 @@ let LfsActivityCtxProvider (children: ReactElement) =
                     )
         }
 
-    let track (action: LfsRunningAction) (work: unit -> JS.Promise<Result<unit, string>>) = promise {
+    let track (action: LfsRunningAction) (work: unit -> JS.Promise<Result<unit, GitLfsActionFailure>>) = promise {
         match scopeIdRef.current with
         | None -> return! work ()
         | Some scopeId ->
@@ -495,9 +521,37 @@ let LfsActivityCtxProvider (children: ReactElement) =
 
             updateActions (LfsRunningActionsState.start scopeId started actionsRef.current)
 
+            let currentLog () =
+                logsRef.current
+                |> Map.tryFind action.OperationId
+                |> Option.defaultValue OperationLog.empty
+
             try
-                return! work ()
+                let! result = work ()
+
+                return
+                    result
+                    |> Result.mapError (fun failure ->
+                        let details =
+                            match List.choose id [ failure.Details; OperationLog.tryDetails (currentLog ()) ] with
+                            | [] -> None
+                            | parts -> Some(String.concat "\n\n" parts)
+
+                        { failure with Details = details }
+                    )
             finally
+                let log = currentLog ()
+
+                if log.Lines.Length > 0 then
+                    setLastLog (
+                        Some {
+                            Label = LfsRunningAction.label action
+                            ArcName = Some(PathHelpers.getFileName scopeId)
+                            FinishedAt = JS.Constructors.Date.now ()
+                            Log = log
+                        }
+                    )
+
                 updateActions (LfsRunningActionsState.finish action.OperationId actionsRef.current)
                 updateLogs (LfsRunningLogs.finish action.OperationId logsRef.current)
     }
@@ -526,5 +580,8 @@ let LfsActivityCtxProvider (children: ReactElement) =
 
     LfsActivityCtx.Provider(
         controller,
-        LfsRunningActionsCtx.Provider(runningActions, LfsRunningLogsCtx.Provider(logsState, children))
+        LfsRunningActionsCtx.Provider(
+            runningActions,
+            LfsRunningLogsCtx.Provider(logsState, LfsLastLogCtx.Provider(lastLog, children))
+        )
     )
