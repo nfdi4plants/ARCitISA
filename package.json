@@ -54,5 +54,8 @@
   },
   "scripts": {
     "prepare": "husky"
+  },
+  "dependencies": {
+    "exifr": "^7.1.3"
   }
 }
