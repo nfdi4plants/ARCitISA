@@ -1351,13 +1351,12 @@ Vitest.describe (
                             // The study on disk still registers the deleted assay, memory no longer does.
                             let! diskArc = loadSwateArcAsync arcPath
 
-                            Vitest
-                                .expect(diskArc.GetStudy("StudyA").RegisteredAssayIdentifiers |> Seq.toArray)
-                                .toEqual [| "DeleteAssay"; "KeepAssay" |]
+                            Vitest.expect(diskArc.GetStudy("StudyA").RegisteredAssayIdentifiers |> Seq.toArray).toEqual
+                                [| "DeleteAssay"; "KeepAssay" |]
 
-                            Vitest
-                                .expect(arc.GetStudy("StudyA").RegisteredAssayIdentifiers |> Seq.toArray)
-                                .toEqual [| "KeepAssay" |]
+                            Vitest.expect(arc.GetStudy("StudyA").RegisteredAssayIdentifiers |> Seq.toArray).toEqual [|
+                                "KeepAssay"
+                            |]
 
                             Vitest.expect(arc.GetStudy("StudyA").hasInMemoryChanges ()).toBe true
                             Vitest.expect(error.Message).toContain "Save the ARC to retry"

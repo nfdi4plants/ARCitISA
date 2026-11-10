@@ -424,9 +424,7 @@ for parent in
                     | Ok(Some persistedArc) ->
                         let persisted = loadParentDataMap persistedArc parentInfo
 
-                        Vitest
-                            .expect(persisted.DataContexts.[0].Name)
-                            .toEqual (Some $"dataset/separate-{parent}.csv")
+                        Vitest.expect(persisted.DataContexts.[0].Name).toEqual (Some $"dataset/separate-{parent}.csv")
                     | Ok None -> failwith "Expected the persisted parent workbook."
                     | Error errors -> failwith (String.concat "\n" errors)
                 })

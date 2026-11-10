@@ -367,15 +367,19 @@ let Main () =
                                                             .AnnotationTable
                                                             .AnnotationTableContextProvider
                                                             .AnnotationTableContextProvider(
-                                                                Renderer.Context.VersionControlDependencyContext.Provider(
-                                                                    WindowLayout
-                                                                        (React.Fragment [|
-                                                                            children
-                                                                            CloseWindowController.CloseWindowController()
-                                                                        |])
-                                                                        leftSidebar
-                                                                        leftActions
-                                                                )
+                                                                Renderer
+                                                                    .Context
+                                                                    .VersionControlDependencyContext
+                                                                    .Provider(
+                                                                        WindowLayout
+                                                                            (React.Fragment [|
+                                                                                children
+                                                                                CloseWindowController
+                                                                                    .CloseWindowController()
+                                                                            |])
+                                                                            leftSidebar
+                                                                            leftActions
+                                                                    )
                                                             )
                                                     )
                                                 )

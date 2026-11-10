@@ -305,7 +305,10 @@ module ArcDeleteHelper =
                         Error(exn $"Could not delete ARC entity at '{normalizedRelativePath}': {deleteError.Message}")
         }
 
-    let deleteArcEntityAsync (arcPath: string) (relativePath: string) : JS.Promise<Result<ArcEntityDeleteOutcome, exn>> =
+    let deleteArcEntityAsync
+        (arcPath: string)
+        (relativePath: string)
+        : JS.Promise<Result<ArcEntityDeleteOutcome, exn>> =
         deleteArcEntityWithAsync ARC.LoadAsyncSwate ContractExecutor.fulfillContractsSwateAsync arcPath relativePath
 
     /// Deletes an entity inside an exclusive external operation scope and applies the delete to memory before the sync

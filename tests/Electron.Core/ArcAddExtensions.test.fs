@@ -677,10 +677,9 @@ Vitest.describe (
                             let! dataMapWorkbook = Xlsx.fromXlsxFile dataMapPath
                             let persistedDataMap = ARCtrl.Spreadsheet.Datamap.fromFsWorkbook dataMapWorkbook
 
-                            Vitest
-                                .expect(persistedDataMap.DataContexts |> Seq.choose _.Name |> Seq.toArray)
-                                .toEqual
-                                [| "imported.csv" |]
+                            Vitest.expect(persistedDataMap.DataContexts |> Seq.choose _.Name |> Seq.toArray).toEqual [|
+                                "imported.csv"
+                            |]
 
                             let! parentWorkbook =
                                 Xlsx.fromXlsxFile (join [| arcPath; zone; identifier; workbookName |])

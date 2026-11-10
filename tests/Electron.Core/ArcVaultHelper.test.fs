@@ -891,7 +891,9 @@ Vitest.describe (
                                 "the vault is idle"
                                 (fun () -> vault.SyncMode = ArcSyncMode.Idle)
 
-                        let! workbookExists = TestHelpers.pathExistsAsync (join [| failedAssayFolder; "isa.assay.xlsx" |])
+                        let! workbookExists =
+                            TestHelpers.pathExistsAsync (join [| failedAssayFolder; "isa.assay.xlsx" |])
+
                         Vitest.expect(workbookExists).toBe false
                         Vitest.expect(vault.arc.Value.ContainsAssay "FailedAssay").toBe false
                         Vitest.expect(vault.hasUnsavedArcChanges).toBe false
@@ -7365,7 +7367,11 @@ Vitest.describe (
                         newer.DataContexts.Add(DataContext(name = "newer-second.csv"))
                         let parentInfo = DatamapParentInfo.create "MapAssay" DataMapParent.Assay
 
-                        match! ContractExecutor.fulfillContractsSwateAsync arcPath [| newer.ToCreateContract(parentInfo) |] with
+                        match!
+                            ContractExecutor.fulfillContractsSwateAsync arcPath [|
+                                newer.ToCreateContract(parentInfo)
+                            |]
+                        with
                         | Error errors -> failwith (PathHelpers.formatContractErrors errors)
                         | Ok _ -> ()
 
