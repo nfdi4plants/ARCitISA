@@ -1,5 +1,6 @@
 module ElectronCore.VersionControlSessionHostTests
 
+open ARCtrl
 open Fable.Core
 open Fable.Core.JsInterop
 open Fable.Electron
@@ -2427,6 +2428,45 @@ Vitest.describe (
 
                     let! uploadChoice = api.getUploadRightAway ()
                     Vitest.expect((expectDtoValue "get the upload choice after bind" uploadChoice).Value).toBe false
+                })
+        )
+
+        Vitest.test (
+            "a Git operation that changes a workbook reaches memory",
+            fun () ->
+                withFixture (fun fixture -> promise {
+                    let workbookPath = "assays/A1/isa.assay.xlsx"
+                    let committedArc = ARC("GitArc")
+                    committedArc.AddAssay(ArcAssay("A1", title = "Committed title"))
+                    do! committedArc.WriteAsync fixture.RepoRoot
+                    git fixture.RepoRoot [ "add"; "-A" ] |> ignore
+                    git fixture.RepoRoot [ "commit"; "-m"; "Add assay" ] |> ignore
+
+                    // The workbook on disk and in memory both hold a title that Git does not.
+                    do! Promise.sleep 20
+                    let! editedArc = loadArcAsync fixture.RepoRoot
+                    editedArc.GetAssay("A1").Title <- Some "Edited title"
+                    do! editedArc.UpdateAsync fixture.RepoRoot
+
+                    let! loadedArc = loadArcAsync fixture.RepoRoot
+                    let vault = registerVault 72 fixture.RepoRoot
+                    vault.SetArc loadedArc
+                    do! seedKnownDisk vault
+                    Vitest.expect(vault.arc.Value.GetAssay("A1").Title).toEqual (Some "Edited title")
+
+                    let api = Main.IPC.IVersionControlApi.api (ipcEvent 72)
+                    let! status = api.getStatus (request "restore-status")
+                    let version = (expectDtoValue "restore status" status).Value.WorkspaceVersion
+
+                    let! restored =
+                        api.restorePaths {
+                            OperationId = "restore-workbook"
+                            Paths = [| workbookPath |]
+                            ExpectedWorkspaceVersion = version
+                        }
+
+                    expectDtoValue "restore the workbook" restored |> ignore
+                    Vitest.expect(vault.arc.Value.GetAssay("A1").Title).toEqual (Some "Committed title")
                 })
         )
 

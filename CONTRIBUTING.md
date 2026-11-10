@@ -68,13 +68,12 @@ test                                Run all tests
 
 `src/Components` is a reusable React component library that can be published to npm and reused by `src/Client` and `src/Electron/src/Renderer`. It contains Storybook/Vitest-based component tests and usage documentation.
 
-To run the Storybook playground for `src/Components`, run `npm run storybook` in the `src/Components` directory.
-
-To run the playground , run `npm start` in `src/Components`. You can edit `src/Components/playground/App.tsx` to test out components in a live environment. This is useful for testing out new components or UI logic without needing to run the entire Client or Electron app.
+- `npm run storybook --workspace=src/Components`: Run the storybook instance.
+- `npm run start --workspace=src/Components`: to run the playground. You can edit `src/Components/playground/App.tsx` to test out components in a live environment. This is useful for testing out new components or UI logic without needing to run the entire Client or Electron app.
 
 ### Electron app
 
-The Electron app is still in early development and not fully integrated into the main build process. To run the Electron app, navigate to `src/Electron` and run `npm start`. This will start the Electron application with hot-reloading for the renderer process.
+- `npm run start --workspace=src/Electron`: to run the Electron app with hot-reloading for the renderer process. If you make changes to the main process, you will need to restart the Electron app manually.
 
 ## Contribute
 

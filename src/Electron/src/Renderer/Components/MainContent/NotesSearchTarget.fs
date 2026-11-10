@@ -55,7 +55,9 @@ let NotesSearchTarget () =
                 let selectedPath = PathHelpers.normalizePath relativePath
                 fileTreeCtx.setSelection (ArcSelection.forTreePath (Some selectedPath))
 
-                let pageState = Renderer.Types.PageState.fromFileContentDTO dto
+                let pageState =
+                    Renderer.Types.PageState.fromFileContentDTO (dto.content, dto.revision)
+
                 pageCtx.setState (Some pageState)
             | Result.Error exn ->
                 fileTreeCtx.setSelection (ArcSelection.clearExplorerNode fileTreeCtx.state.Selection)

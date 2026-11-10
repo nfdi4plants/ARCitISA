@@ -80,14 +80,6 @@ type FileWatcherStartOutcome =
     /// The watcher was stopped, replaced or retired while the start was running, so the caller owns nothing.
     | Stopped
 
-/// The paths an import claimed and the times that decide when its claims end.
-type internal ImportedPathLease = {
-    mutable Paths: string[]
-    mutable CompletedAt: float option
-    mutable LastActivity: float
-    mutable Timer: int option
-}
-
 /// Who owns the files of the vault. Own writes and syncs exclude everything else. External operations can overlap each other.
 type ArcSyncMode =
     | Idle
@@ -96,6 +88,8 @@ type ArcSyncMode =
     | Syncing
     | OwnWrite
     | ExternalOperation of depth: int
+    /// The ARC folder moves. Callers that ask meanwhile wait or are refused.
+    | RootRename
 
 /// <summary>
 /// Represents a vault window in the application, optionally associated with a file path.
@@ -238,11 +232,6 @@ type ArcVault(window: BrowserWindow) =
 
     member val fileWatcherReloadArcTimeout: int option = None with get, set
     member val fileWatcherPendingEvents: ResizeArray<ArcVaultFileSystemEvent> = ResizeArray() with get
-    /// Imported paths (lowercased absolute) mapped to the import that claimed them, and the latest claim wins.
-    /// Chokidar creation events for these paths update the tree but must not re-merge the import.
-    member val internal importedPathOwners: Dictionary<string, int> = Dictionary() with get
-    member val internal importedPathLeases: Dictionary<int, ImportedPathLease> = Dictionary() with get
-    member val internal nextImportToken: int = 0 with get, set
     member val activeFileImport: ActiveFileImport option = None with get, set
     member val isWaitingForImportCleanup = false with get, set
     /// True only while an ARC is being opened or initially created in this vault.
@@ -266,10 +255,11 @@ type ArcVault(window: BrowserWindow) =
         for retry in waiting do
             retry ()
 
-    /// True while an own write, an external operation or a sync owns the vault. A running check does not count.
+    /// False while the vault is idle or a check runs. A check only reads.
     member this.isBusyWriting =
         match syncMode with
         | ArcSyncMode.OwnWrite
+        | ArcSyncMode.RootRename
         | ArcSyncMode.ExternalOperation _
         | ArcSyncMode.Syncing -> true
         | ArcSyncMode.Idle
@@ -277,10 +267,18 @@ type ArcVault(window: BrowserWindow) =
 
     /// The file versions memory was last in sync with. None until a load or a first scan set it, which only a vault opened without Startup sees.
     member val internal KnownDisk: ArcDiskSnapshot option = None with get, set
+    /// Grows each time a sync changes memory.
+    member val internal ArcRevision = 0 with get, set
+    /// The revision at which a sync last changed each file. A DataMap counts as its parent workbook through resolveArcPreviewPath, because one page edits both.
+    member val internal FileRevisions: Map<PathKey, int> = Map.empty with get, set
+    /// True while an entity delete or an import holds the vault. Other external operations, rename and DataMap delete wait for it to end. Save and add are refused.
+    member val internal ExclusiveExternalOperation = false with get, set
     /// A sync was asked for while it could not run.
     member val internal SyncRequested = false with get, set
     member val internal SyncRequestAnnounces = false with get, set
-    /// Changes when the root of the vault changes or the vault closes. A running check or sync compares it after each await and discards its result if it moved.
+    /// A sync failed and no sync has finished since.
+    member val internal LastSyncFailed = false with get, set
+    /// Moves when the pending watcher state is cleared, which a root rename and a close do. A running check or sync compares it after each await and discards its result if it moved.
     member val internal RootToken = 0 with get, set
 
     /// Scans the structural files. Tests replace it to gate or fail a scan.

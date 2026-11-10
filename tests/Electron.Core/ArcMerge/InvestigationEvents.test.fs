@@ -110,4 +110,29 @@ Vitest.describe (
                 Vitest.expect(merged.Title).toEqual (Some "Disc Title")
                 Vitest.expect(merged.License.Value.Content).toBe "old license"
         )
+
+        Vitest.test (
+            "change event on a dirty ARC takes the identifier and registered studies of the disc and keeps the entities",
+            fun () ->
+                let arcLocal, _ = MockData.createTwoCleanCopies ()
+                arcLocal.GetAssay("My Assay").Title <- Some "Local assay edit"
+
+                let arcRemote = ARC("Disc identifier")
+                arcRemote.Title <- Some "Disc Title"
+                arcRemote.RegisteredStudyIdentifiers.Add "Disc study"
+
+                let merged = ARC.merge arcLocal arcRemote [ investigationEvent EventName.Change ]
+
+                Vitest.expect(merged.Identifier).toBe "Disc identifier"
+                Vitest.expect(merged.Title).toEqual (Some "Disc Title")
+                Vitest.expect(merged.RegisteredStudyIdentifiers |> Seq.toList).toEqual [ "Disc study" ]
+                Vitest.expect(merged.StaticHash).toBe (merged.GetLightHashCode())
+
+                Vitest.expect(merged.GetAssay("My Assay").Title).toEqual (Some "Local assay edit")
+
+                let contractPaths =
+                    merged.GetUpdateContracts() |> Array.map (fun contract -> contract.Path)
+
+                Vitest.expect(contractPaths |> Array.contains "assays/My Assay/isa.assay.xlsx").toBe true
+        )
 )

@@ -417,6 +417,18 @@ for parent in
                     let actual = loadParentDataMap (TestHelpers.expectLoadedArc loaded) parentInfo
                     Vitest.expect(actual.DataContexts.Count).toBe 1
                     Vitest.expect(actual.DataContexts.[0].Name).toEqual (Some $"dataset/separate-{parent}.csv")
+                    // A freshly loaded DataMap has no unsaved changes.
+                    Vitest.expect(actual.StaticHash).toBe (actual.GetHashCode())
+
+                    match! loadPersistedDataMapParentAsync arcPath parentInfo with
+                    | Ok(Some persistedArc) ->
+                        let persisted = loadParentDataMap persistedArc parentInfo
+
+                        Vitest
+                            .expect(persisted.DataContexts.[0].Name)
+                            .toEqual (Some $"dataset/separate-{parent}.csv")
+                    | Ok None -> failwith "Expected the persisted parent workbook."
+                    | Error errors -> failwith (String.concat "\n" errors)
                 })
     )
 
@@ -451,6 +463,13 @@ for parent in
                     let actual = loadParentDataMap (TestHelpers.expectLoadedArc loaded) parentInfo
                     Vitest.expect(actual.DataContexts.Count).toBe 1
                     Vitest.expect(actual.DataContexts.[0].Name).toEqual embedded.DataContexts.[0].Name
+
+                    match! loadPersistedDataMapParentAsync arcPath parentInfo with
+                    | Ok(Some persistedArc) ->
+                        let persisted = loadParentDataMap persistedArc parentInfo
+                        Vitest.expect(persisted.DataContexts.[0].Name).toEqual embedded.DataContexts.[0].Name
+                    | Ok None -> failwith "Expected the persisted parent workbook."
+                    | Error errors -> failwith (String.concat "\n" errors)
                 })
     )
 

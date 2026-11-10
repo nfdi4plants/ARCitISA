@@ -46,43 +46,6 @@ let buildWatcherEvent (arcPath: string) (eventName: string) (path: string) =
         AbsolutePath = absolutePath
     }
 
-/// Builds the absolute folder and file paths of an import's planned paths below the target folder.
-/// It does not filter paths the watcher ignores.
-let importedAbsolutePaths arcPath targetRelativePath (plannedPaths: PlannedImportPaths) : string[] * string[] =
-    let targetRelativePath =
-        PathHelpers.normalizeCanonicalRelativePath targetRelativePath
-
-    let toAbsolutePaths (importedRelativePaths: string[]) =
-        importedRelativePaths
-        |> Array.map (fun importedRelativePath ->
-            let relativePath =
-                if String.IsNullOrWhiteSpace targetRelativePath then
-                    importedRelativePath
-                else
-                    $"{targetRelativePath}/{importedRelativePath}"
-                |> PathHelpers.normalizePath
-
-            (buildWatcherEvent arcPath "" relativePath).AbsolutePath
-        )
-
-    toAbsolutePaths plannedPaths.FolderPaths, toAbsolutePaths plannedPaths.FilePaths
-
-/// Builds the watcher events of an import's planned folders and files. It builds events only for the paths
-/// that the structural watcher reports, so the import merges its ARC structure files and claims nothing that
-/// no delayed watcher event would consume.
-let createImportedWatcherEvents arcPath targetRelativePath (plannedPaths: PlannedImportPaths) =
-    let folderPaths, filePaths =
-        importedAbsolutePaths arcPath targetRelativePath plannedPaths
-
-    let buildEvents (eventName: Chokidar.Events) (isDirectory: bool) (absolutePaths: string[]) =
-        absolutePaths
-        |> Array.map (fun absolutePath -> buildWatcherEvent arcPath (eventName.ToString()) absolutePath)
-        |> Array.filter (fun event ->
-            ArcVaultHelper.isStructuralWatcherPathOfKind arcPath event.AbsolutePath (Some isDirectory)
-        )
-
-    Array.append (buildEvents Chokidar.Events.AddDir true folderPaths) (buildEvents Chokidar.Events.Add false filePaths)
-
 /// The directories a batch of watcher events marks dirty, without duplicates. The parent of every event path is
 /// dirty. An added directory is dirty too, because its children are new. A removed directory only dirties its parent.
 let dirtyDirectoriesOfEvents (caseInsensitive: bool) (events: ArcVaultFileSystemEvent list) : string[] =

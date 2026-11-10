@@ -32,4 +32,5 @@ Remoting.createIpc () |> Remoting.buildBridge<IUiSettingsRendererApi>
 Remoting.createIpc () |> Remoting.buildBridge<IUserDefaultsRendererApi>
 
 Remoting.createIpc () |> Remoting.buildBridge<IArcFileWatcherApi>
+Remoting.createIpc () |> Remoting.buildBridge<IArcSyncRendererApi>
 Remoting.createIpc () |> Remoting.buildBridge<IMainSaveBeforeQuitApi>

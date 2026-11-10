@@ -17,21 +17,12 @@ let private newGuidN () = Guid.NewGuid().ToString("N")
 [<Emit("Object.assign(new Error($0), { code: $1 })")>]
 let private nodeError (message: string) (code: string) : exn = jsNative
 
-[<Emit("process.platform")>]
-let private nodePlatform () : string = jsNative
-
-[<Emit("typeof process.getuid === 'function' && process.getuid() === 0")>]
-let private runsAsRoot () : bool = jsNative
-
 type private ISpawnSyncResult =
     abstract error: exn option
     abstract status: int
 
 [<Import("spawnSync", "node:child_process")>]
 let private spawnSync (command: string, args: string[]) : ISpawnSyncResult = jsNative
-
-[<Import("chmod", "fs/promises")>]
-let private chmodAsync (path: string, mode: int) : JS.Promise<unit> = jsNative
 
 [<Import("symlink", "fs/promises")>]
 let private symlinkAsync (target: string, path: string) : JS.Promise<unit> = jsNative
@@ -44,7 +35,7 @@ let private makeFifo (path: string) =
 
 /// File modes and special files behave differently on Windows, and root ignores file modes.
 let private skipOnWindowsOrRoot () =
-    nodePlatform () = "win32" || runsAsRoot ()
+    TestHelpers.nodePlatform () = "win32" || TestHelpers.runsAsRoot ()
 
 let private withAssayArc =
     TestHelpers.withTempArcWith
@@ -314,96 +305,6 @@ Vitest.describe (
                         "C:/arc/~$drafts/notes.md"
                     ] do
                     Vitest.expect(Main.ArcVaultHelper.isFileWatcherPathIgnored regularPath).toBe (false)
-        )
-
-        Vitest.test (
-            "builds addDir and add events only for the planned paths that the structural watcher reports",
-            fun () ->
-                let addDir = Main.Bindings.Chokidar.Events.AddDir.ToString()
-                let add = Main.Bindings.Chokidar.Events.Add.ToString()
-                let guidSuffix = String.replicate 32 "a"
-
-                let eventsFor target plannedPaths =
-                    Main.WatcherHelpers.createImportedWatcherEvents "/arc" target plannedPaths
-                    |> Array.map (fun event -> event.EventName, event.RelativePath)
-
-                // Payload folders and files are never reported.
-                Vitest
-                    .expect(
-                        eventsFor "assays/AssayA/dataset" {
-                            FolderPaths = [| "Run1"; "Run1/raw" |]
-                            FilePaths = [| "Run1/raw/results.csv" |]
-                        }
-                    )
-                    .toEqual ([||])
-
-                Vitest
-                    .expect(
-                        eventsFor "assays" {
-                            FolderPaths = [|
-                                "AssayB"
-                                "AssayB/dataset"
-                                $".swate-import-{guidSuffix}"
-                            |]
-                            FilePaths = [|
-                                "AssayB/isa.assay.xlsx"
-                                "AssayB/isa.datamap.xlsx"
-                                "AssayB/notes.txt"
-                                "AssayB/dataset/raw.csv"
-                            |]
-                        }
-                    )
-                    .toEqual (
-                        [|
-                            addDir, "assays/AssayB"
-                            add, "assays/AssayB/isa.assay.xlsx"
-                            add, "assays/AssayB/isa.datamap.xlsx"
-                        |]
-                    )
-
-                Vitest
-                    .expect(
-                        eventsFor "" {
-                            FolderPaths = [||]
-                            FilePaths = [| "isa.investigation.xlsx"; "notes.md" |]
-                        }
-                    )
-                    .toEqual ([| add, "isa.investigation.xlsx" |])
-        )
-
-        Vitest.test (
-            "builds unfiltered absolute folder and file paths for planned paths, below the target or at the ARC root",
-            fun () ->
-                let plannedPaths = {
-                    FolderPaths = [| "Run1"; "Run1/raw" |]
-                    FilePaths = [| "Run1/raw/results.csv"; "Run1/~$tmp.xlsx" |]
-                }
-
-                let pathsFor target =
-                    Main.WatcherHelpers.importedAbsolutePaths "C:/arc" target plannedPaths
-
-                Vitest
-                    .expect(pathsFor "assays/AssayA/dataset")
-                    .toEqual (
-                        [|
-                            "C:/arc/assays/AssayA/dataset/Run1"
-                            "C:/arc/assays/AssayA/dataset/Run1/raw"
-                        |],
-                        [|
-                            "C:/arc/assays/AssayA/dataset/Run1/raw/results.csv"
-                            "C:/arc/assays/AssayA/dataset/Run1/~$tmp.xlsx"
-                        |]
-                    )
-
-                Vitest
-                    .expect(pathsFor "")
-                    .toEqual (
-                        [| "C:/arc/Run1"; "C:/arc/Run1/raw" |],
-                        [|
-                            "C:/arc/Run1/raw/results.csv"
-                            "C:/arc/Run1/~$tmp.xlsx"
-                        |]
-                    )
         )
 
         Vitest.test (
@@ -818,8 +719,7 @@ Vitest.describe (
                     let mutable plannedFolders = [||]
                     let lifecycleOrder = ResizeArray<string>()
 
-                    // The import handler registers watcher ownership in onPathsPlanned, so it must run
-                    // before anything appears in the target.
+                    // The planning callback runs before anything appears in the target.
                     let onPathsPlanned (planned: PlannedImportPaths) =
                         plannedFiles <- planned.FilePaths
                         plannedFolders <- planned.FolderPaths
@@ -1208,7 +1108,7 @@ Vitest.describe (
 
         Vitest.test (
             "rejects a nested name with a backslash and writes nothing",
-            TestOptions(skip = (nodePlatform () = "win32")),
+            TestOptions(skip = (TestHelpers.nodePlatform () = "win32")),
             fun () ->
                 withAssayArc (fun arcPath -> promise {
                     let! sourcePath = createExternalRunFolderAsync arcPath
@@ -1229,7 +1129,7 @@ Vitest.describe (
 
         Vitest.test (
             "rejects a nested name Windows does not allow and writes nothing",
-            TestOptions(skip = (nodePlatform () = "win32")),
+            TestOptions(skip = (TestHelpers.nodePlatform () = "win32")),
             fun () ->
                 withAssayArc (fun arcPath -> promise {
                     let! sourcePath = createExternalRunFolderAsync arcPath
@@ -1250,7 +1150,7 @@ Vitest.describe (
 
         Vitest.test (
             "rejects a nested or picked name that ends with a space and writes nothing",
-            TestOptions(skip = (nodePlatform () = "win32")),
+            TestOptions(skip = (TestHelpers.nodePlatform () = "win32")),
             fun () ->
                 withAssayArc (fun arcPath -> promise {
                     let! sourcePath = createExternalRunFolderAsync arcPath
@@ -1291,7 +1191,7 @@ Vitest.describe (
 
         Vitest.test (
             "rejects nested names that differ only by case and writes nothing",
-            TestOptions(skip = (nodePlatform () <> "linux")),
+            TestOptions(skip = (TestHelpers.nodePlatform () <> "linux")),
             fun () ->
                 withAssayArc (fun arcPath -> promise {
                     let! sourcePath = createExternalRunFolderAsync arcPath
@@ -1308,7 +1208,7 @@ Vitest.describe (
 
         Vitest.test (
             "rejects nested names that differ only in Unicode form and writes nothing",
-            TestOptions(skip = (nodePlatform () = "darwin")),
+            TestOptions(skip = (TestHelpers.nodePlatform () = "darwin")),
             fun () ->
                 withAssayArc (fun arcPath -> promise {
                     let! sourcePath = createExternalRunFolderAsync arcPath
@@ -1325,7 +1225,7 @@ Vitest.describe (
 
         Vitest.test (
             "rejects a picked item that differs from an existing item only in Unicode form",
-            TestOptions(skip = (nodePlatform () = "darwin")),
+            TestOptions(skip = (TestHelpers.nodePlatform () = "darwin")),
             fun () ->
                 withAssayArc (fun arcPath -> promise {
                     let sourceRoot = dirname arcPath
@@ -1536,7 +1436,7 @@ Vitest.describe (
 
         Vitest.test (
             "imports a source beside a case-distinct ancestor of the target",
-            TestOptions(skip = (nodePlatform () <> "linux")),
+            TestOptions(skip = (TestHelpers.nodePlatform () <> "linux")),
             fun () ->
                 withAssayArc (fun arcPath -> promise {
                     do! createRelativeDirectoryAsync arcPath "data/arc/folder"
@@ -1555,7 +1455,7 @@ Vitest.describe (
 
         Vitest.test (
             "rejects a differently cased alias of the source on Windows",
-            TestOptions(skip = (nodePlatform () <> "win32")),
+            TestOptions(skip = (TestHelpers.nodePlatform () <> "win32")),
             fun () ->
                 withAssayArc (fun arcPath -> promise {
                     do! createRelativeDirectoryAsync arcPath "backup/inner"
@@ -1570,7 +1470,7 @@ Vitest.describe (
 
         Vitest.test (
             "imports a nested link to a case-distinct sibling of the source",
-            TestOptions(skip = (nodePlatform () <> "linux")),
+            TestOptions(skip = (TestHelpers.nodePlatform () <> "linux")),
             fun () ->
                 withAssayArc (fun arcPath -> promise {
                     let sourceRoot = dirname arcPath
@@ -1708,10 +1608,10 @@ Vitest.describe (
                     let lockedPath = join [| sourcePath; "raw"; "locked" |]
                     do! createRelativeDirectoryAsync sourcePath "raw/locked"
                     do! createRelativeDirectoryAsync arcPath "assays/AssayA/dataset"
-                    do! chmodAsync (lockedPath, 0)
+                    do! TestHelpers.chmodAsync (lockedPath, 0)
 
                     let! result = importWithoutCancellation arcPath "assays/AssayA/dataset" [| sourcePath |]
-                    do! chmodAsync (lockedPath, 0o755)
+                    do! TestHelpers.chmodAsync (lockedPath, 0o755)
 
                     result |> expectErrorContaining "access to it was denied"
                     do! expectRelativePathExists arcPath "assays/AssayA/dataset/Run1" false
@@ -1721,7 +1621,7 @@ Vitest.describe (
 
         Vitest.test (
             "rejects a nested self-referencing symbolic link and writes nothing",
-            TestOptions(skip = (nodePlatform () = "win32")),
+            TestOptions(skip = (TestHelpers.nodePlatform () = "win32")),
             fun () ->
                 withAssayArc (fun arcPath -> promise {
                     let! sourcePath = createExternalRunFolderAsync arcPath
@@ -1739,7 +1639,7 @@ Vitest.describe (
 
         Vitest.test (
             "rejects a nested named pipe and writes nothing",
-            TestOptions(skip = (nodePlatform () = "win32" || not (hasMkfifo ()))),
+            TestOptions(skip = (TestHelpers.nodePlatform () = "win32" || not (hasMkfifo ()))),
             fun () ->
                 withAssayArc (fun arcPath -> promise {
                     let! sourcePath = createExternalRunFolderAsync arcPath
@@ -1936,8 +1836,7 @@ Vitest.describe (
                     | Error error -> failwith error.Message
                     | Ok(ImportExternalFilesResult.Completed _) -> failwith "Expected import cancellation."
                     | Ok ImportExternalFilesResult.Cancelled ->
-                        // The import handler registers watcher ownership when files are planned, so a scan
-                        // that stops early must not plan anything.
+                        // A scan that stops early must not plan anything.
                         Vitest.expect(filesWerePlanned).toBe (false)
                         do! expectRelativePathExists arcPath "assays/AssayA/dataset/Run1" false
                         do! expectNoTemporaryImportDirectory arcPath "assays/AssayA/dataset"

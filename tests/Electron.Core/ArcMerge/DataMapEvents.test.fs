@@ -10,6 +10,11 @@ let private datamapEvent name folder id = {
     Path = sprintf "%s/%s/isa.datamap.xlsx" folder id
 }
 
+let private assayFileEvent name id = {
+    EventName = name
+    Path = sprintf "assays/%s/isa.assay.xlsx" id
+}
+
 let private withStudy () =
     let arcLocal, arcRemote = MockData.createTwoCleanCopies ()
     let study = ArcStudy("My Study")
@@ -175,18 +180,68 @@ Vitest.describe (
             "change event on assay datamap: a touched file with the content of the local baseline keeps the local DataMap",
             fun () ->
                 let arcLocal, arcRemote = MockData.createTwoCleanCopies ()
-                let remoteDataMap = DataMap.init ()
+                let remoteDataMap = Datamap.init ()
                 remoteDataMap.DataContexts.Add(DataContext(Label = Some "Base label"))
-                arcRemote.Assays.[0].DataMap <- Some remoteDataMap
-                let localDataMap = DataMap.init ()
+                arcRemote.Assays.[0].Datamap <- Some remoteDataMap
+                let localDataMap = Datamap.init ()
                 localDataMap.DataContexts.Add(DataContext(Label = Some "Base label"))
                 localDataMap.StaticHash <- cleanDataMapStaticHash remoteDataMap
-                arcLocal.Assays.[0].DataMap <- Some localDataMap
-                arcLocal.Assays.[0].DataMap.Value.DataContexts.[0].Label <- Some "Local label"
+                arcLocal.Assays.[0].Datamap <- Some localDataMap
+                arcLocal.Assays.[0].Datamap.Value.DataContexts.[0].Label <- Some "Local label"
 
                 let merged =
                     ARC.merge arcLocal arcRemote [ datamapEvent EventName.Change "assays" "My Assay" ]
 
-                Vitest.expect(merged.Assays.[0].DataMap.Value.DataContexts.[0].Label).toEqual (Some "Local label")
+                Vitest.expect(merged.Assays.[0].Datamap.Value.DataContexts.[0].Label).toEqual (Some "Local label")
+        )
+
+        Vitest.test (
+            "both files of an assay changed with an identical DataMap keeps the DataMap edits",
+            fun () ->
+                let arcLocal, arcRemote = MockData.createTwoCleanCopies ()
+                let remoteDataMap = Datamap.init ()
+                remoteDataMap.DataContexts.Add(DataContext(Label = Some "Base label"))
+                arcRemote.Assays.[0].Datamap <- Some remoteDataMap
+                arcRemote.Assays.[0].Title <- Some "Disc Title"
+                let localDataMap = Datamap.init ()
+                localDataMap.DataContexts.Add(DataContext(Label = Some "Base label"))
+                localDataMap.StaticHash <- cleanDataMapStaticHash remoteDataMap
+                arcLocal.Assays.[0].Datamap <- Some localDataMap
+                arcLocal.Assays.[0].Datamap.Value.DataContexts.[0].Label <- Some "Local label"
+
+                let merged =
+                    ARC.merge arcLocal arcRemote [
+                        assayFileEvent EventName.Change "My Assay"
+                        datamapEvent EventName.Change "assays" "My Assay"
+                    ]
+
+                Vitest.expect(merged.Assays.[0].Title).toEqual (Some "Disc Title")
+                Vitest.expect(merged.Assays.[0].Datamap.Value.DataContexts.[0].Label).toEqual (Some "Local label")
+        )
+
+        Vitest.test (
+            "both files of an assay changed with a changed DataMap gives the disc DataMap",
+            fun () ->
+                let arcLocal, arcRemote = MockData.createTwoCleanCopies ()
+                let baseDataMap = Datamap.init ()
+                baseDataMap.DataContexts.Add(DataContext(Label = Some "Base label"))
+                let remoteDataMap = Datamap.init ()
+                remoteDataMap.DataContexts.Add(DataContext(Label = Some "Disc label"))
+                arcRemote.Assays.[0].Datamap <- Some remoteDataMap
+                arcRemote.Assays.[0].Title <- Some "Disc Title"
+                let localDataMap = Datamap.init ()
+                localDataMap.DataContexts.Add(DataContext(Label = Some "Base label"))
+                localDataMap.StaticHash <- cleanDataMapStaticHash baseDataMap
+                arcLocal.Assays.[0].Datamap <- Some localDataMap
+                arcLocal.Assays.[0].Datamap.Value.DataContexts.[0].Label <- Some "Local label"
+
+                let merged =
+                    ARC.merge arcLocal arcRemote [
+                        assayFileEvent EventName.Change "My Assay"
+                        datamapEvent EventName.Change "assays" "My Assay"
+                    ]
+
+                Vitest.expect(merged.Assays.[0].Title).toEqual (Some "Disc Title")
+                Vitest.expect(merged.Assays.[0].Datamap.Value.DataContexts.[0].Label).toEqual (Some "Disc label")
         )
 )

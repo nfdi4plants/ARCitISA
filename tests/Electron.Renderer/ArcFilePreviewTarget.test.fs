@@ -280,3 +280,38 @@ Vitest.describe (
                 Vitest.expect(request.Details).toEqual (None)
         )
 )
+
+Vitest.describe (
+    "ArcFilePreviewTarget refused edit",
+    fun () ->
+        Vitest.test (
+            "a refused edit reloads the page and tells the user",
+            fun () ->
+                let reloads = ref 0
+                let messages = ResizeArray<string * string>()
+
+                handleSetArcFileOutcome
+                    (fun () -> reloads.Value <- reloads.Value + 1)
+                    (fun title message -> messages.Add((title, message)))
+                    Swate.Electron.Shared.IPCTypes.SetArcFileOutcome.Refused
+
+                Vitest.expect(reloads.Value).toBe 1
+                Vitest.expect(messages.Count).toBe 1
+                Vitest.expect(fst messages.[0]).toBe "Edit not applied"
+        )
+
+        Vitest.test (
+            "an applied edit changes nothing",
+            fun () ->
+                let reloads = ref 0
+                let messages = ResizeArray<string * string>()
+
+                handleSetArcFileOutcome
+                    (fun () -> reloads.Value <- reloads.Value + 1)
+                    (fun title message -> messages.Add((title, message)))
+                    Swate.Electron.Shared.IPCTypes.SetArcFileOutcome.Applied
+
+                Vitest.expect(reloads.Value).toBe 0
+                Vitest.expect(messages.Count).toBe 0
+        )
+)

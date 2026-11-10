@@ -32,7 +32,7 @@ module FileTreeRenameWorkflow =
         (pageState: Renderer.Types.PageState option)
         =
         match pageState with
-        | Some(Renderer.Types.PageState.ArcFilePage(arcFile, _)) ->
+        | Some(Renderer.Types.PageState.ArcFilePage(arcFile, _, _)) ->
             arcFile.TryGetRelativePath()
             |> Option.bind (PathHelpers.tryRemapPathPrefix sourcePath targetPath)
         | _ -> None

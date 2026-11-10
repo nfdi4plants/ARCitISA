@@ -88,6 +88,10 @@ let diff (known: ArcDiskSnapshot) (current: ArcDiskSnapshot) : ArcDiskChange lis
     for KeyValue(key, file) in current do
         match known |> Map.tryFind key with
         | None -> yield Added file.RelativePath
+        // A case-only rename keeps the key, so it has to show as a removal and an addition.
+        | Some knownFile when knownFile.RelativePath <> file.RelativePath ->
+            yield Removed knownFile.RelativePath
+            yield Added file.RelativePath
         | Some knownFile when knownFile.Fingerprint <> file.Fingerprint -> yield Changed file.RelativePath
         | Some _ -> ()
 
@@ -96,15 +100,19 @@ let diff (known: ArcDiskSnapshot) (current: ArcDiskSnapshot) : ArcDiskChange lis
             yield Removed file.RelativePath
 ]
 
-/// The known snapshot after an own write. Only entries that differ between the scans around the write move,
-/// so a file that already differed from the known snapshot before the write still loads in the next sync.
+/// The known snapshot after an own write. Only entries that differ between the scans around the write move. A file that
+/// already differed before the write loads in the next sync only if the write left it alone, so writers that rewrite files sync first.
 let acknowledge (known: ArcDiskSnapshot) (pre: ArcDiskSnapshot) (post: ArcDiskSnapshot) : ArcDiskSnapshot =
     let withWritten =
         post
         |> Map.fold
             (fun state key file ->
                 match pre |> Map.tryFind key with
-                | Some preFile when preFile.Fingerprint = file.Fingerprint -> state
+                | Some preFile when
+                    preFile.Fingerprint = file.Fingerprint
+                    && preFile.RelativePath = file.RelativePath
+                    ->
+                    state
                 | _ -> state |> Map.add key file
             )
             known

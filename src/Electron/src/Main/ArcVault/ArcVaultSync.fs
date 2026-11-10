@@ -9,6 +9,8 @@ open Main.ArcMerge
 open Main.ArcDiskState
 open Main.ArcVaultHelper
 open Swate.Components.Shared
+open Swate.Electron.Shared.IPCTypes
+open Swate.Electron.Shared.FileIOHelper
 open ARCtrl
 open Main.ArcVaultState
 
@@ -21,7 +23,8 @@ type internal ArcSyncOutcome =
 
 /// What Save knows before it writes.
 type internal SaveDiskState =
-    | DiskMatchesMemory
+    /// Also covers a write with syncFirst = false, where nothing was compared before the write.
+    | NoUnsyncedFiles
     /// The sync before the Save failed, so these changed files are not in memory.
     | UnsyncedFiles of changes: ArcDiskChange list * syncError: exn
 
@@ -52,6 +55,10 @@ let internal changedPath (change: ArcDiskChange) : string =
 let private writeBusyError () =
     exn "ARCitISA is still saving another change. Please wait a moment and try again."
 
+let private externalOperationBusyError () =
+    exn
+        "Another operation, such as a Git pull or a file download, is still running. Please try again when it has finished."
+
 let private loadingBusyError () =
     exn "ARCitISA is still loading external changes. Please wait a moment and try again."
 
@@ -60,13 +67,31 @@ let private resolvedUnit () : JS.Promise<unit> = JS.Constructors.Promise.resolve
 type ArcVault with
 
     member internal this.ReportSyncStarted() =
-        swatelogfn this.window.id "Loading external changes to the ARC."
+        if not (this.window.isDestroyed ()) then
+            swatelogfn this.window.id "Loading external changes to the ARC."
+            WindowSend.send<IArcSyncRendererApi> this.window (fun api -> api.arcSyncStarted ())
 
-    member internal this.ReportSyncFinished() =
-        swatelogfn this.window.id "Loaded external changes to the ARC."
+    member internal this.ReportSyncFinished(changedPaths: string[], replacedUnsaved: string[]) =
+        this.LastSyncFailed <- false
+
+        if not (this.window.isDestroyed ()) then
+            swatelogfn this.window.id "Loaded external changes to the ARC."
+
+            WindowSend.send<IArcSyncRendererApi>
+                this.window
+                (fun api ->
+                    api.arcSyncFinished {|
+                        changedPaths = changedPaths
+                        replacedUnsaved = replacedUnsaved
+                    |}
+                )
 
     member internal this.ReportSyncFailed(message: string) =
-        swatelogfn this.window.id "Unable to load external changes to the ARC: %s" message
+        this.LastSyncFailed <- true
+
+        if not (this.window.isDestroyed ()) then
+            swatelogfn this.window.id "Unable to load external changes to the ARC: %s" message
+            WindowSend.send<IArcSyncRendererApi> this.window (fun api -> api.arcSyncFailed message)
 
     member internal this.PublishSyncSnapshot(snapshot: ARC, events: FileEvent list) : Result<unit, exn> =
         match this.arc with
@@ -108,6 +133,30 @@ type ArcVault with
                         return! this.LoadStableSnapshot(arcPath, token, after, attempt + 1)
         }
 
+    /// Bumps the revision once and stamps the given ARC-relative paths with it.
+    member internal this.RecordFileRevisions(paths: string[]) =
+        this.ArcRevision <- this.ArcRevision + 1
+        let caseInsensitive = this.isCaseInsensitive
+
+        for path in paths do
+            let key = PathKey.ofPath caseInsensitive (resolveArcPreviewPath path)
+            this.FileRevisions <- this.FileRevisions.Add(key, this.ArcRevision)
+
+    /// Records files that changed in memory outside a sync. An edit based on their older content is then refused, and open pages reload.
+    /// The removed path, a deleted or renamed workbook, stays out of the message, because its page goes away or the renderer moves it.
+    member internal this.PublishMemoryChange(removedPath: string, changedPaths: string[]) =
+        this.RecordFileRevisions(Array.distinct (Array.append [| removedPath |] changedPaths))
+
+        if changedPaths.Length > 0 && not (this.window.isDestroyed ()) then
+            WindowSend.send<IArcSyncRendererApi>
+                this.window
+                (fun api ->
+                    api.arcSyncFinished {|
+                        changedPaths = changedPaths
+                        replacedUnsaved = [||]
+                    |}
+                )
+
     /// The load and merge of a sync. The caller owns the vault and has set the mode to Syncing.
     member internal this.SyncFromDisk(before: ArcDiskSnapshot, announce: bool) : JS.Promise<ArcSyncOutcome> = promise {
         let token = this.RootToken
@@ -119,22 +168,43 @@ type ArcVault with
                 this.ReportSyncFailed error.Message
                 SyncFailed error
 
+            let discard () =
+                // The renderer blocks input after an announced start, so the notice has to end.
+                if announce then
+                    this.ReportSyncFinished([||], [||])
+
+                Discarded
+
             try
                 if announce then
                     this.ReportSyncStarted()
 
                 match! this.LoadStableSnapshot(arcPath, token, before, 1) with
+                // A vault that closed during a failing load has no ARC left to report on.
+                | Error _ when token <> this.RootToken -> return discard ()
                 | Error error -> return fail error
-                | Ok None -> return Discarded
+                | Ok None -> return discard ()
                 | Ok(Some(snapshot, after)) ->
                     let known = defaultArg this.KnownDisk Map.empty
                     let events = toFileEvents (diff known after)
+
+                    // Read before the publish, which replaces the local ARC.
+                    let replacedUnsaved =
+                        match this.arc with
+                        | Some local when local.hasInMemoryChanges () ->
+                            ArcMergeHelper.replacedUnsavedFiles local snapshot events
+                        | _ -> [||]
 
                     match this.PublishSyncSnapshot(snapshot, events) with
                     | Error error -> return fail error
                     | Ok() ->
                         this.KnownDisk <- Some after
-                        this.ReportSyncFinished()
+                        let changedPaths = events |> List.map _.Path |> List.distinct |> List.toArray
+
+                        if not events.IsEmpty then
+                            this.RecordFileRevisions changedPaths
+
+                        this.ReportSyncFinished(changedPaths, replacedUnsaved)
                         return Synced after
             with error ->
                 return fail error
@@ -166,7 +236,10 @@ type ArcVault with
                             if token = this.RootToken then
                                 match this.KnownDisk with
                                 | None -> this.KnownDisk <- Some before
-                                | Some known when (diff known before).IsEmpty -> ()
+                                | Some known when (diff known before).IsEmpty ->
+                                    // Memory matches disk again, so the failure notice of an earlier sync ends.
+                                    if this.LastSyncFailed then
+                                        this.ReportSyncFinished([||], [||])
                                 | Some _ ->
                                     this.SyncMode <- ArcSyncMode.Syncing
                                     let! _ = this.SyncFromDisk(before, shouldAnnounce)
@@ -188,22 +261,22 @@ type ArcVault with
         | ArcSyncMode.Idle when this.SyncRequested -> this.RequestSync false
         | _ -> resolvedUnit ()
 
-    /// Ok true is the outermost owner. Ok false means the write runs nested in an external operation.
-    member internal this.AcquireOwnWrite(exclusive: bool) : JS.Promise<Result<bool, exn>> =
+    /// Takes the vault for an own write. Save and add (exclusive) are refused while another owner runs, except a running check, which they wait for. Rename and DataMap delete wait, and never run nested in an external operation, because a nested write is not scanned and its files would load as external changes.
+    member internal this.AcquireOwnWrite(exclusive: bool) : JS.Promise<Result<unit, exn>> =
         JS.Constructors.Promise.Create(fun resolve _ ->
             let rec tryAcquire () : unit =
                 match this.SyncMode with
                 | ArcSyncMode.Idle ->
                     this.SyncMode <- ArcSyncMode.OwnWrite
-                    resolve (Ok true)
+                    resolve (Ok())
                 | ArcSyncMode.Checking -> this.WaitForOwnerRelease tryAcquire
                 | ArcSyncMode.Syncing -> resolve (Error(loadingBusyError ()))
                 | ArcSyncMode.OwnWrite when exclusive -> resolve (Error(writeBusyError ()))
                 | ArcSyncMode.OwnWrite -> this.WaitForOwnerRelease tryAcquire
+                | ArcSyncMode.RootRename when exclusive -> resolve (Error(writeBusyError ()))
+                | ArcSyncMode.RootRename -> this.WaitForOwnerRelease tryAcquire
                 | ArcSyncMode.ExternalOperation _ when exclusive -> resolve (Error(writeBusyError ()))
-                | ArcSyncMode.ExternalOperation depth ->
-                    this.SyncMode <- ArcSyncMode.ExternalOperation(depth + 1)
-                    resolve (Ok false)
+                | ArcSyncMode.ExternalOperation _ -> this.WaitForOwnerRelease tryAcquire
 
             tryAcquire ()
         )
@@ -214,6 +287,7 @@ type ArcVault with
             this.SyncMode <- ArcSyncMode.ExternalOperation(depth - 1)
             resolvedUnit ()
         | _ ->
+            this.ExclusiveExternalOperation <- false
             this.ReleaseOwnership()
             this.RunRequestedSync()
 
@@ -230,14 +304,7 @@ type ArcVault with
 
             match! this.AcquireOwnWrite exclusive with
             | Error error -> return Error error
-            | Ok false ->
-                // Nested in an external operation: its changes load in the sync that ends the operation.
-                let! result = runOperation DiskMatchesMemory
-                do! this.LeaveExternalOperation()
-                return result
-            | Ok true ->
-                let token = this.RootToken
-
+            | Ok() ->
                 match this.path with
                 | None ->
                     this.ReleaseOwnership()
@@ -264,23 +331,35 @@ type ArcVault with
                                 let! outcome = this.SyncFromDisk(pre, true)
                                 this.SyncMode <- ArcSyncMode.OwnWrite
 
+                                // The load can take seconds, so the files are compared again after it failed.
+                                let failedSync (syncError: exn) = promise {
+                                    try
+                                        let! rescan = this.DiskScan this.isCaseInsensitive arcPath
+                                        return Ok(UnsyncedFiles(diff known rescan, syncError), rescan)
+                                    with scanError ->
+                                        return Error(exn $"Could not read the ARC folder: {scanError.Message}")
+                                }
+
                                 match outcome with
-                                | Synced final -> return Some(DiskMatchesMemory, final)
-                                | Discarded -> return None
-                                | SyncFailed error -> return Some(UnsyncedFiles(diff known pre, error), pre)
-                            | _ -> return Some(DiskMatchesMemory, pre)
+                                | Synced final -> return Ok(NoUnsyncedFiles, final)
+                                | SyncFailed error -> return! failedSync error
+                                | Discarded when this.path = Some arcPath ->
+                                    return! failedSync (exn "The load was interrupted.")
+                                | Discarded -> return Error(arcNotOpenError ())
+                            | _ -> return Ok(NoUnsyncedFiles, pre)
                         }
 
                         match prepared with
-                        | None ->
+                        | Error error ->
                             this.ReleaseOwnership()
-                            return Error(arcNotOpenError ())
-                        | Some(state, pre) ->
+                            this.RunRequestedSync() |> Promise.start
+                            return Error error
+                        | Ok(state, pre) ->
                             let! result = runOperation state
 
                             match result with
                             | Ok _ ->
-                                if token = this.RootToken then
+                                if this.path = Some arcPath then
                                     try
                                         let! post = this.DiskScan this.isCaseInsensitive arcPath
 
@@ -288,8 +367,13 @@ type ArcVault with
                                     with _ ->
                                         this.SyncRequested <- true
                             | Error _ ->
-                                this.SyncRequested <- true
-                                this.SyncRequestAnnounces <- true
+                                match state with
+                                // The sync just failed and the next event or focus tries again. A request here
+                                // would load right away and fail the same way.
+                                | UnsyncedFiles _ -> ()
+                                | NoUnsyncedFiles ->
+                                    this.SyncRequested <- true
+                                    this.SyncRequestAnnounces <- true
 
                             this.ReleaseOwnership()
                             // A Save does not wait for a load.
@@ -301,7 +385,7 @@ type ArcVault with
     member this.WithOwnWriteScope<'T>
         (exclusive: bool, operation: unit -> JS.Promise<Result<'T, exn>>)
         : JS.Promise<Result<'T, exn>> =
-        this.RunOwnWrite(exclusive, false, fun _ -> operation ())
+        this.RunOwnWrite(exclusive = exclusive, syncFirst = false, operation = (fun _ -> operation ()))
 
     /// Takes the vault for an external operation and runs onAcquired in the tick of the acquisition, so the
     /// operation starts at once when nothing else owns the vault. Ok carries the result of onAcquired.
@@ -324,13 +408,18 @@ type ArcVault with
                 match this.SyncMode with
                 | ArcSyncMode.Idle ->
                     this.SyncMode <- ArcSyncMode.ExternalOperation 1
+                    this.ExclusiveExternalOperation <- exclusive
                     run ()
                 | ArcSyncMode.Checking -> this.WaitForOwnerRelease tryAcquire
                 | ArcSyncMode.Syncing when exclusive -> resolve (Error(loadingBusyError ()))
                 | ArcSyncMode.OwnWrite when exclusive -> resolve (Error(writeBusyError ()))
+                | ArcSyncMode.RootRename when exclusive -> resolve (Error(writeBusyError ()))
+                | ArcSyncMode.RootRename
                 | ArcSyncMode.Syncing
                 | ArcSyncMode.OwnWrite -> this.WaitForOwnerRelease tryAcquire
-                | ArcSyncMode.ExternalOperation _ when exclusive -> resolve (Error(writeBusyError ()))
+                | ArcSyncMode.ExternalOperation _ when exclusive -> resolve (Error(externalOperationBusyError ()))
+                | ArcSyncMode.ExternalOperation _ when this.ExclusiveExternalOperation ->
+                    this.WaitForOwnerRelease tryAcquire
                 | ArcSyncMode.ExternalOperation depth ->
                     this.SyncMode <- ArcSyncMode.ExternalOperation(depth + 1)
                     run ()
@@ -358,7 +447,7 @@ type ArcVault with
             return outcome
         }
 
-    /// Git, LFS, import and plain text writes. Files they change count as external and load in a normal sync when the last one ends, which the scope waits for.
+    /// Git, LFS, ARC creation and plain text writes. Files they change count as external and load in a normal sync when the last one ends, which the scope waits for. They wait while an entity delete or an import holds the vault.
     member this.WithExternalOperationScope<'T>(announce: bool, operation: unit -> JS.Promise<'T>) : JS.Promise<'T> = promise {
         match! this.AcquireExternalOperation(false, fun () -> this.RunExternalOperation(announce, operation)) with
         | Error error -> return raise error
@@ -366,6 +455,7 @@ type ArcVault with
         | Ok(Error error) -> return raise error
     }
 
+    /// Entity delete and import. It is refused while another external operation runs. Other external operations, rename and DataMap delete wait until it ends, because they could change files that the delete or import has already read. Save and add are refused.
     member this.TryWithExclusiveExternalOperationScope<'T>
         (announce: bool, operation: unit -> JS.Promise<Result<'T, exn>>)
         : JS.Promise<Result<'T, exn>> =
@@ -376,13 +466,44 @@ type ArcVault with
             | Ok(Error error) -> return raise error
         }
 
-    /// Loads changes while an external operation owns the vault, so the operation can act on a failed load.
+    /// Owns the vault alone while the ARC folder moves. Every other caller waits or is refused, and reads the new path once it runs.
+    member internal this.TryRunRootRename<'T>
+        (operation: unit -> JS.Promise<Result<'T, exn>>)
+        : JS.Promise<Result<'T, exn>> =
+        promise {
+            let! acquired =
+                JS.Constructors.Promise.Create(fun resolve _ ->
+                    let rec tryAcquire () : unit =
+                        match this.SyncMode with
+                        | ArcSyncMode.Idle ->
+                            this.SyncMode <- ArcSyncMode.RootRename
+                            resolve true
+                        | ArcSyncMode.Checking -> this.WaitForOwnerRelease tryAcquire
+                        | _ -> resolve false
+
+                    tryAcquire ()
+                )
+
+            if not acquired then
+                return Error(writeBusyError ())
+            else
+                let! result = promise {
+                    try
+                        return! operation ()
+                    with error ->
+                        return Error error
+                }
+
+                this.SyncRequested <- true
+                this.ReleaseOwnership()
+                this.RunRequestedSync() |> Promise.start
+                return result
+        }
+
+    /// Loads changes while an import owns the vault, so the import can act on a failed load. The scope is exclusive, so no other operation can end during the load and release the vault.
     member internal this.SyncWithinExternalOperation(announce: bool) : JS.Promise<Result<unit, exn>> = promise {
         match this.SyncMode, this.path with
-        // Another operation shares the vault and could end during the load, which would release the vault under it.
-        // The sync that ends the last operation loads these changes.
-        | ArcSyncMode.ExternalOperation depth, Some _ when depth > 1 -> return Ok()
-        | ArcSyncMode.ExternalOperation _, Some arcPath ->
+        | ArcSyncMode.ExternalOperation 1, Some arcPath when this.ExclusiveExternalOperation ->
             try
                 let! before = this.DiskScan this.isCaseInsensitive arcPath
 
@@ -390,7 +511,11 @@ type ArcVault with
                 | None ->
                     this.KnownDisk <- Some before
                     return Ok()
-                | Some known when (diff known before).IsEmpty -> return Ok()
+                | Some known when (diff known before).IsEmpty ->
+                    if this.LastSyncFailed then
+                        this.ReportSyncFinished([||], [||])
+
+                    return Ok()
                 | Some _ ->
                     this.SyncMode <- ArcSyncMode.Syncing
                     let! outcome = this.SyncFromDisk(before, announce)
@@ -402,6 +527,8 @@ type ArcVault with
                     | SyncFailed error -> return Error error
             with error ->
                 return Error error
+        | ArcSyncMode.ExternalOperation _, Some _ ->
+            return Error(exn "Only an entity delete or an import can load changes inside its scope.")
         | _ -> return Error(arcNotOpenError ())
     }
 

@@ -40,3 +40,19 @@ let importJsonRequestIntoCurrentTarget
 
 let jsonImportErrorModalRequest (error: JsonImportError) : ErrorModalRequest =
     ErrorModalRequest.create (error.Message, title = error.Title, ?details = error.Details)
+
+/// A refused edit means a sync is running or changed the file after the page was read. The page loads the current content again
+/// and the user gets told, because the last edit is gone.
+let handleSetArcFileOutcome
+    (reloadPage: unit -> unit)
+    (showModal: string -> string -> unit)
+    (outcome: Swate.Electron.Shared.IPCTypes.SetArcFileOutcome)
+    =
+    match outcome with
+    | Swate.Electron.Shared.IPCTypes.SetArcFileOutcome.Applied -> ()
+    | Swate.Electron.Shared.IPCTypes.SetArcFileOutcome.Refused ->
+        reloadPage ()
+
+        showModal
+            "Edit not applied"
+            "ARCitISA is loading changes from disk, or this file changed after the page loaded it, so the last edit was not applied. The page now shows the current content."

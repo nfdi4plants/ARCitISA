@@ -508,50 +508,6 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "an import builds events only for the paths that the structural watcher reports",
-            fun () ->
-                let events =
-                    WatcherHelpers.createImportedWatcherEvents "/arc" "assays/A1" {
-                        FolderPaths = [||]
-                        FilePaths = [| "isa.assay.xlsx"; "data.csv" |]
-                    }
-
-                Vitest.expect(events |> Array.map _.RelativePath).toEqual [| "assays/A1/isa.assay.xlsx" |]
-        )
-
-        Vitest.test (
-            "a file imported into a zone folder gets no event because it is a file",
-            fun () ->
-                let events =
-                    WatcherHelpers.createImportedWatcherEvents "/arc" "assays" {
-                        FolderPaths = [||]
-                        FilePaths = [| "notes.txt" |]
-                    }
-
-                Vitest.expect(events.Length).toBe 0
-        )
-
-        Vitest.test (
-            "a completed import releases every mark when the watcher is not running",
-            fun () ->
-                let vault = ArcVault(TestHelpers.testWindow ())
-
-                let events =
-                    WatcherHelpers.createImportedWatcherEvents "/arc" "assays/A1" {
-                        FolderPaths = [||]
-                        FilePaths = [| "isa.assay.xlsx" |]
-                    }
-
-                let token = vault.StartImport()
-                vault.ClaimImportedFileEvents(token, events)
-                vault.ReleaseImportedFileEventsAfterImport(token, Ok(ImportExternalFilesResult.Completed [||]))
-
-                Vitest.expect(vault.IsImportedWatcherEvent events.[0]).toBe false
-                Vitest.expect(vault.importedPathOwners.Count).toBe 0
-                Vitest.expect(vault.importedPathLeases.Count).toBe 0
-        )
-
-        Vitest.test (
             "a root rename resyncs after the restart it took over reaches ready",
             fun () ->
                 withTempArc
@@ -667,38 +623,6 @@ Vitest.describe (
                         finally
                             vault.CancelFileWatcherRestart()
                             vault.ClearPendingFileWatcherState()
-                    })
-        )
-
-        Vitest.test (
-            "a watcher error forgets the imported paths",
-            fun () ->
-                withTempArc
-                    seedEntities
-                    (fun arcPath -> promise {
-                        let vault = newVault arcPath
-                        vault.FileWatcherRestartBackoffMs <- [| 60000 |]
-                        let fake = createFakeWatcher ()
-                        vault.FileWatcherFactory <- readyShortlyFactory fake
-                        let! _ = vault.StartFileWatcherAsync()
-
-                        try
-                            vault.ClaimImportedFileEvents(
-                                vault.StartImport(),
-                                [|
-                                    WatcherHelpers.buildWatcherEvent arcPath "add" ".gitattributes"
-                                |]
-                            )
-
-                            emitError fake "watch failed" "EIO"
-
-                            Vitest.expect(vault.importedPathOwners.Count).toBe 0
-                            Vitest.expect(vault.importedPathLeases.Count).toBe 0
-                        finally
-                            vault.CancelFileWatcherRestart()
-                            vault.ClearPendingFileWatcherState()
-
-                        do! vault.StopFileWatcher()
                     })
         )
 

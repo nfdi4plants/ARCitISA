@@ -67,11 +67,12 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "paths differing only in case name one file when the file system ignores case",
+            "a case-only rename on a file system that ignores case is a removal and an addition",
             fun () ->
+                let renamedPath = "assays/ASSAY/isa.assay.xlsx"
                 let known = snapshotOf true [ assayPath, 10.0, 1.0 ]
-                let current = snapshotOf true [ "Assays/ASSAY/isa.assay.xlsx", 10.0, 1.0 ]
-                Vitest.expect(diff known current).toEqual ([]: ArcDiskChange list)
+                let current = snapshotOf true [ renamedPath, 10.0, 1.0 ]
+                Vitest.expect(diff known current).toEqual [ Removed assayPath; Added renamedPath ]
         )
 
         Vitest.test (
@@ -203,5 +204,18 @@ Vitest.describe (
                     .toEqual (post |> Map.find (PathKey.ofPath false assayPath))
 
                 Vitest.expect(diff acknowledged post).toEqual [ Changed studyPath ]
+        )
+
+        Vitest.test (
+            "an own write that renamed a file by case only stores the new path",
+            fun () ->
+                let renamedPath = "assays/ASSAY/isa.assay.xlsx"
+                let known = snapshotOf true [ assayPath, 10., 1. ]
+                let post = snapshotOf true [ renamedPath, 10., 1. ]
+
+                let acknowledged = acknowledge known known post
+
+                Vitest.expect(relativePathsOf acknowledged).toEqual [ renamedPath ]
+                Vitest.expect(diff acknowledged post).toEqual ([]: ArcDiskChange list)
         )
 )

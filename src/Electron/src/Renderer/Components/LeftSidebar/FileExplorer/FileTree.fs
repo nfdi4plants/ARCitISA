@@ -419,16 +419,15 @@ type FileTree =
 
         let openPreview (item: FileItem) =
             promise {
-                match item.Path with
-                | None ->
+                match FileTreeClick.targetOfClick item with
+                | FileTreeClick.MissingPath ->
                     errorModal.enqueue (
                         ErrorModalRequest.create ($"File '{item.Name}' has no path.", title = "Preview failed")
                     )
                 // A click on a folder only expands or collapses it. The open page and the selection stay,
                 // because the open page, such as the Markdown editor, saves to the selected path.
-                | Some _ when item.IsDirectory -> ()
-                | Some path ->
-                    let selectedPath = PathHelpers.normalizePath path
+                | FileTreeClick.Folder -> ()
+                | FileTreeClick.File selectedPath ->
                     fileStateCtx.setSelection (ArcSelection.forTreePath (Some selectedPath))
 
                     if Swate.Components.Page.FileExplorer.Helper.needsLfsDownload item then

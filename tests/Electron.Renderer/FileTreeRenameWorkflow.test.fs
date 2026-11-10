@@ -379,7 +379,7 @@ Vitest.describe (
                     createConfirmRenameConfig
                         renameDraft
                         "assays/OldAssay/notes/protocol.md"
-                        (Some(Renderer.Types.PageState.ArcFilePage(ArcFiles.Assay(ArcAssay.init "OldAssay"), None)))
+                        (Some(Renderer.Types.PageState.ArcFilePage(ArcFiles.Assay(ArcAssay.init "OldAssay"), None, 0)))
                         probe
 
                 RenameWorkflow.confirmRenameItem config "NewAssay"
@@ -405,7 +405,7 @@ Vitest.describe (
                     createConfirmRenameConfig
                         renameDraft
                         "assays/OldAssay/isa.assay.xlsx"
-                        (Some(Renderer.Types.PageState.ArcFilePage(ArcFiles.Assay(ArcAssay.init "OldAssay"), None)))
+                        (Some(Renderer.Types.PageState.ArcFilePage(ArcFiles.Assay(ArcAssay.init "OldAssay"), None, 0)))
                         probe
 
                 RenameWorkflow.confirmRenameItem config "NewAssay"

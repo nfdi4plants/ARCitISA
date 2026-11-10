@@ -17,6 +17,7 @@
     <Compile Include="Context\LargeObjectStore.fs" />
     <Compile Include="Context\PageStateContext.fs" />
     <Compile Include="Context\FileTreeStore.fs" />
+    <Compile Include="Context\ArcSyncContext.fs" />
     <Compile Include="Context\FileStateContext.fs" />
     <Compile Include="Context\FileTreeHooks.fs" />
     <Compile Include="Context\FileTreeExpansionContext.fs" />
@@ -53,6 +54,7 @@
     <Compile Include="Components\LeftSidebar\FileExplorer\FileTreeRename.fs" />
     <Compile Include="Components\LeftSidebar\FileExplorer\FileTreeDelete.fs" />
     <Compile Include="Components\LeftSidebar\FileExplorer\FileTreeCreate.fs" />
+    <Compile Include="Components\LeftSidebar\FileExplorer\FileTreeClick.fs" />
     <Compile Include="Components\LeftSidebar\FileExplorer\FileTree.fs" />
     <Compile Include="Components\LeftSidebar\FileExplorer\FileWatcherNotice.fs" />
     <Compile Include="Components\LeftSidebar\FileExplorer\Main.fs" />
@@ -62,6 +64,7 @@
     <Compile Include="Components\LeftSidebar\FileImportStatus.fs" />
     <Compile Include="Components\LeftSidebar\Main.fs" />
     <Compile Include="Components\MainContent\Types.fs" />
+    <Compile Include="Components\MainContent\ArcSyncNotice.fs" />
     <Compile Include="Components\MainContent\SettingsPageTarget.fs" />
     <Compile Include="Components\MainContent\ChangelogTarget.fs" />
     <Compile Include="Components\MainContent\ArcFilePreviewTargetHelper.fs" />

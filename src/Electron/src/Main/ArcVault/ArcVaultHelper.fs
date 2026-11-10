@@ -40,6 +40,13 @@ let private setDataMapByParentInfo (arc: ARC) (dmpi: DatamapParentInfo) (dm: Dat
     with e ->
         Error(exn $"Failed to set datamap on ARC: {e.Message}")
 
+/// ARCtrl.Json carries no DataMap hash, so the DataMap of an edited entity arrives with hash 0 and would count as changed.
+/// A DataMap that the edit adds keeps hash 0 because it is new.
+let private keepDataMapStaticHash (oldDataMap: Datamap option) (newDataMap: Datamap option) : unit =
+    match oldDataMap, newDataMap with
+    | Some oldDm, Some newDm -> newDm.StaticHash <- oldDm.StaticHash
+    | _ -> ()
+
 /// This function should only be used for partial updates to an ARC based on a file content DTO.
 let updateARCByFileContentDTO (oldArc: ARC) (dto: FileContentDTO) : Result<ARC, exn> =
     let arcfile = FileContentDTO.toArcFile dto
@@ -74,6 +81,7 @@ let updateARCByFileContentDTO (oldArc: ARC) (dto: FileContentDTO) : Result<ARC, 
             match oldAssayOpt with
             | Some oldAssay ->
                 newAssay.StaticHash <- oldAssay.StaticHash
+                keepDataMapStaticHash oldAssay.Datamap newAssay.Datamap
                 oldArc.SetAssay(newAssay.Identifier, newAssay)
                 Ok oldArc
             | None ->
@@ -85,6 +93,7 @@ let updateARCByFileContentDTO (oldArc: ARC) (dto: FileContentDTO) : Result<ARC, 
             match oldStudyOpt with
             | Some oldStudy ->
                 newStudy.StaticHash <- oldStudy.StaticHash
+                keepDataMapStaticHash oldStudy.Datamap newStudy.Datamap
                 oldArc.SetStudy(newStudy.Identifier, newStudy)
                 Ok oldArc
             | None ->
@@ -99,6 +108,7 @@ let updateARCByFileContentDTO (oldArc: ARC) (dto: FileContentDTO) : Result<ARC, 
                 newWorkflow.CWLDescription <- oldWorkflow.CWLDescription
                 newWorkflow.StaticHash <- oldWorkflow.StaticHash
                 WorkflowPayloads.syncWorkflowPayloadBaseline oldWorkflow newWorkflow
+                keepDataMapStaticHash oldWorkflow.Datamap newWorkflow.Datamap
                 oldArc.SetWorkflow(newWorkflow.Identifier, newWorkflow)
                 Ok oldArc
             | None ->
@@ -114,6 +124,7 @@ let updateARCByFileContentDTO (oldArc: ARC) (dto: FileContentDTO) : Result<ARC, 
                 newRun.CWLInput <- oldRun.CWLInput
                 newRun.StaticHash <- oldRun.StaticHash
                 WorkflowPayloads.syncRunPayloadBaseline oldRun newRun
+                keepDataMapStaticHash oldRun.Datamap newRun.Datamap
                 oldArc.SetRun(newRun.Identifier, newRun)
                 Ok oldArc
             | None ->

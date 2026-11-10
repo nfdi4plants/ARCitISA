@@ -24,3 +24,10 @@ let delete (parentInfo: DatamapParentInfo) (dataMap: Datamap) : Contract =
     | DataMapParent.Study -> dataMap.ToDeleteContractForStudy(parentInfo.ParentId)
     | DataMapParent.Run -> dataMap.ToDeleteContractForRun(parentInfo.ParentId)
     | DataMapParent.Workflow -> dataMap.ToDeleteContractForWorkflow(parentInfo.ParentId)
+
+let parentWorkbookPath (parentInfo: DatamapParentInfo) : string =
+    match parentInfo.Parent with
+    | DataMapParent.Assay -> ARCtrl.Helper.Identifier.Assay.fileNameFromIdentifier parentInfo.ParentId
+    | DataMapParent.Study -> ARCtrl.Helper.Identifier.Study.fileNameFromIdentifier parentInfo.ParentId
+    | DataMapParent.Run -> ARCtrl.Helper.Identifier.Run.fileNameFromIdentifier parentInfo.ParentId
+    | DataMapParent.Workflow -> ARCtrl.Helper.Identifier.Workflow.fileNameFromIdentifier parentInfo.ParentId

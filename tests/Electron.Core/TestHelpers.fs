@@ -26,6 +26,16 @@ let private symlink (_target: string) (_linkPath: string) (_linkType: string) : 
 /// privileges. Other platforms ignore the type and create a folder symlink.
 let createFolderLinkAsync (target: string) (linkPath: string) = symlink target linkPath "junction"
 
+[<Emit("process.platform")>]
+let nodePlatform () : string = jsNative
+
+/// chmod does not stop deletes or writes for root.
+[<Emit("typeof process.getuid === 'function' && process.getuid() === 0")>]
+let runsAsRoot () : bool = jsNative
+
+[<Import("chmod", "fs/promises")>]
+let chmodAsync (path: string, mode: int) : JS.Promise<unit> = jsNative
+
 let writeText (filePath: string) (content: string) =
     Main.Bindings.Filesystem.writeFileSync filePath content Main.Bindings.Filesystem.TextEncoding.Utf8
 
@@ -284,3 +294,14 @@ let waitForCondition (description: string) (condition: unit -> bool) : JS.Promis
 
 [<Import("writeFile", "fs/promises")>]
 let writeBufferAsync (_path: string) (_data: obj) : JS.Promise<unit> = jsNative
+
+/// Runs the operation, then the cleanup, and reports the operation error first.
+let withAsyncCleanup cleanup operation = promise {
+    let! operationResult = operation () |> Promise.result
+    let! cleanupResult = cleanup () |> Promise.result
+
+    match operationResult, cleanupResult with
+    | Ok value, Ok() -> return value
+    | Error operationError, _ -> return raise operationError
+    | Ok _, Error cleanupError -> return raise cleanupError
+}
