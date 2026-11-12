@@ -653,17 +653,27 @@ type DataAnnotator =
                                         setSelectors [||]
                                 )
                             ]
-                            Html.button [
-                                prop.className "swt:btn swt:btn-primary swt:ml-auto"
-                                prop.text (
-                                    if hasSelection then
-                                        "Insert selected"
-                                    else
-                                        "Insert selectors"
-                                )
-                                prop.title "Insert selectors into the currently selected table or DataMap cells."
-                                prop.disabled (not canInsert)
-                                prop.onClick (fun _ -> insertSelectors ())
+                            Html.div [
+                                prop.className "swt:ml-auto"
+                                prop.children [
+                                    Html.span [
+                                        prop.className "swt:text-sm swt:text-error/70 swt:mr-1"
+                                        prop.text "Select table cells"
+                                    ]
+                                    Html.button [
+                                        prop.className "swt:btn swt:btn-primary"
+                                        prop.text (
+                                            if hasSelection then
+                                                "Insert selected"
+                                            else
+                                                "Insert selectors"
+                                        )
+                                        prop.title
+                                            "Insert selectors into the currently selected table or DataMap cells."
+                                        prop.disabled (not canInsert)
+                                        prop.onClick (fun _ -> insertSelectors ())
+                                    ]
+                                ]
                             ]
                         ]
                     ]

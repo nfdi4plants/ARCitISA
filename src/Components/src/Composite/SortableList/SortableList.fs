@@ -16,7 +16,7 @@ type SortableList =
             count: int,
             move: int -> int -> unit,
             remove: string -> unit,
-            ?renderRow: SortableListRowRender<'A> -> ReactElement,
+            renderRow: SortableListRowRender<'A> -> ReactElement,
             ?rowProps: SortableListItem<'A> -> IReactProperty list,
             ?key: string
         ) =
@@ -58,11 +58,7 @@ type SortableList =
             prop.testId $"sortable-list-row-{item.id}"
             prop.ref sortable.setNodeRef
             prop.style rowStyle
-            prop.children [
-                match renderRow with
-                | Some render -> render row
-                | None -> RowComponents.DefaultRow(row)
-            ]
+            prop.children [ renderRow row ]
         ]
 
     /// The parent owns items. Reorders and removals emit a new array without mutating the input.
@@ -193,6 +189,15 @@ type SortableList =
         let itemIds =
             React.useMemo ((fun () -> ResizeArray(items |> Array.map _.id)), [| box items |])
 
+        let renderRow =
+            fun row ->
+                match renderRow with
+                | Some render -> render row
+                | None when setSelectedIds.IsSome && selectedIds.IsSome ->
+                    let isSelected = selectedIds.Value |> List.contains row.item.id
+                    RowComponents.DefaultToggleRow(row, isSelected)
+                | None -> RowComponents.DefaultRow(row)
+
         DndKit.DndContext(
             sensors = sensors,
             collisionDetection = DndKit.pointerWithin,
@@ -242,7 +247,7 @@ type SortableList =
                                                         items.Length,
                                                         move,
                                                         remove,
-                                                        ?renderRow = renderRow,
+                                                        renderRow = renderRow,
                                                         ?rowProps = rowProps,
                                                         key = item.id
                                                     )

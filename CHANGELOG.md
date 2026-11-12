@@ -41,6 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Creating a file, folder, study, assay, workflow, run or DataMap in the File Explorer now opens the folders that lead to it, so you can see it right away. (by @Etschbeijer)
 - After importing files or folders, the File Explorer opens the folder you imported into and each imported folder. (by @Etschbeijer)
 - Opening a isa workbook file, will now open on the metadata sheet not on the first table. (by @Freymaurer)
+- Improve visual feedback in data annotator and file picker components. #1437 (by @Freymaurer)
 
 ### 🐛 Fixed
 
