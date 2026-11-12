@@ -332,7 +332,7 @@ let childCount (snapshot: FileTreeSnapshot) (path: string) : int =
     |> Option.defaultValue 0
 
 /// Present when the entry is in the tree. Absent when its parent directory is loaded and does not list it.
-/// Unknown when the parent is not loaded. The root has no entry and reports Unknown.
+/// Unknown when the parent is not loaded. The root is Present once a snapshot lists it, and Unknown before that.
 let knows (snapshot: FileTreeSnapshot) (path: string) : KnownState =
     let key = keyOf snapshot.CaseInsensitive path
 

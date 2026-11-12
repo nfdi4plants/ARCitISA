@@ -163,7 +163,7 @@ let private importCollectingPlannedFiles arcPath targetRelativePath sourcePaths 
     with
     | Error error -> return failwith error.Message
     | Ok ImportExternalFilesResult.Cancelled -> return failwith "Expected import to complete."
-    | Ok ImportExternalFilesResult.Completed -> return plannedFiles.ToArray()
+    | Ok(ImportExternalFilesResult.Completed _) -> return plannedFiles.ToArray()
 }
 
 let private readRelativeFileAsync rootPath relativePath =
@@ -480,7 +480,7 @@ Vitest.describe (
                     with
                     | Error error -> failwith error.Message
                     | Ok ImportExternalFilesResult.Cancelled -> failwith "Expected import to complete."
-                    | Ok ImportExternalFilesResult.Completed ->
+                    | Ok(ImportExternalFilesResult.Completed _) ->
                         let importedPath = absoluteArcPath arcPath "assays/AssayA/external.txt"
 
                         let! importedContent =
@@ -527,7 +527,7 @@ Vitest.describe (
                             acceptImportedFiles
                     with
                     | Error error -> failwith error.Message
-                    | Ok ImportExternalFilesResult.Completed -> failwith "Expected import cancellation."
+                    | Ok(ImportExternalFilesResult.Completed _) -> failwith "Expected import cancellation."
                     | Ok ImportExternalFilesResult.Cancelled ->
                         do! expectRelativePathExists arcPath "assays/AssayA/dataset/Run1" false
                         do! expectNoTemporaryImportDirectory arcPath "assays/AssayA/dataset"
@@ -565,7 +565,7 @@ Vitest.describe (
                             acceptImportedFiles
                     with
                     | Error error -> failwith error.Message
-                    | Ok ImportExternalFilesResult.Completed -> failwith "Expected import cancellation."
+                    | Ok(ImportExternalFilesResult.Completed _) -> failwith "Expected import cancellation."
                     | Ok ImportExternalFilesResult.Cancelled ->
                         let targetDirectory = absoluteArcPath arcPath "assays/AssayA"
                         let! firstExists = pathExistsAsync (join [| targetDirectory; firstName |])
@@ -684,7 +684,7 @@ Vitest.describe (
                     with
                     | Error error -> failwith error.Message
                     | Ok ImportExternalFilesResult.Cancelled -> failwith "Expected import to complete."
-                    | Ok ImportExternalFilesResult.Completed ->
+                    | Ok(ImportExternalFilesResult.Completed _) ->
                         let importedPath = absoluteArcPath arcPath $"assays/AssayA/{fileName}"
                         let! importedFileExists = pathExistsAsync importedPath
                         Vitest.expect(importedFileExists).toBe (true)
@@ -700,6 +700,77 @@ Vitest.describe (
                                 |> Seq.forall ((=) "cleanup")
                             )
                             .toBe (true)
+                })
+        )
+
+        Vitest.test (
+            "reports only the picked top-level folders as imported folder paths",
+            fun () ->
+                withAssayArc (fun arcPath -> promise {
+                    let! folderPath = createExternalRunFolderAsync arcPath
+                    let filePath = join [| dirname arcPath; "picked.txt" |]
+                    do! writeRelativeFileAsync (dirname arcPath) "picked.txt" "picked content"
+
+                    match!
+                        ArcFileSystemHelper.importExternalFilesOnDisk
+                            arcPath
+                            "assays/AssayA"
+                            [| filePath; folderPath |]
+                            ignore
+                            (fun () -> false)
+                            ignore
+                            ignore
+                            acceptImportedFiles
+                    with
+                    | Error error -> failwith error.Message
+                    | Ok ImportExternalFilesResult.Cancelled -> failwith "Expected import to complete."
+                    | Ok(ImportExternalFilesResult.Completed importedFolderPaths) ->
+                        Vitest.expect(importedFolderPaths).toEqual ([| "assays/AssayA/Run1" |])
+
+                    let onlyFilePath = join [| dirname arcPath; "only.txt" |]
+                    do! writeRelativeFileAsync (dirname arcPath) "only.txt" "only content"
+
+                    match!
+                        ArcFileSystemHelper.importExternalFilesOnDisk
+                            arcPath
+                            "assays/AssayA"
+                            [| onlyFilePath |]
+                            ignore
+                            (fun () -> false)
+                            ignore
+                            ignore
+                            acceptImportedFiles
+                    with
+                    | Error error -> failwith error.Message
+                    | Ok ImportExternalFilesResult.Cancelled -> failwith "Expected import to complete."
+                    | Ok(ImportExternalFilesResult.Completed importedFolderPaths) ->
+                        Vitest.expect(importedFolderPaths).toEqual ([||])
+
+                    let importFolderInto (target: string) (name: string) = promise {
+                        do! createRelativeDirectoryAsync (dirname arcPath) $"external/{name}"
+                        do! writeRelativeFileAsync (dirname arcPath) $"external/{name}/a.txt" "a"
+
+                        match!
+                            ArcFileSystemHelper.importExternalFilesOnDisk
+                                arcPath
+                                target
+                                [| absoluteArcPath (dirname arcPath) $"external/{name}" |]
+                                ignore
+                                (fun () -> false)
+                                ignore
+                                ignore
+                                acceptImportedFiles
+                        with
+                        | Error error -> return failwith error.Message
+                        | Ok ImportExternalFilesResult.Cancelled -> return failwith "Expected import to complete."
+                        | Ok(ImportExternalFilesResult.Completed importedFolderPaths) -> return importedFolderPaths
+                    }
+
+                    let! rootPaths = importFolderInto "" "RootRun"
+                    Vitest.expect(rootPaths).toEqual ([| "RootRun" |])
+
+                    let! slashPaths = importFolderInto "assays/AssayA/" "SlashRun"
+                    Vitest.expect(slashPaths).toEqual ([| "assays/AssayA/SlashRun" |])
                 })
         )
 
@@ -773,7 +844,7 @@ Vitest.describe (
                     with
                     | Error error -> failwith error.Message
                     | Ok ImportExternalFilesResult.Cancelled -> failwith "Expected import to complete."
-                    | Ok ImportExternalFilesResult.Completed ->
+                    | Ok(ImportExternalFilesResult.Completed _) ->
                         let! notes = readRelativeFileAsync arcPath "assays/AssayA/dataset/Run1/notes.txt"
                         let! results = readRelativeFileAsync arcPath "assays/AssayA/dataset/Run1/raw/results.csv"
 
@@ -881,7 +952,7 @@ Vitest.describe (
                     with
                     | Error error -> failwith error.Message
                     | Ok ImportExternalFilesResult.Cancelled -> failwith "Expected import to complete."
-                    | Ok ImportExternalFilesResult.Completed ->
+                    | Ok(ImportExternalFilesResult.Completed _) ->
                         let expected = [|
                             {
                                 step = FileImportStep.Scanning
@@ -1863,7 +1934,7 @@ Vitest.describe (
                             acceptImportedFiles
                     with
                     | Error error -> failwith error.Message
-                    | Ok ImportExternalFilesResult.Completed -> failwith "Expected import cancellation."
+                    | Ok(ImportExternalFilesResult.Completed _) -> failwith "Expected import cancellation."
                     | Ok ImportExternalFilesResult.Cancelled ->
                         // The import handler registers watcher ownership when files are planned, so a scan
                         // that stops early must not plan anything.
@@ -1905,7 +1976,7 @@ Vitest.describe (
                             acceptImportedFiles
                     with
                     | Error error -> failwith error.Message
-                    | Ok ImportExternalFilesResult.Completed -> failwith "Expected import cancellation."
+                    | Ok(ImportExternalFilesResult.Completed _) -> failwith "Expected import cancellation."
                     | Ok ImportExternalFilesResult.Cancelled ->
                         Vitest.expect(cancelledDuringPublishing).toBe (true)
                         do! expectRelativePathExists arcPath "assays/AssayA/dataset/Run1" false
@@ -1977,7 +2048,7 @@ Vitest.describe (
                     match! importWithoutCancellation arcPath "assays/AssayA/dataset" [| linkPath |] with
                     | Error error -> failwith error.Message
                     | Ok ImportExternalFilesResult.Cancelled -> failwith "Expected import to complete."
-                    | Ok ImportExternalFilesResult.Completed ->
+                    | Ok(ImportExternalFilesResult.Completed _) ->
                         let! notes = readRelativeFileAsync arcPath "assays/AssayA/dataset/linked-notes.txt"
                         Vitest.expect(notes).toBe ("linked notes")
                 })

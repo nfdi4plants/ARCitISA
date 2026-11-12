@@ -182,6 +182,15 @@ let isArcEntityFolderViewOpen
         || PathHelpers.pathsEqual selectedPath $"{PathHelpers.normalizePath folderPath}/{workbookName}"
     | _ -> false
 
+let importRevealPaths
+    (result: Result<ImportExternalFilesResult option, exn>)
+    (targetRelativePath: string)
+    : string list =
+    match result with
+    | Ok(Some(ImportExternalFilesResult.Completed importedFolderPaths)) ->
+        targetRelativePath :: List.ofArray importedFolderPaths
+    | _ -> []
+
 /// Builds the row of an entry in one record. Entry paths are already normalized, so nothing normalizes them again.
 let createItem
     (tryFindLfs: string -> Swate.Electron.Shared.VersionControlTypes.ObjectStateDto option)
