@@ -38,7 +38,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - When a file of the open ARC changes on disk, for example after you save it in Excel or after a Git pull, its new content replaces your unsaved edits to that file. Unsaved edits to other files stay, and a notice names each file whose unsaved edits were replaced. (by @Freymaurer)
 - While ARCitISA loads changes that another program or a Git operation made, a notice says so and the open page does not accept edits. Afterwards the open page shows the new content. An edit made on content that has changed in the meantime is refused with a message, and the page shows the current content. (by @Freymaurer)
 - Clicking a study, assay, workflow or run folder in the file tree only expands or collapses it, and its right-click menu no longer offers "Open". The metadata opens from the workbook inside the folder, such as "isa.assay.xlsx". A new study, assay, workflow or run opens its workbook. (by @Freymaurer)
-
+- Creating a file, folder, study, assay, workflow, run or DataMap in the File Explorer now opens the folders that lead to it, so you can see it right away. (by @Etschbeijer)
+- After importing files or folders, the File Explorer opens the folder you imported into and each imported folder. (by @Etschbeijer)
+- Opening a isa workbook file, will now open on the metadata sheet not on the first table. (by @Freymaurer)
 
 ### 🐛 Fixed
 
@@ -88,8 +90,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Git LFS badges come from one background listing per ARC. They update after Git operations in ARCitISA, and after changes made outside it when the window gets focus. #1340 (by @caroott, @Etschbeijer)
 - Switching views in the provenance graph keeps the previous graph on screen until the new one is ready, so the view no longer flashes. (by @caroott)
 - The provenance graph lays out large graphs in the background, so the app stays responsive in the meantime. (by @caroott)
-- Creating a file, folder, study, assay, workflow, run or DataMap in the File Explorer now opens the folders that lead to it, so you can see it right away. (by @Etschbeijer)
-- After importing files or folders, the File Explorer opens the folder you imported into and each imported folder. (by @Etschbeijer)
 
 ### 🐛 Fixed
 
