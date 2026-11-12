@@ -49,10 +49,17 @@ module ArcRenameHelper =
 
     /// Applies the rename to a copy of the local ARC. Entities without unsaved edits take their hash from memory, because
     /// the disk rename wrote the same change. An entity with unsaved edits stays unsaved.
-    let private applyRenameInMemory sourcePath targetPath fileType oldIdentifier newIdentifier (arcLocal: ARC) : ARC =
+    let private applyRenameInMemory
+        (sourcePath: string)
+        (targetPath: string)
+        (fileType: ArcFilesDiscriminate)
+        (oldIdentifier: string)
+        (newIdentifier: string)
+        (arcLocal: ARC)
+        : ARC =
         let renamedArc = copyArcPreservingStaticHashes arcLocal
 
-        let identifierAfterRename kind (identifier: string) =
+        let identifierAfterRename (kind: ArcFilesDiscriminate) (identifier: string) =
             if fileType = kind && identifier = oldIdentifier then
                 newIdentifier
             else

@@ -7231,7 +7231,7 @@ let private writeLegacyParentDataMapAsync arcPath parent identifier name = promi
         for contract in contracts do
             match contract.DTO with
             | Some(DTO.Spreadsheet workbook) ->
-                (workbook :?> FsWorkbook).AddWorksheet(ARCtrl.Spreadsheet.DatamapTable.toFsWorksheet dataMap)
+                workbook.AddWorksheet(ARCtrl.Spreadsheet.DatamapTable.toFsWorksheet dataMap)
             | _ -> ()
 
     match! ContractExecutor.fulfillContractsSwateAsync arcPath contracts with

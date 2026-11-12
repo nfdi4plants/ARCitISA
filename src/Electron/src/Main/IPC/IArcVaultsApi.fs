@@ -707,7 +707,6 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
                                                             sourceAbsolutePaths
                                                             reportImportProgress
                                                             (fun () -> abortSignal.aborted)
-                                                            ignore
                                                             (fun () ->
                                                                 publisher.Stop()
 

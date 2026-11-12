@@ -39,30 +39,30 @@ Vitest.describe (
         Vitest.test (
             "equal snapshots have no changes",
             fun () ->
-                let snapshot = snapshotOf false [ assayPath, 10.0, 1.0 ]
+                let snapshot = snapshotOf false [ (assayPath, 10.0, 1.0) ]
                 Vitest.expect(diff snapshot snapshot).toEqual ([]: ArcDiskChange list)
         )
 
         Vitest.test (
             "a new file is added",
             fun () ->
-                let known = snapshotOf false [ assayPath, 10.0, 1.0 ]
-                let current = snapshotOf false [ assayPath, 10.0, 1.0; studyPath, 5.0, 1.0 ]
+                let known = snapshotOf false [ (assayPath, 10.0, 1.0) ]
+                let current = snapshotOf false [ (assayPath, 10.0, 1.0); (studyPath, 5.0, 1.0) ]
                 Vitest.expect(diff known current).toEqual [ Added studyPath ]
         )
 
         Vitest.test (
             "a different size or modified time is a change",
             fun () ->
-                let known = snapshotOf false [ assayPath, 10.0, 1.0; studyPath, 5.0, 1.0 ]
-                let current = snapshotOf false [ assayPath, 11.0, 1.0; studyPath, 5.0, 2.0 ]
+                let known = snapshotOf false [ (assayPath, 10.0, 1.0); (studyPath, 5.0, 1.0) ]
+                let current = snapshotOf false [ (assayPath, 11.0, 1.0); (studyPath, 5.0, 2.0) ]
                 Vitest.expect(diff known current).toEqual [ Changed assayPath; Changed studyPath ]
         )
 
         Vitest.test (
             "a file that is gone is removed",
             fun () ->
-                let known = snapshotOf false [ assayPath, 10.0, 1.0 ]
+                let known = snapshotOf false [ (assayPath, 10.0, 1.0) ]
                 Vitest.expect(diff known Map.empty).toEqual [ Removed assayPath ]
         )
 
@@ -70,8 +70,8 @@ Vitest.describe (
             "a case-only rename on a file system that ignores case is a removal and an addition",
             fun () ->
                 let renamedPath = "assays/ASSAY/isa.assay.xlsx"
-                let known = snapshotOf true [ assayPath, 10.0, 1.0 ]
-                let current = snapshotOf true [ renamedPath, 10.0, 1.0 ]
+                let known = snapshotOf true [ (assayPath, 10.0, 1.0) ]
+                let current = snapshotOf true [ (renamedPath, 10.0, 1.0) ]
                 Vitest.expect(diff known current).toEqual [ Removed assayPath; Added renamedPath ]
         )
 
@@ -79,8 +79,8 @@ Vitest.describe (
             "paths differing only in case name two files when the file system respects case",
             fun () ->
                 let renamedPath = "assays/ASSAY/isa.assay.xlsx"
-                let known = snapshotOf false [ assayPath, 10.0, 1.0 ]
-                let current = snapshotOf false [ renamedPath, 10.0, 1.0 ]
+                let known = snapshotOf false [ (assayPath, 10.0, 1.0) ]
+                let current = snapshotOf false [ (renamedPath, 10.0, 1.0) ]
                 Vitest.expect(diff known current).toEqual [ Added renamedPath; Removed assayPath ]
         )
 )
@@ -210,8 +210,8 @@ Vitest.describe (
             "an own write that renamed a file by case only stores the new path",
             fun () ->
                 let renamedPath = "assays/ASSAY/isa.assay.xlsx"
-                let known = snapshotOf true [ assayPath, 10., 1. ]
-                let post = snapshotOf true [ renamedPath, 10., 1. ]
+                let known = snapshotOf true [ (assayPath, 10., 1.) ]
+                let post = snapshotOf true [ (renamedPath, 10., 1.) ]
 
                 let acknowledged = acknowledge known known post
 

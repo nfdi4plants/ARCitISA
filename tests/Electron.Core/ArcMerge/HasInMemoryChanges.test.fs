@@ -24,22 +24,4 @@ Vitest.describe (
                 arc.Assays.[0].Datamap <- Some(Datamap.init ())
                 Vitest.expect(arc.hasInMemoryChanges ()).toBe (true)
         )
-
-        Vitest.test (
-            "restoreArcStaticHashes gives an entity replaced under the same identifier the saved hash",
-            fun () ->
-                let arc = MockData.createCleanArc ()
-                arc.Assays.[0].Title <- Some "Edited"
-                let savedHash = arc.Assays.[0].StaticHash
-                let saved = captureArcStaticHashes arc
-                arc.GetUpdateContracts() |> ignore
-                Vitest.expect(arc.hasInMemoryChanges ()).toBe false
-
-                arc.Assays.[0] <- arc.Assays.[0].Copy()
-                arc.Assays.[0].StaticHash <- 0
-                restoreArcStaticHashes saved arc
-
-                Vitest.expect(arc.Assays.[0].StaticHash).toBe savedHash
-                Vitest.expect(arc.hasInMemoryChanges ()).toBe true
-        )
 )

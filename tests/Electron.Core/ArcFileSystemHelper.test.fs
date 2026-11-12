@@ -5,7 +5,6 @@ open Fable.Core
 open Fable.Core.JsInterop
 open Main.Bindings.Path
 open Main.IPC.FileSystemIO
-open Main.ArcVaultTypes
 open Swate.Components.Shared
 open Swate.Electron.Shared.FileIOTypes
 open Swate.Electron.Shared.RenamePathRules
@@ -134,27 +133,14 @@ let private importWithoutCancellation arcPath targetRelativePath sourcePaths =
         ignore
         (fun () -> false)
         ignore
-        ignore
         acceptImportedFiles
 
-/// Imports without cancellation, fails unless the import completes, and returns the planned files.
-let private importCollectingPlannedFiles arcPath targetRelativePath sourcePaths = promise {
-    let plannedFiles = ResizeArray<string>()
-
-    match!
-        ArcFileSystemHelper.importExternalFilesOnDisk
-            arcPath
-            targetRelativePath
-            sourcePaths
-            ignore
-            (fun () -> false)
-            (fun planned -> plannedFiles.AddRange planned.FilePaths)
-            ignore
-            acceptImportedFiles
-    with
+/// Imports without cancellation and fails unless the import completes.
+let private importSuccessfully arcPath targetRelativePath sourcePaths = promise {
+    match! importWithoutCancellation arcPath targetRelativePath sourcePaths with
     | Error error -> return failwith error.Message
     | Ok ImportExternalFilesResult.Cancelled -> return failwith "Expected import to complete."
-    | Ok(ImportExternalFilesResult.Completed _) -> return plannedFiles.ToArray()
+    | Ok(ImportExternalFilesResult.Completed _) -> return ()
 }
 
 let private readRelativeFileAsync rootPath relativePath =
@@ -376,7 +362,6 @@ Vitest.describe (
                             progress.Add
                             (fun () -> false)
                             ignore
-                            ignore
                             acceptImportedFiles
                     with
                     | Error error -> failwith error.Message
@@ -424,7 +409,6 @@ Vitest.describe (
                             onProgress
                             (fun () -> cancelRequested)
                             ignore
-                            ignore
                             acceptImportedFiles
                     with
                     | Error error -> failwith error.Message
@@ -461,7 +445,6 @@ Vitest.describe (
                             |]
                             onProgress
                             (fun () -> cancelRequested)
-                            ignore
                             ignore
                             acceptImportedFiles
                     with
@@ -500,7 +483,6 @@ Vitest.describe (
                             ignore
                             (fun () -> false)
                             ignore
-                            ignore
                             (fun () -> promise { return Error(exn "ARC synchronization failed") })
                     with
                     | Ok outcome -> failwith $"Expected validation failure, got {outcome}."
@@ -532,7 +514,6 @@ Vitest.describe (
                             |]
                             ignore
                             (fun () -> false)
-                            ignore
                             ignore
                             acceptImportedFiles
                     with
@@ -576,7 +557,6 @@ Vitest.describe (
                             [| sourcePath |]
                             ignore
                             (fun () -> false)
-                            ignore
                             (fun () -> lifecycleOrder.Add "published")
                             (fun () -> promise {
                                 lifecycleOrder.Add "validate"
@@ -620,7 +600,6 @@ Vitest.describe (
                             ignore
                             (fun () -> false)
                             ignore
-                            ignore
                             acceptImportedFiles
                     with
                     | Error error -> failwith error.Message
@@ -638,7 +617,6 @@ Vitest.describe (
                             [| onlyFilePath |]
                             ignore
                             (fun () -> false)
-                            ignore
                             ignore
                             acceptImportedFiles
                     with
@@ -658,7 +636,6 @@ Vitest.describe (
                                 [| absoluteArcPath (dirname arcPath) $"external/{name}" |]
                                 ignore
                                 (fun () -> false)
-                                ignore
                                 ignore
                                 acceptImportedFiles
                         with
@@ -692,7 +669,6 @@ Vitest.describe (
                             ignore
                             (fun () -> false)
                             ignore
-                            ignore
                             acceptImportedFiles
                     with
                     | Ok outcome -> failwith $"Expected destination conflict, got {outcome}."
@@ -715,21 +691,6 @@ Vitest.describe (
                 withAssayArc (fun arcPath -> promise {
                     let! sourcePath = createExternalRunFolderAsync arcPath
                     do! createRelativeDirectoryAsync arcPath "assays/AssayA/dataset"
-                    let mutable plannedFiles = [||]
-                    let mutable plannedFolders = [||]
-                    let lifecycleOrder = ResizeArray<string>()
-
-                    // The planning callback runs before anything appears in the target.
-                    let onPathsPlanned (planned: PlannedImportPaths) =
-                        plannedFiles <- planned.FilePaths
-                        plannedFolders <- planned.FolderPaths
-
-                        if
-                            Main.Bindings.Filesystem.existsSync (absoluteArcPath arcPath "assays/AssayA/dataset/Run1")
-                        then
-                            lifecycleOrder.Add "planned after publishing started"
-                        else
-                            lifecycleOrder.Add "planned"
 
                     match!
                         ArcFileSystemHelper.importExternalFilesOnDisk
@@ -738,8 +699,7 @@ Vitest.describe (
                             [| sourcePath |]
                             ignore
                             (fun () -> false)
-                            onPathsPlanned
-                            (fun () -> lifecycleOrder.Add "published")
+                            ignore
                             acceptImportedFiles
                     with
                     | Error error -> failwith error.Message
@@ -756,19 +716,6 @@ Vitest.describe (
                         let! generatedGitKeep =
                             readRelativeFileAsync arcPath "assays/AssayA/dataset/Run1/empty/.gitkeep"
 
-                        Vitest
-                            .expect(plannedFiles)
-                            .toEqual (
-                                [|
-                                    "Run1/notes.txt"
-                                    "Run1/raw/results.csv"
-                                    "Run1/empty/.gitkeep"
-                                |]
-                            )
-
-                        Vitest.expect(plannedFolders).toEqual ([| "Run1"; "Run1/empty"; "Run1/raw" |])
-                        Vitest.expect(lifecycleOrder |> Seq.toArray).toEqual ([| "planned"; "published" |])
-
                         Vitest.expect(notes).toBe ("run notes")
                         Vitest.expect(results).toBe ("a,b")
                         Vitest.expect(emptyFolderExists).toBe (true)
@@ -784,14 +731,13 @@ Vitest.describe (
                     do! createRelativeDirectoryAsync arcPath "assays/AssayA/dataset"
                     do! createRelativeDirectoryAsync (dirname arcPath) "emptyPick"
 
-                    let! plannedFiles =
-                        importCollectingPlannedFiles arcPath "assays/AssayA/dataset" [|
+                    do!
+                        importSuccessfully arcPath "assays/AssayA/dataset" [|
                             join [| dirname arcPath; "emptyPick" |]
                         |]
 
                     let! gitKeep = readRelativeFileAsync arcPath "assays/AssayA/dataset/emptyPick/.gitkeep"
 
-                    Vitest.expect(plannedFiles).toEqual ([| "emptyPick/.gitkeep" |])
                     Vitest.expect(gitKeep).toBe ("")
                 })
         )
@@ -803,12 +749,11 @@ Vitest.describe (
                     do! createRelativeDirectoryAsync arcPath "assays/AssayA/dataset"
                     do! createRelativeDirectoryAsync (dirname arcPath) "nestedPick/a/b"
 
-                    let! plannedFiles =
-                        importCollectingPlannedFiles arcPath "assays/AssayA/dataset" [|
+                    do!
+                        importSuccessfully arcPath "assays/AssayA/dataset" [|
                             join [| dirname arcPath; "nestedPick" |]
                         |]
 
-                    Vitest.expect(plannedFiles).toEqual ([| "nestedPick/a/b/.gitkeep" |])
                     do! expectRelativePathExists arcPath "assays/AssayA/dataset/nestedPick/a/b/.gitkeep" true
                     do! expectRelativePathExists arcPath "assays/AssayA/dataset/nestedPick/a/.gitkeep" false
                 })
@@ -821,9 +766,7 @@ Vitest.describe (
                     let! sourcePath = createExternalRunFolderAsync arcPath
                     do! createRelativeDirectoryAsync arcPath "assays/AssayA/dataset"
 
-                    do!
-                        importCollectingPlannedFiles arcPath "assays/AssayA/dataset" [| sourcePath |]
-                        |> Promise.map ignore
+                    do! importSuccessfully arcPath "assays/AssayA/dataset" [| sourcePath |]
 
                     do! expectRelativePathExists arcPath "assays/AssayA/dataset/Run1/.gitkeep" false
                     do! expectRelativePathExists arcPath "assays/AssayA/dataset/Run1/raw/.gitkeep" false
@@ -837,7 +780,8 @@ Vitest.describe (
                     let! sourcePath = createExternalRunFolderAsync arcPath
                     do! createRelativeDirectoryAsync arcPath "assays/AssayA/dataset"
                     let updates = ResizeArray<FileImportProgress>()
-                    let mutable plannedCount = 0
+                    // Three folders, two source files, and the empty folder's generated .gitkeep.
+                    let itemCount = 6
 
                     match!
                         ArcFileSystemHelper.importExternalFilesOnDisk
@@ -846,7 +790,6 @@ Vitest.describe (
                             [| sourcePath |]
                             updates.Add
                             (fun () -> false)
-                            (fun planned -> plannedCount <- planned.FolderPaths.Length + planned.FilePaths.Length)
                             ignore
                             acceptImportedFiles
                     with
@@ -859,21 +802,20 @@ Vitest.describe (
                                 completedItems = 0
                                 totalItems = 0
                             }
-                            for i in 0..plannedCount do
+                            for i in 0..itemCount do
                                 {
                                     step = FileImportStep.Copying
                                     completedItems = i
-                                    totalItems = plannedCount
+                                    totalItems = itemCount
                                 }
-                            for i in 0..plannedCount do
+                            for i in 0..itemCount do
                                 {
                                     step = FileImportStep.Publishing
                                     completedItems = i
-                                    totalItems = plannedCount
+                                    totalItems = itemCount
                                 }
                         |]
 
-                        Vitest.expect(plannedCount).toBe (6)
                         Vitest.expect(updates.ToArray()).toEqual (expected)
                 })
         )
@@ -919,7 +861,7 @@ Vitest.describe (
                     do! writeRelativeFileAsync sourcePath $"{backupFolder}/data.csv" "c,d"
                     do! createRelativeDirectoryAsync arcPath "assays/AssayA/dataset"
 
-                    let! plannedFiles = importCollectingPlannedFiles arcPath "assays/AssayA/dataset" [| sourcePath |]
+                    do! importSuccessfully arcPath "assays/AssayA/dataset" [| sourcePath |]
 
                     let! lockFolderContent =
                         readRelativeFileAsync arcPath "assays/AssayA/dataset/Run1/~$archive.old/data.csv"
@@ -927,7 +869,6 @@ Vitest.describe (
                     let! backupFolderContent =
                         readRelativeFileAsync arcPath $"assays/AssayA/dataset/Run1/{backupFolder}/data.csv"
 
-                    Vitest.expect(plannedFiles |> Array.contains "Run1/~$archive.old/data.csv").toBe (true)
                     Vitest.expect(lockFolderContent).toBe ("a,b")
                     Vitest.expect(backupFolderContent).toBe ("c,d")
                 })
@@ -949,12 +890,11 @@ Vitest.describe (
                     do! writeRelativeFileAsync (dirname arcPath) $"{backupFolderName}/data.csv" "e,f"
 
                     do!
-                        importCollectingPlannedFiles arcPath "assays/AssayA/dataset" [|
+                        importSuccessfully arcPath "assays/AssayA/dataset" [|
                             join [| dirname arcPath; "~$archive.old" |]
                             join [| dirname arcPath; ".~lock.data.xlsx#" |]
                             join [| dirname arcPath; backupFolderName |]
                         |]
-                        |> Promise.map ignore
 
                     let! content = readRelativeFileAsync arcPath "assays/AssayA/dataset/~$archive.old/data.csv"
 
@@ -980,17 +920,17 @@ Vitest.describe (
 
                     // Planning has finished at this point, so copying into the staging folder is the first
                     // step that misses the file.
-                    let removeSourceFile _ =
-                        Main.Bindings.Filesystem.unlinkSync (join [| sourcePath; "raw"; "results.csv" |])
+                    let removeSourceFile (progress: FileImportProgress) =
+                        if progress.step = FileImportStep.Copying && progress.completedItems = 0 then
+                            Main.Bindings.Filesystem.unlinkSync (join [| sourcePath; "raw"; "results.csv" |])
 
                     let! result =
                         ArcFileSystemHelper.importExternalFilesOnDisk
                             arcPath
                             "assays/AssayA/dataset"
                             [| sourcePath |]
-                            ignore
-                            (fun () -> false)
                             removeSourceFile
+                            (fun () -> false)
                             ignore
                             acceptImportedFiles
 
@@ -1010,21 +950,21 @@ Vitest.describe (
 
                     // Another program creates `Run1` after the import checked that the name is free. The
                     // rollback only removes what the import created, so this folder must survive.
-                    let createConflictingFolder _ =
-                        Main.Bindings.Filesystem.mkdirSync
-                            conflictingFolder
-                            (Main.Bindings.Filesystem.MkdirOptions(recursive = true))
+                    let createConflictingFolder (progress: FileImportProgress) =
+                        if progress.step = FileImportStep.Copying && progress.completedItems = 0 then
+                            Main.Bindings.Filesystem.mkdirSync
+                                conflictingFolder
+                                (Main.Bindings.Filesystem.MkdirOptions(recursive = true))
 
-                        TestHelpers.writeText (join [| conflictingFolder; "mine.txt" |]) "my data"
+                            TestHelpers.writeText (join [| conflictingFolder; "mine.txt" |]) "my data"
 
                     let! result =
                         ArcFileSystemHelper.importExternalFilesOnDisk
                             arcPath
                             "assays/AssayA/dataset"
                             [| sourcePath |]
-                            ignore
-                            (fun () -> false)
                             createConflictingFolder
+                            (fun () -> false)
                             ignore
                             acceptImportedFiles
 
@@ -1047,8 +987,8 @@ Vitest.describe (
                     do! writeRelativeFileAsync sourceRoot "external/Run2/notes.txt" "second run notes"
                     do! createRelativeDirectoryAsync arcPath "assays/AssayA/dataset"
 
-                    let! plannedFiles =
-                        importCollectingPlannedFiles arcPath "assays/AssayA/dataset" [|
+                    do!
+                        importSuccessfully arcPath "assays/AssayA/dataset" [|
                             firstSourcePath
                             absoluteArcPath sourceRoot "external/Run2"
                         |]
@@ -1056,16 +996,14 @@ Vitest.describe (
                     let! firstNotes = readRelativeFileAsync arcPath "assays/AssayA/dataset/Run1/notes.txt"
                     let! secondNotes = readRelativeFileAsync arcPath "assays/AssayA/dataset/Run2/notes.txt"
 
-                    Vitest
-                        .expect(plannedFiles)
-                        .toEqual (
-                            [|
-                                "Run1/notes.txt"
-                                "Run1/raw/results.csv"
-                                "Run2/notes.txt"
-                                "Run1/empty/.gitkeep"
-                            |]
-                        )
+                    for relativePath in
+                        [|
+                            "Run1/notes.txt"
+                            "Run1/raw/results.csv"
+                            "Run2/notes.txt"
+                            "Run1/empty/.gitkeep"
+                        |] do
+                        do! expectRelativePathExists arcPath $"assays/AssayA/dataset/{relativePath}" true
 
                     Vitest.expect(firstNotes).toBe ("run notes")
                     Vitest.expect(secondNotes).toBe ("second run notes")
@@ -1344,9 +1282,7 @@ Vitest.describe (
 
                     do! createRelativeDirectoryAsync arcPath "assays/AssayA/dataset"
 
-                    do!
-                        importCollectingPlannedFiles arcPath "assays/AssayA/dataset" [| sourcePath |]
-                        |> Promise.map ignore
+                    do! importSuccessfully arcPath "assays/AssayA/dataset" [| sourcePath |]
 
                     for relativePath, content in files do
                         let! imported = readRelativeFileAsync arcPath $"assays/AssayA/dataset/Run1/{relativePath}"
@@ -1366,12 +1302,11 @@ Vitest.describe (
                     do! writeRelativeFileAsync sourceRoot ".gitkeep/inner.txt" "inner"
 
                     do!
-                        importCollectingPlannedFiles arcPath "assays/AssayA/dataset/raw" [|
+                        importSuccessfully arcPath "assays/AssayA/dataset/raw" [|
                             join [| sourceRoot; "~$Book1.xlsx" |]
                             join [| sourceRoot; "isa_datamap" |]
                             join [| sourceRoot; ".gitkeep" |]
                         |]
-                        |> Promise.map ignore
 
                     let! lockFile = readRelativeFileAsync arcPath "assays/AssayA/dataset/raw/~$Book1.xlsx"
                     let! dataMap = readRelativeFileAsync arcPath "assays/AssayA/dataset/raw/isa_datamap"
@@ -1443,9 +1378,7 @@ Vitest.describe (
                     do! createRelativeDirectoryAsync arcPath "Data"
                     do! writeRelativeFileAsync arcPath "Data/notes.txt" "case-distinct source"
 
-                    do!
-                        importCollectingPlannedFiles arcPath "data/arc/folder" [| absoluteArcPath arcPath "Data" |]
-                        |> Promise.map ignore
+                    do! importSuccessfully arcPath "data/arc/folder" [| absoluteArcPath arcPath "Data" |]
 
                     let! content = readRelativeFileAsync arcPath "data/arc/folder/Data/notes.txt"
                     Vitest.expect(content).toBe "case-distinct source"
@@ -1486,9 +1419,7 @@ Vitest.describe (
 
                     do! createRelativeDirectoryAsync arcPath "assays/AssayA/dataset"
 
-                    do!
-                        importCollectingPlannedFiles arcPath "assays/AssayA/dataset" [| sourcePath |]
-                        |> Promise.map ignore
+                    do! importSuccessfully arcPath "assays/AssayA/dataset" [| sourcePath |]
 
                     let! content = readRelativeFileAsync arcPath "assays/AssayA/dataset/a/link/notes.txt"
 
@@ -1524,9 +1455,7 @@ Vitest.describe (
 
                     do! createRelativeDirectoryAsync arcPath "assays/AssayA/dataset"
 
-                    do!
-                        importCollectingPlannedFiles arcPath "assays/AssayA/dataset" [| sourcePath |]
-                        |> Promise.map ignore
+                    do! importSuccessfully arcPath "assays/AssayA/dataset" [| sourcePath |]
 
                     let! fileContent = readRelativeFileAsync arcPath "assays/AssayA/dataset/Run1/filelink.txt"
 
@@ -1690,9 +1619,7 @@ Vitest.describe (
                     do! TestHelpers.createFolderLinkAsync sharedPath (join [| sourcePath; "raw"; "linkB" |])
                     do! createRelativeDirectoryAsync arcPath "assays/AssayA/dataset"
 
-                    do!
-                        importCollectingPlannedFiles arcPath "assays/AssayA/dataset" [| sourcePath |]
-                        |> Promise.map ignore
+                    do! importSuccessfully arcPath "assays/AssayA/dataset" [| sourcePath |]
 
                     let! first = readRelativeFileAsync arcPath "assays/AssayA/dataset/Run1/linkA/data.txt"
                     let! second = readRelativeFileAsync arcPath "assays/AssayA/dataset/Run1/raw/linkB/data.txt"
@@ -1755,9 +1682,7 @@ Vitest.describe (
                     do! TestHelpers.createFolderLinkAsync sourcePath linkPath
                     do! createRelativeDirectoryAsync arcPath "assays/AssayA/dataset"
 
-                    do!
-                        importCollectingPlannedFiles arcPath "assays/AssayA/dataset" [| linkPath |]
-                        |> Promise.map ignore
+                    do! importSuccessfully arcPath "assays/AssayA/dataset" [| linkPath |]
 
                     let! results = readRelativeFileAsync arcPath "assays/AssayA/dataset/LinkedRun/raw/results.csv"
 
@@ -1804,7 +1729,6 @@ Vitest.describe (
                             ignore
                             (fun () -> false)
                             ignore
-                            ignore
                             (fun () -> promise { return Error(exn "ARC synchronization failed") })
 
                     result |> expectErrorContaining "ARC synchronization failed"
@@ -1820,24 +1744,33 @@ Vitest.describe (
                 withAssayArc (fun arcPath -> promise {
                     let! sourcePath = createExternalRunFolderAsync arcPath
                     do! createRelativeDirectoryAsync arcPath "assays/AssayA/dataset"
-                    let mutable filesWerePlanned = false
+                    let updates = ResizeArray<FileImportProgress>()
 
                     match!
                         ArcFileSystemHelper.importExternalFilesOnDisk
                             arcPath
                             "assays/AssayA/dataset"
                             [| sourcePath |]
-                            ignore
+                            updates.Add
                             (fun () -> true)
-                            (fun _ -> filesWerePlanned <- true)
                             ignore
                             acceptImportedFiles
                     with
                     | Error error -> failwith error.Message
                     | Ok(ImportExternalFilesResult.Completed _) -> failwith "Expected import cancellation."
                     | Ok ImportExternalFilesResult.Cancelled ->
-                        // A scan that stops early must not plan anything.
-                        Vitest.expect(filesWerePlanned).toBe (false)
+                        Vitest
+                            .expect(updates.ToArray())
+                            .toEqual (
+                                [|
+                                    {
+                                        step = FileImportStep.Scanning
+                                        completedItems = 0
+                                        totalItems = 0
+                                    }
+                                |]
+                            )
+
                         do! expectRelativePathExists arcPath "assays/AssayA/dataset/Run1" false
                         do! expectNoTemporaryImportDirectory arcPath "assays/AssayA/dataset"
                 })
@@ -1870,7 +1803,6 @@ Vitest.describe (
                             [| sourcePath |]
                             ignore
                             isCancellationRequested
-                            ignore
                             ignore
                             acceptImportedFiles
                     with
@@ -2060,9 +1992,7 @@ Vitest.describe (
                         do! createRelativeDirectoryAsync sourcePath $"named-folders/{name}"
                         do! writeRelativeFileAsync sourcePath $"named-folders/{name}/inner.txt" "folder content"
 
-                    do!
-                        importCollectingPlannedFiles arcPath "assays/AssayA/dataset" [| sourcePath |]
-                        |> Promise.map ignore
+                    do! importSuccessfully arcPath "assays/AssayA/dataset" [| sourcePath |]
 
                     let importedRoot = "assays/AssayA/dataset/Run1"
 
