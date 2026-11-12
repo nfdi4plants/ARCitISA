@@ -143,7 +143,9 @@ swt:p-0"""
         let onSelect =
             fun cell newCellRange ->
                 onSelect |> Option.iter (fun onSelect -> onSelect cell newCellRange)
-                scrollTo (cell)
+
+                if newCellRange.IsSome then
+                    scrollTo (cell)
 
         let activeCellIndex, setActiveCellIndex =
             React.useState (None: CellCoordinate option)

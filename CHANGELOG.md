@@ -51,6 +51,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A Save that fails, for example because Excel has the workbook open, keeps the changes marked as unsaved, so the next Save writes them. (by @Freymaurer)
 - When a changed file can't be loaded, a notice says so, and the file loads once it is fixed. Before, the failure was only logged. (by @Freymaurer)
 - DataMaps are read from and saved to the adjacent `isa.datamap.xlsx`. A legacy DataMap sheet inside a parent workbook is read only when that file is missing and moves to the file when the parent is saved. (by @Freymaurer)
+- Fix bug where deselecting a table cell was not correctly propagated to the file picker and data annotator components. (by @Freymaurer)
 
 ## 3.2.0 - 2026-11-02
 

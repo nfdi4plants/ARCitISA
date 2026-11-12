@@ -555,12 +555,10 @@ type DataAnnotator =
             | _ -> ()
 
         let hasSelection = not (List.isEmpty selectedSelectors)
+        let hasInsertionTarget = defaultArg canInsert true
 
         let canInsert =
-            defaultArg canInsert true
-            && onInsert.IsSome
-            && items.Length > 0
-            && not isLoading
+            hasInsertionTarget && onInsert.IsSome && items.Length > 0 && not isLoading
 
         Html.div [
             prop.className "swt:flex swt:flex-col swt:gap-4 swt:grow"
@@ -656,10 +654,11 @@ type DataAnnotator =
                             Html.div [
                                 prop.className "swt:ml-auto"
                                 prop.children [
-                                    Html.span [
-                                        prop.className "swt:text-sm swt:text-error/70 swt:mr-1"
-                                        prop.text "Select table cells"
-                                    ]
+                                    if not hasInsertionTarget then
+                                        Html.span [
+                                            prop.className "swt:text-sm swt:text-error/70 swt:mr-1"
+                                            prop.text "Select table cells"
+                                        ]
                                     Html.button [
                                         prop.className "swt:btn swt:btn-primary"
                                         prop.text (

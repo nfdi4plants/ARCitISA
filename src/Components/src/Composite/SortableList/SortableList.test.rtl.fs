@@ -67,6 +67,22 @@ let private SelectableSample (initialSelectedIds: string list) =
 let private shiftClick (id: string) =
     RTL.fireEvent.click (RTL.screen.getByTestId id, {| shiftKey = true |})
 
+Vitest.test (
+    "default selection checkboxes follow row clicks and toggle their row",
+    fun () ->
+        RTL.render (SelectableSample []) |> ignore
+
+        let checkbox () =
+            RTL.screen.getByRole ("checkbox", ByRoleOptions(name = Text "Select Alpha")) :?> HTMLInputElement
+
+        Vitest.expect((checkbox ()).``checked``).toBe false
+        click "sortable-list-row-alpha"
+        Vitest.expect((checkbox ()).``checked``).toBe true
+        RTL.fireEvent.click (checkbox ())
+        Vitest.expect((checkbox ()).``checked``).toBe false
+        Vitest.expect((RTL.screen.getByTestId "selected-ids").textContent).toBe ""
+)
+
 Vitest.beforeEach (fun () -> installRowGeometry ())
 
 Vitest.afterEach (fun () ->

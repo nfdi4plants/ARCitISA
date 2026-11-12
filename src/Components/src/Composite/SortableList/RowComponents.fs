@@ -86,10 +86,11 @@ type RowComponents =
         ]
 
     [<ReactComponent>]
-    static member IsSelectedToggle(isSelected: bool) =
+    static member IsSelectedToggle(isSelected: bool, ?label: string) =
         Html.input [
             prop.className "swt:checkbox swt:checkbox-primary swt:checkbox-xs"
             prop.type'.checkbox
+            prop.ariaLabel (defaultArg label "Select row")
             prop.isChecked isSelected
             prop.readOnly true
         ]
@@ -133,8 +134,11 @@ type RowComponents =
                 prop.className "swt:w-20"
                 prop.children [
                     Html.div [
-                        RowComponents.IsSelectedToggle(isSelected)
-                        RowComponents.DragHandle(row)
+                        prop.className "swt:flex swt:items-center swt:gap-1"
+                        prop.children [
+                            RowComponents.IsSelectedToggle(isSelected, label = $"Select {row.item.label}")
+                            RowComponents.DragHandle(row)
+                        ]
                     ]
                 ]
             ]

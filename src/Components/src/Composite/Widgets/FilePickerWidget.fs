@@ -172,17 +172,17 @@ type FilePickerWidget =
         Html.div [
             prop.className "swt:ml-auto"
             prop.children [
-                Html.span [
-                    prop.className "swt:text-sm swt:text-error/70 swt:mr-1"
-                    prop.text "Select table cells"
-                ]
+                if not tableCellSelected then
+                    Html.span [
+                        prop.className "swt:text-sm swt:text-error/70 swt:mr-1"
+                        prop.text "Select table cells"
+                    ]
                 Html.button [
                     prop.className "swt:btn swt:btn-primary"
                     prop.disabled (not tableCellSelected)
-                    prop.required true
                     prop.text text
                     prop.title title
-                    prop.type'.submit
+                    prop.type'.button
                     prop.onClick (fun _ -> insertPaths hasSelection)
                 ]
             ]
@@ -290,8 +290,8 @@ type FilePickerWidget =
             prop.children [
                 if isLoading then
                     LoadingSpinner.LoadingSpinner("Loading Paths...", DaisyuiSize.LG)
-                else if hasPaths then
 
+                else if hasPaths then
                     FilePickerWidgetContext.SelectedPathsCtx.Provider(
                         selectContextState,
                         React.Fragment [
