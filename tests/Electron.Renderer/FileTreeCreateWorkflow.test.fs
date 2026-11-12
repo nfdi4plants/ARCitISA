@@ -62,7 +62,7 @@ Vitest.describe (
     "FileTreeCreateWorkflow",
     fun () ->
         Vitest.test (
-            "createArcEntry reveals the zone folder, opens the entity folder and closes the modal",
+            "createArcEntry reveals and opens the workbook and closes the modal",
             fun () -> promise {
                 let probe = createProbe ()
                 let draft = createDraft ()
@@ -71,10 +71,10 @@ Vitest.describe (
 
                 do! waitUntilIdle probe
 
-                Vitest.expect(List.toArray probe.Revealed).toEqual ([| "studies" |])
+                Vitest.expect(List.toArray probe.Revealed).toEqual ([| "studies/S1/isa.study.xlsx" |])
                 Vitest.expect(probe.Opened.Length).toBe (1)
-                Vitest.expect(probe.Opened.Head.Path).toEqual (Some "studies/S1")
-                Vitest.expect(probe.Opened.Head.IsDirectory).toBe (true)
+                Vitest.expect(probe.Opened.Head.Path).toEqual (Some "studies/S1/isa.study.xlsx")
+                Vitest.expect(probe.Opened.Head.IsDirectory).toBe (false)
                 Vitest.expect(probe.Closed).toBe (true)
                 Vitest.expect(probe.Errors.Length).toBe (0)
                 Vitest.expect(probe.Busy).toBe (false)

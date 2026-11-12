@@ -31,17 +31,3 @@ module IPCHelper =
             match vault.path with
             | Some arcPath -> Ok(vault, arcPath)
             | None -> Error(arcNotOpenError ())
-
-    let withBusyWritingScope (vault: ArcVault) (operation: unit -> JS.Promise<'T>) : JS.Promise<'T> =
-        vault.WithBusyWritingScope operation
-
-    let withExclusiveBusyWriting
-        (vault: ArcVault)
-        (operation: unit -> JS.Promise<Result<'T, exn>>)
-        : JS.Promise<Result<'T, exn>> =
-        if vault.isBusyWriting then
-            JS.Constructors.Promise.resolve (
-                Error(exn "ARCitISA is still saving another change. Please wait a moment and try again.")
-            )
-        else
-            withBusyWritingScope vault operation

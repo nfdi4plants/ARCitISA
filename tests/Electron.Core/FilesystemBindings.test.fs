@@ -35,31 +35,6 @@ Vitest.describe (
         )
 )
 
-Vitest.describe (
-    "existsSyncWithExactName",
-    fun () ->
-        Vitest.test (
-            "accepts only children that exist with exactly the checked name",
-            fun () -> promise {
-                let! directoryPath = TestHelpers.createTempDirectoryAsync "swate-exact-name-"
-
-                try
-                    do! writeFileAsync (join [| directoryPath; "Sample.csv" |]) "sample" TextEncoding.Utf8
-
-                    let existsWithExactName = Main.WatcherHelpers.existsSyncWithExactName
-
-                    Vitest.expect(existsWithExactName (join [| directoryPath; "Sample.csv" |])).toBe true
-                    // A case-only difference counts as gone, also on case-insensitive file systems.
-                    Vitest.expect(existsWithExactName (join [| directoryPath; "sample.csv" |])).toBe false
-                    Vitest.expect(existsWithExactName (join [| directoryPath; "missing.csv" |])).toBe false
-                    do! TestHelpers.removeDirectoryAsync directoryPath
-                with error ->
-                    do! TestHelpers.removeDirectoryAsync directoryPath
-                    return raise error
-            }
-        )
-)
-
 let private withPreviewFile (name: string) (content: string) (check: string -> JS.Promise<unit>) = promise {
     let! directoryPath = TestHelpers.createTempDirectoryAsync "swate-preview-"
 

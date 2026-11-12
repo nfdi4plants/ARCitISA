@@ -151,6 +151,22 @@ type FileTreeDirectoryUpdateDto = {|
 /// Size and modification time of one file, as stat reports them.
 type FileStatDto = {| sizeBytes: float; mtimeMs: float |}
 
+type OpenFileResult = {|
+    content: FileContentDTO
+    revision: int
+|}
+
+type SetArcFileInMemoryRequest = {|
+    file: FileContentDTO
+    baseRevision: int
+|}
+
+[<RequireQualifiedAccess; StringEnum>]
+type SetArcFileOutcome =
+    | Applied
+    /// A sync changed the file after the edit's revision, or a sync is running. The edit was not applied.
+    | Refused
+
 /// Two Way Bridge: Renderer <-> Main
 type IArcVaultsApi = {
     /// Open ARC via folder dialog. Main decides: current window / new window / focus existing.
@@ -186,7 +202,7 @@ type IArcVaultsApi = {
     /// Pulls the current large object index of the vault. A vault without an index answers notLoaded with no entries.
     getLargeObjectIndex: unit -> JS.Promise<Result<LargeObjectIndexSnapshot, exn>>
     pathExists: string -> JS.Promise<Result<bool, exn>>
-    openFile: string -> JS.Promise<Result<FileContentDTO, exn>>
+    openFile: string -> JS.Promise<Result<OpenFileResult, exn>>
     openArcFolderInFileExplorer: unit -> JS.Promise<Result<unit, exn>>
     showPathInFileExplorer: string -> JS.Promise<Result<unit, exn>>
     openPathWithDefaultApplication: string -> JS.Promise<Result<unit, exn>>
@@ -202,8 +218,8 @@ type IArcVaultsApi = {
     /// Persists the active in-memory ARC scaffold to disk.
     saveArcFile: unit -> JS.Promise<Result<unit, exn>>
     /// Applies ARC file changes to the active vault's in-memory ARC without writing to disk.
-    setArcFileInMemory: FileContentDTO -> JS.Promise<Result<unit, exn>>
-    /// Adds a new ARC entity from the file tree. The file watcher performs the follow-up merge and file-tree update.
+    setArcFileInMemory: SetArcFileInMemoryRequest -> JS.Promise<Result<SetArcFileOutcome, exn>>
+    /// Adds a new ARC entity from the file tree as an own write. Memory holds the entity when it returns.
     addArcFile: FileContentDTO -> JS.Promise<Result<unit, exn>>
     /// Creates a generic file or folder inside a safe ARC directory.
     createFileSystemItem: CreateFileSystemItemRequest -> JS.Promise<Result<string, exn>>
@@ -380,6 +396,18 @@ module MainToRendererIpc =
 type IArcFileWatcherApi = {
     /// This function is called when ARC is reloaded due to local file changes.
     IsLoadingChanges: bool -> unit
+}
+
+type ArcSyncFinishedDto = {|
+    changedPaths: string[]
+    replacedUnsaved: string[]
+|}
+
+/// One Way Bridge: Main -> Renderer
+type IArcSyncRendererApi = {
+    arcSyncStarted: unit -> unit
+    arcSyncFinished: ArcSyncFinishedDto -> unit
+    arcSyncFailed: string -> unit
 }
 
 type IMainSaveBeforeQuitApi = { requestSaveBeforeQuit: unit -> unit }

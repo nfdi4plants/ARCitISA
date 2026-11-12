@@ -33,8 +33,8 @@ let shouldResetPageStateAfterSelectionRemoval (pageState: PageState option) =
 /// treeHasDataMap tells whether the tree lists the DataMap file of the entity that the open page belongs to.
 let tryGetDataMapMismatchReload (treeHasDataMap: bool) (pageState: PageState option) =
     match pageState with
-    | Some(PageState.ArcFilePage(ArcFiles.DataMap _, _)) -> None
-    | Some(PageState.ArcFilePage(arcFile, requestedView)) ->
+    | Some(PageState.ArcFilePage(ArcFiles.DataMap _, _, _)) -> None
+    | Some(PageState.ArcFilePage(arcFile, requestedView, _)) ->
         match arcFile.TryGetDataMapParentInfo() with
         | Some parentInfo ->
             let pageHasDataMap = arcFile.TryGetDataMap().IsSome
@@ -52,6 +52,21 @@ let tryGetDataMapMismatchReload (treeHasDataMap: bool) (pageState: PageState opt
                     PathHelpers.normalizePath parentPath, nextRequestedView
                 )
         | None -> None
+    | _ -> None
+
+/// True when a changed file and the open page resolve to the same file. resolveArcPreviewPath maps a DataMap to its
+/// parent workbook, because one page edits both. Returns the relative path of the page for a reload.
+let syncChangedOpenPage (caseInsensitive: bool) (changedPaths: string[]) (pageState: PageState option) : string option =
+    match pageState with
+    | Some(PageState.ArcFilePage(arcFile, _, _)) ->
+        arcFile.TryGetRelativePath()
+        |> Option.filter (fun pagePath ->
+            let keyOf path =
+                PathKey.ofPath caseInsensitive (Swate.Electron.Shared.FileIOHelper.resolveArcPreviewPath path)
+
+            let pageKey = keyOf pagePath
+            changedPaths |> Array.exists (fun changed -> keyOf changed = pageKey)
+        )
     | _ -> None
 
 let private reloadsWhenSelectedFileChanges =
@@ -129,7 +144,7 @@ let useReconcileSelectedPreview
 
     let dataMapPath =
         match pageState with
-        | Some(PageState.ArcFilePage(arcFile, _)) ->
+        | Some(PageState.ArcFilePage(arcFile, _, _)) ->
             arcFile.TryGetDataMapParentInfo()
             |> Option.map (DatamapParentInfo.toPath >> PathHelpers.normalizePath)
         | _ -> None
@@ -194,7 +209,8 @@ let useReconcileSelectedPreview
                     reloadPreview
                         parentPath
                         (function
-                        | PageState.ArcFilePage(nextArcFile, _) -> PageState.ArcFilePage(nextArcFile, requestedView)
+                        | PageState.ArcFilePage(nextArcFile, _, revision) ->
+                            PageState.ArcFilePage(nextArcFile, requestedView, revision)
                         | other -> other
                         )
                 | None when shouldClearPageStateForLfsPointerSelection tryFindLfs selectedEntry pageState ->

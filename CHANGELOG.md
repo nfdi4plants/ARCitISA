@@ -35,6 +35,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - When a commit fails because a selected file can't be found, the error message names the affected files. (by @caroott)
 - When large files could not be downloaded after an update, "Download now" tries every missing file, even when one of them fails. (by @caroott)
 - When large files could not be downloaded after an update, the warning and the "Download now" question no longer show the raw Git LFS output. "Show last log" still has it. If "Download now" fails, the message points to "Download LFS file" to try again. (by @caroott)
+- When a file of the open ARC changes on disk, for example after you save it in Excel or after a Git pull, its new content replaces your unsaved edits to that file. Unsaved edits to other files stay, and a notice names each file whose unsaved edits were replaced. (by @Freymaurer)
+- While ARCitISA loads changes that another program or a Git operation made, a notice says so and the open page does not accept edits. Afterwards the open page shows the new content. An edit made on content that has changed in the meantime is refused with a message, and the page shows the current content. (by @Freymaurer)
+- Clicking a study, assay, workflow or run folder in the file tree only expands or collapses it, and its right-click menu no longer offers "Open". The metadata opens from the workbook inside the folder, such as "isa.assay.xlsx". A new study, assay, workflow or run opens its workbook. (by @Freymaurer)
+- Creating a file, folder, study, assay, workflow, run or DataMap in the File Explorer now opens the folders that lead to it, so you can see it right away. (by @Etschbeijer)
+- After importing files or folders, the File Explorer opens the folder you imported into and each imported folder. (by @Etschbeijer)
+- Opening a isa workbook file, will now open on the metadata sheet not on the first table. (by @Freymaurer)
+
+### 🐛 Fixed
+
+- Edits typed right after a Save are no longer replaced a few seconds later by the saved file. (by @Freymaurer)
+- A change that another program saved shortly before a Save in ARCitISA now loads before the Save writes. Before, it could be missed. (by @Freymaurer)
+- Adding a study, assay, workflow, run or DataMap no longer reports an error when another workbook in the ARC can't be read. (by @Freymaurer)
+- A Save that fails, for example because Excel has the workbook open, keeps the changes marked as unsaved, so the next Save writes them. (by @Freymaurer)
+- When a changed file can't be loaded, a notice says so, and the file loads once it is fixed. Before, the failure was only logged. (by @Freymaurer)
+- DataMaps are read from and saved to the adjacent `isa.datamap.xlsx`. A legacy DataMap sheet inside a parent workbook is read only when that file is missing and moves to the file when the parent is saved. (by @Freymaurer)
 
 ## 3.2.0 - 2026-11-02
 
@@ -75,8 +90,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Git LFS badges come from one background listing per ARC. They update after Git operations in ARCitISA, and after changes made outside it when the window gets focus. #1340 (by @caroott, @Etschbeijer)
 - Switching views in the provenance graph keeps the previous graph on screen until the new one is ready, so the view no longer flashes. (by @caroott)
 - The provenance graph lays out large graphs in the background, so the app stays responsive in the meantime. (by @caroott)
-- Creating a file, folder, study, assay, workflow, run or DataMap in the File Explorer now opens the folders that lead to it, so you can see it right away. (by @Etschbeijer)
-- After importing files or folders, the File Explorer opens the folder you imported into and each imported folder. (by @Etschbeijer)
 
 ### 🐛 Fixed
 
@@ -92,6 +105,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - When a Git lock also stops "Download now", ARCitISA offers "Remove lock" and then "Download now" again. (by @caroott)
 - After a Git lock stopped a download of large files, removing the lock in ARCitISA also clears the files that git-lfs had already written from the changed files list. ARCitISA then offers "Download now" only when a large file is still missing. (by @caroott)
 - "Download now" no longer shows an error for a large file with your own edits. The file keeps its edit. (by @caroott)
+
 
 ## 3.1.0 - 2026-10-21
 

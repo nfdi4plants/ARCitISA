@@ -1,11 +1,14 @@
 module ElectronRenderer.FileExplorerStateReconciliationRtlTests
 
+open ARCtrl
 open Fable.Core
 open Feliz
 open Renderer.Components.Helper
 open Renderer.Context.FileStateContext
 open Renderer.Context.FileTreeStore
 open Renderer.Types
+open Swate.Components.Shared
+open Swate.Electron.Shared.FileIOHelper
 open Swate.Electron.Shared.FileIOTypes
 open Swate.Electron.Shared.VersionControlTypes
 open Swate.Electron.Shared.IPCTypes
@@ -113,6 +116,45 @@ let private render store props reloads clears =
     fun next -> RTL.act (fun () -> promise { setProps.Value next })
 
 let private noLfs (_: string) : ObjectStateDto option = None
+
+let private arcPagePath = "assays/A/isa.assay.xlsx"
+
+[<ReactComponent>]
+let private ArcPageProbeHost (stamp: FileContentStamp option, reloads: ResizeArray<string>) =
+    FileExplorerStateReconciliation.useReconcileSelectedPreview
+        noLfs
+        (Some arcPagePath)
+        (Some(PageState.ArcFilePage(ArcFiles.Assay(ArcAssay.init "A"), None, 0)))
+        stamp
+        (fun path _ -> reloads.Add path)
+        ignore
+
+    Html.none
+
+[<ReactComponent>]
+let private ArcPageHarness
+    (store: FileTreeStore, reloads: ResizeArray<string>, expose: (FileContentStamp option -> unit) -> unit)
+    =
+    let stamp, setStamp = React.useState (stamp arcPagePath 1.0)
+    expose setStamp
+
+    FileStateCtx.Provider(controllerFor store, ArcPageProbeHost(stamp, reloads))
+
+Vitest.test (
+    "a content stamp does not reload an ARC page",
+    fun () -> promise {
+        let store = storeWith [ arcPagePath ]
+        let reloads = ResizeArray<string>()
+        let setStamp = ref (fun (_: FileContentStamp option) -> ())
+
+        RTL.render (ArcPageHarness(store, reloads, (fun setter -> setStamp.Value <- setter)))
+        |> ignore
+
+        do! RTL.act (fun () -> promise { setStamp.Value(stamp arcPagePath 2.0) })
+
+        Vitest.expect(reloads.Count).toBe 0
+    }
+)
 
 Vitest.test (
     "the selected preview reloads only for changes of the selected file, its LFS state or its content stamp",

@@ -9,6 +9,7 @@ open Main.ArcVaultState
 open Main.ArcVaultLargeObjects
 open Main.ArcVaultFileTree
 open Main.ArcVaultFileWatcher
+open Main.ArcVaultSync
 open Fable.Electron
 open Main.Bindings.Filesystem
 open Main.Bindings.Path
@@ -822,8 +823,9 @@ bbbb refs/heads/main
                     let finishWrite = ref (fun () -> ())
 
                     let writing =
-                        vault.WithBusyWritingScope(fun () ->
-                            Promise.create (fun resolve _ -> finishWrite.Value <- fun () -> resolve ())
+                        vault.WithExternalOperationScope(
+                            false,
+                            fun () -> Promise.create (fun resolve _ -> finishWrite.Value <- fun () -> resolve ())
                         )
 
                     release.Value()

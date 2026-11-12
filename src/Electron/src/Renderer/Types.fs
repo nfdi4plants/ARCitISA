@@ -216,7 +216,7 @@ type GitDiffPageData = {
 
 [<RequireQualifiedAccess>]
 type PageState =
-    | ArcFilePage of arcFile: ArcFiles * requestedView: ActiveView option
+    | ArcFilePage of arcFile: ArcFiles * requestedView: ActiveView option * revision: int
     | MarkdownPage of string
     | PDFPage of string * string
     | ImagePage of FileContentType * string * string
@@ -239,7 +239,7 @@ type PageState =
     | Changelog of version: string * requestId: string
     | SettingsPage
 
-    static member fromFileContentDTO(dto: FileContentDTO) : PageState =
+    static member fromFileContentDTO(dto: FileContentDTO, revision: int) : PageState =
         match dto.fileType with
         | FileContentType.Markdown -> PageState.MarkdownPage dto.content
         | FileContentType.PDF -> PageState.PDFPage(dto.content, dto.path)
@@ -262,17 +262,13 @@ type PageState =
                         System.StringComparison.OrdinalIgnoreCase
                     )
                 then
-                    PageState.ArcFilePage(arcFile, Some ActiveView.DataMap)
+                    PageState.ArcFilePage(arcFile, Some ActiveView.DataMap, revision)
                 elif normalizedPath.EndsWith(".xlsx", System.StringComparison.OrdinalIgnoreCase) then
-                    let startingView =
-                        if arcFile.Tables().Count > 0 then
-                            ActiveView.Table 0
-                        else
-                            ActiveView.Metadata
+                    let startingView = ActiveView.Metadata
 
-                    PageState.ArcFilePage(arcFile, Some startingView)
+                    PageState.ArcFilePage(arcFile, Some startingView, revision)
                 else
-                    PageState.ArcFilePage(arcFile, None)
+                    PageState.ArcFilePage(arcFile, None, revision)
             | None ->
                 PageState.ErrorPage
                     $"Failed to parse ARC file: {dto.path} - {dto.fileType} - unsupported format or corrupted content."

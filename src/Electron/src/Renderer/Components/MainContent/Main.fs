@@ -89,72 +89,77 @@ let Main (appRootPath: ArcRootPath, pageState: PageState option) =
     Swate.Components.Composite.Template.TemplateCacheProvider.TemplateCacheProvider(
         loadTemplates = MainHelper.loadTemplates,
         children =
-            Html.div [
-                prop.className "swt:size-full swt:min-w-0 swt:min-h-0 swt:flex swt:justify-center swt:overflow-hidden"
-                prop.children [
-                    match appRootPath, pageState with
-                    | _, Some PageState.DataHubBrowser -> DataHubBrowserTarget()
-                    | Some _, Some PageState.ValidationPackageBrowser -> ValidationPackageBrowserTarget()
-                    | _, Some(PageState.Changelog(version, requestId)) ->
-                        Html.div [
-                            prop.key requestId
-                            prop.className "swt:flex swt:grow swt:min-w-0 swt:min-h-0"
-                            prop.children [
-                                React.Suspense(
-                                    [ LazyComponents.LazyChangelogTarget(version) ],
-                                    fallback = LazyComponents.FullPageLoadingSpinner("Loading changelog...")
-                                )
+            ArcSyncNotice.ArcSyncArea(
+                Html.div [
+                    prop.className
+                        "swt:size-full swt:min-w-0 swt:min-h-0 swt:flex swt:justify-center swt:overflow-hidden"
+                    prop.children [
+                        match appRootPath, pageState with
+                        | _, Some PageState.DataHubBrowser -> DataHubBrowserTarget()
+                        | Some _, Some PageState.ValidationPackageBrowser -> ValidationPackageBrowserTarget()
+                        | _, Some(PageState.Changelog(version, requestId)) ->
+                            Html.div [
+                                prop.key requestId
+                                prop.className "swt:flex swt:grow swt:min-w-0 swt:min-h-0"
+                                prop.children [
+                                    React.Suspense(
+                                        [ LazyComponents.LazyChangelogTarget(version) ],
+                                        fallback = LazyComponents.FullPageLoadingSpinner("Loading changelog...")
+                                    )
+                                ]
                             ]
-                        ]
-                    | _, Some PageState.SettingsPage ->
-                        React.Suspense(
-                            [ LazyComponents.LazySettingPage() ],
-                            fallback = LazyComponents.FullPageLoadingSpinner("Loading settings...")
-                        )
-                    | None, _ ->
-                        Html.div [
-                            prop.className
-                                "swt:flex-1 swt:min-w-0 swt:min-h-0 swt:flex swt:justify-center swt:items-center"
-                            prop.children [ Renderer.Components.InitState.InitState() ]
-                        ]
-                    | Some _, Some(PageState.ArcFilePage(arcFile, requestedView)) ->
-                        ArcFilePreviewTarget(arcFile, requestedView)
-                    | Some _, Some(PageState.MarkdownPage content) ->
-                        React.Suspense(
-                            [ LazyComponents.LazyMarkdownEditorTarget(content) ],
-                            fallback = LazyComponents.FullPageLoadingSpinner("Loading markdown editor...")
-                        )
-                    | Some _, Some((PageState.PDFPage _ | PageState.ImagePage _ | PageState.HtmlPage _) as pageState) ->
-                        FileViewerTarget.FileViewerTarget pageState
-                    | Some _, Some(PageState.TextPage content) -> TextPreviewTarget content
-                    | Some _, Some PageState.UnknownPage -> UnknownPreviewTarget()
-                    | Some _, Some(PageState.LargeFilePage(path, sizeBytes, reason)) ->
-                        LargeFilePreviewTarget(path, sizeBytes, reason)
-                    | Some _, Some(PageState.ErrorPage errMsg) -> ErrorViewTarget errMsg
-                    // | Some _, Some PageState.LandingDraftPage -> LandingDraftTarget()
-                    | Some _, Some PageState.NotesDraftPage -> NotesDraftTarget()
-                    | Some _, Some PageState.NotesSearchPage -> NotesSearchTarget()
-                    | Some _, Some PageState.ProvenanceGroupingPage ->
-                        React.Suspense(
-                            [ LazyComponents.ProvenanceGroupingTarget() ],
-                            fallback = LazyComponents.FullPageLoadingSpinner("Loading Table Editor...")
-                        )
-                    | Some _, Some(PageState.ProvenanceGraphPage requestId) ->
-                        // The area keys the content by the request id and shows what failed when the lazy import
-                        // or the target throws. It sits in its own module, so Main imports the target only lazily.
-                        ProvenanceGraphArea.ProvenanceGraphArea
-                            requestId
-                            (React.Suspense(
-                                [ LazyComponents.ProvenanceGraphTarget() ],
-                                fallback = LazyComponents.FullPageLoadingSpinner("Loading provenance graph...")
-                            ))
-                    | Some _, Some(PageState.GitDiffPage diffPage) -> GitDiffTarget.Main diffPage
-                    | Some _, Some(PageState.GitMergeConflictPage mergeData) -> GitMergeConflictTarget.Main mergeData
-                    | Some _, Some(PageState.GitFileChoiceConflictPage choiceData) ->
-                        GitFileChoiceConflictTarget.Main choiceData
-                    | Some _, Some(PageState.GitUnsupportedPage unsupportedPage) ->
-                        GitUnsupportedTarget.Main unsupportedPage
-                    | Some _, None -> EmptySelectionTarget()
+                        | _, Some PageState.SettingsPage ->
+                            React.Suspense(
+                                [ LazyComponents.LazySettingPage() ],
+                                fallback = LazyComponents.FullPageLoadingSpinner("Loading settings...")
+                            )
+                        | None, _ ->
+                            Html.div [
+                                prop.className
+                                    "swt:flex-1 swt:min-w-0 swt:min-h-0 swt:flex swt:justify-center swt:items-center"
+                                prop.children [ Renderer.Components.InitState.InitState() ]
+                            ]
+                        | Some _, Some(PageState.ArcFilePage(arcFile, requestedView, revision)) ->
+                            ArcFilePreviewTarget(arcFile, requestedView, revision)
+                        | Some _, Some(PageState.MarkdownPage content) ->
+                            React.Suspense(
+                                [ LazyComponents.LazyMarkdownEditorTarget(content) ],
+                                fallback = LazyComponents.FullPageLoadingSpinner("Loading markdown editor...")
+                            )
+                        | Some _,
+                          Some((PageState.PDFPage _ | PageState.ImagePage _ | PageState.HtmlPage _) as pageState) ->
+                            FileViewerTarget.FileViewerTarget pageState
+                        | Some _, Some(PageState.TextPage content) -> TextPreviewTarget content
+                        | Some _, Some PageState.UnknownPage -> UnknownPreviewTarget()
+                        | Some _, Some(PageState.LargeFilePage(path, sizeBytes, reason)) ->
+                            LargeFilePreviewTarget(path, sizeBytes, reason)
+                        | Some _, Some(PageState.ErrorPage errMsg) -> ErrorViewTarget errMsg
+                        // | Some _, Some PageState.LandingDraftPage -> LandingDraftTarget()
+                        | Some _, Some PageState.NotesDraftPage -> NotesDraftTarget()
+                        | Some _, Some PageState.NotesSearchPage -> NotesSearchTarget()
+                        | Some _, Some PageState.ProvenanceGroupingPage ->
+                            React.Suspense(
+                                [ LazyComponents.ProvenanceGroupingTarget() ],
+                                fallback = LazyComponents.FullPageLoadingSpinner("Loading Table Editor...")
+                            )
+                        | Some _, Some(PageState.ProvenanceGraphPage requestId) ->
+                            // The area keys the content by the request id and shows what failed when the lazy import
+                            // or the target throws. It sits in its own module, so Main imports the target only lazily.
+                            ProvenanceGraphArea.ProvenanceGraphArea
+                                requestId
+                                (React.Suspense(
+                                    [ LazyComponents.ProvenanceGraphTarget() ],
+                                    fallback = LazyComponents.FullPageLoadingSpinner("Loading provenance graph...")
+                                ))
+                        | Some _, Some(PageState.GitDiffPage diffPage) -> GitDiffTarget.Main diffPage
+                        | Some _, Some(PageState.GitMergeConflictPage mergeData) ->
+                            GitMergeConflictTarget.Main mergeData
+                        | Some _, Some(PageState.GitFileChoiceConflictPage choiceData) ->
+                            GitFileChoiceConflictTarget.Main choiceData
+                        | Some _, Some(PageState.GitUnsupportedPage unsupportedPage) ->
+                            GitUnsupportedTarget.Main unsupportedPage
+                        | Some _, None -> EmptySelectionTarget()
+                    ]
                 ]
-            ]
+            )
     )

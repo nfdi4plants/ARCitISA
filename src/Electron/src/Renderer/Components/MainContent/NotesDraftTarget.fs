@@ -95,10 +95,12 @@ let NotesDraftTarget () =
 
             match previewResult with
             | Ok previewData ->
-                let pageState = Renderer.Types.PageState.fromFileContentDTO previewData
+                let pageState =
+                    Renderer.Types.PageState.fromFileContentDTO (previewData.content, previewData.revision)
+
                 pageStateCtx.setState (Some pageState)
             | Result.Error _ ->
-                let pageState = Renderer.Types.PageState.fromFileContentDTO request
+                let pageState = Renderer.Types.PageState.fromFileContentDTO (request, 0)
                 pageStateCtx.setState (Some pageState)
     }
 

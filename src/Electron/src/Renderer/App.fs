@@ -328,59 +328,66 @@ let Main () =
         Swate.Components.Composite.TermSearch.TermSearchConfigProvider.TIBQueryProvider(
             Context.AppStateContext.AppStateCtx.Provider(
                 model.ArcRootPath,
-                Renderer.Context.FileStateContext.FileStateCtxProviderWithSnapshots(
-                    {
-                        arcRootPath = model.ArcRootPath
-                        isRename = model.ArcRootIsRename
-                        changeVersion = model.ArcRootPathLiveUpdateVersion
-                    },
-                    (fun () -> Api.ipcArcVaultApi.getFileTreeSnapshot ()),
-                    {
-                        loadActiveImport = fun () -> Api.ipcArcVaultApi.getActiveFileImport ()
-                        pickAbsolutePaths = Api.ipcArcVaultApi.pickAbsolutePaths
-                        runImport = Api.ipcArcVaultApi.tryImportExternalFiles
-                        cancelImport = Api.ipcArcVaultApi.cancelImportExternalFiles
-                    },
-                    Renderer.Context.PageStateContext.PageStateCtx.Provider(
-                        pageCtx,
-                        Renderer.Context.PageStateContext.PageStateUpdateCtx.Provider(
-                            updatePageState,
-                            ErrorModalProvider.ErrorModalProvider(
-                                Renderer.Context.AuthStateContext.Provider(
-                                    Renderer.Context.LargeObjectStore.LargeObjectStoreProviderWith(
-                                        model.ArcRootPath,
-                                        model.ArcRootIsRename,
-                                        (fun () -> Api.ipcArcVaultApi.getLargeObjectIndex ()),
-                                        Renderer.Context.LfsActivityContext.LfsActivityCtxProvider(
-                                            Renderer.Context.FileTreeExpansionContext.FileTreeExpansionCtxProvider(
-                                                {
-                                                    loadDirectory = Api.ipcArcVaultApi.loadDirectory
-                                                    revalidateDirectories = Api.ipcArcVaultApi.revalidateDirectories
-                                                    statFile = Api.ipcArcVaultApi.statFile
-                                                },
-                                                Renderer.Context.GitStateContext.GitStateCtxProvider(
-                                                    Swate
-                                                        .Components
-                                                        .Composite
-                                                        .AnnotationTable
-                                                        .AnnotationTableContextProvider
-                                                        .AnnotationTableContextProvider(
-                                                            Renderer.Context.VersionControlDependencyContext.Provider(
-                                                                WindowLayout
-                                                                    (React.Fragment [|
-                                                                        children
-                                                                        CloseWindowController.CloseWindowController()
-                                                                    |])
-                                                                    leftSidebar
-                                                                    leftActions
+                Renderer.Context.ArcSyncContext.Provider(
+                    model.ArcRootIsRename,
+                    Renderer.Context.FileStateContext.FileStateCtxProviderWithSnapshots(
+                        {
+                            arcRootPath = model.ArcRootPath
+                            isRename = model.ArcRootIsRename
+                            changeVersion = model.ArcRootPathLiveUpdateVersion
+                        },
+                        (fun () -> Api.ipcArcVaultApi.getFileTreeSnapshot ()),
+                        {
+                            loadActiveImport = fun () -> Api.ipcArcVaultApi.getActiveFileImport ()
+                            pickAbsolutePaths = Api.ipcArcVaultApi.pickAbsolutePaths
+                            runImport = Api.ipcArcVaultApi.tryImportExternalFiles
+                            cancelImport = Api.ipcArcVaultApi.cancelImportExternalFiles
+                        },
+                        Renderer.Context.PageStateContext.PageStateCtx.Provider(
+                            pageCtx,
+                            Renderer.Context.PageStateContext.PageStateUpdateCtx.Provider(
+                                updatePageState,
+                                ErrorModalProvider.ErrorModalProvider(
+                                    Renderer.Context.AuthStateContext.Provider(
+                                        Renderer.Context.LargeObjectStore.LargeObjectStoreProviderWith(
+                                            model.ArcRootPath,
+                                            model.ArcRootIsRename,
+                                            (fun () -> Api.ipcArcVaultApi.getLargeObjectIndex ()),
+                                            Renderer.Context.LfsActivityContext.LfsActivityCtxProvider(
+                                                Renderer.Context.FileTreeExpansionContext.FileTreeExpansionCtxProvider(
+                                                    {
+                                                        loadDirectory = Api.ipcArcVaultApi.loadDirectory
+                                                        revalidateDirectories = Api.ipcArcVaultApi.revalidateDirectories
+                                                        statFile = Api.ipcArcVaultApi.statFile
+                                                    },
+                                                    Renderer.Context.GitStateContext.GitStateCtxProvider(
+                                                        Swate
+                                                            .Components
+                                                            .Composite
+                                                            .AnnotationTable
+                                                            .AnnotationTableContextProvider
+                                                            .AnnotationTableContextProvider(
+                                                                Renderer
+                                                                    .Context
+                                                                    .VersionControlDependencyContext
+                                                                    .Provider(
+                                                                        WindowLayout
+                                                                            (React.Fragment [|
+                                                                                children
+                                                                                CloseWindowController
+                                                                                    .CloseWindowController()
+                                                                            |])
+                                                                            leftSidebar
+                                                                            leftActions
+                                                                    )
                                                             )
-                                                        )
+                                                    )
                                                 )
                                             )
                                         )
-                                    )
-                                ),
-                                ?scopeId = currentArcScopeId
+                                    ),
+                                    ?scopeId = currentArcScopeId
+                                )
                             )
                         )
                     )

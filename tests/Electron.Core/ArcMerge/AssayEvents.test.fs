@@ -2,6 +2,7 @@ module ElectronCore.ArcMerge.AssayEventsTests
 
 open ARCtrl
 open Main.ArcMerge
+open Main.ARCtrlExtensions
 open Vitest
 
 let private assayEvent name id = {
@@ -88,5 +89,40 @@ Vitest.describe (
                 let merged = ARC.merge arcLocal arcRemote [ event ]
 
                 Vitest.expect(merged.Assays.[0].Title).toEqual (None)
+        )
+
+        Vitest.test (
+            "change event: a touched file with the content of the local baseline keeps the local edits",
+            fun () ->
+                let arcLocal, arcRemote = MockData.createTwoCleanCopies ()
+                arcLocal.Assays.[0].Title <- Some "User Title"
+
+                let merged = ARC.merge arcLocal arcRemote [ assayEvent EventName.Change "My Assay" ]
+
+                Vitest.expect(merged.Assays.[0].Title).toEqual (Some "User Title")
+                Vitest.expect(merged.Assays.[0].hasInMemoryChanges ()).toBe (true)
+        )
+
+        Vitest.test (
+            "change event: a replaced assay gets the disk hash and an untouched assay keeps its local hash",
+            fun () ->
+                let arcLocal, arcRemote = MockData.createTwoCleanCopies ()
+                arcLocal.InitAssay("Second Assay") |> ignore
+                arcRemote.InitAssay("Second Assay") |> ignore
+                arcLocal.GetUpdateContracts() |> ignore
+                arcRemote.GetUpdateContracts() |> ignore
+                arcLocal.GetAssay("Second Assay").Title <- Some "User Title"
+                arcRemote.GetAssay("My Assay").Title <- Some "Disc Title"
+                let localSecondHash = arcLocal.GetAssay("Second Assay").StaticHash
+
+                let merged = ARC.merge arcLocal arcRemote [ assayEvent EventName.Change "My Assay" ]
+
+                Vitest
+                    .expect(merged.GetAssay("My Assay").StaticHash)
+                    .toBe (arcRemote.GetAssay("My Assay").GetLightHashCode())
+
+                Vitest.expect(merged.GetAssay("My Assay").hasInMemoryChanges ()).toBe (false)
+                Vitest.expect(merged.GetAssay("Second Assay").StaticHash).toBe localSecondHash
+                Vitest.expect(merged.GetAssay("Second Assay").hasInMemoryChanges ()).toBe (true)
         )
 )

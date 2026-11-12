@@ -12,23 +12,27 @@ open Swate.Electron.Shared.FileIOHelper
 module DataMapExtensions =
 
     let loadPersistedDataMapParentAsync (arcPath: string) (parentInfo: DatamapParentInfo) = promise {
-        let parentFilePath =
-            match parentInfo.Parent with
-            | DataMapParent.Assay -> ARCtrl.Helper.Identifier.Assay.fileNameFromIdentifier parentInfo.ParentId
-            | DataMapParent.Study -> ARCtrl.Helper.Identifier.Study.fileNameFromIdentifier parentInfo.ParentId
-            | DataMapParent.Run -> ARCtrl.Helper.Identifier.Run.fileNameFromIdentifier parentInfo.ParentId
-            | DataMapParent.Workflow -> ARCtrl.Helper.Identifier.Workflow.fileNameFromIdentifier parentInfo.ParentId
+        let parentFilePath = DataMapContract.parentWorkbookPath parentInfo
 
         if not (existsSync (join [| arcPath; parentFilePath |])) then
             return Ok None
         else
-            let persistedArc = ARC.fromFilePaths [| parentFilePath |]
+            let dataMapPath = DatamapParentInfo.toPath parentInfo
+
+            let paths = [|
+                parentFilePath
+                if existsSync (join [| arcPath; dataMapPath |]) then
+                    dataMapPath
+            |]
+
+            let persistedArc = ARC.fromFilePaths paths
             let contracts = persistedArc.GetReadContracts()
 
             match! ContractExecutor.fulfillReadContractsSwateAsync arcPath contracts with
             | Error errors -> return Error errors
             | Ok fulfilledContracts ->
                 persistedArc.SetISAFromContracts fulfilledContracts
+                applySeparateDatamaps persistedArc fulfilledContracts
                 return Ok(Some persistedArc)
     }
 

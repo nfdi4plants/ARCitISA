@@ -40,25 +40,11 @@ let private setDataMapByParentInfo (arc: ARC) (dmpi: DatamapParentInfo) (dm: Dat
     with e ->
         Error(exn $"Failed to set datamap on ARC: {e.Message}")
 
-/// Replaces the just-added ARC entity with the disk round-tripped version.
-/// This keeps lossy serialization details from becoming immediate unsaved changes.
-let syncAddedArcFileFromPersisted (source: ARC) (target: ARC) (arcFile: ArcFiles) : unit =
-    match arcFile with
-    | ArcFiles.Assay assay ->
-        source.TryGetAssay assay.Identifier
-        |> Option.iter (fun sourceAssay -> target.SetAssay(assay.Identifier, sourceAssay))
-    | ArcFiles.Study(study, _) ->
-        source.TryGetStudy study.Identifier
-        |> Option.iter (fun sourceStudy -> target.SetStudy(study.Identifier, sourceStudy))
-    | ArcFiles.Workflow workflow ->
-        source.TryGetWorkflow workflow.Identifier
-        |> Option.iter (fun sourceWorkflow -> target.SetWorkflow(workflow.Identifier, sourceWorkflow))
-    | ArcFiles.Run run ->
-        source.TryGetRun run.Identifier
-        |> Option.iter (fun sourceRun -> target.SetRun(run.Identifier, sourceRun))
-    | ArcFiles.DataMap(Some parentInfo, _) ->
-        source.TryGetDataMap parentInfo
-        |> Option.iter (fun persistedDataMap -> target.TrySetDataMap(parentInfo, Some persistedDataMap) |> ignore)
+/// ARCtrl.Json carries no DataMap hash, so the DataMap of an edited entity arrives with hash 0 and would count as changed.
+/// A DataMap that the edit adds keeps hash 0 because it is new.
+let private keepDataMapStaticHash (oldDataMap: Datamap option) (newDataMap: Datamap option) : unit =
+    match oldDataMap, newDataMap with
+    | Some oldDm, Some newDm -> newDm.StaticHash <- oldDm.StaticHash
     | _ -> ()
 
 /// This function should only be used for partial updates to an ARC based on a file content DTO.
@@ -95,6 +81,7 @@ let updateARCByFileContentDTO (oldArc: ARC) (dto: FileContentDTO) : Result<ARC, 
             match oldAssayOpt with
             | Some oldAssay ->
                 newAssay.StaticHash <- oldAssay.StaticHash
+                keepDataMapStaticHash oldAssay.Datamap newAssay.Datamap
                 oldArc.SetAssay(newAssay.Identifier, newAssay)
                 Ok oldArc
             | None ->
@@ -106,6 +93,7 @@ let updateARCByFileContentDTO (oldArc: ARC) (dto: FileContentDTO) : Result<ARC, 
             match oldStudyOpt with
             | Some oldStudy ->
                 newStudy.StaticHash <- oldStudy.StaticHash
+                keepDataMapStaticHash oldStudy.Datamap newStudy.Datamap
                 oldArc.SetStudy(newStudy.Identifier, newStudy)
                 Ok oldArc
             | None ->
@@ -120,6 +108,7 @@ let updateARCByFileContentDTO (oldArc: ARC) (dto: FileContentDTO) : Result<ARC, 
                 newWorkflow.CWLDescription <- oldWorkflow.CWLDescription
                 newWorkflow.StaticHash <- oldWorkflow.StaticHash
                 WorkflowPayloads.syncWorkflowPayloadBaseline oldWorkflow newWorkflow
+                keepDataMapStaticHash oldWorkflow.Datamap newWorkflow.Datamap
                 oldArc.SetWorkflow(newWorkflow.Identifier, newWorkflow)
                 Ok oldArc
             | None ->
@@ -135,6 +124,7 @@ let updateARCByFileContentDTO (oldArc: ARC) (dto: FileContentDTO) : Result<ARC, 
                 newRun.CWLInput <- oldRun.CWLInput
                 newRun.StaticHash <- oldRun.StaticHash
                 WorkflowPayloads.syncRunPayloadBaseline oldRun newRun
+                keepDataMapStaticHash oldRun.Datamap newRun.Datamap
                 oldArc.SetRun(newRun.Identifier, newRun)
                 Ok oldArc
             | None ->
@@ -147,33 +137,6 @@ let swatelogfn id fmt =
 
 let swatefailfn id fmt =
     Printf.kprintf (fun s -> failwith ("[ARCitISA-" + string id + "] " + s)) fmt
-
-/// Serializes ARC merge operations through a single FIFO owner. Individual operation failures
-/// reject their caller's promise without terminating the queue processor.
-type internal ArcMergeQueue(windowId: int) =
-
-    let mailbox =
-        MailboxProcessor.Start(fun inbox ->
-            let rec processNext () = async {
-                let! operation = inbox.Receive()
-                do! operation () |> Async.AwaitPromise
-                return! processNext ()
-            }
-
-            processNext ()
-        )
-
-    member _.Enqueue<'T>(operation: unit -> JS.Promise<'T>) : JS.Promise<'T> =
-        JS.Constructors.Promise.Create(fun resolve reject ->
-            mailbox.Post(fun () -> promise {
-                try
-                    let! result = operation ()
-                    resolve result
-                with error ->
-                    swatelogfn windowId "Queued ARC merge failed: %s" error.Message
-                    reject error
-            })
-        )
 
 type OpenArcRootRenamePlan = {
     SourcePath: string

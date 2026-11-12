@@ -8,8 +8,12 @@ open Swate.Electron.Shared.FileIOHelper
 // core function with `openView` as a thin Electron adapter; Api.fs can then be split by domain separately.
 let applyRequestedPathView (requestedPath: string) (pageState: Renderer.Types.PageState) =
     match PathHelpers.getNameFromPath requestedPath, pageState with
-    | requestedFileName, Renderer.Types.PageState.ArcFilePage(arcFile, _) when
+    | requestedFileName, Renderer.Types.PageState.ArcFilePage(arcFile, _, revision) when
         PathHelpers.pathsEqual requestedFileName ARCtrl.ArcPathHelper.DatamapFileName
         ->
-        Renderer.Types.PageState.ArcFilePage(arcFile, Some Swate.Components.Page.ArcFileEditor.Types.ActiveView.DataMap)
+        Renderer.Types.PageState.ArcFilePage(
+            arcFile,
+            Some Swate.Components.Page.ArcFileEditor.Types.ActiveView.DataMap,
+            revision
+        )
     | _ -> pageState

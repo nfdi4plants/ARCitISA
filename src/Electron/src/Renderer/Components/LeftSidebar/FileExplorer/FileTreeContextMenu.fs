@@ -115,10 +115,7 @@ let openContextMenuItems (config: ContextMenuConfig) (item: FileItem) =
     match tryGetRelativeItemPath item with
     | None -> []
     | Some relativePath -> [
-        if
-            not item.IsDirectory
-            || tryGetArcEntityWorkbookName relativePath |> Option.isSome
-        then
+        if not item.IsDirectory then
             ContextMenuItem.create "Open" "swt:fluent--open-24-regular" (fun () -> config.openItem item)
 
         yield! pathActionContextMenuItemsForRelativePath config.pathActionConfig item relativePath

@@ -3,7 +3,6 @@ module Main.IPC.FileSystemIO
 open System
 open Fable.Core
 open Fable.Core.JsInterop
-open Main.ArcVaultTypes
 open Swate.Components.Shared
 open Swate.Electron.Shared.FileIOTypes
 open Swate.Electron.Shared.RenamePathRules
@@ -680,7 +679,6 @@ module ArcFileSystemHelper =
         (sourcePaths: string[])
         (onProgress: FileImportProgress -> unit)
         (isCancellationRequested: unit -> bool)
-        (onPathsPlanned: PlannedImportPaths -> unit)
         (onPublished: unit -> unit)
         (validateImportedFiles: unit -> JS.Promise<Result<unit, exn>>)
         : JS.Promise<Result<ImportExternalFilesResult, exn>> =
@@ -698,17 +696,6 @@ module ArcFileSystemHelper =
                     let! plan = createExternalFileImportPlan isCancellationRequested targetDirectory sourcePaths
 
                     let createdTargetPaths = ResizeArray<string>()
-
-                    onPathsPlanned {
-                        FolderPaths =
-                            plan.Entries
-                            |> Array.filter (fun entry -> entry.IsDirectory)
-                            |> Array.map _.RelativePath
-                        FilePaths =
-                            plan.Entries
-                            |> Array.filter (fun entry -> not entry.IsDirectory)
-                            |> Array.map _.RelativePath
-                    }
 
                     let! result = promise {
                         try

@@ -50,123 +50,158 @@ module ArcVaultExtensions =
                     return Ok()
         }
 
-        /// Returns the load error to the import caller when loading fails. The import can then report that its in-memory merge did not happen.
-        member this.TryTriggerArcInMemoryMergeOnFileWatcherEvents(events: ArcVaultFileSystemEvent list) = promise {
-            let arcEvents = WatcherHelpers.toArcMergeEvents events
-
-            return!
-                this.EnqueueArcMerge(fun () -> promise {
-                    match! this.LoadWatcherSnapshot() with
-                    | Error loadError -> return Error loadError
-                    | Ok snapshot -> return this.PublishWatcherSnapshot(snapshot, arcEvents)
-                })
-        }
-
-        member this.TriggerArcInMemoryMergeOnFileWatcherEvents(events: ArcVaultFileSystemEvent list) = promise {
-            match! this.TryTriggerArcInMemoryMergeOnFileWatcherEvents events with
-            | Ok() -> ()
-            | Error mergeError ->
-                swatelogfn this.window.id "Unable to merge ARC after file watcher event: %s" mergeError.Message
-        }
-
-        /// Applies an ARC content DTO to the in-memory ARC and marks the vault dirty.
-        member this.UpdateArcByFileContentDTO(request: FileContentDTO) : Result<unit, exn> =
+        /// Applies an ARC content DTO to the in-memory ARC and marks the vault dirty. Refuses the edit while a
+        /// sync runs and when a sync changed the file after the revision the edit was made on.
+        member this.TryUpdateArcByFileContentDTO(request: SetArcFileInMemoryRequest) : Result<SetArcFileOutcome, exn> =
             match this.arc with
             | None -> Error(arcNotOpenError ())
             | Some arc ->
                 let normalizedRequest =
-                    Swate.Electron.Shared.FileIOHelper.FileContentDTO.normalizeArcFileRequestPath request
+                    Swate.Electron.Shared.FileIOHelper.FileContentDTO.normalizeArcFileRequestPath request.file
 
-                match updateARCByFileContentDTO arc normalizedRequest with
-                | Error saveError -> Error saveError
-                | Ok newArc ->
-                    this.SetArc(newArc)
-                    this.RefreshHasUnsavedArcChangesFlag()
-                    Ok()
+                let key =
+                    PathKey.ofPath this.isCaseInsensitive (resolveArcPreviewPath normalizedRequest.path)
+
+                let isSyncing =
+                    match this.SyncMode with
+                    | ArcSyncMode.Syncing -> true
+                    | _ -> false
+
+                let isStale =
+                    this.FileRevisions
+                    |> Map.tryFind key
+                    |> Option.exists (fun revision -> revision > request.baseRevision)
+
+                if isSyncing || isStale then
+                    Ok SetArcFileOutcome.Refused
+                else
+                    match updateARCByFileContentDTO arc normalizedRequest with
+                    | Error saveError -> Error saveError
+                    | Ok newArc ->
+                        this.SetArc(newArc)
+                        this.RefreshHasUnsavedArcChangesFlag()
+                        Ok SetArcFileOutcome.Applied
 
         /// Writes the active in-memory ARC scaffold to disk without touching unmanaged files such as notes.
         /// Returns the paths actually written. Save baselines are committed only after persistence succeeds.
-        member this.WriteArc() : Fable.Core.JS.Promise<Result<string[], exn>> = promise {
-            match this.isBusyWriting, this.path, this.arc with
-            | true, _, _ ->
-                return Error(exn "ARCitISA is still saving another change. Please wait a moment and try again.")
-            | false, Some arcPath, Some arc ->
-                return!
-                    this.WithBusyWritingScope(fun () -> promise {
-                        try
-                            match! arc.TryUpdateAsyncSwate arcPath with
-                            | Error errors -> return Error(exn (PathHelpers.formatContractErrors errors))
-                            | Ok writtenContracts ->
-                                this.RefreshHasUnsavedArcChangesFlag()
-                                return Ok(contractWrittenPaths writtenContracts)
-                        with e ->
-                            return Error(exn $"Failed to persist ARC to disk: {e.Message}")
-                    })
-            | _ -> return Error(arcNotOpenError ())
-        }
+        member this.WriteArc() : Fable.Core.JS.Promise<Result<string[], exn>> =
+            match this.path, this.arc with
+            | Some _, Some _ ->
+                this.RunOwnWrite(
+                    exclusive = true,
+                    syncFirst = true,
+                    operation =
+                        fun diskState -> promise {
+                            // A sync before the write can have replaced the ARC object.
+                            match this.path, this.arc with
+                            | Some arcPath, Some arc ->
+                                // A file that changed on disk and could not be loaded must not be overwritten.
+                                // The check runs on the final contract batch, before anything is written.
+                                let executeUnlessUnsynced arcPath contracts =
+                                    let overlapping =
+                                        match diskState with
+                                        | NoUnsyncedFiles -> []
+                                        | UnsyncedFiles(changes, _) ->
+                                            let writtenKeys =
+                                                contractWrittenPaths contracts
+                                                |> Array.map (PathKey.ofPath this.isCaseInsensitive)
 
-        /// Adds a new ARC entity through ARCtrl's scoped add path.
-        /// Watcher ARC merges are suppressed during the disk write; static hashes are resynced from disk afterwards.
+                                            changes
+                                            |> List.map changedPath
+                                            |> List.filter (fun changed ->
+                                                let key = PathKey.ofPath this.isCaseInsensitive changed
+                                                writtenKeys |> Array.exists (fun written -> written = key)
+                                            )
+
+                                    match diskState, overlapping with
+                                    | UnsyncedFiles(_, syncError), _ :: _ ->
+                                        let files = String.concat ", " overlapping
+
+                                        promise {
+                                            return
+                                                Error [|
+                                                    $"Could not save because these files changed on disk and could not be loaded: {files}. {syncError.Message}"
+                                                |]
+                                        }
+                                    | _ -> ContractExecutor.fulfillContractsSwateAsync arcPath contracts
+
+                                try
+                                    match! persistArcSaveWithAsync executeUnlessUnsynced arcPath arc with
+                                    | Error errors -> return Error(exn (PathHelpers.formatContractErrors errors))
+                                    | Ok writtenContracts ->
+                                        this.RefreshHasUnsavedArcChangesFlag()
+                                        return Ok(contractWrittenPaths writtenContracts)
+                                with e ->
+                                    return Error(exn $"Failed to persist ARC to disk: {e.Message}")
+                            | _ -> return Error(arcNotOpenError ())
+                        }
+                )
+            | _ -> promise { return Error(arcNotOpenError ()) }
+
+        /// Adds a new ARC entity through ARCtrl's scoped add path as an own write.
+        /// The ARC in memory is not reloaded, so an unreadable workbook elsewhere does not fail the add.
+        /// The new entity gets its clean static hash when it is committed to memory.
         member this.AddArcFile(request: FileContentDTO) : Fable.Core.JS.Promise<Result<unit, exn>> = promise {
-            match this.isBusyWriting, this.path, this.arc with
-            | true, _, _ ->
-                return Error(exn "ARCitISA is still saving another change. Please wait a moment and try again.")
-            | false, Some arcPath, Some arcLocal ->
+            match this.path, this.arc with
+            | Some _, Some _ ->
                 let normalizedRequest =
                     Swate.Electron.Shared.FileIOHelper.FileContentDTO.normalizeArcFileRequestPath request
 
                 match Swate.Electron.Shared.FileIOHelper.FileContentDTO.toArcFile normalizedRequest with
                 | None -> return Error(exn $"Unsupported file type for adding: {normalizedRequest.fileType}")
                 | Some arcFile ->
-                    return!
-                        this.WithBusyWritingScope(fun () -> promise {
-                            match! arcLocal.TryAddArcFileAsync(arcPath, arcFile) with
-                            | Error errors -> return Error(exn (PathHelpers.formatContractErrors errors))
-                            | Ok _ ->
-                                match! ARC.LoadAsyncSwate arcPath with
-                                | Ok persistedArc ->
-                                    baselineArcStaticHashes persistedArc
-                                    syncAddedArcFileFromPersisted persistedArc arcLocal arcFile
-                                    syncArcStaticHashes persistedArc arcLocal
-                                    this.RefreshHasUnsavedArcChangesFlag()
+                    // The tree reconciles after the scope ended, as SaveArc does.
+                    let! added =
+                        this.WithOwnWriteScope(
+                            exclusive = true,
+                            operation =
+                                fun () -> promise {
+                                    // A sync can have replaced the ARC while this call waited for the vault.
+                                    match this.path, this.arc with
+                                    | Some arcPath, Some arcLocal ->
+                                        match! arcLocal.TryAddArcFileAsync(arcPath, arcFile) with
+                                        | Error errors -> return Error(exn (PathHelpers.formatContractErrors errors))
+                                        | Ok _ ->
+                                            this.RefreshHasUnsavedArcChangesFlag()
 
-                                    // The watcher reports the new file late, or never when it is down. The nearest loaded
-                                    // folder is reconciled now, which loads a new entity folder through the zone rule.
-                                    let addedRelativePath =
-                                        match arcFile with
-                                        | ArcFiles.DataMap(Some parentInfo, _) ->
-                                            Some(DatamapParentInfo.toPath parentInfo)
-                                        | _ -> arcFile.TryGetRelativePath()
+                                            // The watcher reports the new file late, or never when it is down. The nearest loaded
+                                            // folder is reconciled now, which loads a new entity folder through the zone rule.
+                                            let addedRelativePath =
+                                                match arcFile with
+                                                | ArcFiles.DataMap(Some parentInfo, _) ->
+                                                    Some(DatamapParentInfo.toPath parentInfo)
+                                                | _ -> arcFile.TryGetRelativePath()
 
-                                    match addedRelativePath with
-                                    | Some relativePath ->
-                                        match PathHelpers.tryGetParentPath (join [| arcPath; relativePath |]) with
-                                        | Some parentDirectory ->
-                                            do! this.EnqueueFileTreeDirectoryReconcile parentDirectory
-                                        | None -> ()
-                                    | None -> ()
+                                            return
+                                                Ok(
+                                                    addedRelativePath
+                                                    |> Option.bind (fun relativePath ->
+                                                        PathHelpers.tryGetParentPath (join [| arcPath; relativePath |])
+                                                    )
+                                                )
+                                    | _ -> return Error(arcNotOpenError ())
+                                }
+                        )
 
-                                    return Ok()
-                                | Error loadErrors ->
-                                    this.RefreshHasUnsavedArcChangesFlag()
-
-                                    return
-                                        Error(
-                                            exn (
-                                                "Added ARC file, but could not reload the persisted hash baseline: "
-                                                + (PathHelpers.formatContractErrors loadErrors)
-                                            )
-                                        )
-                        })
+                    match added with
+                    | Error error -> return Error error
+                    | Ok(Some parentDirectory) ->
+                        do! this.EnqueueFileTreeDirectoryReconcile parentDirectory
+                        return Ok()
+                    | Ok None -> return Ok()
             | _ -> return Error(arcNotOpenError ())
         }
 
         member this.LoadArc() = promise {
             if this.path.IsSome then
+                // The scan runs first, so a change during the load still shows as a difference.
+                let! knownDisk = this.DiskScan this.isCaseInsensitive this.path.Value
+
                 match! ARC.LoadAsyncSwateZeroByteRepair this.path.Value with
                 | Error e -> swatefailfn this.window.id "Unable to load ARC: %s" (PathHelpers.formatContractErrors e)
                 | Ok _ when this.window.isDestroyed () -> return raise (ArcLoadCancelledException this.window.id)
                 | Ok arc ->
+                    this.KnownDisk <- Some knownDisk
                     this.SetArc(arc)
                     this.RefreshHasUnsavedArcChangesFlag()
             else
@@ -181,6 +216,10 @@ module ArcVaultExtensions =
 
             this.isInitializingArc <- false
             this.path <- None
+            this.KnownDisk <- None
+            this.LastSyncFailed <- false
+            this.ArcRevision <- 0
+            this.FileRevisions <- Map.empty
             this.FileTreeWriter.Reset(this.isCaseInsensitive)
 
             try
@@ -313,22 +352,26 @@ module ArcVaultExtensions =
                     this.RefreshHasUnsavedArcChangesFlag()
 
                     do!
-                        this.WithBusyWritingScope(fun () -> promise {
-                            match! arc.TryWriteAsyncSwate(normalizedPath) with
-                            | Ok _ ->
-                                // Creation can belong to another renderer, so scaffold the actual new ARC here.
-                                let enabled = UserDefaults.production.Effective().AutoCreateNotesFolder
+                        this.WithExternalOperationScope(
+                            announce = false,
+                            operation =
+                                fun () -> promise {
+                                    match! arc.TryWriteAsyncSwate(normalizedPath) with
+                                    | Ok _ ->
+                                        // Creation can belong to another renderer, so scaffold the actual new ARC here.
+                                        let enabled = UserDefaults.production.Effective().AutoCreateNotesFolder
 
-                                match!
-                                    Main.Notes.NoteScaffolding.ensureNotesFolderAtArcPath normalizedPath enabled
-                                with
-                                | Ok() -> ()
-                                | Error error -> return raise error
-                            | Error errors ->
-                                failwithf
-                                    "Could not write ARC, failed with the following errors %s"
-                                    (PathHelpers.formatContractErrors errors)
-                        })
+                                        match!
+                                            Main.Notes.NoteScaffolding.ensureNotesFolderAtArcPath normalizedPath enabled
+                                        with
+                                        | Ok() -> ()
+                                        | Error error -> return raise error
+                                    | Error errors ->
+                                        failwithf
+                                            "Could not write ARC, failed with the following errors %s"
+                                            (PathHelpers.formatContractErrors errors)
+                                }
+                        )
 
                     try
                         do! this.Startup()
@@ -392,7 +435,27 @@ module ArcVaultExtensions =
                             if this.isBusyWriting then
                                 return Error(busyWritingError ())
                             else
-                                return! renameOpenArcRootDirectoryOnDisk currentPath newName
+                                // The rename owns the vault alone while the folder moves. A non-exclusive caller waits and
+                                // then runs with the new path, an exclusive one is refused.
+                                let started = ref false
+
+                                let! scoped =
+                                    this.TryRunRootRename(fun () -> promise {
+                                        started.Value <- true
+                                        let! renamed = renameOpenArcRootDirectoryOnDisk currentPath newName
+
+                                        match renamed with
+                                        | Ok renamedPath ->
+                                            this.path <- Some renamedPath
+                                            this.FileTreeWriter.Reset(this.isCaseInsensitive)
+                                        | Error _ -> ()
+
+                                        return renamed
+                                    })
+
+                                match scoped with
+                                | Error _ when not started.Value -> return Error(busyWritingError ())
+                                | other -> return other
                         }
 
                 match renameResult with
@@ -414,9 +477,6 @@ module ArcVaultExtensions =
 
                     return Error renameError
                 | Ok renamedPath ->
-                    this.path <- Some renamedPath
-                    this.FileTreeWriter.Reset(this.isCaseInsensitive)
-
                     match Main.VersionControl.WorkspaceSessionHost.tryCurrent () with
                     | Some host ->
                         let! moved = host.WorkspaceRenamed(currentPath, renamedPath) |> Async.StartAsPromise
@@ -612,6 +672,9 @@ type ArcVaults() =
                     swatelogfn id "Unable to restart the file watcher after window focus: %s" restartError.Message
                 )
                 |> Promise.start
+
+            if vault.CanRequestSyncOnFocus then
+                vault.RequestSync true |> Promise.start
 
             if vault.CanCheckGitStateOnFocus then
                 vault.CheckGitStateOnFocus() |> Promise.start

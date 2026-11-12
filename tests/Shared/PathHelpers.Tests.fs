@@ -239,25 +239,6 @@ let tests =
                  |> ArcEntityPathRules.isDeleteTargetAllowed)
                 "Study resource folders should stay protected with non-canonical casing."
 
-        testCase "buildFallbackUnlinkPaths maps entity folder to canonical files"
-        <| fun _ ->
-            let fallbackPaths = ArcEntityPathRules.buildFallbackUnlinkPaths "runs/MyRun"
-
-            Expect.equal
-                fallbackPaths
-                [ "runs/MyRun/isa.run.xlsx"; "runs/MyRun/isa.datamap.xlsx" ]
-                "Entity-folder fallback should synthesize canonical entity + datamap unlink paths."
-
-        testCase "buildFallbackUnlinkPaths keeps canonical file targets as-is"
-        <| fun _ ->
-            let fallbackPaths =
-                ArcEntityPathRules.buildFallbackUnlinkPaths "workflows/MyFlow/isa.datamap.xlsx"
-
-            Expect.equal
-                fallbackPaths
-                [ "workflows/MyFlow/isa.datamap.xlsx" ]
-                "Canonical file fallback should return the normalized target path."
-
         testCase "classifyRenameTarget maps canonical ARC file paths to dedicated rename variants"
         <| fun _ ->
             let classification =

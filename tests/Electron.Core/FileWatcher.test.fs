@@ -72,11 +72,10 @@ let private waitUntil (what: string) (timeoutMs: int) (condition: unit -> bool) 
         failwith $"Timed out after {timeoutMs} ms waiting for {what}."
 }
 
-/// No reload timer is armed and nothing is queued, so no merge is in flight.
+/// No reload timer is armed and nothing is queued.
 let private isWatcherQuiet (vault: ArcVault) =
     vault.fileWatcherReloadArcTimeout.IsNone
     && vault.fileWatcherPendingEvents.Count = 0
-    && vault.fileWatcherPendingArcMergeEvents.Count = 0
 
 let private isUnavailable (state: FileWatcherState) =
     match state with
@@ -181,7 +180,7 @@ Vitest.describe (
         structuralScopeCase "polling" true
 
         Vitest.test (
-            "an atomic save of isa.study.xlsx produces one merge batch",
+            "an atomic save of isa.study.xlsx produces one load",
             fun () ->
                 withTempArc
                     seedEntities
@@ -190,6 +189,7 @@ Vitest.describe (
                         let vault = newVault arcPath
                         vault.SetArc loadedArc
                         do! vault.EnqueueFileTreeScan()
+                        do! TestHelpers.seedKnownDisk vault
 
                         // The batch has to re-add the entry, so the single reconcile job shows as one publish.
                         let root = Main.FileTreeCreator.normalizeRootPath arcPath
@@ -209,11 +209,12 @@ Vitest.describe (
                         vault.FileWatcherFactory <- fun path polling -> createFileWatcherWith fastTuning path polling
                         let mergeCount = ref 0
 
-                        vault.WatcherMergeBarrier <-
-                            Some(fun () ->
+                        let realLoad = vault.SnapshotLoad
+
+                        vault.SnapshotLoad <-
+                            fun path ->
                                 mergeCount.Value <- mergeCount.Value + 1
-                                promise { return () }
-                            )
+                                realLoad path
 
                         let! outcome = vault.StartFileWatcherAsync(false)
 
@@ -240,7 +241,7 @@ Vitest.describe (
                                 unlinkSync studyPath
                                 renameSync replacementPath studyPath
 
-                                do! waitUntil "the merge" 10000 (fun () -> mergeCount.Value > 0)
+                                do! waitUntil "the load" 10000 (fun () -> mergeCount.Value > 0)
                                 do! waitUntil "the reload to settle" 10000 (fun () -> isWatcherQuiet vault)
                                 do! Promise.sleep 700
                                 return Ok mergeCount.Value
@@ -267,6 +268,7 @@ Vitest.describe (
                         let! loadedArc = TestHelpers.loadArcAsync arcPath
                         let vault = newVault arcPath
                         vault.SetArc loadedArc
+                        do! TestHelpers.seedKnownDisk vault
                         vault.isInitializingArc <- true
                         let fake = createFakeWatcher ()
                         vault.FileWatcherFactory <- readyShortlyFactory fake
@@ -370,6 +372,7 @@ Vitest.describe (
                                 5000
                                 (fun () -> vault.fileWatcherState = FileWatcherState.Running)
 
+                        // The writer job adds the entry before it bumps the version, so the wait covers both.
                         do!
                             waitUntil
                                 "the revalidated tree"
@@ -505,56 +508,15 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "an import builds events only for the paths that the structural watcher reports",
-            fun () ->
-                let events =
-                    WatcherHelpers.createImportedWatcherEvents "/arc" "assays/A1" {
-                        FolderPaths = [||]
-                        FilePaths = [| "isa.assay.xlsx"; "data.csv" |]
-                    }
-
-                Vitest.expect(events |> Array.map _.RelativePath).toEqual [| "assays/A1/isa.assay.xlsx" |]
-        )
-
-        Vitest.test (
-            "a file imported into a zone folder gets no event because it is a file",
-            fun () ->
-                let events =
-                    WatcherHelpers.createImportedWatcherEvents "/arc" "assays" {
-                        FolderPaths = [||]
-                        FilePaths = [| "notes.txt" |]
-                    }
-
-                Vitest.expect(events.Length).toBe 0
-        )
-
-        Vitest.test (
-            "a completed import releases every mark when the watcher is not running",
-            fun () ->
-                let vault = ArcVault(TestHelpers.testWindow ())
-
-                let events =
-                    WatcherHelpers.createImportedWatcherEvents "/arc" "assays/A1" {
-                        FolderPaths = [||]
-                        FilePaths = [| "isa.assay.xlsx" |]
-                    }
-
-                let token = vault.StartImport()
-                vault.ClaimImportedFileEvents(token, events)
-                vault.ReleaseImportedFileEventsAfterImport(token, Ok(ImportExternalFilesResult.Completed [||]))
-
-                Vitest.expect(vault.IsImportedWatcherEvent events.[0]).toBe false
-                Vitest.expect(vault.importedPathOwners.Count).toBe 0
-                Vitest.expect(vault.importedPathLeases.Count).toBe 0
-        )
-
-        Vitest.test (
             "a root rename resyncs after the restart it took over reaches ready",
             fun () ->
                 withTempArc
                     seedEntities
                     (fun arcPath -> promise {
+                        let! loadedArc = TestHelpers.loadArcAsync arcPath
                         let vault = newVault arcPath
+                        vault.SetArc loadedArc
+                        do! TestHelpers.seedKnownDisk vault
                         let watchedRoots = ResizeArray<string>()
                         let fake = createFakeWatcher ()
 
@@ -565,18 +527,22 @@ Vitest.describe (
 
                         vault.FileWatcherRestartTimeout <- Some(JS.setTimeout ignore 60000)
 
+                        let! diskArc = TestHelpers.loadArcAsync arcPath
+                        diskArc.GetStudy("S1").Title <- Some "Changed before the rename"
+                        do! Promise.sleep 20
+                        do! diskArc.UpdateAsync arcPath
+
                         try
                             match! vault.RenameOpenArcRoot "renamed-pending-restart" with
                             | Error error -> failwith error.Message
                             | Ok renamedPath ->
-                                // The resync replays the entity files as watcher events.
+                                // The resync compares the files with the known versions and loads the change.
                                 do!
                                     waitUntil
-                                        "the resync events"
+                                        "the resync"
                                         5000
                                         (fun () ->
-                                            vault.fileWatcherPendingEvents.Count > 0
-                                            || vault.fileWatcherReloadArcTimeout.IsSome
+                                            vault.arc.Value.GetStudy("S1").Title = Some "Changed before the rename"
                                         )
 
                                 Vitest.expect(watchedRoots.ToArray()).toEqual [| renamedPath |]
@@ -657,38 +623,6 @@ Vitest.describe (
                         finally
                             vault.CancelFileWatcherRestart()
                             vault.ClearPendingFileWatcherState()
-                    })
-        )
-
-        Vitest.test (
-            "a watcher error forgets the imported paths",
-            fun () ->
-                withTempArc
-                    seedEntities
-                    (fun arcPath -> promise {
-                        let vault = newVault arcPath
-                        vault.FileWatcherRestartBackoffMs <- [| 60000 |]
-                        let fake = createFakeWatcher ()
-                        vault.FileWatcherFactory <- readyShortlyFactory fake
-                        let! _ = vault.StartFileWatcherAsync()
-
-                        try
-                            vault.ClaimImportedFileEvents(
-                                vault.StartImport(),
-                                [|
-                                    WatcherHelpers.buildWatcherEvent arcPath "add" ".gitattributes"
-                                |]
-                            )
-
-                            emitError fake "watch failed" "EIO"
-
-                            Vitest.expect(vault.importedPathOwners.Count).toBe 0
-                            Vitest.expect(vault.importedPathLeases.Count).toBe 0
-                        finally
-                            vault.CancelFileWatcherRestart()
-                            vault.ClearPendingFileWatcherState()
-
-                        do! vault.StopFileWatcher()
                     })
         )
 
@@ -850,34 +784,10 @@ Vitest.describe (
                         handleFileEvent "addDir" (join [| arcPath; "assays/NewAssay/dataset" |])
 
                         Vitest.expect(vault.fileWatcherPendingEvents.Count).toBe 2
-                        Vitest.expect(vault.fileWatcherPendingArcMergeEvents.Count).toBe 0
 
                         do! waitUntil "the batch to be applied" 10000 (fun () -> isWatcherQuiet vault)
                         Vitest.expect(vault.arc.IsNone).toBe true
                     })
-        )
-
-        Vitest.test (
-            "only events that expand to merge events reach the ARC merge queue",
-            fun () ->
-                let queue eventName relativePath =
-                    let pending = ResizeArray()
-                    let mergeQueue = ResizeArray()
-
-                    WatcherHelpers.queueFileWatcherEvent
-                        (fun _ -> true)
-                        (Some "/arc")
-                        pending
-                        mergeQueue
-                        eventName
-                        $"/arc/{relativePath}"
-
-                    pending.Count, mergeQueue.Count
-
-                Vitest.expect(queue "addDir" "assays/A1").toEqual ((1, 0))
-                Vitest.expect(queue "unlinkDir" "assays/A1").toEqual ((1, 1))
-                Vitest.expect(queue "unlinkDir" "assays/A1/dataset").toEqual ((1, 0))
-                Vitest.expect(queue "add" "assays/A1/isa.assay.xlsx").toEqual ((1, 1))
         )
 
         Vitest.test (

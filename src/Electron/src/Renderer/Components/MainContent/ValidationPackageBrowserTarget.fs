@@ -34,9 +34,11 @@ module private ValidationPackageBrowserHelper =
 
             match fileResult with
             | Error error -> onError $"Could not read validation packages file: {error.Message}"
-            | Ok fileDto when fileDto.fileType = FileContentType.NoPreview ->
+            | Ok opened when opened.content.fileType = FileContentType.NoPreview ->
                 onError "Could not read validation packages file: the file is too large or has no text content."
-            | Ok fileDto ->
+            | Ok opened ->
+                let fileDto = opened.content
+
                 try
                     let parsedConfig = ValidationPackagesConfig.fromYamlString fileDto.content
                     setConfig parsedConfig

@@ -5,6 +5,7 @@ open Fable.Core
 open Swate.Components.Shared
 open Swate.Electron.Shared.FileIOHelper
 open Swate.Electron.Shared.FileIOTypes
+open Swate.Electron.Shared.IPCTypes
 
 let withArcFileRequest
     (arcFile: ArcFiles)
@@ -16,13 +17,14 @@ let withArcFileRequest
         | Some request -> return! execute request
     }
 
-let saveArcFile (arcFile: ArcFiles) : JS.Promise<Result<unit, exn>> =
+/// Sends the file to main together with the revision its content came from. Main refuses the edit when a sync changed
+/// the file after that revision.
+let setArcFileInMemory (arcFile: ArcFiles) (baseRevision: int) : JS.Promise<Result<SetArcFileOutcome, exn>> =
     withArcFileRequest
         arcFile
-        (fun request -> promise {
-            let! setResult = Api.ipcArcVaultApi.setArcFileInMemory request
-
-            match setResult with
-            | Error exn -> return Error exn
-            | Ok() -> return! Api.ipcArcVaultApi.saveArcFile ()
-        })
+        (fun request ->
+            Api.ipcArcVaultApi.setArcFileInMemory {|
+                file = request
+                baseRevision = baseRevision
+            |}
+        )

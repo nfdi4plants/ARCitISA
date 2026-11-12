@@ -510,11 +510,6 @@ Vitest.describe (
                 Vitest.expect(ArcEntityPathRules.isDeleteTargetAllowed fileTarget).toBe true
                 Vitest.expect(ArcEntityPathRules.isDeleteTargetAllowed folderTarget).toBe true
                 Vitest.expect(ArcEntityPathRules.isRenamePathAllowed path).toBe false
-
-                Vitest.expect(ArcEntityPathRules.buildFallbackUnlinkPaths path |> List.toArray).toEqual [|
-                    "assays/README.md/isa.assay.xlsx"
-                    "assays/README.md/isa.datamap.xlsx"
-                |]
         )
 
         Vitest.test (

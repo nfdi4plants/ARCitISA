@@ -11,6 +11,7 @@ open Main.Bindings.Path
 open Swate.Components.Shared
 open Swate.Electron.Shared.FileIOHelper
 open ARCtrl
+open FsSpreadsheet.Js
 open Vitest
 
 let private expectSome (value: 'T option) (message: string) : 'T =
@@ -614,4 +615,90 @@ Vitest.describe (
                         Vitest.expect(vault.isBusyWriting).toBe (false)
                     })
         )
+)
+
+Vitest.describe (
+    "adding entities with adjacent DataMaps",
+    fun () ->
+        for parentKind, zone, workbookName in
+            [|
+                DataMapParent.Assay, "assays", "isa.assay.xlsx"
+                DataMapParent.Study, "studies", "isa.study.xlsx"
+                DataMapParent.Run, "runs", "isa.run.xlsx"
+                DataMapParent.Workflow, "workflows", "isa.workflow.xlsx"
+            |] do
+            Vitest.test (
+                $"adds a {zone} entity with an adjacent DataMap",
+                fun () ->
+                    withTempArc
+                        ignore
+                        (fun arcPath -> promise {
+                            let identifier = "ImportedParent"
+                            let dataMap = Datamap.init ()
+                            dataMap.DataContexts.Add(DataContext(name = "imported.csv"))
+
+                            let arcFile =
+                                match parentKind with
+                                | DataMapParent.Assay ->
+                                    let assay = ArcAssay(identifier)
+                                    assay.Datamap <- Some dataMap
+                                    ArcFiles.Assay assay
+                                | DataMapParent.Study ->
+                                    let study = ArcStudy(identifier)
+                                    study.Datamap <- Some dataMap
+                                    ArcFiles.Study(study, [])
+                                | DataMapParent.Run ->
+                                    let run = ArcRun(identifier)
+                                    run.Datamap <- Some dataMap
+                                    ArcFiles.Run run
+                                | DataMapParent.Workflow ->
+                                    let workflow = ArcWorkflow(identifier)
+                                    workflow.Datamap <- Some dataMap
+                                    ArcFiles.Workflow workflow
+
+                            // Imported files arrive through the same DTO conversion used by the add UI.
+                            let request =
+                                FileContentDTO.fromArcFile arcFile |> expectSome <| "Expected entity DTO."
+
+                            let importedArcFile =
+                                FileContentDTO.toArcFile request |> expectSome <| "Expected imported entity."
+
+                            let! arc = loadArcAsync arcPath
+
+                            match! arc.TryAddArcFileAsync(arcPath, importedArcFile) with
+                            | Ok _ -> ()
+                            | Error errors -> failwith (PathHelpers.formatContractErrors errors)
+
+                            let parentInfo = DatamapParentInfo.create identifier parentKind
+                            let dataMapPath = join [| arcPath; zone; identifier; "isa.datamap.xlsx" |]
+                            let! fileExists = pathExistsAsync dataMapPath
+                            Vitest.expect(fileExists).toBe (true)
+
+                            let! dataMapWorkbook = Xlsx.fromXlsxFile dataMapPath
+                            let persistedDataMap = ARCtrl.Spreadsheet.Datamap.fromFsWorkbook dataMapWorkbook
+
+                            Vitest.expect(persistedDataMap.DataContexts |> Seq.choose _.Name |> Seq.toArray).toEqual [|
+                                "imported.csv"
+                            |]
+
+                            let! parentWorkbook =
+                                Xlsx.fromXlsxFile (join [| arcPath; zone; identifier; workbookName |])
+
+                            let containsDataMapSheet =
+                                parentWorkbook.GetWorksheets()
+                                |> Seq.exists (fun sheet -> sheet.Name = "isa_datamap")
+
+                            Vitest.expect(containsDataMapSheet).toBe (false)
+
+                            let! reloadedArc = loadArcAsync arcPath
+
+                            let loadedDataMap =
+                                reloadedArc.TryGetDataMap parentInfo |> expectSome
+                                <| "Expected reloaded DataMap."
+
+                            Vitest.expect(loadedDataMap.DataContexts |> Seq.choose _.Name |> Seq.toArray).toEqual [|
+                                "imported.csv"
+                            |]
+                        })
+            )
 )

@@ -92,20 +92,74 @@ module ArcAddExtensions =
                 workingArc, ArcFileCreateContracts.createContracts false arcFile
         | ArcFiles.Template _ -> failwith "Adding template files is not supported."
 
+    /// Adds a copy of the entity from the working ARC to the target ARC. The copy and its DataMap carry the hashes of saved content.
+    /// baselinePayload marks the CWL payload that the add wrote as saved.
+    let private addCleanCopy
+        (tryGetSource: string -> 'entity option)
+        (identifier: string)
+        (copyEntity: 'entity -> 'entity)
+        (getLightHash: 'entity -> int)
+        (setStaticHash: 'entity -> int -> unit)
+        (getDataMap: 'entity -> Datamap option)
+        (baselinePayload: 'entity -> unit)
+        (addToTarget: 'entity -> unit)
+        =
+        tryGetSource identifier
+        |> Option.iter (fun source ->
+            let copy = copyEntity source
+            setStaticHash copy (getLightHash copy)
+            baselinePayload copy
+
+            getDataMap copy
+            |> Option.iter (fun dataMap -> dataMap.StaticHash <- cleanDataMapStaticHash dataMap)
+
+            addToTarget copy
+        )
+
     let private commitAddedArcFile (targetArc: ARC) (workingArc: ARC) (arcFile: ArcFiles) =
         match arcFile with
         | ArcFiles.Assay assay ->
-            workingArc.TryGetAssay assay.Identifier
-            |> Option.iter (fun sourceAssay -> targetArc.AddAssay(sourceAssay.Copy()))
+            addCleanCopy
+                workingArc.TryGetAssay
+                assay.Identifier
+                (fun (source: ArcAssay) -> source.Copy())
+                (fun (copy: ArcAssay) -> copy.GetLightHashCode())
+                (fun (copy: ArcAssay) hash -> copy.StaticHash <- hash)
+                (fun (copy: ArcAssay) -> copy.Datamap)
+                ignore
+                (fun copy -> targetArc.AddAssay(copy))
         | ArcFiles.Study(study, _) ->
-            workingArc.TryGetStudy study.Identifier
-            |> Option.iter (fun sourceStudy -> targetArc.AddStudy(sourceStudy.Copy()))
+            addCleanCopy
+                workingArc.TryGetStudy
+                study.Identifier
+                (fun (source: ArcStudy) -> source.Copy())
+                (fun (copy: ArcStudy) -> copy.GetLightHashCode())
+                (fun (copy: ArcStudy) hash -> copy.StaticHash <- hash)
+                (fun (copy: ArcStudy) -> copy.Datamap)
+                ignore
+                (fun copy -> targetArc.AddStudy(copy))
         | ArcFiles.Run run ->
-            workingArc.TryGetRun run.Identifier
-            |> Option.iter (fun sourceRun -> targetArc.AddRun(sourceRun.Copy()))
+            addCleanCopy
+                workingArc.TryGetRun
+                run.Identifier
+                (fun (source: ArcRun) -> source.Copy())
+                (fun (copy: ArcRun) -> copy.GetLightHashCode())
+                (fun (copy: ArcRun) hash -> copy.StaticHash <- hash)
+                (fun (copy: ArcRun) -> copy.Datamap)
+                // The add wrote the CWL description and inputs.
+                WorkflowPayloads.baselineRunPayload
+                (fun copy -> targetArc.AddRun(copy))
         | ArcFiles.Workflow workflow ->
-            workingArc.TryGetWorkflow workflow.Identifier
-            |> Option.iter (fun sourceWorkflow -> targetArc.AddWorkflow(sourceWorkflow.Copy()))
+            addCleanCopy
+                workingArc.TryGetWorkflow
+                workflow.Identifier
+                (fun (source: ArcWorkflow) -> source.Copy())
+                (fun (copy: ArcWorkflow) -> copy.GetLightHashCode())
+                (fun (copy: ArcWorkflow) hash -> copy.StaticHash <- hash)
+                (fun (copy: ArcWorkflow) -> copy.Datamap)
+                // The add wrote the CWL description.
+                WorkflowPayloads.baselineWorkflowPayload
+                (fun copy -> targetArc.AddWorkflow(copy))
         | ArcFiles.DataMap(Some parentInfo, _) ->
             workingArc.TryGetDataMap parentInfo
             |> Option.iter (fun dataMap ->

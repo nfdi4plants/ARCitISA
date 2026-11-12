@@ -14,11 +14,14 @@
     <Compile Include="FileImportProgressBar.test.rtl.fs" />
     <Compile Include="FileSystemHelper.test.fs" />
     <Compile Include="FileTreeFileTargetWorkflow.test.fs" />
+    <Compile Include="FileTreeClick.test.fs" />
     <Compile Include="FileTreeMaterialization.test.fs" />
     <Compile Include="FileTreePerformance.test.fs" />
     <Compile Include="FileTreeContextMenu.test.fs" />
     <Compile Include="FileTreeContextMenu.test.rtl.fs" />
     <Compile Include="FileWatcherNotice.test.rtl.fs" />
+    <Compile Include="ArcSyncState.test.fs" />
+    <Compile Include="ArcSyncNotice.test.rtl.fs" />
     <Compile Include="FileTreeDeleteWorkflow.test.fs" />
     <Compile Include="FileTreeCreateWorkflow.test.fs" />
     <Compile Include="FileTreeRenameWorkflow.test.fs" />

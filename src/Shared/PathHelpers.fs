@@ -609,21 +609,6 @@ module ArcEntityPathRules =
         let zoneFolder = zoneFolderName zone
         $"{zoneFolder}/{identifier}"
 
-    let buildFallbackUnlinkPaths (relativePath: string) =
-        let fallbackPaths =
-            match classifyDeleteTarget relativePath with
-            | DeletePathClassification.CanonicalFileTarget(CanonicalArcFileTarget.EntityFile _, normalizedRelativePath)
-            | DeletePathClassification.CanonicalFileTarget(CanonicalArcFileTarget.DataMapFile _, normalizedRelativePath) -> [
-                normalizedRelativePath
-              ]
-            | DeletePathClassification.EntityFolderTarget(zone, identifier, _) -> [
-                canonicalEntityFilePath zone identifier
-                canonicalDataMapFilePath zone identifier
-              ]
-            | _ -> []
-
-        fallbackPaths |> Seq.distinctBy PathHelpers.normalizeForComparison |> Seq.toList
-
     let classifyRenameTarget (relativePath: string) =
         let normalizedRelativePath = normalizeRelativePath relativePath
 
@@ -720,13 +705,6 @@ module ArcEntityPathRules =
         | RenamePathClassification.DisallowedTarget normalizedRelativePath
         | RenamePathClassification.ProtectedTarget normalizedRelativePath -> normalizedRelativePath
         | RenamePathClassification.RootTarget -> ""
-
-    let tryGetRenameEntityFolderTarget (relativePath: string) =
-        match classifyRenameTarget relativePath with
-        | RenamePathClassification.EntityFolderTarget(zone, identifier, _)
-        | RenamePathClassification.CanonicalEntityFileTarget(zone, identifier, _)
-        | RenamePathClassification.CanonicalDataMapFileTarget(zone, identifier, _) -> Some(zone, identifier)
-        | _ -> None
 
     let buildCanonicalEntityPaths zone identifier = [
         canonicalEntityFilePath zone identifier

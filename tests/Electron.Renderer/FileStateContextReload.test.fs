@@ -410,7 +410,7 @@ Vitest.describe (
                 Vitest
                     .expect(
                         FileExplorerStateReconciliation.shouldResetPageStateAfterSelectionRemoval (
-                            Some(RendererPageState.ArcFilePage(workflowArcFile, None))
+                            Some(RendererPageState.ArcFilePage(workflowArcFile, None, 0))
                         )
                     )
                     .toBe (true)
@@ -532,7 +532,7 @@ Vitest.describe (
                 assay.Datamap <- Some(Datamap.init ())
 
                 let pageState =
-                    Some(RendererPageState.ArcFilePage(ArcFiles.Assay assay, Some ActiveView.DataMap))
+                    Some(RendererPageState.ArcFilePage(ArcFiles.Assay assay, Some ActiveView.DataMap, 0))
 
                 let fileTreeWithDataMap = [|
                     FileEntry.create ("isa.datamap.xlsx", "assays/DataMapAssay/isa.datamap.xlsx", false)
@@ -562,7 +562,8 @@ Vitest.describe (
                                 Some(DatamapParentInfo.create "DataMapAssay" DataMapParent.Assay),
                                 Datamap.init ()
                             ),
-                            Some ActiveView.DataMap
+                            Some ActiveView.DataMap,
+                            0
                         )
                     )
 
@@ -581,7 +582,7 @@ Vitest.describe (
                     noPreview = None
                 |}
 
-                let pageState = RendererPageState.fromFileContentDTO dto
+                let pageState = RendererPageState.fromFileContentDTO (dto, 0)
 
                 match pageState with
                 | RendererPageState.MarkdownPage markdownContent -> Vitest.expect(markdownContent).toBe ("# My Note")
@@ -598,7 +599,7 @@ Vitest.describe (
                     noPreview = None
                 |}
 
-                let pageState = RendererPageState.fromFileContentDTO dto
+                let pageState = RendererPageState.fromFileContentDTO (dto, 0)
 
                 match pageState with
                 | RendererPageState.PDFPage(pdfContent, _) -> Vitest.expect(pdfContent).toBe ("PDF content")
@@ -615,7 +616,7 @@ Vitest.describe (
                     noPreview = None
                 |}
 
-                let pageState = RendererPageState.fromFileContentDTO dto
+                let pageState = RendererPageState.fromFileContentDTO (dto, 0)
 
                 match pageState with
                 | RendererPageState.ImagePage(FileContentType.PNG, pngContent, _) ->
@@ -633,7 +634,7 @@ Vitest.describe (
                     noPreview = None
                 |}
 
-                let pageState = RendererPageState.fromFileContentDTO dto
+                let pageState = RendererPageState.fromFileContentDTO (dto, 0)
 
                 match pageState with
                 | RendererPageState.ImagePage(FileContentType.JPG, jpgContent, _) ->
@@ -651,7 +652,7 @@ Vitest.describe (
                     noPreview = None
                 |}
 
-                let pageState = RendererPageState.fromFileContentDTO dto
+                let pageState = RendererPageState.fromFileContentDTO (dto, 0)
 
                 match pageState with
                 | RendererPageState.ImagePage(FileContentType.SVG, svgContent, _) ->
@@ -669,7 +670,7 @@ Vitest.describe (
                     noPreview = None
                 |}
 
-                let pageState = RendererPageState.fromFileContentDTO dto
+                let pageState = RendererPageState.fromFileContentDTO (dto, 0)
 
                 match pageState with
                 | RendererPageState.ImagePage(FileContentType.GIF, gifContent, _) ->
@@ -687,7 +688,7 @@ Vitest.describe (
                     noPreview = None
                 |}
 
-                let pageState = RendererPageState.fromFileContentDTO dto
+                let pageState = RendererPageState.fromFileContentDTO (dto, 0)
 
                 match pageState with
                 | RendererPageState.HtmlPage(htmlContent, _) ->
@@ -706,13 +707,13 @@ Vitest.describe (
                     )
                     |> Option.defaultWith (fun () -> failwith "Expected an assay DTO.")
 
-                match RendererPageState.fromFileContentDTO dto with
-                | RendererPageState.ArcFilePage(_, Some ActiveView.Metadata) -> ()
+                match RendererPageState.fromFileContentDTO (dto, 0) with
+                | RendererPageState.ArcFilePage(_, Some ActiveView.Metadata, _) -> ()
                 | _ -> failwith "Expected the Metadata starting view."
         )
 
         Vitest.test (
-            "fromFileContentDTO opens an ARC workbook with tables on its first table",
+            "fromFileContentDTO opens an ARC workbook with tables on its metadata",
             fun () ->
                 let assay = ArcAssay.init "assay"
                 assay.AddTable(ArcTable.init "table")
@@ -721,9 +722,9 @@ Vitest.describe (
                     Swate.Electron.Shared.FileIOHelper.FileContentDTO.fromArcFile (ArcFiles.Assay assay)
                     |> Option.defaultWith (fun () -> failwith "Expected an assay DTO.")
 
-                match RendererPageState.fromFileContentDTO dto with
-                | RendererPageState.ArcFilePage(_, Some(ActiveView.Table 0)) -> ()
-                | _ -> failwith "Expected the first table starting view."
+                match RendererPageState.fromFileContentDTO (dto, 0) with
+                | RendererPageState.ArcFilePage(_, Some ActiveView.Metadata, _) -> ()
+                | _ -> failwith "Expected the metadata starting view."
         )
 
         Vitest.test (
@@ -737,8 +738,8 @@ Vitest.describe (
                     )
                     |> Option.defaultWith (fun () -> failwith "Expected a DataMap DTO.")
 
-                match RendererPageState.fromFileContentDTO dto with
-                | RendererPageState.ArcFilePage(_, Some ActiveView.DataMap) -> ()
+                match RendererPageState.fromFileContentDTO (dto, 0) with
+                | RendererPageState.ArcFilePage(_, Some ActiveView.DataMap, _) -> ()
                 | _ -> failwith "Expected the DataMap starting view."
         )
 
@@ -749,12 +750,12 @@ Vitest.describe (
                 assay.AddTable(ArcTable.init "table")
 
                 let pageState =
-                    RendererPageState.ArcFilePage(ArcFiles.Assay assay, Some(ActiveView.Table 0))
+                    RendererPageState.ArcFilePage(ArcFiles.Assay assay, Some(ActiveView.Table 0), 0)
                     |> Renderer.Components.Helper.ArcViewSelection.applyRequestedPathView
                         "assays/assay/isa.datamap.xlsx"
 
                 match pageState with
-                | RendererPageState.ArcFilePage(_, Some ActiveView.DataMap) -> ()
+                | RendererPageState.ArcFilePage(_, Some ActiveView.DataMap, _) -> ()
                 | _ -> failwith "Expected the redirected DataMap click to select the DataMap view."
         )
 
@@ -784,7 +785,7 @@ Vitest.describe (
                 let dto =
                     FileContentDTO.createNoPreview "data/big.txt" 1234.0 NoPreviewReason.TooLarge
 
-                match RendererPageState.fromFileContentDTO dto with
+                match RendererPageState.fromFileContentDTO (dto, 0) with
                 | RendererPageState.LargeFilePage(path, sizeBytes, reason) ->
                     Vitest.expect(path).toBe "data/big.txt"
                     Vitest.expect(sizeBytes).toBe 1234.0
@@ -1216,5 +1217,84 @@ Vitest.describe (
                 Vitest.expect(showsBar (state FileImportPhase.Copying FileImportStep.Copying 0 0) false).toBe (false)
                 Vitest.expect(showsBar (state FileImportPhase.Copying FileImportStep.Copying 3 7) false).toBe (true)
                 Vitest.expect(showsBar (state FileImportPhase.Copying FileImportStep.Publishing 4 7) false).toBe (true)
+        )
+)
+
+Vitest.describe (
+    "syncChangedOpenPage",
+    fun () ->
+        let assayPage =
+            Some(RendererPageState.ArcFilePage(ArcFiles.Assay(ArcAssay.init "A"), None, 0))
+
+        let dataMapPage =
+            Some(
+                RendererPageState.ArcFilePage(
+                    ArcFiles.DataMap(Some(DatamapParentInfo.create "A" DataMapParent.Assay), Datamap.init ()),
+                    Some ActiveView.DataMap,
+                    0
+                )
+            )
+
+        Vitest.test (
+            "returns the path of the open page when its file changed",
+            fun () ->
+                Vitest
+                    .expect(
+                        FileExplorerStateReconciliation.syncChangedOpenPage
+                            false
+                            [| "assays/A/isa.assay.xlsx" |]
+                            assayPage
+                    )
+                    .toEqual (Some "assays/A/isa.assay.xlsx")
+        )
+
+        Vitest.test (
+            "a DataMap change reloads the page of its workbook",
+            fun () ->
+                Vitest
+                    .expect(
+                        FileExplorerStateReconciliation.syncChangedOpenPage
+                            false
+                            [| "assays/A/isa.datamap.xlsx" |]
+                            assayPage
+                    )
+                    .toEqual (Some "assays/A/isa.assay.xlsx")
+        )
+
+        Vitest.test (
+            "a workbook change reloads the open DataMap page",
+            fun () ->
+                Vitest
+                    .expect(
+                        FileExplorerStateReconciliation.syncChangedOpenPage
+                            false
+                            [| "assays/A/isa.assay.xlsx" |]
+                            dataMapPage
+                    )
+                    .toEqual (Some "assays/A/isa.datamap.xlsx")
+        )
+
+        Vitest.test (
+            "another file and a page that is not an ARC file return None",
+            fun () ->
+                Vitest
+                    .expect(
+                        FileExplorerStateReconciliation.syncChangedOpenPage
+                            false
+                            [| "assays/B/isa.assay.xlsx" |]
+                            assayPage
+                    )
+                    .toEqual
+                    None
+
+                Vitest
+                    .expect(
+                        FileExplorerStateReconciliation.syncChangedOpenPage
+                            false
+                            [| "assays/A/isa.assay.xlsx" |]
+                            (Some(RendererPageState.TextPage "text"))
+                    )
+                    .toEqual
+                    None
         )
 )
