@@ -344,8 +344,8 @@ type AnnotationTable =
                     match target.closest ("[data-row][data-column]"), containerRef.current with
                     | Some cell, Some container when container.contains (cell) ->
                         let cell = cell :?> Browser.Types.HTMLElement
-                        let row = int cell?dataset?row
-                        let col = int cell?dataset?column
+                        let row = cell.getAttribute ("data-row") |> int
+                        let col = cell.getAttribute ("data-column") |> int
                         let indices: CellCoordinate = {| y = row; x = col |}
                         Some indices
                     | _ -> None

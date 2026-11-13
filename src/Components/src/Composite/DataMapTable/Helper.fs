@@ -38,6 +38,23 @@ let updateDataMap (dataMap: Datamap) (setDataMap: Datamap -> unit) (update: Data
     update nextDataMap
     setDataMap nextDataMap
 
+let duplicateRows (dataMap: Datamap) (coordinates: seq<CellCoordinate>) (setDataMap: Datamap -> unit) =
+    updateDataMap
+        dataMap
+        setDataMap
+        (fun nextDataMap ->
+            for rowIndex in Swate.Components.Composite.Table.Helper.selectedRowIndices dataMap.RowCount coordinates do
+                let source = dataMap.DataContexts.[rowIndex]
+                let duplicate = source.Copy()
+                // ARCtrl's copy omits Label and shares mutable ontology annotations and comments.
+                duplicate.Label <- source.Label
+                duplicate.Explication <- source.Explication |> Option.map _.Copy()
+                duplicate.Unit <- source.Unit |> Option.map _.Copy()
+                duplicate.ObjectType <- source.ObjectType |> Option.map _.Copy()
+                duplicate.Comments <- source.Comments |> Seq.map _.Copy() |> ResizeArray
+                nextDataMap.DataContexts.Insert(rowIndex + 1, duplicate)
+        )
+
 let cutCells (dataMap: Datamap) (coordinates: CellCoordinate[]) (setDataMap: Datamap -> unit) =
     Swate.Components.ClipboardContract.Actions.cut
         (captureCells dataMap coordinates)

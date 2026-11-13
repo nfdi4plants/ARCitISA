@@ -16,6 +16,8 @@ open Swate.Components.Composite.Table.Types
 open Swate.Components.Composite.Table.Helper
 open Swate.Components.ClipboardCodec
 
+module AnnotationTableHelper = Swate.Components.Composite.AnnotationTable.Helper
+
 type AnnotationTableContextMenuUtil =
 
     static member clear(cellIndex: CellCoordinate, table: ArcTable, selectHandle: SelectHandle) : ArcTable =
@@ -737,6 +739,45 @@ type AnnotationTableContextMenuUtil =
 
 [<Erase>]
 type AnnotationTableContextMenu =
+    static member private DuplicateRowItem
+        (index: CellCoordinate, table: ArcTable, setTable: ArcTable -> unit, selectHandle: SelectHandle)
+        =
+        let coordinates = targetCoordinates index selectHandle
+        let rowCount = selectedRowIndices table.RowCount coordinates |> Array.length
+
+        ContextMenuItem(
+            Html.div (
+                if rowCount > 1 then
+                    "Duplicate Selected Rows"
+                else
+                    "Duplicate Row"
+            ),
+            icon = Html.i [ prop.className "swt:iconify swt:fluent--copy-24-regular" ],
+            onClick = (fun _ -> AnnotationTableHelper.duplicateRows table coordinates |> setTable)
+        )
+
+    static member private DuplicateColumnItems
+        (index: CellCoordinate, table: ArcTable, setTable: ArcTable -> unit, selectHandle: SelectHandle)
+        =
+        let coordinates = targetCoordinates index selectHandle
+
+        [
+            if AnnotationTableHelper.canDuplicateColumns table coordinates then
+                let columnCount =
+                    selectedColumnIndices table.ColumnCount coordinates |> Array.length
+
+                ContextMenuItem(
+                    Html.div (
+                        if columnCount > 1 then
+                            "Duplicate Selected Columns"
+                        else
+                            "Duplicate Column"
+                    ),
+                    icon = Html.i [ prop.className "swt:iconify swt:fluent--copy-24-regular" ],
+                    onClick = (fun _ -> AnnotationTableHelper.duplicateColumns table coordinates |> setTable)
+                )
+        ]
+
     static member CompositeCellContent
         (
             index: CellCoordinate,
@@ -843,6 +884,8 @@ type AnnotationTableContextMenu =
                         |> Promise.start
             )
             ContextMenuItem(isDivider = true)
+            AnnotationTableContextMenu.DuplicateRowItem(cellIndex, arcTable, setArcTable, selectHandle)
+            yield! AnnotationTableContextMenu.DuplicateColumnItems(cellIndex, arcTable, setArcTable, selectHandle)
             ContextMenuItem(
                 Html.div "Delete Row",
                 icon = Icons.DeleteLeft(),
@@ -926,6 +969,7 @@ type AnnotationTableContextMenu =
                         |> Promise.start
             )
             ContextMenuItem(isDivider = true)
+            yield! AnnotationTableContextMenu.DuplicateColumnItems(cellCoordinate, arcTable, setArcTable, selectHandle)
             ContextMenuItem(
                 Html.div "Delete Column",
                 icon = Icons.DeleteDown(),
@@ -953,6 +997,7 @@ type AnnotationTableContextMenu =
         (index: int, table: ArcTable, setTable: ArcTable -> unit, selectHandle: SelectHandle)
         =
         [
+            AnnotationTableContextMenu.DuplicateRowItem({| x = 0; y = index |}, table, setTable, selectHandle)
             ContextMenuItem(
                 Html.div "Delete Row",
                 icon = Icons.DeleteLeft(),

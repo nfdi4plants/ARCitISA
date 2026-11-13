@@ -2,6 +2,7 @@ module Swate.Components.Composite.Table.Helper
 
 open Feliz
 open Swate.Components
+open Swate.Components.Composite.Table.Types
 
 type ATCMC =
     static member Icon(className: string) = Html.i [ prop.className className ]
@@ -37,3 +38,17 @@ let selectedRowIndices (rowCount: int) (coordinates: seq<CellCoordinate>) =
     |> Seq.distinct
     |> Seq.sortDescending
     |> Seq.toArray
+
+let selectedColumnIndices (columnCount: int) (coordinates: seq<CellCoordinate>) =
+    coordinates
+    |> Seq.map (fun coordinate -> coordinate.x - 1)
+    |> Seq.filter (fun columnIndex -> columnIndex >= 0 && columnIndex < columnCount)
+    |> Seq.distinct
+    |> Seq.sortDescending
+    |> Seq.toArray
+
+let targetCoordinates (coordinate: CellCoordinate) (selectHandle: SelectHandle) =
+    if selectHandle.contains coordinate then
+        selectHandle.getSelectedCells () |> Seq.toArray
+    else
+        [| coordinate |]
