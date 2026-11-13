@@ -392,6 +392,12 @@ module KeyboardNavExtensions =
                     fun () ->
                         select.current.Clear()
                         setSelectedCells None
+
+                        selectedCells
+                        |> Option.iter (fun range ->
+                            onSelect
+                            |> Option.iter (fun notify -> notify {| x = range.xStart; y = range.yStart |} None)
+                        )
                 selectedCellsReducedSet = selectedCells |> SelectedCellRange.toReducedSet
                 count = selectedCells |> SelectedCellRange.count
             |}

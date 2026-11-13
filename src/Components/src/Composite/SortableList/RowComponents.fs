@@ -86,11 +86,61 @@ type RowComponents =
         ]
 
     [<ReactComponent>]
+    static member IsSelectedToggle(isSelected: bool, ?label: string) =
+        Html.input [
+            prop.className "swt:checkbox swt:checkbox-primary swt:checkbox-xs"
+            prop.type'.checkbox
+            prop.ariaLabel (defaultArg label "Select row")
+            prop.isChecked isSelected
+            prop.readOnly true
+        ]
+
+    [<ReactComponent>]
     static member DefaultRow(row: SortableListRowRender<'A>, ?label: ReactElement) =
         React.Fragment [
             Html.td [
                 prop.className "swt:w-10"
                 prop.children [ RowComponents.DragHandle(row) ]
+            ]
+            Html.td [
+                prop.className "swt:max-w-md swt:truncate"
+                prop.title row.item.label
+                prop.children [
+                    defaultArg label (Html.span [ prop.className "swt:font-mono"; prop.text row.item.label ])
+                ]
+            ]
+            Html.td [
+                prop.className "swt:w-20"
+                prop.children [
+                    Html.div [
+                        prop.className "swt:join"
+                        prop.children [
+                            RowComponents.MoveUpButton(row)
+                            RowComponents.MoveDownButton(row)
+                        ]
+                    ]
+                ]
+            ]
+            Html.td [
+                prop.className "swt:w-14 swt:text-right"
+                prop.children [ RowComponents.RemoveButton(row) ]
+            ]
+        ]
+
+    [<ReactComponent>]
+    static member DefaultToggleRow(row: SortableListRowRender<'A>, isSelected: bool, ?label: ReactElement) =
+        React.Fragment [
+            Html.td [
+                prop.className "swt:w-20"
+                prop.children [
+                    Html.div [
+                        prop.className "swt:flex swt:items-center swt:gap-1"
+                        prop.children [
+                            RowComponents.IsSelectedToggle(isSelected, label = $"Select {row.item.label}")
+                            RowComponents.DragHandle(row)
+                        ]
+                    ]
+                ]
             ]
             Html.td [
                 prop.className "swt:max-w-md swt:truncate"
