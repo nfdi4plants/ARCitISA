@@ -1,4 +1,4 @@
-module Main.AppMenu
+module Main.HelpMenu
 
 open Fable.Core
 open Fable.Electron.Main
@@ -59,7 +59,7 @@ let showReleaseNotes (window: BaseWindow option) =
             (fun api -> api.showReleaseNotes (Main.Settings.AppVersion.getState().CurrentVersion))
     )
 
-let createHelpMenu () =
+let create () =
     MenuItem.Options(
         id = "swate-help",
         label = "Help",
@@ -97,26 +97,3 @@ let createHelpMenu () =
                 )
             |]
     )
-
-let install () =
-    let existingItems =
-        match Menu.getApplicationMenu () with
-        | Some menu ->
-            menu.items
-            |> Array.filter (fun item -> item.role <> Enums.MenuItem.Role.Help && item.id <> "swate-help")
-            |> Array.map U2.Case2
-        | None ->
-            [|
-                if Main.Bindings.Node.processPlatform () = "darwin" then
-                    Enums.MenuItem.Options.Role.AppMenu
-                Enums.MenuItem.Options.Role.FileMenu
-                Enums.MenuItem.Options.Role.EditMenu
-                Enums.MenuItem.Options.Role.ViewMenu
-                Enums.MenuItem.Options.Role.WindowMenu
-            |]
-            |> Array.map (fun role -> U2.Case1(MenuItem.Options(role = role)))
-
-    Array.append existingItems [| U2.Case1(createHelpMenu ()) |]
-    |> Menu.buildFromTemplate
-    |> Some
-    |> Menu.setApplicationMenu

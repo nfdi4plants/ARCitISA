@@ -37,7 +37,7 @@ Vitest.test (
         Main.AppMenu.install ()
         Main.AppMenu.install ()
         let menu = Menu.getApplicationMenu().Value
-        Vitest.expect(menu.items.Length).toBe 2
+        Vitest.expect(menu.items.Length).toBe 3
         Vitest.expect(menu.items.[0].id).toBe "original-file"
         let help = menu.getMenuItemById("swate-help").Value
 
@@ -108,14 +108,14 @@ Vitest.test (
             ChangelogVersion = None
         }
 
-        do! Main.AppMenu.checkForUpdates (Some parentWindow) (fun () -> promise { return Ok state })
+        do! Main.HelpMenu.checkForUpdates (Some parentWindow) (fun () -> promise { return Ok state })
 
         do!
-            Main.AppMenu.checkForUpdates
+            Main.HelpMenu.checkForUpdates
                 (Some parentWindow)
                 (fun () -> promise { return Ok { state with UpdateVersion = None } })
 
-        do! Main.AppMenu.checkForUpdates (Some parentWindow) (fun () -> promise { return Error(exn "Offline") })
+        do! Main.HelpMenu.checkForUpdates (Some parentWindow) (fun () -> promise { return Error(exn "Offline") })
 
         Vitest.expect(dialogs.ToArray()).toEqual [|
             "ARCitISA v2.0.0 is available."
@@ -139,7 +139,7 @@ Vitest.test (
 
         clickMenuItem notes window
         clickMenuItem notes window
-        Main.AppMenu.showReleaseNotes None
+        Main.HelpMenu.showReleaseNotes None
 
         Vitest.expect(messages.ToArray()).toEqual [|
             "IReleaseNotesRendererApi:showReleaseNotes"
