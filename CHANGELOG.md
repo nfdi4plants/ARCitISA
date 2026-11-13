@@ -35,12 +35,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - When a commit fails because a selected file can't be found, the error message names the affected files. (by @caroott)
 - When large files could not be downloaded after an update, "Download now" tries every missing file, even when one of them fails. (by @caroott)
 - When large files could not be downloaded after an update, the warning and the "Download now" question no longer show the raw Git LFS output. "Show last log" still has it. If "Download now" fails, the message points to "Download LFS file" to try again. (by @caroott)
-- When a file of the open ARC changes on disk, for example after you save it in Excel or after a Git pull, its new content replaces your unsaved edits to that file. Unsaved edits to other files stay, and a notice names each file whose unsaved edits were replaced. (by @Freymaurer)
-- While ARCitISA loads changes that another program or a Git operation made, a notice says so and the open page does not accept edits. Afterwards the open page shows the new content. An edit made on content that has changed in the meantime is refused with a message, and the page shows the current content. (by @Freymaurer)
+- When a file of the open ARC changes on disk, for example after you save it in Excel or after a Git pull, its new content replaces your unsaved edits to that file. Unsaved edits to other files stay, and a warning below the navigation bar names each file whose unsaved edits were replaced. (by @Freymaurer)
+- While ARCitISA loads changes that another program or a Git operation made, the open page does not accept edits and shows the wait cursor, and the save button shows a sync icon and cannot be clicked. While the ARC saves, the save button shows a spinner. Afterwards the open page shows the new content. An edit made on content that has changed in the meantime is refused with a message, and the page shows the current content. (by @Freymaurer)
 - Clicking a study, assay, workflow or run folder in the file tree only expands or collapses it, and its right-click menu no longer offers "Open". The metadata opens from the workbook inside the folder, such as "isa.assay.xlsx". A new study, assay, workflow or run opens its workbook. (by @Freymaurer)
 - Creating a file, folder, study, assay, workflow, run or DataMap in the File Explorer now opens the folders that lead to it, so you can see it right away. (by @Etschbeijer)
 - After importing files or folders, the File Explorer opens the folder you imported into and each imported folder. (by @Etschbeijer)
 - Opening a isa workbook file, will now open on the metadata sheet not on the first table. (by @Freymaurer)
+- Integrate new ARCitISA icon set into the application. (by @caroott + @Freymaurer)
 
 ### 🐛 Fixed
 
