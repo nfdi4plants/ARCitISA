@@ -105,14 +105,7 @@ type FilePickerWidget =
                     (fun nextItems -> setPaths (fun _ -> nextItems |> Array.map _.label)),
                     className = "swt:max-h-[45vh]",
                     selectedIds = selectedPathsCtx.state,
-                    setSelectedIds = selectedPathsCtx.setStateUpdater,
-                    renderRow =
-                        (fun row ->
-                            RowComponents.DefaultRow(
-                                row,
-                                label = Html.span [ prop.className "swt:font-mono"; prop.text row.item.label ]
-                            )
-                        )
+                    setSelectedIds = selectedPathsCtx.setStateUpdater
                 )
             ]
 
@@ -143,10 +136,76 @@ type FilePickerWidget =
         ]
 
     [<ReactComponent>]
+    static member private ActionButtonClear(hasSelection: bool, clearAll, clearSelected) =
+        let text = if hasSelection then "Clear Selected" else "Clear"
+
+        let title =
+            if hasSelection then
+                "Clear only the currently selected paths from the list"
+            else
+                "Clear all file paths from the list"
+
+        let onClick = fun _ -> if hasSelection then clearSelected () else clearAll ()
+
+        Html.button [
+            prop.className "swt:btn swt:btn-neutral"
+            prop.text text
+            prop.title title
+            prop.onClick (fun _ -> onClick ())
+        ]
+
+
+    [<ReactComponent>]
+    static member private ActionButtonInsert(hasSelection: bool, insertPaths: bool -> unit, tableCellSelected: bool) =
+        let text =
+            if hasSelection then
+                "Insert selected file names"
+            else
+                "Insert file names"
+
+        let title =
+            if hasSelection then
+                "Insert only the currently selected file names into the currently selected table or DataMap cells."
+            else
+                "Insert all file names into the currently selected table or DataMap cells."
+
+        Html.div [
+            prop.className "swt:ml-auto"
+            prop.children [
+                if not tableCellSelected then
+                    Html.span [
+                        prop.className "swt:text-sm swt:text-error/70 swt:mr-1"
+                        prop.text "Select table cells"
+                    ]
+                Html.button [
+                    prop.className "swt:btn swt:btn-primary"
+                    prop.disabled (not tableCellSelected)
+                    prop.text text
+                    prop.title title
+                    prop.type'.button
+                    prop.onClick (fun _ -> insertPaths hasSelection)
+                ]
+            ]
+        ]
+
+    [<ReactComponent>]
     static member private ActionButtons
-        (setPaths: (string[] -> string[]) -> unit, pickPaths, insertPaths: bool -> unit, canInsert: bool)
+        (setPaths: (string[] -> string[]) -> unit, pickPaths, insertPaths: bool -> unit, tableCellSelected: bool)
         =
         let selectedPathsCtx = FilePickerWidgetContext.useSelectedPathsCtx ()
+
+        let hasSelection = selectedPathsCtx.state |> List.isEmpty |> not
+
+        let clearAll = fun () -> setPaths (fun _ -> [||])
+
+        let clearSelected =
+            fun () ->
+                setPaths (fun current ->
+                    let selected = selectedPathsCtx.state
+                    current |> Array.filter (fun path -> not (List.contains path selected))
+                )
+
+                selectedPathsCtx.setStateUpdater (fun _ -> [])
 
         Html.div [
             prop.className "swt:flex swt:gap-2 swt:w-full"
@@ -157,44 +216,8 @@ type FilePickerWidget =
                     prop.title "Select more file paths and add them to the list"
                     prop.onClick (fun _ -> pickPaths ())
                 ]
-                match selectedPathsCtx.state with
-                | [] ->
-                    Html.button [
-                        prop.className "swt:btn swt:btn-neutral"
-                        prop.text "Clear"
-                        prop.title "Clear all file paths from the list"
-                        prop.onClick (fun _ -> setPaths (fun _ -> [||]))
-                    ]
-
-                    Html.button [
-                        prop.className "swt:btn swt:btn-primary swt:ml-auto"
-                        prop.disabled (not canInsert)
-                        prop.text "Insert file names"
-                        prop.title "Insert file paths into the currently selected table or DataMap cells."
-                        prop.onClick (fun _ -> insertPaths false)
-                    ]
-                | _ ->
-                    Html.button [
-                        prop.className "swt:btn swt:btn-neutral"
-                        prop.text "Clear Selected"
-                        prop.title "Clear only the currently selected paths from the list"
-                        prop.onClick (fun _ ->
-                            setPaths (fun current ->
-                                let selected = selectedPathsCtx.state
-                                current |> Array.filter (fun path -> not (List.contains path selected))
-                            )
-
-                            selectedPathsCtx.setStateUpdater (fun _ -> [])
-                        )
-                    ]
-
-                    Html.button [
-                        prop.className "swt:btn swt:btn-primary swt:ml-auto"
-                        prop.disabled (not canInsert)
-                        prop.title "Insert selected file paths into the currently selected table or DataMap cells."
-                        prop.text "Insert selected"
-                        prop.onClick (fun _ -> insertPaths true)
-                    ]
+                FilePickerWidget.ActionButtonClear(hasSelection, clearAll, clearSelected)
+                FilePickerWidget.ActionButtonInsert(hasSelection, insertPaths, tableCellSelected)
             ]
         ]
 
@@ -267,9 +290,8 @@ type FilePickerWidget =
             prop.children [
                 if isLoading then
                     LoadingSpinner.LoadingSpinner("Loading Paths...", DaisyuiSize.LG)
-                else if hasPaths then
-                    let canInsert = hasPaths && insertionTarget.IsSome
 
+                else if hasPaths then
                     FilePickerWidgetContext.SelectedPathsCtx.Provider(
                         selectContextState,
                         React.Fragment [
@@ -277,7 +299,7 @@ type FilePickerWidget =
 
                             FilePickerWidget.Table(paths, setPaths)
 
-                            FilePickerWidget.ActionButtons(setPaths, pickPaths, insertPaths, canInsert)
+                            FilePickerWidget.ActionButtons(setPaths, pickPaths, insertPaths, insertionTarget.IsSome)
                         ]
                     )
                 else
