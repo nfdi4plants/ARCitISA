@@ -200,6 +200,7 @@
     <Compile Include="Composite\Table\Helper.fs" />
     <Compile Include="Composite\Table\TableCell.fs" />
     <Compile Include="Composite\Table\Table.fs" />
+    <Compile Include="Composite\Table\TableCell.test.rtl.fs" />
     <Compile Include="Composite\AnnotationTable\Types.fs" />
     <Compile Include="Composite\AnnotationTable\Context.fs" />
     <Compile Include="Composite\AnnotationTable\ContextProvider.fs" />

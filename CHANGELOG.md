@@ -44,6 +44,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Opening a isa workbook file, will now open on the metadata sheet not on the first table. (by @Freymaurer)
 - Integrate new ARCitISA icon set into the application. (by @caroott + @Freymaurer)
 - Improve visual feedback in data annotator and file picker components. #1437 (by @Freymaurer)
+- Typing into an already-filled table cell will now overwrite its content instead of appending to it. #924 (by @Freymaurer)
 
 ### 🐛 Fixed
 
