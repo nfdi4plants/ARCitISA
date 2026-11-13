@@ -283,7 +283,7 @@ swt:p-0"""
                         style.minWidth 0
                     ]
                     prop.className
-                        "swt:overflow-auto swt:grow swt:h-full swt:w-full swt:border swt:border-primary swt:rounded-sm swt:bg-base-100"
+                        "swt:isolate swt:overflow-auto swt:grow swt:h-full swt:w-full swt:border swt:border-primary swt:rounded-sm swt:bg-base-100"
                     if debug then
                         prop.testId "virtualized-table"
                     prop.children [
