@@ -22,6 +22,7 @@
     <Compile Include="FileWatcherNotice.test.rtl.fs" />
     <Compile Include="ArcSyncState.test.fs" />
     <Compile Include="ArcSyncNotice.test.rtl.fs" />
+    <Compile Include="SaveArcButtonStatus.test.fs" />
     <Compile Include="FileTreeDeleteWorkflow.test.fs" />
     <Compile Include="FileTreeCreateWorkflow.test.fs" />
     <Compile Include="FileTreeRenameWorkflow.test.fs" />

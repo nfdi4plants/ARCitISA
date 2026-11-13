@@ -5,96 +5,174 @@ open Fable.Core.JsInterop
 open Feliz
 open Renderer.Components.MainContent.ArcSyncNotice
 open Renderer.Context.ArcSyncContext
+open Swate.Components.Composite.Layout
+open Swate.Components.Primitive.Banner.Types
 open Vitest
 
 Vitest.afterEach (fun () -> RTL.cleanup ())
 
-Vitest.test (
-    "the notice shows the running text while a sync runs",
-    fun () ->
-        RTL.render (ArcSyncNotice(true, None, [||], ignore)) |> ignore
+[<ReactComponent>]
+let private SyncLayout (includeDependency: bool) =
+    let syncBanners = useBannerEntries ()
 
-        let notice = RTL.screen.getByTestId "arc-sync-running"
-        Vitest.expect(notice.textContent.Contains "External changes detected, waiting").toBe true
-)
+    let dependencyBanners =
+        if includeDependency then
+            [|
+                BannerEntry.create ("dependency-banner", "Dependency warning", variant = BannerVariant.Warning)
+            |]
+        else
+            [||]
 
-Vitest.test (
-    "the notice shows the failure message",
-    fun () ->
-        RTL.render (ArcSyncNotice(false, Some "boom", [||], ignore)) |> ignore
-
-        let notice = RTL.screen.getByTestId "arc-sync-failed"
-        Vitest.expect(notice.textContent.Contains "memory is behind the files on disk").toBe true
-        Vitest.expect(notice.textContent.Contains "boom").toBe true
-)
-
-Vitest.test (
-    "the notice lists replaced files and dismisses",
-    fun () -> promise {
-        let dismissed = ref 0
-
-        RTL.render (
-            ArcSyncNotice(
-                false,
-                None,
-                [| "assays/A/isa.assay.xlsx" |],
-                (fun () -> dismissed.Value <- dismissed.Value + 1)
-            )
-        )
-        |> ignore
-
-        let notice = RTL.screen.getByTestId "arc-sync-replaced"
-        Vitest.expect(notice.textContent.Contains "assays/A/isa.assay.xlsx").toBe true
-
-        do! RTL.act (fun () -> promise { (RTL.screen.getByLabelText "Dismiss").click () })
-
-        Vitest.expect(dismissed.Value).toBe 1
-    }
-)
-
-Vitest.test (
-    "the notice shows nothing without a sync state",
-    fun () ->
-        RTL.render (ArcSyncNotice(false, None, [||], ignore)) |> ignore
-
-        Vitest.expect((RTL.screen.queryByTestId "arc-sync-running").IsNone).toBe true
-        Vitest.expect((RTL.screen.queryByTestId "arc-sync-failed").IsNone).toBe true
-        Vitest.expect((RTL.screen.queryByTestId "arc-sync-replaced").IsNone).toBe true
-)
+    Layout.Main(
+        children = ArcSyncArea(Html.div [ prop.testId "page-child" ]),
+        navbar = Html.div [ prop.testId "navbar-child" ],
+        banners = Array.append dependencyBanners syncBanners
+    )
 
 [<ReactComponent>]
-let private AreaHarness (expose: (ArcSyncState -> unit) -> unit) =
-    let state, setState =
-        React.useState {
-            ArcSyncState.init () with
-                IsSyncing = true
-        }
-
+let private LayoutHarness
+    (initialState: ArcSyncState, expose: (ArcSyncState -> unit) -> unit, includeDependency: bool)
+    =
+    let state, setState = React.useState initialState
     expose setState
 
     ArcSyncCtx.Provider(
         {
             state = state
             subscribeSyncFinished = fun _ -> ignore
-            dismissReplaced = ignore
+            dismissReplaced = fun () -> setState { state with ReplacedUnsaved = [||] }
         },
-        ArcSyncArea(Html.div [ prop.testId "page-child" ])
+        SyncLayout includeDependency
     )
 
+let private renderNotices state =
+    RTL.render (LayoutHarness(state, ignore, false)) |> ignore
+
+let private statusText () =
+    (RTL.screen.getByTestId "arc-sync-status").textContent
+
 Vitest.test (
-    "input is blocked during a sync and the page stays mounted",
+    "a running load adds no banner, blocks the page with the wait cursor and tells screen readers that it waits",
+    fun () ->
+        renderNotices {
+            ArcSyncState.init () with
+                IsSyncing = true
+        }
+
+        let area = RTL.screen.getByTestId "arc-sync-area"
+        let page = RTL.screen.getByTestId "page-child"
+        let status = RTL.screen.getByTestId "arc-sync-status"
+
+        Vitest.expect((RTL.screen.queryByTestId "layout-main-banners").IsNone).toBe true
+        Vitest.expect(page.parentElement.hasAttribute "inert").toBe true
+        Vitest.expect(area.classList.contains "swt:cursor-wait").toBe true
+        Vitest.expect(status.getAttribute "role").toBe "status"
+        Vitest.expect(area.contains status).toBe true
+        Vitest.expect(page.parentElement.contains status).toBe false
+        Vitest.expect(status.textContent).toBe "Loading external changes…"
+)
+
+Vitest.test (
+    "the replaced-edit banner stays while a load runs",
+    fun () ->
+        renderNotices {
+            ArcSyncState.init () with
+                IsSyncing = true
+                ReplacedUnsaved = [| "assays/A/isa.assay.xlsx" |]
+        }
+
+        let notice = RTL.screen.getByTestId "arc-sync-replaced"
+        Vitest.expect(notice.textContent.Contains "assays/A/isa.assay.xlsx").toBe true
+        Vitest.expect((RTL.screen.queryByLabelText "Close").IsSome).toBe true
+)
+
+Vitest.test (
+    "the failure banner shows the error and cannot be closed",
+    fun () ->
+        renderNotices {
+            ArcSyncState.init () with
+                FailedMessage = Some "boom"
+        }
+
+        let notice = RTL.screen.getByTestId "arc-sync-failed"
+        Vitest.expect(notice.textContent.Contains "memory is behind the files on disk").toBe true
+        Vitest.expect(notice.textContent.Contains "boom").toBe true
+        Vitest.expect((RTL.screen.queryByLabelText "Close").IsNone).toBe true
+)
+
+Vitest.test (
+    "closing the replaced-edit banner leaves the failure and dependency banners visible",
+    fun () -> promise {
+        RTL.render (
+            LayoutHarness(
+                {
+                    IsSyncing = false
+                    FailedMessage = Some "boom"
+                    ReplacedUnsaved = [| "assays/A/isa.assay.xlsx"; "studies/B/isa.study.xlsx" |]
+                },
+                ignore,
+                true
+            )
+        )
+        |> ignore
+
+        let notice = RTL.screen.getByTestId "arc-sync-replaced"
+        Vitest.expect(notice.textContent.Contains "assays/A/isa.assay.xlsx").toBe true
+        Vitest.expect(notice.textContent.Contains "studies/B/isa.study.xlsx").toBe true
+        Vitest.expect(RTL.screen.queryAllByRole("alert").Count).toBe 3
+
+        do! RTL.act (fun () -> promise { (RTL.screen.getByLabelText "Close").click () })
+
+        Vitest.expect((RTL.screen.queryByTestId "arc-sync-replaced").IsNone).toBe true
+        Vitest.expect((RTL.screen.queryByTestId "arc-sync-failed").IsSome).toBe true
+        Vitest.expect((RTL.screen.queryByTestId "dependency-banner").IsSome).toBe true
+        Vitest.expect(RTL.screen.queryAllByRole("alert").Count).toBe 2
+    }
+)
+
+Vitest.test (
+    "the layout has no banners, no wait cursor and no status without a sync state",
+    fun () ->
+        renderNotices (ArcSyncState.init ())
+
+        Vitest.expect((RTL.screen.queryByTestId "arc-sync-failed").IsNone).toBe true
+        Vitest.expect((RTL.screen.queryByTestId "arc-sync-replaced").IsNone).toBe true
+        Vitest.expect((RTL.screen.queryByTestId "layout-main-banners").IsNone).toBe true
+        Vitest.expect((RTL.screen.getByTestId "arc-sync-area").classList.contains "swt:cursor-wait").toBe false
+        Vitest.expect(statusText ()).toBe ""
+)
+
+Vitest.test (
+    "input is blocked only during a sync and layout updates keep the page and navbar mounted",
     fun () -> promise {
         let setState = ref (fun (_: ArcSyncState) -> ())
-        RTL.render (AreaHarness(fun setter -> setState.Value <- setter)) |> ignore
+
+        RTL.render (LayoutHarness(ArcSyncState.init (), (fun setter -> setState.Value <- setter), false))
+        |> ignore
 
         let before = RTL.screen.getByTestId "page-child"
+        let navbarBefore = RTL.screen.getByTestId "navbar-child"
+        Vitest.expect(before.parentElement.hasAttribute "inert").toBe false
+
+        do! RTL.act (fun () -> promise { setState.Value(ArcSyncState.started (ArcSyncState.init ())) })
+
         Vitest.expect(before.parentElement.hasAttribute "inert").toBe true
+        Vitest.expect(statusText ()).toBe "Loading external changes…"
+
+        do! RTL.act (fun () -> promise { setState.Value(ArcSyncState.failed "boom" (ArcSyncState.init ())) })
+
+        Vitest.expect(before.parentElement.hasAttribute "inert").toBe false
+        Vitest.expect(statusText ()).toBe ""
+        Vitest.expect((RTL.screen.queryByTestId "arc-sync-failed").IsSome).toBe true
 
         do! RTL.act (fun () -> promise { setState.Value(ArcSyncState.init ()) })
 
         let after = RTL.screen.getByTestId "page-child"
+        let navbarAfter = RTL.screen.getByTestId "navbar-child"
         Vitest.expect(after.parentElement.hasAttribute "inert").toBe false
         Vitest.expect(obj.ReferenceEquals(before, after)).toBe true
+        Vitest.expect(obj.ReferenceEquals(navbarBefore, navbarAfter)).toBe true
+        Vitest.expect((RTL.screen.queryByTestId "layout-main-banners").IsNone).toBe true
     }
 )
 
