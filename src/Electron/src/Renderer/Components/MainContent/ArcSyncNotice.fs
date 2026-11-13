@@ -1,99 +1,67 @@
 module Renderer.Components.MainContent.ArcSyncNotice
 
 open Feliz
+open Renderer.Context.ArcSyncContext
+open Swate.Components.Primitive.Banner.Types
 
-/// A short notice above the page while external changes load, after a failed load, and after a load replaced unsaved
-/// edits. While a load runs, only the running notice shows.
-[<ReactComponent>]
-let ArcSyncNotice
-    (isSyncing: bool, failedMessage: string option, replacedUnsaved: string[], dismissReplaced: unit -> unit)
-    =
-    if isSyncing then
-        Html.div [
-            prop.testId "arc-sync-running"
-            prop.role "status"
-            prop.className "swt:alert swt:mx-1 swt:px-2 swt:py-1 swt:text-xs"
-            prop.children [
-                Html.i [
-                    prop.className "swt:iconify swt:fluent--arrow-sync-24-regular swt:size-4 swt:shrink-0"
-                ]
-                Html.span [ prop.text "External changes detected, waiting…" ]
-            ]
-        ]
-    else
-        React.Fragment [
-            match failedMessage with
-            | Some message ->
-                Html.div [
-                    prop.testId "arc-sync-failed"
-                    prop.role "status"
-                    prop.className
-                        "swt:alert swt:alert-warning swt:mx-1 swt:px-2 swt:py-1 swt:text-xs swt:max-h-24 swt:overflow-y-auto swt:shrink-0"
-                    prop.children [
-                        Html.i [
-                            prop.className "swt:iconify swt:fluent--warning-24-regular swt:size-4 swt:shrink-0"
-                        ]
-                        Html.span [
-                            prop.text (
-                                "Could not load external changes, so memory is behind the files on disk. "
-                                + message
-                            )
-                        ]
-                    ]
-                ]
-            | None -> ()
+/// Entries for the window's layout banner slot: a failed load, and the files whose unsaved edits a load replaced.
+/// A running load has no banner, because a banner that comes and goes with every short load makes the window jump.
+/// The wait cursor over the page and the save button show it instead.
+let bannerEntries (state: ArcSyncState) (dismissReplaced: unit -> unit) : BannerEntry[] = [|
+    match state.FailedMessage with
+    | Some message ->
+        BannerEntry.create (
+            "arc-sync-failed",
+            "Could not load external changes, so memory is behind the files on disk. "
+            + message,
+            variant = BannerVariant.Warning
+        )
+    | None -> ()
 
-            if replacedUnsaved.Length > 0 then
-                Html.div [
-                    prop.testId "arc-sync-replaced"
-                    prop.role "status"
-                    prop.className
-                        "swt:alert swt:alert-warning swt:mx-1 swt:px-2 swt:py-1 swt:text-xs swt:max-h-24 swt:overflow-y-auto swt:shrink-0"
-                    prop.children [
-                        Html.i [
-                            prop.className "swt:iconify swt:fluent--warning-24-regular swt:size-4 swt:shrink-0"
-                        ]
-                        Html.span [
-                            prop.text (
-                                "External changes replaced unsaved edits in: "
-                                + String.concat ", " replacedUnsaved
-                            )
-                        ]
-                        Html.button [
-                            prop.className "swt:btn swt:btn-ghost swt:btn-xs swt:btn-square"
-                            prop.ariaLabel "Dismiss"
-                            prop.onClick (fun _ -> dismissReplaced ())
-                            prop.children [
-                                Html.i [
-                                    prop.className "swt:iconify swt:fluent--dismiss-24-regular swt:size-4"
-                                ]
-                            ]
-                        ]
-                    ]
-                ]
-        ]
+    if state.ReplacedUnsaved.Length > 0 then
+        BannerEntry.create (
+            "arc-sync-replaced",
+            "External changes replaced unsaved edits in: "
+            + String.concat ", " state.ReplacedUnsaved,
+            variant = BannerVariant.Warning,
+            onClose = dismissReplaced
+        )
+|]
+
+[<Hook>]
+let useBannerEntries () =
+    let sync = useArcSyncCtx ()
+    bannerEntries sync.state sync.dismissReplaced
 
 /// React 19 passes the boolean inert property to the DOM, which blocks pointer and keyboard input in the subtree.
 let private inertWhile (isInert: bool) : IReactProperty = prop.custom ("inert", isInert)
 
-/// Shows the sync notice above the page and blocks input while a sync runs. The structure is the same in every state,
-/// so a change of the sync state does not unmount the page. Main stays a memo component with props only.
+/// Blocks input to the page while a load runs and shows the wait cursor over it. The structure is the same in every
+/// state, so a change of the sync state does not unmount the page. Nothing on screen announces the load, so a status
+/// that only screen readers see does.
 [<ReactComponent>]
 let ArcSyncArea (children: ReactElement) =
-    let sync = Renderer.Context.ArcSyncContext.useArcSyncCtx ()
+    let sync = useArcSyncCtx ()
+    let isSyncing = sync.state.IsSyncing
 
+    // The pointer passes through inert content, so the cursor sits on the wrapper around it.
     Html.div [
-        prop.className "swt:size-full swt:min-w-0 swt:min-h-0 swt:flex swt:flex-col"
+        prop.testId "arc-sync-area"
+        prop.className [
+            "swt:size-full swt:min-w-0 swt:min-h-0"
+            if isSyncing then
+                "swt:cursor-wait"
+        ]
         prop.children [
-            ArcSyncNotice(
-                sync.state.IsSyncing,
-                sync.state.FailedMessage,
-                sync.state.ReplacedUnsaved,
-                sync.dismissReplaced
-            )
+            Html.span [
+                prop.testId "arc-sync-status"
+                prop.role "status"
+                prop.className "swt:sr-only"
+                prop.text (if isSyncing then "Loading external changes…" else "")
+            ]
             Html.div [
-                prop.className "swt:flex-1 swt:min-w-0 swt:min-h-0"
-                inertWhile sync.state.IsSyncing
+                prop.className "swt:size-full swt:min-w-0 swt:min-h-0"
+                inertWhile isSyncing
                 prop.children [ children ]
             ]
         ]

@@ -180,6 +180,45 @@ module private Authentication =
             onRemoveAccount = onRemoveAccount
         )
 
+/// What the save button of the navbar shows.
+[<RequireQualifiedAccess>]
+type SaveArcButtonStatus =
+    | Ready
+    | NothingToSave
+    | Saving
+    /// External changes load. The main process refuses a save until they have loaded.
+    | LoadingExternalChanges
+
+module SaveArcButtonStatus =
+
+    /// A running save wins over a load, because the user started it and waits for it.
+    let create (isSaving: bool) (isSyncing: bool) (hasUnsavedChanges: bool) : SaveArcButtonStatus =
+        if isSaving then
+            SaveArcButtonStatus.Saving
+        elif isSyncing then
+            SaveArcButtonStatus.LoadingExternalChanges
+        elif hasUnsavedChanges then
+            SaveArcButtonStatus.Ready
+        else
+            SaveArcButtonStatus.NothingToSave
+
+    let canSave (status: SaveArcButtonStatus) = status = SaveArcButtonStatus.Ready
+
+    let isBusy (status: SaveArcButtonStatus) =
+        match status with
+        | SaveArcButtonStatus.Saving
+        | SaveArcButtonStatus.LoadingExternalChanges -> true
+        | SaveArcButtonStatus.Ready
+        | SaveArcButtonStatus.NothingToSave -> false
+
+    /// The tooltip, which also tells screen readers why the button is disabled.
+    let title (status: SaveArcButtonStatus) =
+        match status with
+        | SaveArcButtonStatus.Ready
+        | SaveArcButtonStatus.NothingToSave -> "Save ARC"
+        | SaveArcButtonStatus.Saving -> "Saving ARC…"
+        | SaveArcButtonStatus.LoadingExternalChanges -> "Loading external changes…"
+
 type Navbar =
 
     [<ReactComponent>]
@@ -314,8 +353,13 @@ type Navbar =
                 dependencies = [||]
             }
 
+        let sync = Renderer.Context.ArcSyncContext.useArcSyncCtx ()
+
+        let status =
+            SaveArcButtonStatus.create isSaving sync.state.IsSyncing hasUnsavedChanges.state
+
         let onSaveArc _ =
-            if hasUnsavedChanges.state && not isSaving then
+            if SaveArcButtonStatus.canSave status then
                 setIsSaving true
 
                 promise {
@@ -332,17 +376,32 @@ type Navbar =
                 )
                 |> Promise.start
 
+        // Every state shows a square of the same size, so the navbar does not move when the state changes.
         Html.button [
             prop.type'.button
-            prop.disabled (isSaving || not hasUnsavedChanges.state)
+            prop.disabled (not (SaveArcButtonStatus.canSave status))
             prop.className "swt:btn swt:btn-square swt:btn-info swt:btn-sm"
             prop.onClick onSaveArc
-            prop.title "Save ARC"
+            prop.title (SaveArcButtonStatus.title status)
             prop.ariaLabel "Save ARC"
+            prop.ariaBusy (SaveArcButtonStatus.isBusy status)
             prop.children [
-                Html.i [
-                    prop.className "swt:iconify swt:fluent--save-16-filled swt:size-5"
-                ]
+                match status with
+                | SaveArcButtonStatus.Saving ->
+                    Html.span [
+                        prop.className "swt:loading swt:loading-spinner swt:size-5"
+                        prop.ariaHidden true
+                    ]
+                | SaveArcButtonStatus.LoadingExternalChanges ->
+                    Html.i [
+                        prop.className "swt:iconify swt:arcitisa--arc-sync swt:size-5 swt:animate-pulse"
+                        prop.ariaHidden true
+                    ]
+                | SaveArcButtonStatus.Ready
+                | SaveArcButtonStatus.NothingToSave ->
+                    Html.i [
+                        prop.className "swt:iconify swt:fluent--save-16-filled swt:size-5"
+                    ]
             ]
         ]
 

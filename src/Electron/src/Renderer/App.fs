@@ -132,21 +132,21 @@ let private update (msg: Msg) (model: Model) : Model * Cmd<Msg> =
         Cmd.none
 
 let private subscribe (_model: Model) : Sub<Msg> = [
-    [ "appPathChange" ],
-    fun dispatch ->
-        let dispose =
-            Renderer.IpcReceiver.subscribeProxyReceiver<IPathChangeRendererApi> {
-                pathChange =
-                    fun change ->
-                        ArcRootPathChanged(change |> Option.map _.path, change |> Option.exists _.isRename)
-                        |> dispatch
-            }
+    ([ "appPathChange" ],
+     fun dispatch ->
+         let dispose =
+             Renderer.IpcReceiver.subscribeProxyReceiver<IPathChangeRendererApi> {
+                 pathChange =
+                     fun change ->
+                         ArcRootPathChanged(change |> Option.map _.path, change |> Option.exists _.isRename)
+                         |> dispatch
+             }
 
-        dispatch ArcRootPathSnapshotRequested
+         dispatch ArcRootPathSnapshotRequested
 
-        { new System.IDisposable with
-            member _.Dispose() = dispose ()
-        }
+         { new System.IDisposable with
+             member _.Dispose() = dispose ()
+         })
 ]
 
 [<ReactComponent>]
@@ -265,7 +265,8 @@ let private LeftActionButtons (leftSidebarTarget: LeftSidebarPage) setLeftSideba
 [<ReactComponent>]
 let private WindowLayout (children: ReactElement) (leftSidebar: ReactElement option) (leftActions: ReactElement) =
     let dependencyBanner = VersionControlDependencyBanner.useBannerEntry ()
-    let banners = Array.choose id [| dependencyBanner |]
+    let syncBanners = MainContent.ArcSyncNotice.useBannerEntries ()
+    let banners = Array.append (Array.choose id [| dependencyBanner |]) syncBanners
 
     Layout.Main(
         children = children,
