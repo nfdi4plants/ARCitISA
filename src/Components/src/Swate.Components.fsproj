@@ -197,6 +197,7 @@
     <Compile Include="Composite\Table\Constants.fs" />
     <Compile Include="Composite\Table\Context.fs" />
     <Compile Include="Composite\Table\KeyboardNavigation.fs" />
+    <Compile Include="Composite\Table\KeyboardNavigation.test.fs" />
     <Compile Include="Composite\Table\Helper.fs" />
     <Compile Include="Composite\Table\TableCell.fs" />
     <Compile Include="Composite\Table\Table.fs" />
@@ -442,6 +443,8 @@
     <Compile Include="Page\ValidationPackageBrowser\ValidationPackageBrowser.sample.fs" />
     <Compile Include="Page\ArcFileEditor\Types.fs" />
     <Compile Include="Page\ArcFileEditor\Helper.fs" />
+    <Compile Include="Page\ArcFileEditor\SearchField.test.fs" />
+    <Compile Include="Page\ArcFileEditor\SearchField.fs" />
     <Compile Include="Page\ArcFileEditor\EmptyTableView\Types.fs" />
     <Compile Include="Page\ArcFileEditor\EmptyTableView\Helper.fs" />
     <Compile Include="Page\ArcFileEditor\EmptyTableView\Main.fs" />
@@ -449,6 +452,7 @@
     <Compile Include="Page\ArcFileEditor\ArcFileFooterTabs.fs" />
     <Compile Include="Page\ArcFileEditor\ArcFileEditor.fs" />
     <Compile Include="Page\ArcFileEditor\ArcFileEditor.test.rtl.fs" />
+    <Compile Include="Page\ArcFileEditor\SearchField.test.rtl.fs" />
     <Compile Include="Page\ArcFileEditor\EmptyTableView\Main.sample.fs" />
     <Compile Include="Page\ArcFileEditor\EmptyTableView\Main.test.rtl.fs" />
 

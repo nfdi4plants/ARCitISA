@@ -126,3 +126,42 @@ Vitest.test (
         Vitest.expect(isNull (input ())).toBe true
     }
 )
+
+Vitest.test (
+    "Enter commits the last row and keeps the selection within the table",
+    fun () -> promise {
+        let changes = ResizeArray<CompositeCell>()
+        renderTable (CompositeCell.FreeText "Existing value") changes.Add
+        let user = userEvent.setup ()
+        do! RTL.waitFor (fun () -> Vitest.expect(isNull (cellElement 2)).toBe false)
+        do! user.dblClick (cellElement 2)
+        do! user.keyboard "Updated{Enter}"
+        Vitest.expect(changes.Count).toBe 1
+        let selected = document.querySelector "[data-selected='true']"
+        Vitest.expect(isNull selected).toBe false
+        Vitest.expect(selected.getAttribute "data-row").toBe "2"
+        do! user.keyboard "Replacement"
+        Vitest.expect((input ()).value).toBe "Replacement"
+    }
+)
+
+Vitest.test (
+    "leaving an inline editor commits its value and preserves focus on an external control",
+    fun () -> promise {
+        let changes = ResizeArray<CompositeCell>()
+        renderTable (CompositeCell.FreeText "Existing value") changes.Add
+        RTL.render (Html.button [ prop.text "Outside the table" ]) |> ignore
+        let user = userEvent.setup ()
+        do! RTL.waitFor (fun () -> Vitest.expect(isNull (cellElement 1)).toBe false)
+        do! user.dblClick (cellElement 1)
+        do! user.keyboard "Updated"
+
+        let outside =
+            RTL.screen.getByRole ("button", ByRoleOptions(name = Text "Outside the table"))
+
+        do! user.click outside
+        Vitest.expect(document.activeElement).toBe outside
+        Vitest.expect(changes.Count).toBe 1
+        Vitest.expect(changes.[0].AsFreeText).toBe "Updated"
+    }
+)

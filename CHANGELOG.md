@@ -29,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - If Git or Git LFS can't be used, for example because it is missing or too old, a warning below the navigation bar of every window says why. It stays until the problem is fixed and lets you open the settings or check again. (by @caroott)
 - The Git defaults in the settings show which Git program ARCitISA uses and its version. You can pick a different Git program there, or go back to the one ARCitISA finds by itself. (by @caroott)
 - Added "Duplicate Row/Column" to the annotation table context menu and "Duplicate Row" to the datamap context menu. #945 (by @Freymaurer)
+- Added search function for in-table-search. #417 (by @Freymaurer)
 
 ### 🔄 Changed
 

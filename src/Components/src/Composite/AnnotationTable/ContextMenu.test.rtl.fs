@@ -9,6 +9,9 @@ open Vitest
 [<Emit("$0.spyOn(HTMLElement.prototype, $1, 'get').mockReturnValue($2)")>]
 let private mockGeometry (vi: Vi) (property: string) (value: int) : unit = jsNative
 
+[<Emit("new KeyboardEvent('keydown', {key: $0, code: $1, ctrlKey: $2, metaKey: $3, bubbles: true, cancelable: true})")>]
+let private shortcutEvent (key: string) (code: string) (ctrl: bool) (meta: bool) : KeyboardEvent = jsNative
+
 let private renderTable () =
     mockGeometry Vitest.vi "offsetWidth" 800
     mockGeometry Vitest.vi "offsetHeight" 600
@@ -127,5 +130,70 @@ Vitest.test (
         openMenu 1 0
         let! _ = RTL.screen.findByRole "menu"
         Vitest.expect(RTL.screen.queryByRole("button", ByRoleOptions(name = Text "Duplicate Column")).IsNone).toBe true
+    }
+)
+
+for includeBody in [ false; true ] do
+    Vitest.test (
+        $"Delete preserves headers and clears only selected body cells (includeBody={includeBody})",
+        fun () -> promise {
+            let table, updated = renderTable ()
+            let header = table.Headers.[0].Copy()
+            do! RTL.waitFor (fun () -> Vitest.expect(isNull (cell 1 0)).toBe false)
+            RTL.fireEvent.click (cell 1 0)
+
+            if includeBody then
+                RTL.fireEvent.custom ("click", cell 1 2, {| shiftKey = true |})
+
+            let event = shortcutEvent "Delete" "Delete" false false
+            (cell 1 0).dispatchEvent event |> ignore
+            Vitest.expect(event.defaultPrevented).toBe true
+            Vitest.expect(updated.Value.IsSome).toBe true
+            Vitest.expect(updated.Value.Value.Headers.[0]).toEqual header
+            Vitest.expect(updated.Value.Value.GetCellAt(0, 0).AsFreeText).toBe (if includeBody then "" else "A")
+            Vitest.expect(updated.Value.Value.GetCellAt(0, 1).AsFreeText).toBe (if includeBody then "" else "B")
+        }
+    )
+
+for ctrl, meta in [ true, false; false, true ] do
+    Vitest.test (
+        $"Cut leaves header selections unchanged (ctrl={ctrl}, meta={meta})",
+        fun () -> promise {
+            let table, updated = renderTable ()
+            do! RTL.waitFor (fun () -> Vitest.expect(isNull (cell 1 0)).toBe false)
+            RTL.fireEvent.click (cell 1 0)
+            (cell 1 0).dispatchEvent (shortcutEvent "x" "KeyX" ctrl meta) |> ignore
+            Vitest.expect(updated.Value.IsNone).toBe true
+            Vitest.expect(table.GetCellAt(0, 0).AsFreeText).toBe "A"
+        }
+    )
+
+Vitest.test (
+    "context menu shows implemented shortcut chords and omits unsupported mnemonics",
+    fun () -> promise {
+        renderTable () |> ignore
+        do! RTL.waitFor (fun () -> Vitest.expect(isNull (cell 1 1)).toBe false)
+        openMenu 1 1
+        let! _ = RTL.screen.findByRole "menu"
+
+        let menuButton label =
+            RTL.screen.getByRole (
+                "button",
+                ByRoleOptions(name = TextMatch.Regex(System.Text.RegularExpressions.Regex $"^{label}"))
+            )
+
+        Vitest.expect((menuButton "Details").querySelector("kbd").textContent).toBe "F2"
+        let copyHint = (menuButton "Copy").querySelector("kbd").textContent
+        Vitest.expect(copyHint = "Ctrl+C" || copyHint = "⌘+C").toBe true
+
+        for label in
+            [
+                "Edit"
+                "Fill Column"
+                "Delete Row"
+                "Delete Column"
+                "Move Column"
+            ] do
+            Vitest.expect(isNull ((menuButton label).querySelector "kbd")).toBe true
     }
 )

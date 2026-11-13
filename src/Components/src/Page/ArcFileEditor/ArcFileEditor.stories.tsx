@@ -71,6 +71,43 @@ export const NavbarWidgetToggle: Story = {
   },
 };
 
+export const NavbarSearch: Story = {
+  parameters: { isolated: true },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const search = canvas.getByRole('searchbox', { name: 'Search cells' });
+    const status = () => canvas.getByRole('status', { name: 'Search results' });
+
+    for (const row of [1, 2]) {
+      const cell = await waitFor(() => {
+        const element = canvasElement.querySelector(`[data-row="${row}"][data-column="1"] > div`);
+        expect(element).toBeInTheDocument();
+        return element as HTMLElement;
+      });
+      await userEvent.dblClick(cell);
+      await userEvent.type(canvas.getByRole('textbox'), `Source ${row}`);
+      if (row === 1) await userEvent.keyboard('{Enter}');
+    }
+    const modifier = /Mac|iPhone|iPad|iPod/.test(navigator.platform) ? 'Meta' : 'Control';
+    await userEvent.keyboard(`{${modifier}>}f{/${modifier}}`);
+    expect(search).toHaveFocus();
+    await userEvent.keyboard('Source');
+    expect(search).toHaveValue('Source');
+    expect(status()).toHaveTextContent('0 / 2');
+    await userEvent.keyboard('{Enter}');
+    expect(status()).toHaveTextContent('1 / 2');
+    await waitFor(() => {
+      expect(canvasElement.querySelector('[data-selected="true"]')).toHaveAttribute('data-row', '1');
+    });
+    await userEvent.keyboard('{Enter}');
+    expect(status()).toHaveTextContent('2 / 2');
+    expect(canvasElement.querySelector('[data-selected="true"]')).toHaveAttribute('data-row', '2');
+    expect(search).toHaveFocus();
+    await userEvent.keyboard('{Escape}');
+    expect(search).toHaveValue('');
+  },
+};
+
 export const DeleteThenAddTable: Story = {
   parameters: { isolated: true },
   play: async ({ canvasElement }) => {

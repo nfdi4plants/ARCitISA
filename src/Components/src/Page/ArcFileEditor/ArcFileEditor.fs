@@ -16,12 +16,13 @@ open Swate.Components.Page.ArcFileEditor.Types
 open Swate.Components.Composite.AnnotationTable
 open Swate.Components.Composite.Widgets.DataAnnotator.Types
 open Swate.Components.Page.ArcFileEditor.EmptyTableView.Types
+open Swate.Components.Composite.Table.Types
 
 type private LazyComponents =
 
     [<ReactLazyComponent>]
-    static member LazyDataMap(datamap: Datamap, setDatamap: Datamap -> unit) =
-        DataMapTable.DataMapTable(datamap = datamap, setDatamap = setDatamap)
+    static member LazyDataMap(datamap: Datamap, setDatamap: Datamap -> unit, tableRef: IRefValue<TableHandle>) =
+        DataMapTable.DataMapTable(datamap = datamap, setDatamap = setDatamap, tableRef = tableRef)
 
     [<ReactLazyComponent>]
     static member LazyBuildingBlockWidget
@@ -154,7 +155,8 @@ type Main =
             arcFileState: ArcFiles,
             setArcFileState: ArcFiles -> unit,
             onImportPersons: (unit -> JS.Promise<Person[]>) option,
-            fetchArcNodes: (unit -> JS.Promise<ArcNodeTable[]>) option
+            fetchArcNodes: (unit -> JS.Promise<ArcNodeTable[]>) option,
+            tableRef: IRefValue<TableHandle>
         ) =
         match activeView with
         | ActiveView.Metadata ->
@@ -185,7 +187,7 @@ type Main =
                         Some index,
                         ?fetchArcNodes = fetchArcNodes
                     )
-                | _ -> AnnotationTable.AnnotationTable(table, setTable)
+                | _ -> AnnotationTable.AnnotationTable(table, setTable, tableRef = tableRef)
             | None ->
                 Html.div [
                     prop.className "swt:p-4 swt:text-error"
@@ -199,7 +201,7 @@ type Main =
                     setArcFileState (ArcFiles.refreshRef arcFileState)
 
                 Main.LazyLoaderWithMessage(
-                    LazyComponents.LazyDataMap(assay.Datamap.Value, setDatamap),
+                    LazyComponents.LazyDataMap(assay.Datamap.Value, setDatamap, tableRef),
                     "Loading DataMap..."
                 )
             | ArcFiles.Study(study, assays) when study.Datamap.IsSome ->
@@ -208,7 +210,7 @@ type Main =
                     setArcFileState (ArcFiles.refreshRef (ArcFiles.Study(study, assays)))
 
                 Main.LazyLoaderWithMessage(
-                    LazyComponents.LazyDataMap(study.Datamap.Value, setDatamap),
+                    LazyComponents.LazyDataMap(study.Datamap.Value, setDatamap, tableRef),
                     "Loading DataMap..."
                 )
             | ArcFiles.Run run when run.Datamap.IsSome ->
@@ -217,7 +219,7 @@ type Main =
                     setArcFileState (ArcFiles.refreshRef arcFileState)
 
                 Main.LazyLoaderWithMessage(
-                    LazyComponents.LazyDataMap(run.Datamap.Value, setDatamap),
+                    LazyComponents.LazyDataMap(run.Datamap.Value, setDatamap, tableRef),
                     "Loading DataMap..."
                 )
             | ArcFiles.Workflow workflow when workflow.Datamap.IsSome ->
@@ -226,14 +228,17 @@ type Main =
                     setArcFileState (ArcFiles.refreshRef arcFileState)
 
                 Main.LazyLoaderWithMessage(
-                    LazyComponents.LazyDataMap(workflow.Datamap.Value, setDatamap),
+                    LazyComponents.LazyDataMap(workflow.Datamap.Value, setDatamap, tableRef),
                     "Loading DataMap..."
                 )
             | ArcFiles.DataMap(parent, datamap) ->
                 let setDatamap (nextDatamap: Datamap) =
                     setArcFileState (ArcFiles.DataMap(parent, nextDatamap))
 
-                Main.LazyLoaderWithMessage(LazyComponents.LazyDataMap(datamap, setDatamap), "Loading DataMap...")
+                Main.LazyLoaderWithMessage(
+                    LazyComponents.LazyDataMap(datamap, setDatamap, tableRef),
+                    "Loading DataMap..."
+                )
             | _ ->
                 Html.div [
                     prop.className "swt:p-4 swt:text-error"
@@ -362,6 +367,7 @@ type Main =
         }
 
         let activeTableIndex = activeView.TryTableIndex
+        let tableRef = React.useRef<TableHandle> (null)
 
         let canAddDataMap =
             onAddDataMap.IsSome
@@ -375,7 +381,11 @@ type Main =
 
         let navbar =
             Navbar.Main(
-                left = Swate.Components.Page.ArcFileEditor.Widgets.Main.WidgetToggleBtns(),
+                left =
+                    React.Fragment [
+                        SearchField.SearchField(arcFile, activeView, tableRef)
+                        Swate.Components.Page.ArcFileEditor.Widgets.Main.WidgetToggleBtns()
+                    ],
                 right = trailingNavbarElement,
                 className = "swt:border swt:border-base-300"
             )
@@ -444,7 +454,14 @@ type Main =
                     Html.div [
                         prop.className "swt:grow swt:flex swt:flex-col swt:overflow-hidden"
                         prop.children [
-                            Main.ArcFileContentView(activeView, arcFile, setArcFile, onImportPersons, fetchArcNodes)
+                            Main.ArcFileContentView(
+                                activeView,
+                                arcFile,
+                                setArcFile,
+                                onImportPersons,
+                                fetchArcNodes,
+                                tableRef
+                            )
                         ]
                     ]
                     Main.AddRowsFooter(activeView, arcFile, setArcFile)
