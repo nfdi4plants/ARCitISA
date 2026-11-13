@@ -26,6 +26,7 @@
     <Compile Include="FileTreeDeleteWorkflow.test.fs" />
     <Compile Include="FileTreeCreateWorkflow.test.fs" />
     <Compile Include="FileTreeRenameWorkflow.test.fs" />
+    <Compile Include="FileTreeRenameModal.test.rtl.fs" />
     <Compile Include="FileTreeFreeLfsModal.test.rtl.fs" />
     <Compile Include="GitLfsHelper.test.fs" />
     <Compile Include="GitSidebarPanel.test.fs" />

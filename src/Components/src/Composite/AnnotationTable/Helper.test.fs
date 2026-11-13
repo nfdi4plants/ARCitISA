@@ -31,6 +31,40 @@ let private columnValues (table: ArcTable) column = [|
 |]
 
 Vitest.test (
+    "column reorder preserves the table name, headers, units, and values without changing the original",
+    fun () ->
+        let table = createTable ()
+        let order = [| 2; 0; 1 |]
+        let result = reorderColumns table order
+        Vitest.expect(result.Name).toBe table.Name
+        Vitest.expect(result.RowCount).toBe table.RowCount
+        Vitest.expect(result.ColumnCount).toBe table.ColumnCount
+
+        for index in 0 .. order.Length - 1 do
+            Vitest.expect(result.GetColumn(index)).toEqual (table.GetColumn(order.[index]))
+
+        result.SetCellAt(0, 0, CompositeCell.FreeText "changed")
+        Vitest.expect(table.GetCellAt(2, 0).AsFreeText).toBe "note-1"
+        result.Headers.[2].TryGetTerm().Value.Name <- Some "Changed header"
+        Vitest.expect(table.Headers.[1].TryGetTerm().Value.NameText).toBe "Temperature"
+)
+
+Vitest.test (
+    "column reorder handles empty columns and rejects missing or duplicated indices",
+    fun () ->
+        let table = ArcTable.init "Empty columns"
+        table.AddColumn(CompositeHeader.FreeText "First")
+        table.AddColumn(CompositeHeader.FreeText "Second")
+        let result = reorderColumns table [| 1; 0 |]
+        Vitest.expect(result.RowCount).toBe 0
+        Vitest.expect(result.GetColumn(0)).toEqual (table.GetColumn(1))
+
+        for order in [ [| 0 |]; [| 0; 0 |]; [| -1; 1 |]; [| 0; 2 |] ] do
+            Vitest.expect(fun () -> reorderColumns table order |> ignore).toThrowError
+                "Column order must contain every column index exactly once."
+)
+
+Vitest.test (
     "duplicates each selected row once immediately below its source without changing the original",
     fun () ->
         let table = createTable ()

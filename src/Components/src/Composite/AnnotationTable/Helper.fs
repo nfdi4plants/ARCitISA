@@ -5,6 +5,24 @@ open Swate.Components
 
 module TableHelper = Swate.Components.Composite.Table.Helper
 
+/// Reorders a copy, retaining the table's name, headers, and complete cell values.
+let reorderColumns (table: ArcTable) (columnOrder: int[]) =
+    if Array.sort columnOrder <> [| 0 .. table.ColumnCount - 1 |] then
+        invalidArg (nameof columnOrder) "Column order must contain every column index exactly once."
+
+    let nextTable = table.Copy()
+    let currentOrder = ResizeArray [ 0 .. table.ColumnCount - 1 ]
+
+    for targetIndex in 0 .. columnOrder.Length - 1 do
+        let sourceIndex = currentOrder.IndexOf columnOrder.[targetIndex]
+
+        if sourceIndex <> targetIndex then
+            nextTable.MoveColumn(sourceIndex, targetIndex)
+            currentOrder.RemoveAt sourceIndex
+            currentOrder.Insert(targetIndex, columnOrder.[targetIndex])
+
+    nextTable
+
 let duplicateRows (table: ArcTable) (coordinates: seq<CellCoordinate>) =
     let nextTable = table.Copy()
 

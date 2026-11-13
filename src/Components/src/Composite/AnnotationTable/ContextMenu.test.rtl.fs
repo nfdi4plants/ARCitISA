@@ -82,6 +82,29 @@ Vitest.test (
 
 for row in [ 0; 1 ] do
     Vitest.test (
+        $"Move Column opens the sortable dialog from table row {row} and applies the chosen order",
+        fun () -> promise {
+            let table, updated = renderTable ()
+            do! RTL.waitFor (fun () -> Vitest.expect(isNull (cell 2 row)).toBe false)
+            openMenu 2 row
+
+            let! move =
+                RTL.screen.findByRole (
+                    "button",
+                    ByRoleOptions(name = TextMatch.Regex(System.Text.RegularExpressions.Regex "^Move Column"))
+                )
+
+            RTL.fireEvent.click move
+            let! moveUp = RTL.screen.findByRole ("button", ByRoleOptions(name = Text "Move Parameter [Temperature] up"))
+            RTL.fireEvent.click moveUp
+            Vitest.expect(updated.Value).toEqual None
+            RTL.fireEvent.click (RTL.screen.getByRole ("button", ByRoleOptions(name = Text "Submit")))
+            Vitest.expect(updated.Value.Value.GetColumn(0)).toEqual (table.GetColumn(1))
+            Vitest.expect(updated.Value.Value.GetColumn(1)).toEqual (table.GetColumn(0))
+        }
+    )
+
+    Vitest.test (
         $"Duplicate Column copies the entire column from table row {row}",
         fun () -> promise {
             let table, updated = renderTable ()

@@ -208,6 +208,7 @@
     <Compile Include="Composite\AnnotationTable\Helper.test.fs" />
     <Compile Include="Composite\AnnotationTable\ContextMenu.fs" />
     <Compile Include="Composite\AnnotationTable\Modals.fs" />
+    <Compile Include="Composite\AnnotationTable\Modals.test.rtl.fs" />
     <Compile Include="Composite\AnnotationTable\AnnotationTable.fs" />
     <Compile Include="Composite\AnnotationTable\ContextMenu.test.rtl.fs" />
     <Compile Include="Composite\TermSearch\TermSearch.test.rtl.fs" />

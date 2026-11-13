@@ -650,6 +650,26 @@ Vitest.describe (
         )
 
         Vitest.test (
+            "renameArcEntityAsync rejects invalid identifiers before disk access",
+            fun () -> promise {
+                let arc = ARC("test-arc")
+                arc.AddAssay(ArcAssay("OldAssay"))
+
+                match!
+                    ArcRenameHelper.renameArcEntityAsync
+                        "unused-arc-path"
+                        (renameRequest "assays/OldAssay" "invalid.identifier")
+                        (fun () -> Some arc)
+                with
+                | Ok _ -> failwith "Expected the invalid identifier to be rejected."
+                | Error error ->
+                    Vitest.expect(error.Message).toBe Swate.Electron.Shared.RenamePathRules.arcIdentifierError
+
+                Vitest.expect(arc.Assays.[0].Identifier).toBe "OldAssay"
+            }
+        )
+
+        Vitest.test (
             "renameArcEntityAsync rejects non-entity rename paths without disk access",
             fun () -> promise {
                 let arc = ARC("test-arc")
