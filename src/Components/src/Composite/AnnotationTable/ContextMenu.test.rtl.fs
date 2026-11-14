@@ -5,16 +5,26 @@ open Browser.Dom
 open Browser.Types
 open Fable.Core
 open Vitest
+open Swate.Components
+open Swate.Components.Composite.Table.Types
 
-[<Emit("$0.spyOn(HTMLElement.prototype, $1, 'get').mockReturnValue($2)")>]
+[<Emit("$0.spyOn(HTMLElement.prototype, $1, 'get').mockImplementation(function () { return $1 === 'offsetWidth' && this.hasAttribute('data-column') ? 120 : $2; })")>]
 let private mockGeometry (vi: Vi) (property: string) (value: int) : unit = jsNative
 
 [<Emit("new KeyboardEvent('keydown', {key: $0, code: $1, ctrlKey: $2, metaKey: $3, bubbles: true, cancelable: true})")>]
 let private shortcutEvent (key: string) (code: string) (ctrl: bool) (meta: bool) : KeyboardEvent = jsNative
 
-let private renderTable () =
+let private renderTableValue table =
     mockGeometry Vitest.vi "offsetWidth" 800
     mockGeometry Vitest.vi "offsetHeight" 600
+    let updated = ref None
+
+    RTL.render (AnnotationTable.AnnotationTable(table, (fun next -> updated.Value <- Some next)))
+    |> ignore
+
+    table, updated
+
+let private renderTable () =
     let table = ArcTable.init "Context menu"
 
     table.AddColumn(
@@ -30,12 +40,7 @@ let private renderTable () =
         ]
     )
 
-    let updated = ref None
-
-    RTL.render (AnnotationTable.AnnotationTable(table, (fun next -> updated.Value <- Some next)))
-    |> ignore
-
-    table, updated
+    renderTableValue table
 
 let private cell column row =
     document.querySelector ($"[data-row='{row}'][data-column='{column}'] > div") :?> HTMLElement
@@ -50,6 +55,16 @@ let private openMenu column row =
             bubbles = true
         |}
     )
+
+let private menuButton (label: string) = RTL.screen.findByText label
+
+let private readClipboard text items =
+    { new Clipboard with
+        member _.read() = promise { return items }
+        member _.readText() = promise { return text }
+        member _.write _ = promise { return () }
+        member _.writeText _ = promise { return () }
+    }
 
 Vitest.afterEach (fun () ->
     RTL.cleanup ()
@@ -80,6 +95,286 @@ Vitest.test (
         let! duplicate = RTL.screen.findByRole ("button", ByRoleOptions(name = Text "Duplicate Row"))
         RTL.fireEvent.click duplicate
         Vitest.expect(updated.Value.Value.GetRow(1)).toEqual (table.GetRow(0))
+    }
+)
+
+Vitest.test (
+    "Delete Column on the first header removes the first data column",
+    fun () -> promise {
+        let table, updated = renderTable ()
+        let remainingColumn = table.GetColumn(1)
+        do! RTL.waitFor (fun () -> Vitest.expect(isNull (cell 1 0)).toBe false)
+        openMenu 1 0
+        let! delete = menuButton "Delete Column"
+        RTL.fireEvent.click delete
+        Vitest.expect(updated.Value.Value.ColumnCount).toBe 1
+        Vitest.expect(updated.Value.Value.GetColumn(0)).toEqual remainingColumn
+    }
+)
+
+Vitest.test (
+    "Delete Row on the first row index removes the first data row",
+    fun () -> promise {
+        let table, updated = renderTable ()
+        let remainingRow = table.GetRow(1)
+        do! RTL.waitFor (fun () -> Vitest.expect(isNull (cell 0 1)).toBe false)
+        openMenu 0 1
+        let! delete = menuButton "Delete Row"
+        RTL.fireEvent.click delete
+        Vitest.expect(updated.Value.Value.RowCount).toBe 1
+        Vitest.expect(updated.Value.Value.GetRow(0)).toEqual remainingRow
+    }
+)
+
+Vitest.test (
+    "Paste reads plain clipboard text into the clicked column outside a stale selection",
+    fun () -> promise {
+        let restore = ClipboardTestHelpers.install (readClipboard "hot" [||])
+
+        try
+            let table, updated = renderTable ()
+            do! RTL.waitFor (fun () -> Vitest.expect(isNull (cell 2 1)).toBe false)
+            RTL.fireEvent.click (cell 1 1)
+            openMenu 2 1
+            let! paste = menuButton "Paste"
+            RTL.fireEvent.click paste
+            do! RTL.waitFor (fun () -> Vitest.expect(updated.Value.IsSome).toBe true)
+            Vitest.expect(updated.Value.Value.GetCellAt(1, 0).AsTerm.NameText).toBe "hot"
+            Vitest.expect(updated.Value.Value.GetCellAt(0, 0).AsFreeText).toBe "A"
+            Vitest.expect(table.GetCellAt(1, 0).AsTerm.NameText).toBe "warm"
+        finally
+            restore ()
+    }
+)
+
+Vitest.test (
+    "Paste reads structured clipboard cells with selectors and ontology metadata",
+    fun () -> promise {
+        let source = [|
+            CompositeCell.createDataFromString "file.txt#row=2"
+            CompositeCell.createTermFromString ("instrument", "MS", "MS:1000031")
+            CompositeCell.createUnitizedFromString ("4", "metre", "UO", "UO:0000008")
+        |]
+
+        let item =
+            ClipboardTestHelpers.createItem "file.txt#row=2\tinstrument\t4 metre" [| source |]
+
+        let restore = ClipboardTestHelpers.install (readClipboard "" [| item |])
+
+        try
+            let target = ArcTable.init "Structured paste"
+            target.AddColumn(CompositeHeader.Input IOType.Source, ResizeArray [ CompositeCell.FreeText "keep" ])
+
+            target.AddColumn(
+                CompositeHeader.Output IOType.Data,
+                ResizeArray [ CompositeCell.createDataFromString "old.txt" ]
+            )
+
+            target.AddColumn(
+                CompositeHeader.Characteristic(OntologyAnnotation "Instrument"),
+                ResizeArray [ CompositeCell.Term(OntologyAnnotation "old") ]
+            )
+
+            target.AddColumn(
+                CompositeHeader.Parameter(OntologyAnnotation "Length"),
+                ResizeArray [ CompositeCell.Term(OntologyAnnotation "old") ]
+            )
+
+            let _, updated = renderTableValue target
+            do! RTL.waitFor (fun () -> Vitest.expect(isNull (cell 4 1)).toBe false)
+            RTL.fireEvent.click (cell 1 1)
+            openMenu 2 1
+            let! paste = menuButton "Paste"
+            RTL.fireEvent.click paste
+            do! RTL.waitFor (fun () -> Vitest.expect(updated.Value.IsSome).toBe true)
+            Vitest.expect(updated.Value.Value.GetCellAt(0, 0).AsFreeText).toBe "keep"
+
+            for index in 0..2 do
+                Vitest.expect(updated.Value.Value.GetCellAt(index + 1, 0)).toEqual source.[index]
+
+            Vitest.expect(target.GetCellAt(1, 0).ToString()).toBe "old.txt"
+        finally
+            restore ()
+    }
+)
+
+Vitest.test (
+    "Paste on a header uses plain header content instead of structured body cells",
+    fun () -> promise {
+        let item =
+            ClipboardTestHelpers.createItem "Input [Source Name]" [| [| CompositeCell.FreeText "structured body" |] |]
+
+        let restore = ClipboardTestHelpers.install (readClipboard "" [| item |])
+
+        try
+            let table, updated = renderTable ()
+            do! RTL.waitFor (fun () -> Vitest.expect(isNull (cell 1 0)).toBe false)
+            openMenu 1 0
+            let! paste = menuButton "Paste"
+            RTL.fireEvent.click paste
+            let! _ = RTL.screen.findByRole ("dialog", ByRoleOptions(name = Text "Headers have been detected"))
+            Vitest.expect(updated.Value.IsNone).toBe true
+            Vitest.expect(table.GetCellAt(0, 0).AsFreeText).toBe "A"
+            Vitest.expect(isNull (RTL.screen.getByRole ("button", ByRoleOptions(name = Text "Add columns")))).toBe false
+
+            Vitest
+                .expect(
+                    isNull (RTL.screen.getByRole ("columnheader", ByRoleOptions(name = Text "Input [Source Name]")))
+                )
+                .toBe
+                false
+        finally
+            restore ()
+    }
+)
+
+Vitest.test (
+    "Paste of an all-blank structured body reports an unknown paste case without clearing cells",
+    fun () -> promise {
+        let item = ClipboardTestHelpers.createItem "" [| [| CompositeCell.FreeText "" |] |]
+        let restore = ClipboardTestHelpers.install (readClipboard "" [| item |])
+
+        try
+            let table, updated = renderTable ()
+            do! RTL.waitFor (fun () -> Vitest.expect(isNull (cell 1 1)).toBe false)
+            openMenu 1 1
+            let! paste = menuButton "Paste"
+            RTL.fireEvent.click paste
+            let! dialog = RTL.screen.findByRole ("dialog", ByRoleOptions(name = Text "Something went wrong"))
+            Vitest.expect(dialog.textContent.Contains "We cannot determine the paste case").toBe true
+            Vitest.expect(updated.Value.IsNone).toBe true
+            Vitest.expect(table.GetCellAt(0, 0).AsFreeText).toBe "A"
+        finally
+            restore ()
+    }
+)
+
+Vitest.test (
+    "Copy includes the data selector in its plain text fallback",
+    fun () -> promise {
+        let mutable writtenText = None
+
+        let clipboard =
+            { new Clipboard with
+                member _.read() = promise { return [||] }
+                member _.readText() = promise { return "" }
+                member _.write _ = promise { return raise (System.Exception "Rich clipboard unavailable") }
+                member _.writeText text = promise { writtenText <- Some text }
+            }
+
+        let restore = ClipboardTestHelpers.install clipboard
+
+        try
+            let table = ArcTable.init "Copy selector"
+
+            table.AddColumn(
+                CompositeHeader.Output IOType.Data,
+                ResizeArray [ CompositeCell.createDataFromString "file.txt#row=2" ]
+            )
+
+            renderTableValue table |> ignore
+            do! RTL.waitFor (fun () -> Vitest.expect(isNull (cell 1 1)).toBe false)
+            openMenu 1 1
+            let! copy = menuButton "Copy"
+            RTL.fireEvent.click copy
+            do! RTL.waitFor (fun () -> Vitest.expect(writtenText).toEqual (Some "file.txt#row=2"))
+        finally
+            restore ()
+    }
+)
+
+Vitest.test (
+    "Cut clears source cells only after clipboard writing succeeds",
+    fun () -> promise {
+        let mutable completeWrite: unit -> unit = ignore
+        let pendingWrite = Promise.create (fun resolve _ -> completeWrite <- resolve)
+        let mutable writeStarted = false
+
+        let clipboard =
+            { new Clipboard with
+                member _.read() = promise { return [||] }
+                member _.readText() = promise { return "" }
+
+                member _.write _ =
+                    writeStarted <- true
+                    pendingWrite
+
+                member _.writeText _ =
+                    writeStarted <- true
+                    pendingWrite
+            }
+
+        let restore = ClipboardTestHelpers.install clipboard
+        let restoreItem = ClipboardTestHelpers.installItemConstructor ()
+
+        try
+            let table, updated = renderTable ()
+            do! RTL.waitFor (fun () -> Vitest.expect(isNull (cell 1 1)).toBe false)
+            openMenu 1 1
+            let! cut = menuButton "Cut"
+            RTL.fireEvent.click cut
+            do! RTL.waitFor (fun () -> Vitest.expect(writeStarted).toBe true)
+            Vitest.expect(updated.Value.IsNone).toBe true
+            Vitest.expect(table.GetCellAt(0, 0).AsFreeText).toBe "A"
+            completeWrite ()
+            do! RTL.waitFor (fun () -> Vitest.expect(updated.Value.IsSome).toBe true)
+            Vitest.expect(updated.Value.Value.GetCellAt(0, 0).AsFreeText).toBe ""
+            Vitest.expect(updated.Value.Value.GetCellAt(0, 1).AsFreeText).toBe "B"
+            Vitest.expect(table.GetCellAt(0, 0).AsFreeText).toBe "A"
+        finally
+            restoreItem ()
+            restore ()
+    }
+)
+
+Vitest.test (
+    "Cut preserves source cells when every clipboard write fails",
+    fun () -> promise {
+        let clipboard =
+            { new Clipboard with
+                member _.read() = promise { return [||] }
+                member _.readText() = promise { return "" }
+                member _.write _ = promise { return raise (System.Exception "write failed") }
+                member _.writeText _ = promise { return raise (System.Exception "write failed") }
+            }
+
+        let restore = ClipboardTestHelpers.install clipboard
+        let restoreItem = ClipboardTestHelpers.installItemConstructor ()
+
+        try
+            let table, updated = renderTable ()
+            let anchor: CellCoordinate = {| x = 1; y = 1 |}
+
+            let selected =
+                SelectHandle(
+                    (fun _ -> false),
+                    ignore,
+                    ignore,
+                    (fun () -> None),
+                    (fun () -> ResizeArray()),
+                    (fun () -> 0)
+                )
+
+            let mutable failure = None
+
+            // Await the utility directly: the menu starts this promise without exposing its rejection.
+            try
+                do!
+                    AnnotationTableContextMenuUtil.cut (
+                        anchor,
+                        table,
+                        (fun next -> updated.Value <- Some next),
+                        selected
+                    )
+            with error ->
+                failure <- Some error.Message
+
+            Vitest.expect(failure).toEqual (Some "write failed")
+            Vitest.expect(updated.Value.IsNone).toBe true
+            Vitest.expect(table.GetCellAt(0, 0).AsFreeText).toBe "A"
+        finally
+            restoreItem ()
+            restore ()
     }
 )
 
