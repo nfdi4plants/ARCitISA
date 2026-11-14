@@ -5,6 +5,7 @@ open Swate.Components.Page.FileExplorer.Types
 open Swate.Components.Shared
 open Swate.Electron.Shared.FileIOHelper
 open Swate.Electron.Shared.FileIOTypes
+open Swate.Electron.Shared.RenamePathRules
 open ARCtrl
 open Types
 
@@ -259,15 +260,6 @@ let arcCreateKinds = [
     }
 ]
 
-let isArcCreateIdentifierValid (identifier: string) =
-    let identifier = identifier.Trim()
-
-    (System.String.IsNullOrWhiteSpace identifier |> not)
-    && ARCtrl.Helper.Identifier.tryCheckValidCharacters identifier
-
-let arcCreateIdentifierError =
-    "Identifier is required and may only contain letters, digits, spaces, underscores, or dashes."
-
 let tryGetInlineArcCreateKind (rootPath: string) (item: FileItem) =
     if not item.IsDirectory then
         None
@@ -284,11 +276,9 @@ let tryGetInlineArcCreateKind (rootPath: string) (item: FileItem) =
         | _ -> None
 
 let tryBuildArcCreateDraft kind (identifier: string) (existingPaths: string seq) =
-    let identifier = identifier.Trim()
-
-    if isArcCreateIdentifierValid identifier |> not then
-        Error arcCreateIdentifierError
-    else
+    match validateArcIdentifier identifier with
+    | Error validationError -> Error validationError
+    | Ok identifier ->
         match arcCreateKinds |> List.tryFind (fun config -> config.Kind = kind) with
         | None -> Error $"Creating {kind} files is not supported from the file explorer."
         | Some config ->

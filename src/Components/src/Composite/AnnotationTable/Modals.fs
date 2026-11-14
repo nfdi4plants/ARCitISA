@@ -11,6 +11,8 @@ open Swate.Components.Composite.Table.Types
 open Swate.Components.Composite.AnnotationTable.Types
 open Swate.Components.Shared
 open Swate.Components.Primitive.BaseModal
+open Swate.Components.Composite.SortableList
+open Swate.Components.Composite.SortableList.Types
 
 // 👀 this file is work in progress
 
@@ -675,82 +677,88 @@ type ContextMenuModals =
                 tableRef.current.focus ()
                 setModal None
 
-        let isInSelected = tableRef.current.SelectHandle.contains (uiTableIndex)
-
-        let columnIndices =
-            if isInSelected then
-                let range = tableRef.current.SelectHandle.getSelectedCellRange().Value
-                [| range.xStart - 1 .. range.xEnd - 1 |]
-            else
-                [| arcTableIndex.x - 1 |]
-
-        let Subtable = arcTable.Subtable(columnIndices)
-
-        let tempTable =
-            React.useRef (
-                let table = arcTable.Copy()
-                table.RemoveColumns columnIndices
-                table
+        let columnIndices, _ =
+            React.useState (fun () ->
+                match tableRef.current.SelectHandle.getSelectedCellRange () with
+                | Some range when tableRef.current.SelectHandle.contains uiTableIndex -> [|
+                    max 0 (range.xStart - 1) .. min (arcTable.ColumnCount - 1) (range.xEnd - 1)
+                  |]
+                | _ -> [| arcTableIndex.x - 1 |]
             )
 
-        /// We try to avoid any out of bounds errors by limiting the range of the index
-        let MaxIndex = tempTable.current.ColumnCount - 1
+        let items, setItems =
+            React.useState (fun () -> [|
+                for index in 0 .. arcTable.ColumnCount - 1 do
+                    let isSelected = Array.contains index columnIndices
 
-        let selectedIndex, setSelectedIndex = React.useState (0)
+                    // Keep a multi-column selection together as one sortable row.
+                    if not isSelected || Some index = Array.tryHead columnIndices then
+                        let indices = if isSelected then columnIndices else [| index |]
+
+                        SortableListItem.create (
+                            $"column-{index}",
+                            (indices
+                             |> Array.map (fun i -> arcTable.Headers.[i].ToString())
+                             |> String.concat ", "),
+                            Some indices
+                        )
+            |])
 
         let submit =
             fun _ ->
-                let table = tempTable.current.Copy()
-                table.Join(Subtable, selectedIndex, TableJoinOptions.WithValues)
-                setArcTable (table)
+                let columnOrder = items |> Array.collect (fun item -> item.data.Value)
+                setArcTable (Helper.reorderColumns arcTable columnOrder)
                 rmv ()
 
-        let modalActivity =
-            Html.label [
-                prop.className "swt:input swt:w-fit"
-                prop.children [
-                    Html.input [
-                        prop.type'.number
-                        prop.onChange (fun (input: int) -> setSelectedIndex (input - 1))
-                        prop.defaultValue (selectedIndex + 1)
-                        prop.min 1
-                        prop.max (MaxIndex + 2)
-                    ]
-                    Html.span [
-                        prop.className "swt:label"
-                        prop.textf "%i|%i" (selectedIndex + 1) (MaxIndex + 2)
-                    ]
-                ]
-            ]
-
         let content =
-            let mkRow (index: int, value: string option, isInserted) =
-                Html.tr [
-                    if isInserted then
-                        prop.className "swt:bg-success swt:success-content swt:border-success-content"
-                    prop.children [
-                        Html.td (if value.IsSome then sprintf "%i" (index + 1) else "")
-                        Html.td (value |> Option.defaultValue "")
-                    ]
-                ]
-
             React.Fragment [
-                Html.table [
-                    prop.className "swt:table"
-                    prop.children [
-                        Html.thead [ Html.tr [ Html.th "Index"; Html.th "Column" ] ]
-                        Html.tbody [
-                            for i in 0 .. tempTable.current.ColumnCount do // do columncount instead of columncount - 1 to included append option
-                                if i = selectedIndex then
-                                    for subIndex in 0 .. Subtable.ColumnCount - 1 do
-                                        mkRow (i + subIndex, Subtable.Headers.[subIndex].ToString() |> Some, true)
-
-                                if i < tempTable.current.ColumnCount then
-                                    let index = if i < selectedIndex then i else i + Subtable.ColumnCount
-                                    mkRow (index, tempTable.current.Headers.[i].ToString() |> Some, false)
-                        ]
-                    ]
+                Html.p [
+                    prop.className "swt:text-sm swt:opacity-60"
+                    prop.text (
+                        if columnIndices.Length > 1 then
+                            "Drag to reorder or use the arrow buttons. Selected columns move together."
+                        else
+                            "Drag to reorder or use the arrow buttons."
+                    )
                 ]
+                SortableList.SortableList(
+                    items,
+                    setItems,
+                    rowProps =
+                        (fun item ->
+                            if item.data.Value = columnIndices then
+                                [ prop.className "swt:bg-primary/10" ]
+                            else
+                                []
+                        ),
+                    renderRow =
+                        (fun row ->
+                            React.Fragment [
+                                Html.td [
+                                    prop.className "swt:w-10"
+                                    prop.children [ RowComponents.DragHandle(row) ]
+                                ]
+                                Html.td [
+                                    prop.children [
+                                        for index in row.item.data.Value do
+                                            Html.div [ prop.text (arcTable.Headers.[index].ToString()) ]
+                                    ]
+                                ]
+                                Html.td [
+                                    prop.className "swt:w-20"
+                                    prop.children [
+                                        Html.div [
+                                            prop.className "swt:join"
+                                            prop.children [
+                                                RowComponents.MoveUpButton(row)
+                                                RowComponents.MoveDownButton(row)
+                                            ]
+                                        ]
+                                    ]
+                                ]
+                            ]
+                        )
+                )
             ]
 
         let footer =
@@ -763,7 +771,7 @@ type ContextMenuModals =
                         prop.text "Cancel"
                         prop.onClick rmv
                     ]
-                    Html.a [
+                    Html.button [
                         prop.className "swt:btn swt:btn-primary"
                         prop.text "Submit"
                         prop.onClick submit
@@ -781,13 +789,12 @@ type ContextMenuModals =
             true,
             (fun _ -> rmv ()),
             Html.p (
-                if Subtable.ColumnCount > 1 then
+                if columnIndices.Length > 1 then
                     "Move Columns"
                 else
                     "Move Column"
             ),
             content,
-            modalActions = modalActivity,
             footer = footer,
             ?debug = debugString
         )

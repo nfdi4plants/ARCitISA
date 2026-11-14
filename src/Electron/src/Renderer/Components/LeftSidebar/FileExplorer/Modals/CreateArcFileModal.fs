@@ -4,6 +4,7 @@ open Fable.Core
 open Feliz
 open Swate.Components.Shared
 open Swate.Components.Primitive.Dialog
+open Swate.Electron.Shared.RenamePathRules
 open Renderer.Components.LeftSidebar.FileExplorer.Helper
 open Renderer.Components.LeftSidebar.FileExplorer.Types
 
@@ -31,15 +32,9 @@ type CreateArcFileModal =
             initialValue = $"New {config.Label}",
             close = close,
             submit = (fun identifier -> submit kind identifier),
-            validate =
-                (fun identifier ->
-                    if isArcCreateIdentifierValid identifier then
-                        Ok identifier
-                    else
-                        Error arcCreateIdentifierError
-                ),
+            validate = validateArcIdentifier,
             submitLabel = $"Create {config.Label}",
-            validationMessage = arcCreateIdentifierError,
+            validationMessage = arcIdentifierError,
             isBusy = isCreating,
             busyLabel = "Creating...",
             debug = "arc-create"

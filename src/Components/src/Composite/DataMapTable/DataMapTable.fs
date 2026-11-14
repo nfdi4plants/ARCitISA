@@ -251,10 +251,11 @@ type DataMapTable =
     [<ReactComponent(true)>]
     static member DataMapTable
         // 👀 If you rename these variables, ensure that the names are forwarded for lazy loading in `src\Components\src\ARCFileEditor\ArcFileEditor.fs` as well!
-        (datamap: Datamap, setDatamap: Datamap -> unit, ?height, ?debug: bool) =
+        (datamap: Datamap, setDatamap: Datamap -> unit, ?height, ?debug: bool, ?tableRef: IRefValue<TableHandle>) =
 
         let modal, setModal = React.useState (None: Modal option)
-        let tableRef = React.useRef<TableHandle> (unbox null)
+        let tableRefInner = React.useRef<TableHandle> (unbox null)
+        let tableRef = defaultArg tableRef tableRefInner
         let containerRef = React.useElementRef ()
         let defaultDebug = defaultArg debug false
         let annotationTableCtx = useAnnotationTableStateCtx ()

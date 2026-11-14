@@ -9,6 +9,8 @@
     <Compile Include="WorkflowPayloads.test.fs" />
     <Compile Include="ArcSave.test.fs" />
     <Compile Include="AppMenu.test.fs" />
+    <Compile Include="ArcMenu.test.fs" />
+    <Compile Include="ChildProcessBindings.test.fs" />
     <Compile Include="ArcMerge\MockData.fs" />
     <Compile Include="ArcMerge\HasInMemoryChanges.test.fs" />
     <Compile Include="ArcMerge\PathParsing.test.fs" />

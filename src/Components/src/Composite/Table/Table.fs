@@ -222,7 +222,11 @@ swt:p-0"""
 
                                 setActiveCellIndex (Some restartIndex)
                         else
-                            let newIndex: CellCoordinate = {| x = index.x; y = index.y + 1 |}
+                            let newIndex: CellCoordinate = {|
+                                x = index.x
+                                y = min (index.y + 1) (rowCount - 1)
+                            |}
+
                             setActiveCellIndex None
                             GridSelect.selectAt (newIndex, false)
                             scrollContainerRef.current.Value.focus ()
@@ -233,10 +237,17 @@ swt:p-0"""
                     | _ -> ()
 
             let onBlur =
-                fun (index: CellCoordinate) (_: Browser.Types.FocusEvent) ->
+                fun (index: CellCoordinate) (event: Browser.Types.FocusEvent) ->
                     if activeCellIndex = Some index then
                         setActiveCellIndex (None)
-                        scrollContainerRef.current.Value.focus ()
+
+                        match scrollContainerRef.current with
+                        | Some container when
+                            not (isNullOrUndefined event.relatedTarget)
+                            && container.contains (unbox event.relatedTarget)
+                            ->
+                            container.focus ()
+                        | _ -> ()
 
             let onClick =
                 fun (index: CellCoordinate) (e: Browser.Types.MouseEvent) ->
@@ -283,7 +294,7 @@ swt:p-0"""
                         style.minWidth 0
                     ]
                     prop.className
-                        "swt:overflow-auto swt:grow swt:h-full swt:w-full swt:border swt:border-primary swt:rounded-sm swt:bg-base-100"
+                        "swt:isolate swt:overflow-auto swt:grow swt:h-full swt:w-full swt:border swt:border-primary swt:rounded-sm swt:bg-base-100"
                     if debug then
                         prop.testId "virtualized-table"
                     prop.children [

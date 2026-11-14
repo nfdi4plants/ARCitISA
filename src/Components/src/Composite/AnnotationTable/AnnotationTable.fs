@@ -344,8 +344,8 @@ type AnnotationTable =
                     match target.closest ("[data-row][data-column]"), containerRef.current with
                     | Some cell, Some container when container.contains (cell) ->
                         let cell = cell :?> Browser.Types.HTMLElement
-                        let row = int cell?dataset?row
-                        let col = int cell?dataset?column
+                        let row = cell.getAttribute ("data-row") |> int
+                        let col = cell.getAttribute ("data-column") |> int
                         let indices: CellCoordinate = {| y = row; x = col |}
                         Some indices
                     | _ -> None
@@ -616,12 +616,16 @@ type AnnotationTable =
 
                             match GridSelect.tryGetKeyboardShortcut e selectedCells activeCell with
                             | Some GridSelect.KeyboardShortcut.Details ->
+                                e.preventDefault ()
                                 let cell = selectedCells.selectedCellsReducedSet.MinimumElement
                                 setModal (Some(ModalTypes.Details cell))
                             | Some GridSelect.KeyboardShortcut.Delete ->
+                                e.preventDefault ()
                                 arcTable.ClearSelectedCells(tableRef.current.SelectHandle)
                                 arcTable.Copy() |> setArcTable
                             | Some GridSelect.KeyboardShortcut.Paste ->
+                                e.preventDefault ()
+
                                 AnnotationTableContextMenuUtil.tryPasteCopiedCells (
                                     selectedCells.selectedCellsReducedSet.MinimumElement,
                                     arcTable,
@@ -631,6 +635,8 @@ type AnnotationTable =
                                 )
                                 |> Promise.start
                             | Some GridSelect.KeyboardShortcut.Copy ->
+                                e.preventDefault ()
+
                                 AnnotationTableContextMenuUtil.copy (
                                     selectedCells.selectedCellsReducedSet.MinimumElement,
                                     arcTable,
@@ -638,6 +644,8 @@ type AnnotationTable =
                                 )
                                 |> Promise.start
                             | Some GridSelect.KeyboardShortcut.Cut ->
+                                e.preventDefault ()
+
                                 AnnotationTableContextMenuUtil.cut (
                                     selectedCells.selectedCellsReducedSet.MinimumElement,
                                     arcTable,

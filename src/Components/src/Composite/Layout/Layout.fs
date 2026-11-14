@@ -490,7 +490,7 @@ type Layout =
             React.useMemo (
                 (fun () ->
                     Html.div [
-                        prop.className "swt:grow swt:min-w-0 swt:min-h-0 swt:overflow-hidden"
+                        prop.className "swt:isolate swt:grow swt:min-w-0 swt:min-h-0 swt:overflow-hidden"
                         prop.testId "layout-main-content"
                         prop.children children
                     ]
@@ -510,8 +510,9 @@ type Layout =
                     prop.children [
                         if navbar.IsSome then
                             Html.div [
+                                // Keep navbar menus above content-local buttons and floating widgets.
                                 prop.className
-                                    "swt:h-12 swt:shrink-0 swt:grow-0 swt:flex swt:flex-row swt:items-center swt:border-b swt:border-base-content/50"
+                                    "swt:isolate swt:z-20 swt:h-12 swt:shrink-0 swt:grow-0 swt:flex swt:flex-row swt:items-center swt:border-b swt:border-base-content/50"
                                 prop.testId "layout-main-navbar"
                                 prop.children navbar.Value
                             ]

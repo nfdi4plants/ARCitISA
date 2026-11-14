@@ -50,18 +50,26 @@ module GridSelect =
         (selectedCells: GridSelectHandle)
         (activeCell: CellCoordinate option)
         =
-        if activeCell.IsSome || selectedCells.count = 0 then
+        if activeCell.IsSome || selectedCells.count = 0 || event.altKey || event.shiftKey then
             None
         else
             let isControl = event.ctrlKey || event.metaKey
 
             match event.code with
-            | code when code = kbdEventCode.f2 || (code = kbdEventCode.enter && isControl) ->
+            | code when
+                (code = kbdEventCode.f2 && not isControl)
+                || (code = kbdEventCode.enter && isControl)
+                ->
                 Some KeyboardShortcut.Details
-            | code when code = kbdEventCode.delete -> Some KeyboardShortcut.Delete
+            | code when code = kbdEventCode.delete && not isControl -> Some KeyboardShortcut.Delete
             | code when code = kbdEventCode.key ("v") && isControl -> Some KeyboardShortcut.Paste
             | code when code = kbdEventCode.key ("c") && isControl -> Some KeyboardShortcut.Copy
-            | code when code = kbdEventCode.key ("x") && isControl -> Some KeyboardShortcut.Cut
+            | code when
+                code = kbdEventCode.key ("x")
+                && isControl
+                && (selectedCells.selectedCells |> Option.exists (fun range -> range.yStart > 0))
+                ->
+                Some KeyboardShortcut.Cut
             | _ -> None
 
     type OnSelect = CellCoordinate -> CellCoordinateRange option -> unit
