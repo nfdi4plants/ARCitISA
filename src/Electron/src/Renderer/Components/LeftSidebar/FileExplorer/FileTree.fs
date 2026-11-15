@@ -856,8 +856,7 @@ type FileTree =
         let renameModal =
             FileTreeRenameModal.Main(
                 isOpen = activeRenameDraft.IsSome,
-                itemName = (activeRenameDraft |> Option.map (fun draft -> draft.Item.Name)),
-                initialName = (activeRenameDraft |> Option.map _.InitialName),
+                draft = activeRenameDraft,
                 close = closeDialog,
                 submit = confirmRenameItem,
                 isRenaming = isDialogBusy

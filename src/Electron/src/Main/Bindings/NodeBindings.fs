@@ -12,6 +12,13 @@ let environmentVariable (name: string) : string option = jsNative
 [<Import("homedir", "os")>]
 let homeDirectory () : string = jsNative
 
+type FileUrl =
+    abstract host: string
+    abstract pathname: string
+
+[<Import("pathToFileURL", "url")>]
+let pathToFileUrl (path: string) : FileUrl = jsNative
+
 [<Emit("$0.length")>]
 let bufferLength (buffer: obj) : int = jsNative
 

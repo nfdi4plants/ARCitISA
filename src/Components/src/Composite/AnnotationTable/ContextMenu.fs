@@ -16,6 +16,8 @@ open Swate.Components.Composite.Table.Types
 open Swate.Components.Composite.Table.Helper
 open Swate.Components.ClipboardCodec
 
+module AnnotationTableHelper = Swate.Components.Composite.AnnotationTable.Helper
+
 type AnnotationTableContextMenuUtil =
 
     static member clear(cellIndex: CellCoordinate, table: ArcTable, selectHandle: SelectHandle) : ArcTable =
@@ -737,6 +739,52 @@ type AnnotationTableContextMenuUtil =
 
 [<Erase>]
 type AnnotationTableContextMenu =
+
+    static member private ModifierKey =
+        match Swate.Components.Util.UserOS.getUserOS () with
+        | Swate.Components.Util.UserOS.MacOS
+        | Swate.Components.Util.UserOS.IOS -> "⌘"
+        | _ -> "Ctrl"
+
+    static member private DuplicateRowItem
+        (index: CellCoordinate, table: ArcTable, setTable: ArcTable -> unit, selectHandle: SelectHandle)
+        =
+        let coordinates = targetCoordinates index selectHandle
+        let rowCount = selectedRowIndices table.RowCount coordinates |> Array.length
+
+        ContextMenuItem(
+            Html.div (
+                if rowCount > 1 then
+                    "Duplicate Selected Rows"
+                else
+                    "Duplicate Row"
+            ),
+            icon = Html.i [ prop.className "swt:iconify swt:fluent--copy-24-regular" ],
+            onClick = (fun _ -> AnnotationTableHelper.duplicateRows table coordinates |> setTable)
+        )
+
+    static member private DuplicateColumnItems
+        (index: CellCoordinate, table: ArcTable, setTable: ArcTable -> unit, selectHandle: SelectHandle)
+        =
+        let coordinates = targetCoordinates index selectHandle
+
+        [
+            if AnnotationTableHelper.canDuplicateColumns table coordinates then
+                let columnCount =
+                    selectedColumnIndices table.ColumnCount coordinates |> Array.length
+
+                ContextMenuItem(
+                    Html.div (
+                        if columnCount > 1 then
+                            "Duplicate Selected Columns"
+                        else
+                            "Duplicate Column"
+                    ),
+                    icon = Html.i [ prop.className "swt:iconify swt:fluent--copy-24-regular" ],
+                    onClick = (fun _ -> AnnotationTableHelper.duplicateColumns table coordinates |> setTable)
+                )
+        ]
+
     static member CompositeCellContent
         (
             index: CellCoordinate,
@@ -764,19 +812,17 @@ type AnnotationTableContextMenu =
             ContextMenuItem(
                 Html.div "Details",
                 icon = Icons.MagnifyingGlassPlus(),
-                kbdbutton = ATCMC.KbdHint("D"),
+                kbdbutton = ATCMC.KbdHint("F2"),
                 onClick = fun _ -> AnnotationTable.ModalTypes.Details index |> Some |> setModal
             )
             ContextMenuItem(
                 Html.div "Edit",
                 icon = Icons.PenToSquare(),
-                kbdbutton = ATCMC.KbdHint("E"),
                 onClick = fun _ -> AnnotationTable.ModalTypes.Edit index |> Some |> setModal
             )
             ContextMenuItem(
                 Html.div "Fill Column",
                 icon = Icons.Pen(),
-                kbdbutton = ATCMC.KbdHint("F"),
                 onClick =
                     fun _ ->
                         let nextTable = arcTable.Copy()
@@ -794,7 +840,6 @@ type AnnotationTableContextMenu =
                 ContextMenuItem(
                     Html.div transformName,
                     icon = Icons.ArrorRightLeft(),
-                    kbdbutton = ATCMC.KbdHint("T"),
                     onClick = fun _ -> AnnotationTable.ModalTypes.Transform index |> Some |> setModal
                 )
             ContextMenuItem(
@@ -810,7 +855,7 @@ type AnnotationTableContextMenu =
             ContextMenuItem(
                 Html.div "Copy",
                 icon = Icons.Copy(),
-                kbdbutton = ATCMC.KbdHint("C"),
+                kbdbutton = ATCMC.KbdHint($"{AnnotationTableContextMenu.ModifierKey}+C"),
                 onClick =
                     fun _ ->
                         AnnotationTableContextMenuUtil.copy (cellIndex, arcTable, selectHandle)
@@ -821,7 +866,7 @@ type AnnotationTableContextMenu =
                 ContextMenuItem(
                     Html.div "Cut",
                     icon = Icons.Scissor(),
-                    kbdbutton = ATCMC.KbdHint("X"),
+                    kbdbutton = ATCMC.KbdHint($"{AnnotationTableContextMenu.ModifierKey}+X"),
                     onClick =
                         fun _ ->
                             AnnotationTableContextMenuUtil.cut (cellIndex, arcTable, setArcTable, selectHandle)
@@ -830,7 +875,7 @@ type AnnotationTableContextMenu =
             ContextMenuItem(
                 Html.div "Paste",
                 icon = Icons.Paste(),
-                kbdbutton = ATCMC.KbdHint("V"),
+                kbdbutton = ATCMC.KbdHint($"{AnnotationTableContextMenu.ModifierKey}+V"),
                 onClick =
                     fun _ ->
                         AnnotationTableContextMenuUtil.tryPasteCopiedCells (
@@ -843,10 +888,11 @@ type AnnotationTableContextMenu =
                         |> Promise.start
             )
             ContextMenuItem(isDivider = true)
+            AnnotationTableContextMenu.DuplicateRowItem(cellIndex, arcTable, setArcTable, selectHandle)
+            yield! AnnotationTableContextMenu.DuplicateColumnItems(cellIndex, arcTable, setArcTable, selectHandle)
             ContextMenuItem(
                 Html.div "Delete Row",
                 icon = Icons.DeleteLeft(),
-                kbdbutton = ATCMC.KbdHint("DelR"),
                 onClick =
                     fun c ->
                         let cc = c.spawnData |> unbox<CellCoordinate>
@@ -857,7 +903,6 @@ type AnnotationTableContextMenu =
             ContextMenuItem(
                 Html.div "Delete Column",
                 icon = Icons.DeleteDown(),
-                kbdbutton = ATCMC.KbdHint("DelC"),
                 onClick =
                     fun c ->
                         let cc = c.spawnData |> unbox<CellCoordinate>
@@ -868,7 +913,6 @@ type AnnotationTableContextMenu =
             ContextMenuItem(
                 Html.div "Move Column",
                 icon = Icons.ArrorRightLeft(),
-                kbdbutton = ATCMC.KbdHint("MC"),
                 onClick =
                     fun c ->
                         let cc = c.spawnData |> unbox<CellCoordinate>
@@ -890,20 +934,19 @@ type AnnotationTableContextMenu =
             ContextMenuItem(
                 Html.div "Details",
                 icon = Icons.MagnifyingGlassPlus(),
-                kbdbutton = ATCMC.KbdHint("D"),
+                kbdbutton = ATCMC.KbdHint("F2"),
                 onClick = fun _ -> AnnotationTable.ModalTypes.Details cellCoordinate |> Some |> setModal
             )
             ContextMenuItem(
                 Html.div "Edit",
                 icon = Icons.PenToSquare(),
-                kbdbutton = ATCMC.KbdHint("E"),
                 onClick = fun _ -> AnnotationTable.ModalTypes.Edit cellCoordinate |> Some |> setModal
             )
             ContextMenuItem(isDivider = true)
             ContextMenuItem(
                 Html.div "Copy",
                 icon = Icons.Copy(),
-                kbdbutton = ATCMC.KbdHint("C"),
+                kbdbutton = ATCMC.KbdHint($"{AnnotationTableContextMenu.ModifierKey}+C"),
                 onClick =
                     fun _ ->
                         AnnotationTableContextMenuUtil.copy (cellCoordinate, arcTable, selectHandle)
@@ -913,7 +956,7 @@ type AnnotationTableContextMenu =
             ContextMenuItem(
                 Html.div "Paste",
                 icon = Icons.Paste(),
-                kbdbutton = ATCMC.KbdHint("V"),
+                kbdbutton = ATCMC.KbdHint($"{AnnotationTableContextMenu.ModifierKey}+V"),
                 onClick =
                     fun _ ->
                         AnnotationTableContextMenuUtil.tryPasteCopiedCells (
@@ -926,10 +969,10 @@ type AnnotationTableContextMenu =
                         |> Promise.start
             )
             ContextMenuItem(isDivider = true)
+            yield! AnnotationTableContextMenu.DuplicateColumnItems(cellCoordinate, arcTable, setArcTable, selectHandle)
             ContextMenuItem(
                 Html.div "Delete Column",
                 icon = Icons.DeleteDown(),
-                kbdbutton = ATCMC.KbdHint("DelC"),
                 onClick =
                     fun c ->
                         let cc = c.spawnData |> unbox<CellCoordinate>
@@ -940,7 +983,6 @@ type AnnotationTableContextMenu =
             ContextMenuItem(
                 Html.div "Move Column",
                 icon = Icons.ArrorRightLeft(),
-                kbdbutton = ATCMC.KbdHint("MC"),
                 onClick =
                     fun c ->
                         let cc = c.spawnData |> unbox<CellCoordinate>
@@ -953,10 +995,10 @@ type AnnotationTableContextMenu =
         (index: int, table: ArcTable, setTable: ArcTable -> unit, selectHandle: SelectHandle)
         =
         [
+            AnnotationTableContextMenu.DuplicateRowItem({| x = 0; y = index |}, table, setTable, selectHandle)
             ContextMenuItem(
                 Html.div "Delete Row",
                 icon = Icons.DeleteLeft(),
-                kbdbutton = ATCMC.KbdHint("DelR"),
                 onClick =
                     fun c ->
                         let cc = c.spawnData |> unbox<CellCoordinate>

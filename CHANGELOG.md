@@ -28,6 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - When a Git action fails, "Technical details" in the error message show the output of the Git commands it ran. (by @caroott)
 - If Git or Git LFS can't be used, for example because it is missing or too old, a warning below the navigation bar of every window says why. It stays until the problem is fixed and lets you open the settings or check again. (by @caroott)
 - The Git defaults in the settings show which Git program ARCitISA uses and its version. You can pick a different Git program there, or go back to the one ARCitISA finds by itself. (by @caroott)
+- Added "Duplicate Row/Column" to the annotation table context menu and "Duplicate Row" to the datamap context menu. #945 (by @Freymaurer)
+- Added search function for in-table-search. #417 (by @Freymaurer)
 
 ### 🔄 Changed
 
@@ -43,6 +45,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Opening a isa workbook file, will now open on the metadata sheet not on the first table. (by @Freymaurer)
 - Integrate new ARCitISA icon set into the application. (by @caroott + @Freymaurer)
 - Improve visual feedback in data annotator and file picker components. #1437 (by @Freymaurer)
+- Typing into an already-filled table cell will now overwrite its content instead of appending to it. #924 (by @Freymaurer)
+- Changed "Move Column" UI to reuse the same component as "File Picker" and "Data Annotator" (by @Freymaurer)
 
 ### 🐛 Fixed
 
@@ -53,6 +57,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - When a changed file can't be loaded, a notice says so, and the file loads once it is fixed. Before, the failure was only logged. (by @Freymaurer)
 - DataMaps are read from and saved to the adjacent `isa.datamap.xlsx`. A legacy DataMap sheet inside a parent workbook is read only when that file is missing and moves to the file when the parent is saved. (by @Freymaurer)
 - Fix bug where deselecting a table cell was not correctly propagated to the file picker and data annotator components. (by @Freymaurer)
+- Fix bug where "Rename" on study, assay, workflow or run folders in the file tree did not correctly warn against invalid characters. #1444 (by @Freymaurer)
 
 ## 3.2.0 - 2026-11-02
 

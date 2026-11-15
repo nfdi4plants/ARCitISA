@@ -58,6 +58,25 @@ let validateRenameName (newName: string) =
         else
             Ok normalizedNewName
 
+let arcIdentifierError =
+    "Identifier is required and may only contain letters, digits, spaces, underscores, or dashes."
+
+/// Creation and entity renaming use the same identifier and filesystem restrictions.
+let validateArcIdentifier (identifier: string) =
+    if
+        String.IsNullOrWhiteSpace identifier
+        || not (ARCtrl.Helper.Identifier.tryCheckValidCharacters identifier)
+    then
+        Error arcIdentifierError
+    else
+        validateRenameName identifier
+
+/// Files directly inside a collection folder are ordinary files, even though their path has the shape of an entity.
+let validateItemRenameName (isFile: bool) (sourcePath: string) (newName: string) =
+    match ArcEntityPathRules.classifyRenameTarget sourcePath with
+    | ArcEntityPathRules.RenamePathClassification.EntityFolderTarget _ when not isFile -> validateArcIdentifier newName
+    | _ -> validateRenameName newName
+
 let buildRenamedSiblingPath (sourcePath: string) (newName: string) =
     let normalizedSourcePath = normalizeRelativePath sourcePath
     let normalizedNewName = newName.Trim()

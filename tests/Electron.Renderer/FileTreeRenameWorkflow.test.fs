@@ -185,6 +185,26 @@ Vitest.describe (
     fun () ->
 
         Vitest.test (
+            "invalid entity identifiers never dispatch a rename and keep the dialog open",
+            fun () ->
+                for zone in [ "assays"; "studies"; "workflows"; "runs" ] do
+                    let draft = createFolderItem "Old" $"{zone}/Old" |> buildRenameDraftOrFail
+                    let probe = createRenameWorkflowProbe ()
+                    let mutable errors = []
+
+                    let config = {
+                        createConfirmRenameConfig draft draft.SourcePath None probe with
+                            enqueueError = fun error -> errors <- error :: errors
+                    }
+
+                    RenameWorkflow.confirmRenameItem config "invalid.identifier"
+                    Vitest.expect(probe.RenameRequest).toEqual None
+                    Vitest.expect(probe.Closed).toBe false
+                    Vitest.expect(probe.GitStatusRefreshCount).toBe 0
+                    Vitest.expect(errors.Length).toBe 1
+        )
+
+        Vitest.test (
             "rename context menu item is shown for assay, study, workflow, and run entity folders",
             fun () ->
                 let entityFolderPaths = [

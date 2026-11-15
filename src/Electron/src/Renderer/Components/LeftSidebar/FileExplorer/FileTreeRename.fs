@@ -54,7 +54,7 @@ module FileTreeRenameWorkflow =
         match config.pendingRenameDraft with
         | None -> config.closeRenameModal ()
         | Some renameDraft ->
-            match validateRenameName newName with
+            match validateRenameDraftName renameDraft newName with
             | Error validationError -> applyError validationError
             | Ok normalizedNewName ->
                 let targetPath = buildRenamedSiblingPath renameDraft.SourcePath normalizedNewName

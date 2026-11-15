@@ -33,10 +33,7 @@ type DataMapContextMenu =
                 let index = data |> unbox<CellCoordinate>
 
                 let selectedCoordinates =
-                    if tableRef.current.SelectHandle.contains index then
-                        tableRef.current.SelectHandle.getSelectedCells () |> Seq.toArray
-                    else
-                        [| index |]
+                    TableHelper.targetCoordinates index tableRef.current.SelectHandle
 
                 let selectedRowCount = selectedCoordinates |> Array.distinctBy _.y |> Array.length
 
@@ -127,6 +124,17 @@ type DataMapContextMenu =
                         text =
                             Html.div (
                                 if selectedRowCount > 1 then
+                                    "Duplicate Selected Rows"
+                                else
+                                    "Duplicate Row"
+                            ),
+                        icon = Html.i [ prop.className "swt:iconify swt:fluent--copy-24-regular" ],
+                        onClick = (fun _ -> DataMapTableHelper.duplicateRows dataMap selectedCoordinates setDataMap)
+                    )
+                    ContextMenuItem(
+                        text =
+                            Html.div (
+                                if selectedRowCount > 1 then
                                     "Delete Selected Rows"
                                 else
                                     "Delete Row"
@@ -155,8 +163,8 @@ type DataMapContextMenu =
                     match target.closest ("[data-row][data-column]"), containerRef.current with
                     | Some cell, Some container when container.contains (cell) ->
                         let cell = cell :?> Browser.Types.HTMLElement
-                        let row = int cell?dataset?row
-                        let column = int cell?dataset?column
+                        let row = cell.getAttribute ("data-row") |> int
+                        let column = cell.getAttribute ("data-column") |> int
 
                         if column > 0 && row > 0 then
                             Some {| x = column; y = row |}

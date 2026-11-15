@@ -35,6 +35,46 @@ Vitest.describe (
         )
 
         Vitest.test (
+            "ARC creation and entity renames share identifier validation across all collections",
+            fun () ->
+                for zone in addZones do
+                    for name in
+                        [
+                            ""
+                            " "
+                            "sample.v2"
+                            "sample/child"
+                            "sample\\child"
+                            "sample@lab"
+                            "AUX"
+                        ] do
+                        let creation = validateArcIdentifier name
+                        Vitest.expect(Result.isError creation).toBe true
+                        Vitest.expect(validateItemRenameName false $"{zone}/Old" name).toEqual creation
+
+                    Vitest
+                        .expect(validateItemRenameName false $"{zone}/Old" "  Sample_2 - batch 3  ")
+                        .toEqual (Ok "Sample_2 - batch 3")
+        )
+
+        Vitest.test (
+            "ordinary files and nested folders retain filesystem naming rules",
+            fun () ->
+                for zone in addZones do
+                    Vitest
+                        .expect(validateItemRenameName true $"{zone}/notes.md" "notes.v2.md")
+                        .toEqual (Ok "notes.v2.md")
+
+                    Vitest
+                        .expect(validateItemRenameName false $"{zone}/Old/custom" "custom.v2")
+                        .toEqual (Ok "custom.v2")
+
+                Vitest
+                    .expect(validateItemRenameName true "notes/old.md" "bad:name.md")
+                    .toEqual (validateRenameName "bad:name.md")
+        )
+
+        Vitest.test (
             "validateRenameName rejects path separators",
             fun () ->
                 let result = validateRenameName "bad/name"

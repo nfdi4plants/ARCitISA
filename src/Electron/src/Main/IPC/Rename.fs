@@ -299,7 +299,10 @@ module ArcRenameHelper =
                     | None -> return Error(arcNotOpenError ())
                     | Some(Error resolutionError) -> return Error resolutionError
                     | Some(Ok()) ->
-                        match tryBuildRenameTargetPath sourcePath request.newName with
+                        match
+                            validateArcIdentifier request.newName
+                            |> Result.bind (tryBuildRenameTargetPath sourcePath)
+                        with
                         | Error targetPathError -> return Error(exn targetPathError)
                         | Ok targetPath ->
                             let targetIdentifier = PathHelpers.getNameFromPath targetPath

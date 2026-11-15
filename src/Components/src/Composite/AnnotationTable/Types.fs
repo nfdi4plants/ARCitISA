@@ -51,7 +51,12 @@ module ARCtrlExtensions =
     type ArcTable with
         member this.ClearSelectedCells(selectHandle: SelectHandle) =
             let selectedCells = selectHandle.getSelectedCells ()
-            let indices = selectedCells |> Seq.map (fun i -> (i.x - 1, i.y - 1)) |> Seq.toArray
+
+            let indices =
+                selectedCells
+                |> Seq.filter (fun i -> i.x > 0 && i.x <= this.ColumnCount && i.y > 0 && i.y <= this.RowCount)
+                |> Seq.map (fun i -> (i.x - 1, i.y - 1))
+                |> Seq.toArray
 
             indices
             |> Array.iter (fun (ci, ri) ->

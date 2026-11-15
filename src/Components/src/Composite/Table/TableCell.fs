@@ -184,6 +184,7 @@ type TableCell =
             (fun props ->
                 Html.input [
                     prop.autoFocus true
+                    prop.onFocus (fun e -> (e.target :?> Browser.Types.HTMLInputElement).select ())
                     if debug.IsSome && debug.Value then
                         prop.testid ($"active-cell-string-input-{index.y}-{index.x}")
                     prop.className "swt:rounded-none swt:w-full swt:h-full swt:input swt:outline-0! swt:border-0!"
@@ -231,6 +232,7 @@ type TableCell =
                     props.setData,
                     ?parentId = parentId,
                     onBlur = (fun e -> props.onBlur e),
+                    onFocus = (fun e -> (e.target :?> Browser.Types.HTMLInputElement).select ()),
                     onKeyDown = (fun e -> props.onKeyDown e),
                     classNames =
                         TermSearchStyle(!^"swt:rounded-none swt:w-full swt:h-full swt:!outline-0 swt:!border-0"),
