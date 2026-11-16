@@ -51,6 +51,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### 🐛 Fixed
 
 - The File Picker, Data Annotator and Building Block widgets act only on the cells you see selected, also after switching tabs or sheets. (by @caroott)
+- Delete Row in the right-click menu of a table cell removes the row of that cell. (by @caroott)
 - Edits typed right after a Save are no longer replaced a few seconds later by the saved file. (by @Freymaurer)
 - A change that another program saved shortly before a Save in ARCitISA now loads before the Save writes. Before, it could be missed. (by @Freymaurer)
 - Adding a study, assay, workflow, run or DataMap no longer reports an error when another workbook in the ARC can't be read. (by @Freymaurer)

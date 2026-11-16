@@ -126,6 +126,36 @@ Vitest.test (
     }
 )
 
+for row, expectedRemaining in [ 2, [ "R1"; "R3" ]; 3, [ "R1"; "R2" ] ] do
+    Vitest.test (
+        $"Delete Row on a body cell in data row {row} removes that row and closes the menu",
+        fun () -> promise {
+            let table = ArcTable.init "Delete body row"
+
+            table.AddColumn(
+                CompositeHeader.Input IOType.Source,
+                ResizeArray [
+                    CompositeCell.FreeText "R1"
+                    CompositeCell.FreeText "R2"
+                    CompositeCell.FreeText "R3"
+                ]
+            )
+
+            let _, updated = renderTableValue table
+            do! RTL.waitFor (fun () -> Vitest.expect(isNull (cell 1 row)).toBe false)
+            openMenu 1 row
+            let! delete = menuButton "Delete Row"
+            RTL.fireEvent.click delete
+            Vitest.expect(updated.Value.Value.RowCount).toBe 2
+
+            let remaining =
+                [ 0..1 ] |> List.map (fun i -> updated.Value.Value.GetCellAt(0, i).AsFreeText)
+
+            Vitest.expect(remaining).toEqual expectedRemaining
+            do! RTL.waitFor (fun () -> Vitest.expect(RTL.screen.queryByRole("menu").IsNone).toBe true)
+        }
+    )
+
 Vitest.test (
     "Paste reads plain clipboard text into the clicked column outside a stale selection",
     fun () -> promise {
