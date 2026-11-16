@@ -38,6 +38,7 @@ type SearchField =
                     && hasModifier
                     && not event.altKey
                     && not event.shiftKey
+                    && (event.target :?> Browser.Types.Element).closest("[role='dialog']").IsNone
                 then
                     match inputRef.current with
                     | Some input when not input.disabled && not event.defaultPrevented ->

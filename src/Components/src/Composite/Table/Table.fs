@@ -242,8 +242,8 @@ swt:p-0"""
 
                         match scrollContainerRef.current with
                         | Some container when
-                            not (isNullOrUndefined event.relatedTarget)
-                            && container.contains (unbox event.relatedTarget)
+                            isNullOrUndefined event.relatedTarget
+                            || container.contains (unbox event.relatedTarget)
                             ->
                             container.focus ()
                         | _ -> ()

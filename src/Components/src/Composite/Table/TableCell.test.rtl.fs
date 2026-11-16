@@ -165,3 +165,15 @@ Vitest.test (
         Vitest.expect(changes.[0].AsFreeText).toBe "Updated"
     }
 )
+
+Vitest.test (
+    "leaving an inline editor without focusing another element returns focus to the table",
+    fun () -> promise {
+        renderTable (CompositeCell.FreeText "Existing value") ignore
+        let user = userEvent.setup ()
+        do! RTL.waitFor (fun () -> Vitest.expect(isNull (cellElement 1)).toBe false)
+        do! user.dblClick (cellElement 1)
+        RTL.fireEvent.custom ("focusOut", input ())
+        Vitest.expect(document.activeElement).toBe (RTL.screen.getByTestId "virtualized-table")
+    }
+)

@@ -8,6 +8,7 @@ open Feliz
 open Vitest
 open Swate.Components
 open Swate.Components.Composite.AnnotationTable.Context
+open Swate.Components.Primitive.BaseModal
 open Swate.Components.Shared
 open Swate.Components.Page.ArcFileEditor.Types
 
@@ -271,4 +272,33 @@ Vitest.test (
         do! RTL.waitFor (fun () -> expectSelected 1 1)
         Vitest.expect((RTL.screen.getByTestId "insertion-target").textContent).toBe "selected"
     }
+)
+
+Vitest.test (
+    "the find shortcut inside a dialog leaves focus in the dialog",
+    fun () ->
+        mockPlatform Vitest.vi "Win32"
+        mockGeometry Vitest.vi "offsetWidth" 800
+        mockGeometry Vitest.vi "offsetHeight" 600
+
+        RTL.render (
+            React.Fragment [
+                view (createArcFile ())
+                BaseModal.Modal(
+                    isOpen = true,
+                    setIsOpen = ignore,
+                    header = Html.text "Details",
+                    children = Html.input [ prop.testId "dialog-input" ]
+                )
+            ]
+        )
+        |> ignore
+
+        let dialogInput = RTL.screen.getByTestId "dialog-input" :?> HTMLInputElement
+        Vitest.expect((RTL.screen.getByRole "dialog").contains dialogInput).toBe true
+        dialogInput.focus ()
+        let event = findEvent true false false false
+        dialogInput.dispatchEvent event |> ignore
+        Vitest.expect(event.defaultPrevented).toBe false
+        Vitest.expect(document.activeElement).toBe dialogInput
 )

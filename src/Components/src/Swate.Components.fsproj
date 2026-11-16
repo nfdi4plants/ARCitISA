@@ -164,6 +164,7 @@
     <Compile Include="Primitive\ContextMenu\ContextMenu.test.rtl.fs" />
     <Compile Include="Primitive\ComboBox\Types.fs" />
     <Compile Include="Primitive\ComboBox\ComboBox.fs" />
+    <Compile Include="Primitive\ComboBox\ComboBox.test.rtl.fs" />
     <Compile Include="Primitive\Dropdown\Dropdown.fs" />
     <Compile Include="Primitive\ErrorBoundary\ErrorBoundary.fs" />
     <Compile Include="Primitive\ErrorBoundary\ErrorBoundary.test.rtl.fs" />
