@@ -46,10 +46,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Integrate new ARCitISA icon set into the application. (by @caroott + @Freymaurer)
 - Improve visual feedback in data annotator and file picker components. #1437 (by @Freymaurer)
 - Typing into an already-filled table cell will now overwrite its content instead of appending to it. #924 (by @Freymaurer)
-- Changed "Move Column" UI to reuse the same component as "File Picker" and "Data Annotator" (by @Freymaurer)
+- Changed "Move Column" UI to reuse the same component as "File Picker" and "Data Annotator". Columns move only within their group, so the order stays after saving. (by @Freymaurer + @caroott)
 
 ### 🐛 Fixed
 
+- The File Picker, Data Annotator and Building Block widgets act only on the cells you see selected, also after switching tabs or sheets. (by @caroott)
+- Delete Row in the right-click menu of a table cell removes the row of that cell. (by @caroott)
 - Edits typed right after a Save are no longer replaced a few seconds later by the saved file. (by @Freymaurer)
 - A change that another program saved shortly before a Save in ARCitISA now loads before the Save writes. Before, it could be missed. (by @Freymaurer)
 - Adding a study, assay, workflow, run or DataMap no longer reports an error when another workbook in the ARC can't be read. (by @Freymaurer)

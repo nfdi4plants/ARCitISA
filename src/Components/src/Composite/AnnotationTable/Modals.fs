@@ -686,23 +686,43 @@ type ContextMenuModals =
                 | _ -> [| arcTableIndex.x - 1 |]
             )
 
+        let columnClass index =
+            ARCtrl.Spreadsheet.ArcTable.classifyHeaderOrder arcTable.Headers.[index]
+
         let items, setItems =
-            React.useState (fun () -> [|
-                for index in 0 .. arcTable.ColumnCount - 1 do
-                    let isSelected = Array.contains index columnIndices
+            React.useState (fun () ->
+                [|
+                    for index in 0 .. arcTable.ColumnCount - 1 do
+                        let isSelected = Array.contains index columnIndices
 
-                    // Keep a multi-column selection together as one sortable row.
-                    if not isSelected || Some index = Array.tryHead columnIndices then
-                        let indices = if isSelected then columnIndices else [| index |]
+                        // Keep a multi-column selection together as one sortable row.
+                        if not isSelected || Some index = Array.tryHead columnIndices then
+                            let indices = if isSelected then columnIndices else [| index |]
 
-                        SortableListItem.create (
-                            $"column-{index}",
-                            (indices
-                             |> Array.map (fun i -> arcTable.Headers.[i].ToString())
-                             |> String.concat ", "),
-                            Some indices
-                        )
-            |])
+                            SortableListItem.create (
+                                $"column-{index}",
+                                (indices
+                                 |> Array.map (fun i -> arcTable.Headers.[i].ToString())
+                                 |> String.concat ", "),
+                                Some indices
+                            )
+                |]
+                // The xlsx writer stores columns grouped by class, so the list starts in that order.
+                |> List.ofArray
+                |> List.sortBy (fun item -> columnClass item.data.Value.[0])
+                |> Array.ofList
+            )
+
+        // A block that spans several classes has no class and stays where it is.
+        let isMoveAllowed fromIndex toIndex =
+            let itemClass (item: SortableListItem<int[]>) =
+                match item.data.Value |> Array.map columnClass |> Array.distinct with
+                | [| single |] -> Some single
+                | _ -> None
+
+            match itemClass items.[fromIndex], itemClass items.[toIndex] with
+            | Some fromClass, Some toClass -> fromClass = toClass
+            | _ -> false
 
         let submit =
             fun _ ->
@@ -721,9 +741,15 @@ type ContextMenuModals =
                             "Drag to reorder or use the arrow buttons."
                     )
                 ]
+                Html.p [
+                    prop.className "swt:text-sm swt:opacity-60"
+                    prop.text
+                        "Columns move within their group. The file always stores Input and protocol columns first and Output columns last."
+                ]
                 SortableList.SortableList(
                     items,
                     setItems,
+                    isMoveAllowed = isMoveAllowed,
                     rowProps =
                         (fun item ->
                             if item.data.Value = columnIndices then

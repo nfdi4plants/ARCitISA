@@ -126,6 +126,36 @@ Vitest.test (
     }
 )
 
+for row, expectedRemaining in [ 2, [ "R1"; "R3" ]; 3, [ "R1"; "R2" ] ] do
+    Vitest.test (
+        $"Delete Row on a body cell in data row {row} removes that row and closes the menu",
+        fun () -> promise {
+            let table = ArcTable.init "Delete body row"
+
+            table.AddColumn(
+                CompositeHeader.Input IOType.Source,
+                ResizeArray [
+                    CompositeCell.FreeText "R1"
+                    CompositeCell.FreeText "R2"
+                    CompositeCell.FreeText "R3"
+                ]
+            )
+
+            let _, updated = renderTableValue table
+            do! RTL.waitFor (fun () -> Vitest.expect(isNull (cell 1 row)).toBe false)
+            openMenu 1 row
+            let! delete = menuButton "Delete Row"
+            RTL.fireEvent.click delete
+            Vitest.expect(updated.Value.Value.RowCount).toBe 2
+
+            let remaining =
+                [ 0..1 ] |> List.map (fun i -> updated.Value.Value.GetCellAt(0, i).AsFreeText)
+
+            Vitest.expect(remaining).toEqual expectedRemaining
+            do! RTL.waitFor (fun () -> Vitest.expect(RTL.screen.queryByRole("menu").IsNone).toBe true)
+        }
+    )
+
 Vitest.test (
     "Paste reads plain clipboard text into the clicked column outside a stale selection",
     fun () -> promise {
@@ -382,7 +412,18 @@ for row in [ 0; 1 ] do
     Vitest.test (
         $"Move Column opens the sortable dialog from table row {row} and applies the chosen order",
         fun () -> promise {
-            let table, updated = renderTable ()
+            let table = ArcTable.init "Move column"
+
+            for name in [ "Temperature"; "Humidity" ] do
+                table.AddColumn(
+                    CompositeHeader.Parameter(OntologyAnnotation(name)),
+                    ResizeArray [
+                        CompositeCell.Term(OntologyAnnotation("warm"))
+                        CompositeCell.Term(OntologyAnnotation("cold"))
+                    ]
+                )
+
+            let _, updated = renderTableValue table
             do! RTL.waitFor (fun () -> Vitest.expect(isNull (cell 2 row)).toBe false)
             openMenu 2 row
 
@@ -393,7 +434,7 @@ for row in [ 0; 1 ] do
                 )
 
             RTL.fireEvent.click move
-            let! moveUp = RTL.screen.findByRole ("button", ByRoleOptions(name = Text "Move Parameter [Temperature] up"))
+            let! moveUp = RTL.screen.findByRole ("button", ByRoleOptions(name = Text "Move Parameter [Humidity] up"))
             RTL.fireEvent.click moveUp
             Vitest.expect(updated.Value).toEqual None
             RTL.fireEvent.click (RTL.screen.getByRole ("button", ByRoleOptions(name = Text "Submit")))

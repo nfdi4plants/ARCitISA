@@ -180,3 +180,80 @@ Vitest.test (
         for index in 0 .. table.ColumnCount - 1 do
             Vitest.expect(updated.Value.GetColumn(index)).toEqual (table.GetColumn(index))
 )
+
+let private createClassTable () =
+    let table = ArcTable.init "Classes"
+    table.AddColumn(CompositeHeader.Input IOType.Source, ResizeArray [ CompositeCell.FreeText "in" ])
+
+    table.AddColumn(
+        CompositeHeader.Parameter(OntologyAnnotation("A")),
+        ResizeArray [ CompositeCell.Term(OntologyAnnotation("a")) ]
+    )
+
+    table.AddColumn(
+        CompositeHeader.Parameter(OntologyAnnotation("B")),
+        ResizeArray [ CompositeCell.Term(OntologyAnnotation("b")) ]
+    )
+
+    table.AddColumn(CompositeHeader.Output IOType.Sample, ResizeArray [ CompositeCell.FreeText "out" ])
+    table
+
+let private isDisabled (id: string) =
+    (RTL.screen.getByTestId id :?> HTMLButtonElement).disabled
+
+Vitest.test (
+    "columns cannot move across column classes",
+    fun () ->
+        RTL.render (Modal(createClassTable (), None, ignore, ignore)) |> ignore
+
+        for id in
+            [
+                "up-column-3"
+                "up-column-1"
+                "down-column-0"
+                "down-column-2"
+            ] do
+            Vitest.expect(isDisabled $"sortable-list-{id}").toBe true
+
+        for id in [ "down-column-1"; "up-column-2" ] do
+            Vitest.expect(isDisabled $"sortable-list-{id}").toBe false
+)
+
+Vitest.test (
+    "two parameter columns swap and Submit applies it",
+    fun () ->
+        let table = createClassTable ()
+        let mutable updated = None
+
+        RTL.render (Modal(table, None, (fun next -> updated <- Some next), ignore))
+        |> ignore
+
+        RTL.fireEvent.click (RTL.screen.getByTestId "sortable-list-down-column-1")
+        click "Submit"
+
+        for newIndex, oldIndex in [ 0, 0; 1, 2; 2, 1; 3, 3 ] do
+            Vitest.expect(updated.Value.GetColumn(newIndex)).toEqual (table.GetColumn(oldIndex))
+)
+
+Vitest.test (
+    "an unsorted table starts in the order the file stores and Submit applies it",
+    fun () ->
+        let table = ArcTable.init "Unsorted"
+
+        table.AddColumn(
+            CompositeHeader.Parameter(OntologyAnnotation("A")),
+            ResizeArray [ CompositeCell.Term(OntologyAnnotation("a")) ]
+        )
+
+        table.AddColumn(CompositeHeader.Output IOType.Sample, ResizeArray [ CompositeCell.FreeText "out" ])
+        table.AddColumn(CompositeHeader.Input IOType.Source, ResizeArray [ CompositeCell.FreeText "in" ])
+        let mutable updated = None
+
+        RTL.render (Modal(table, None, (fun next -> updated <- Some next), ignore))
+        |> ignore
+
+        click "Submit"
+
+        for newIndex, oldIndex in [ 0, 2; 1, 0; 2, 1 ] do
+            Vitest.expect(updated.Value.GetColumn(newIndex)).toEqual (table.GetColumn(oldIndex))
+)

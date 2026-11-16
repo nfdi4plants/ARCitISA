@@ -9,6 +9,7 @@ open Swate.Components
 open Swate.Components.Composite.AnnotationTable
 open Swate.Components.Composite.AnnotationTable.Context
 open Swate.Components.Shared
+open Swate.Components.Page.ArcFileEditor.Types
 
 module private TestHelpers =
 
@@ -89,8 +90,7 @@ let private SelectDestination (tableName: string) =
                 yEnd = 1
             |}
 
-            annotationCtx.state.Add(tableName, AnnotationTableContext.init selection)
-            |> annotationCtx.setState
+            annotationCtx.setSelection tableName (Some selection)
         )
     ]
 
@@ -136,5 +136,94 @@ Vitest.test (
 
         let updatedTable = updatedArcFile.Value.Tables().[0]
         Vitest.expect(updatedTable.GetCellAt(0, 0).AsData.Selector).toEqual (Some "cell=2,1")
+    }
+)
+
+[<ReactComponent>]
+let private InsertionTarget (arcFile: ArcFiles, activeView: ActiveView) =
+    let ctx = useAnnotationTableStateCtx ()
+
+    let target =
+        Composite.Widgets.CellInsertion.tryGetTarget arcFile activeView.TryTableIndex ctx.state
+
+    Html.output [
+        prop.testId "insertion-target"
+        prop.text (if target.IsSome then "selected" else "none")
+    ]
+
+let private createEditorArcFile () =
+    let assay = ArcAssay.init "SelectionSharing"
+
+    for name in [ "First"; "Second" ] do
+        let table = ArcTable.init name
+        table.AddColumn(CompositeHeader.Input IOType.Source, ResizeArray [ CompositeCell.FreeText "Alpha" ])
+        assay.AddTable table
+
+    assay.Datamap <- Some(Datamap(ResizeArray [ DataContext(name = "Alpha.csv") ]))
+    ArcFiles.Assay assay
+
+let private renderEditor (startingActiveView: ActiveView) =
+    TestHelpers.installTableGeometry ()
+
+    RTL.render (
+        Main.ArcFileEditor(
+            createEditorArcFile (),
+            ignore,
+            (fun () -> promise { return [||] }),
+            trailingNavbarElements =
+                (fun (props: ArcFileEditorHeaderProps) -> InsertionTarget(props.arcFile, props.activeView)),
+            startingActiveView = startingActiveView
+        )
+    )
+    |> ignore
+
+let private firstCell () =
+    Browser.Dom.document.querySelector ("[data-row='1'][data-column='1'] > div") :?> HTMLElement
+
+let private selectFirstCell () = promise {
+    do! RTL.waitFor (fun () -> Vitest.expect(isNull (firstCell ())).toBe false)
+    RTL.fireEvent.click (firstCell ())
+    Vitest.expect((RTL.screen.getByTestId "insertion-target").textContent).toBe "selected"
+}
+
+let private clickElement (selector: string) =
+    RTL.fireEvent.click (Browser.Dom.document.querySelector selector :?> HTMLElement)
+
+let private hasSelectedCell () =
+    not (isNull (Browser.Dom.document.querySelector "[data-selected='true']"))
+
+Vitest.test (
+    "returning to a table from the metadata view leaves no insertion target",
+    fun () -> promise {
+        renderEditor (ActiveView.Table 0)
+        do! selectFirstCell ()
+        clickElement "[data-footertabid='metadata']"
+        Vitest.expect((RTL.screen.getByTestId "insertion-target").textContent).toBe "none"
+        RTL.fireEvent.click (RTL.screen.getByTestId "arc-file-editor-table-tab-0")
+        do! RTL.waitFor (fun () -> Vitest.expect(isNull (firstCell ())).toBe false)
+        Vitest.expect(hasSelectedCell ()).toBe false
+        Vitest.expect((RTL.screen.getByTestId "insertion-target").textContent).toBe "none"
+    }
+)
+
+Vitest.test (
+    "switching to another table shows no selection and no insertion target",
+    fun () -> promise {
+        renderEditor (ActiveView.Table 0)
+        do! selectFirstCell ()
+        RTL.fireEvent.click (RTL.screen.getByTestId "arc-file-editor-table-tab-1")
+        do! RTL.waitFor (fun () -> Vitest.expect(isNull (firstCell ())).toBe false)
+        Vitest.expect(hasSelectedCell ()).toBe false
+        Vitest.expect((RTL.screen.getByTestId "insertion-target").textContent).toBe "none"
+    }
+)
+
+Vitest.test (
+    "leaving the DataMap view clears its insertion target",
+    fun () -> promise {
+        renderEditor ActiveView.DataMap
+        do! selectFirstCell ()
+        clickElement "[data-footertabid='metadata']"
+        Vitest.expect((RTL.screen.getByTestId "insertion-target").textContent).toBe "none"
     }
 )

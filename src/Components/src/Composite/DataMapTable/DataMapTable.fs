@@ -259,17 +259,13 @@ type DataMapTable =
         let containerRef = React.useElementRef ()
         let defaultDebug = defaultArg debug false
         let annotationTableCtx = useAnnotationTableStateCtx ()
-        let hasAnnotationCtx = isNullOrUndefined annotationTableCtx |> not
+
+        React.useEffectOnce (fun () ->
+            FsReact.createDisposable (fun () -> annotationTableCtx.clearSelection DataMapTable.SelectionContextKey)
+        )
 
         let onSelect: GridSelect.OnSelect =
-            fun _ range ->
-                if hasAnnotationCtx then
-                    let nextDataMapCtx: AnnotationTableContext = { SelectedCells = range }
-
-                    let nextData =
-                        annotationTableCtx.state.Add(DataMapTable.SelectionContextKey, nextDataMapCtx)
-
-                    annotationTableCtx.setState nextData
+            fun _ range -> annotationTableCtx.setSelection DataMapTable.SelectionContextKey range
 
         let renderCell =
             (fun (index: CellCoordinate) ->

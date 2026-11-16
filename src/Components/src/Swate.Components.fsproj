@@ -164,6 +164,7 @@
     <Compile Include="Primitive\ContextMenu\ContextMenu.test.rtl.fs" />
     <Compile Include="Primitive\ComboBox\Types.fs" />
     <Compile Include="Primitive\ComboBox\ComboBox.fs" />
+    <Compile Include="Primitive\ComboBox\ComboBox.test.rtl.fs" />
     <Compile Include="Primitive\Dropdown\Dropdown.fs" />
     <Compile Include="Primitive\ErrorBoundary\ErrorBoundary.fs" />
     <Compile Include="Primitive\ErrorBoundary\ErrorBoundary.test.rtl.fs" />
@@ -216,6 +217,7 @@
     <Compile Include="Composite\AnnotationTable\Modals.fs" />
     <Compile Include="Composite\AnnotationTable\Modals.test.rtl.fs" />
     <Compile Include="Composite\AnnotationTable\AnnotationTable.fs" />
+    <Compile Include="Composite\AnnotationTable\AnnotationTable.test.rtl.fs" />
     <Compile Include="Composite\AnnotationTable\ContextMenu.test.rtl.fs" />
     <Compile Include="Composite\TermSearch\TermSearch.test.rtl.fs" />
     <Compile Include="Composite\AnnotationTable\ResetTableConfirmationModal.fs" />
@@ -303,6 +305,7 @@
     <Compile Include="Composite\Widgets\TemplateWidget.fs" />
     <Compile Include="Composite\Widgets\TemplateWidget.test.rtl.fs" />
     <Compile Include="Composite\Widgets\Widgets.fs" />
+    <Compile Include="Composite\Widgets\Widgets.test.fs" />
     <Compile Include="Composite\Workspace\Types.fs" />
     <Compile Include="Composite\Workspace\WorkspaceModel.fs" />
     <Compile Include="Composite\Workspace\Helper\DndId.fs" />

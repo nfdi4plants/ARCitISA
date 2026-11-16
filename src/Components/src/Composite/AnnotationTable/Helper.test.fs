@@ -65,6 +65,25 @@ Vitest.test (
 )
 
 Vitest.test (
+    "column reorder works on a table whose rows were all removed",
+    fun () ->
+        let table = createTable ()
+
+        for _ in 1..3 do
+            table.RemoveRow 0
+
+        let result = reorderColumns table [| 2; 0; 1 |]
+        Vitest.expect(result.Name).toBe table.Name
+        Vitest.expect(result.RowCount).toBe 0
+
+        Vitest.expect(result.Headers |> Seq.toArray).toEqual [|
+            table.Headers.[2]
+            table.Headers.[0]
+            table.Headers.[1]
+        |]
+)
+
+Vitest.test (
     "duplicates each selected row once immediately below its source without changing the original",
     fun () ->
         let table = createTable ()

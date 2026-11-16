@@ -347,9 +347,9 @@ Vitest.test (
             Run = fun command args cwd -> promise { calls.Add("run", command, args, cwd) }
         }
 
-        do! ArcExternalTools.openTerminalWith launchers "win32" path
-        do! ArcExternalTools.openTerminalWith launchers "darwin" path
-        do! ArcExternalTools.openTerminalWith launchers "linux" path
+        do! ArcExternalTools.openTerminalWith launchers "win32" None path
+        do! ArcExternalTools.openTerminalWith launchers "darwin" None path
+        do! ArcExternalTools.openTerminalWith launchers "linux" None path
 
         Vitest.expect(calls.ToArray()).toEqual [|
             "detached", "wt.exe", [| "-d"; "." |], path
@@ -370,7 +370,7 @@ Vitest.test (
         let mutable failure = ""
 
         try
-            do! ArcExternalTools.openTerminalWith launchers "win32" "C:/ARC"
+            do! ArcExternalTools.openTerminalWith launchers "win32" None "C:/ARC"
         with error ->
             failure <- error.Message
 
@@ -395,7 +395,7 @@ Vitest.test (
                 }
         }
 
-        do! ArcExternalTools.openTerminalWith launchers "linux" "/ARC"
+        do! ArcExternalTools.openTerminalWith launchers "linux" None "/ARC"
         Vitest.expect(calls.ToArray()).toEqual [| "x-terminal-emulator"; "gnome-terminal" |]
         calls.Clear()
 
@@ -411,11 +411,87 @@ Vitest.test (
         let mutable failure = ""
 
         try
-            do! ArcExternalTools.openTerminalWith failing "linux" "/ARC"
+            do! ArcExternalTools.openTerminalWith failing "linux" None "/ARC"
         with error ->
             failure <- error.Message
 
         Vitest.expect(failure).toBe "Access denied"
         Vitest.expect(calls.ToArray()).toEqual [| "x-terminal-emulator" |]
+    }
+)
+
+let private recordingLaunchers
+    (calls: ResizeArray<string * string[] * string>)
+    (isMissing: string -> bool)
+    : ArcExternalTools.TerminalLaunchers =
+    {
+        Run = fun _ _ _ -> promise { return () }
+        StartDetached =
+            fun command args cwd -> promise {
+                calls.Add(command, args, cwd)
+
+                if isMissing command then
+                    return raise (nodeError "Not installed" "ENOENT")
+            }
+    }
+
+Vitest.test (
+    "Linux launches the TERMINAL value first in the ARC folder",
+    fun () -> promise {
+        let calls = ResizeArray<string * string[] * string>()
+
+        do!
+            ArcExternalTools.openTerminalWith
+                (recordingLaunchers calls (fun _ -> false))
+                "linux"
+                (Some "alacritty")
+                "/ARC"
+
+        Vitest.expect(calls.ToArray()).toEqual [| "alacritty", [||], "/ARC" |]
+    }
+)
+
+Vitest.test (
+    "Linux falls through to the candidate list when the TERMINAL value is not installed",
+    fun () -> promise {
+        let calls = ResizeArray<string * string[] * string>()
+
+        do!
+            ArcExternalTools.openTerminalWith
+                (recordingLaunchers calls (fun command -> command = "alacritty"))
+                "linux"
+                (Some "alacritty")
+                "/ARC"
+
+        Vitest.expect(calls.ToArray()).toEqual [|
+            "alacritty", [||], "/ARC"
+            "x-terminal-emulator", [||], "/ARC"
+        |]
+    }
+)
+
+Vitest.test (
+    "Linux ignores an empty TERMINAL value",
+    fun () -> promise {
+        let calls = ResizeArray<string * string[] * string>()
+        do! ArcExternalTools.openTerminalWith (recordingLaunchers calls (fun _ -> false)) "linux" (Some "") "/ARC"
+        Vitest.expect(calls.ToArray()).toEqual [| "x-terminal-emulator", [||], "/ARC" |]
+    }
+)
+
+Vitest.test (
+    "Linux tries ptyxis in the ARC folder before xterm",
+    fun () -> promise {
+        let calls = ResizeArray<string * string[] * string>()
+
+        do!
+            ArcExternalTools.openTerminalWith
+                (recordingLaunchers calls (fun command -> command <> "ptyxis"))
+                "linux"
+                None
+                "/ARC"
+
+        Vitest.expect(calls |> Seq.last).toEqual ("ptyxis", [| "--working-directory"; "/ARC" |], "/ARC")
+        Vitest.expect(calls |> Seq.exists (fun (command, _, _) -> command = "xterm")).toBe false
     }
 )

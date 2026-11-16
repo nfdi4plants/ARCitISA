@@ -12,11 +12,20 @@ type AnnotationTableContext = {
 
     static member init(?selectedCells) = { SelectedCells = selectedCells }
 
+/// Selections of the mounted grids, keyed by table name (or `DataMapTable.SelectionContextKey`).
+/// Writers set and clear their own key, so a grid that is not on screen leaves no selection behind.
+type AnnotationTableSelections = {
+    state: Map<string, AnnotationTableContext>
+    setSelection: string -> CellCoordinateRange option -> unit
+    clearSelection: string -> unit
+}
+
 let AnnotationTableStateCtx =
-    React.createContext<StateContext<Map<string, AnnotationTableContext>>> (
+    React.createContext<AnnotationTableSelections> (
         {
             state = Map.empty
-            setState = fun _ -> ()
+            setSelection = fun _ _ -> ()
+            clearSelection = ignore
         }
     )
 

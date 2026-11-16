@@ -4,6 +4,7 @@ open Feliz
 open Browser.Types
 open Swate
 open Swate.Components
+open Swate.Components.JsBindings
 open Swate.Components.Composite.Widgets.LocalStorage
 open Swate.Components.Composite.Widgets.Context
 open Swate.Components.Composite.TermSearch
@@ -29,65 +30,81 @@ open InitExtensions
 open Fable.Core
 open Fable.Core.JsInterop
 
+module WidgetPosition =
+
+    /// Moves a widget into its host. Positions are relative to the top left corner of the host.
+    /// A widget that is larger than the host sits at the top left corner.
+    let clampIntoHost (host: Rect) (element: Rect) (position: Rect) : Rect = {
+        X = min (max position.X 0) (max 0 (host.X - element.X))
+        Y = min (max position.Y 0) (max 0 (host.Y - element.Y))
+    }
+
 module private MoveEventListener =
 
     open Fable.Core.JsInterop
 
-    let ensurePositionInsideWindow (element: IRefValue<HTMLElement option>) (position: Rect) =
-        let maxX = Browser.Dom.window.innerWidth - element.current.Value.offsetWidth
-        let tempX = position.X
-        let newX = System.Math.Min(System.Math.Max(tempX, 0), int maxX)
-        let maxY = Browser.Dom.window.innerHeight - element.current.Value.offsetHeight
-        let tempY = position.Y
-        let newY = System.Math.Min(System.Math.Max(tempY, 0), int maxY)
-        { X = newX; Y = newY }
+    let private measure (element: IRefValue<HTMLElement option>) = {
+        X = int element.current.Value.offsetWidth
+        Y = int element.current.Value.offsetHeight
+    }
 
-    let calculatePosition (element: IRefValue<HTMLElement option>) (startPosition: Rect) =
-        fun (e: Event) ->
-            let e: MouseEvent = !!e
-            let tempX = int e.clientX - startPosition.X
-            let tempY = int e.clientY - startPosition.Y
-            let tempPosition = { X = tempX; Y = tempY }
-            ensurePositionInsideWindow element tempPosition
+    let ensurePositionInsideHost
+        (host: IRefValue<HTMLElement option>)
+        (element: IRefValue<HTMLElement option>)
+        (position: Rect)
+        =
+        WidgetPosition.clampIntoHost (measure host) (measure element) position
 
-    let onmousemove (element: IRefValue<HTMLElement option>) (startPosition: Rect) setPosition =
+    let pointerInHost (host: IRefValue<HTMLElement option>) (e: MouseEvent) =
+        let hostRect = host.current.Value.getBoundingClientRect ()
+
+        {
+            X = int (e.clientX - hostRect.left)
+            Y = int (e.clientY - hostRect.top)
+        }
+
+    let calculatePosition
+        (host: IRefValue<HTMLElement option>)
+        (element: IRefValue<HTMLElement option>)
+        (startPosition: Rect)
+        =
         fun (e: Event) ->
-            let nextPosition = calculatePosition element startPosition e
+            let pointer = pointerInHost host !!e
+
+            let tempPosition = {
+                X = pointer.X - startPosition.X
+                Y = pointer.Y - startPosition.Y
+            }
+
+            ensurePositionInsideHost host element tempPosition
+
+    let onmousemove
+        (host: IRefValue<HTMLElement option>)
+        (element: IRefValue<HTMLElement option>)
+        (startPosition: Rect)
+        setPosition
+        =
+        fun (e: Event) ->
+            let nextPosition = calculatePosition host element startPosition e
             setPosition (Some nextPosition)
 
-    let onmouseup (prefix, element: IRefValue<HTMLElement option>) onmousemove =
+    let onmouseup (prefix, host: IRefValue<HTMLElement option>, element: IRefValue<HTMLElement option>) onmousemove =
         Browser.Dom.document.removeEventListener ("mousemove", onmousemove)
 
         if element.current.IsSome then
             let rect = element.current.Value.getBoundingClientRect ()
-            let position = { X = int rect.left; Y = int rect.top }
+            let hostRect = host.current.Value.getBoundingClientRect ()
+
+            let position = {
+                X = int (rect.left - hostRect.left)
+                Y = int (rect.top - hostRect.top)
+            }
+
             Position.write (prefix, position)
 
 module ResizeEventListener =
 
     open Fable.Core.JsInterop
-
-    let adaptElement (innerWidth: int) (innerHeight: int) (size: Rect) (position: Rect) setWidth setPosition =
-        let combinedWidth = size.X + position.X
-        let combinedHeight = size.Y + position.Y
-
-        if innerWidth <= size.X then
-            (Some { X = innerWidth; Y = size.Y }) |> setWidth
-
-        let newXPosition =
-            if innerWidth <= combinedWidth then
-                System.Math.Max(0, innerWidth - size.X)
-            else
-                position.X
-
-        let newYPosition =
-            if innerHeight <= combinedHeight then
-                System.Math.Max(0, innerHeight - size.Y)
-            else
-                position.Y
-
-        setPosition (Some { X = newXPosition; Y = newYPosition })
-
 
     let onmousemove (startPosition: Rect) (startSize: Rect) setSize =
         fun (e: Event) ->
@@ -111,17 +128,6 @@ module ResizeEventListener =
                 }
             )
 
-    let windowSizeChange setInnerWidth setInnerHeight =
-        React.useEffect (fun () ->
-            let onResize _ =
-                setInnerWidth Browser.Dom.window.innerWidth
-                setInnerHeight Browser.Dom.window.innerHeight
-
-            Browser.Dom.window.addEventListener ("resize", onResize)
-            // Cleanup function to remove event listener when the component unmounts
-            FsReact.createDisposable (fun () -> Browser.Dom.window.removeEventListener ("resize", onResize))
-        )
-
 [<RequireQualifiedAccess>]
 [<Erase; Mangle(false)>]
 type Widget =
@@ -131,6 +137,7 @@ type Widget =
     static member Base
         (
             content: ReactElement,
+            host: IRefValue<HTMLElement option>,
             prefix: string,
             rmv: MouseEvent -> unit,
             key: string,
@@ -145,51 +152,38 @@ type Widget =
 
         let size, setSize = React.useState (fun _ -> Rect.initSizeFromPrefix prefix)
 
-        let innerWidth, setInnerWidth =
-            React.useState (fun _ -> Browser.Dom.window.innerWidth)
-
-        let innerHeight, setInnerHeight =
-            React.useState (fun _ -> Browser.Dom.window.innerHeight)
-
         let element = React.useElementRef ()
 
-        ResizeEventListener.windowSizeChange setInnerWidth setInnerHeight
+        // Keeps the widget inside the host when the host changes size, for example when a sidebar opens.
+        React.useLayoutEffectOnce (fun _ ->
+            if Dom.ResizeObserver.isAvailable then
+                let observer =
+                    Dom.ResizeObserver(fun _ ->
+                        let current = {
+                            X = int element.current.Value.offsetLeft
+                            Y = int element.current.Value.offsetTop
+                        }
 
-        let debouncedAdaptElement =
-            React.useDebouncedCallback (
-                fun () ->
-                    match position, size with
-                    | Some position, Some size ->
-                        ResizeEventListener.adaptElement
-                            (int innerWidth)
-                            (int innerHeight)
-                            size
-                            position
-                            setSize
-                            setPosition
-                    | _, _ -> ()
-                , 100
-            )
+                        let clamped = MoveEventListener.ensurePositionInsideHost host element current
 
-        React.useEffectOnce (fun _ -> debouncedAdaptElement ())
+                        if clamped <> current then
+                            setPosition (Some clamped)
+                    )
 
-        React.useEffect (
-            (fun () ->
-                //Adapt position when the size of the element is changed so that it is visible
-                debouncedAdaptElement ()
-            //React shall only be used, when the size of the element is changed
-            ),
-            [| box innerWidth; box innerHeight |]
+                observer.observe host.current.Value
+                FsReact.createDisposable (fun () -> observer.disconnect ())
+            else
+                FsReact.createDisposable ignore
         )
 
         React.useLayoutEffectOnce (fun _ ->
             position
             |> Option.iter (fun position ->
-                MoveEventListener.ensurePositionInsideWindow element position
+                MoveEventListener.ensurePositionInsideHost host element position
                 |> Some
                 |> setPosition
             )
-        ) // Reposition widget inside window
+        ) // Reposition widget inside host
 
         let resizeElement (content: ReactElement) =
             Html.div [
@@ -218,12 +212,13 @@ type Widget =
                     style.zIndex zIndex
                     style.cursor.eastWestResize //style.cursor.northWestSouthEastResize;
                     style.display.flex
-                    style.position.fixedRelativeToWindow
+                    style.position.absolute
                     style.minWidth.minContent
                     if size.IsSome then
                         style.width size.Value.X
+                        style.maxWidth (length.percent 100)
                     else
-                        style.maxWidth 600
+                        style.custom ("maxWidth", "min(600px, 100%)")
                     //style.height size.Value.Y
                     if position.IsNone then
                         //style.transform.translate (length.perc -50,length.perc -50)
@@ -249,11 +244,19 @@ type Widget =
                         onFocus ()
                         e.preventDefault ()
                         e.stopPropagation ()
-                        let x = e.clientX - element.current.Value.offsetLeft
-                        let y = e.clientY - element.current.Value.offsetTop
-                        let startPosition = { X = int x; Y = int y }
-                        let onmousemove = MoveEventListener.onmousemove element startPosition setPosition
-                        let onmouseup = fun _ -> MoveEventListener.onmouseup (prefix, element) onmousemove
+                        let pointer = MoveEventListener.pointerInHost host e
+
+                        let startPosition = {
+                            X = pointer.X - int element.current.Value.offsetLeft
+                            Y = pointer.Y - int element.current.Value.offsetTop
+                        }
+
+                        let onmousemove =
+                            MoveEventListener.onmousemove host element startPosition setPosition
+
+                        let onmouseup =
+                            fun _ -> MoveEventListener.onmouseup (prefix, host, element) onmousemove
+
                         Browser.Dom.document.addEventListener ("mousemove", onmousemove)
                         let config = createEmpty<AddEventListenerOptions>
                         config.once <- true
@@ -285,6 +288,8 @@ type Widget =
     static member WidgetController
         (widgets: Map<WidgetType, WidgetDefinition>, children: ReactElement, ?closeAllWhen: bool)
         =
+
+        let hostRef = React.useElementRef ()
 
         let activeWidgets, setActiveWidgets =
             React.useStateWithUpdater<WidgetType list> ([])
@@ -376,23 +381,29 @@ type Widget =
                 |]
             )
 
+        let widgetElements = [
+            for index, widgetType in activeWidgets |> List.indexed do
+                match widgets.TryFind widgetType with
+                | Some widget ->
+                    Widget.Base(
+                        content = widget.content,
+                        host = hostRef,
+                        prefix = widget.prefix,
+                        rmv = (fun _ -> closeWidget widgetType),
+                        key = widgetType.ToString(),
+                        zIndex = 99 + index,
+                        onFocus = (fun () -> focusWidget widgetType)
+                    )
+                | None -> Html.none
+        ]
+
+        // Widgets stay inside this host, so they cannot cover the app chrome around the content.
         WidgetControllerCtx.Provider(
             widgetContext,
-            [
-                children
-
-                for index, widgetType in activeWidgets |> List.indexed do
-                    match widgets.TryFind widgetType with
-                    | Some widget ->
-                        Widget.Base(
-                            content = widget.content,
-                            prefix = widget.prefix,
-                            rmv = (fun _ -> closeWidget widgetType),
-                            key = widgetType.ToString(),
-                            zIndex = 99 + index,
-                            onFocus = (fun () -> focusWidget widgetType)
-                        )
-                    | None -> Html.none
+            Html.div [
+                prop.ref hostRef
+                prop.className "swt:relative swt:flex swt:flex-col swt:grow swt:min-h-0 swt:min-w-0"
+                prop.children (children :: widgetElements)
             ]
         )
 
