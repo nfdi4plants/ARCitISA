@@ -69,7 +69,8 @@ type TerminalLaunchers = {
     Run: string -> string[] -> string -> JS.Promise<unit>
 }
 
-let openTerminalWith (launchers: TerminalLaunchers) platform arcPath =
+/// terminal is the value of the TERMINAL environment variable. Linux tries it before the built-in candidates.
+let openTerminalWith (launchers: TerminalLaunchers) platform (terminal: string option) arcPath =
     match platform with
     | "win32" -> promise {
         try
@@ -98,13 +99,23 @@ let openTerminalWith (launchers: TerminalLaunchers) platform arcPath =
                         return raise error
         }
 
-        tryLaunch [
-            "x-terminal-emulator", [||]
-            "gnome-terminal", [| "--working-directory"; arcPath |]
-            "konsole", [| "--workdir"; arcPath |]
-            "xfce4-terminal", [| "--working-directory"; arcPath |]
-            "xterm", [||]
-        ]
+        let preferred =
+            terminal
+            |> Option.filter (fun command -> not (System.String.IsNullOrWhiteSpace command))
+            |> Option.map (fun command -> command, ([||]: string[]))
+            |> Option.toList
+
+        tryLaunch (
+            preferred
+            @ [
+                "x-terminal-emulator", [||]
+                "gnome-terminal", [| "--working-directory"; arcPath |]
+                "konsole", [| "--workdir"; arcPath |]
+                "xfce4-terminal", [| "--working-directory"; arcPath |]
+                "ptyxis", [| "--working-directory"; arcPath |]
+                "xterm", [||]
+            ]
+        )
     | _ -> promise { return failwith $"Opening a terminal is not supported on {platform}." }
 
 let openTerminal arcPath =
@@ -114,4 +125,5 @@ let openTerminal arcPath =
             Run = ChildProcess.run
         }
         (Node.processPlatform ())
+        (Node.environmentVariable "TERMINAL")
         arcPath
