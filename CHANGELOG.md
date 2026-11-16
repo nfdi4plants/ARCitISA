@@ -46,7 +46,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Integrate new ARCitISA icon set into the application. (by @caroott + @Freymaurer)
 - Improve visual feedback in data annotator and file picker components. #1437 (by @Freymaurer)
 - Typing into an already-filled table cell will now overwrite its content instead of appending to it. #924 (by @Freymaurer)
-- Changed "Move Column" UI to reuse the same component as "File Picker" and "Data Annotator" (by @Freymaurer)
+- Changed "Move Column" UI to reuse the same component as "File Picker" and "Data Annotator". Columns move only within their group, so the order stays after saving. (by @Freymaurer + @caroott)
 
 ### 🐛 Fixed
 

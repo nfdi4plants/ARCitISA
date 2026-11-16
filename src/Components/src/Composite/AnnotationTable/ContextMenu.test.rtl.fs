@@ -412,7 +412,18 @@ for row in [ 0; 1 ] do
     Vitest.test (
         $"Move Column opens the sortable dialog from table row {row} and applies the chosen order",
         fun () -> promise {
-            let table, updated = renderTable ()
+            let table = ArcTable.init "Move column"
+
+            for name in [ "Temperature"; "Humidity" ] do
+                table.AddColumn(
+                    CompositeHeader.Parameter(OntologyAnnotation(name)),
+                    ResizeArray [
+                        CompositeCell.Term(OntologyAnnotation("warm"))
+                        CompositeCell.Term(OntologyAnnotation("cold"))
+                    ]
+                )
+
+            let _, updated = renderTableValue table
             do! RTL.waitFor (fun () -> Vitest.expect(isNull (cell 2 row)).toBe false)
             openMenu 2 row
 
@@ -423,7 +434,7 @@ for row in [ 0; 1 ] do
                 )
 
             RTL.fireEvent.click move
-            let! moveUp = RTL.screen.findByRole ("button", ByRoleOptions(name = Text "Move Parameter [Temperature] up"))
+            let! moveUp = RTL.screen.findByRole ("button", ByRoleOptions(name = Text "Move Parameter [Humidity] up"))
             RTL.fireEvent.click moveUp
             Vitest.expect(updated.Value).toEqual None
             RTL.fireEvent.click (RTL.screen.getByRole ("button", ByRoleOptions(name = Text "Submit")))

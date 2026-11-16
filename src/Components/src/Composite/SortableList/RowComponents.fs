@@ -33,7 +33,7 @@ type RowComponents =
             prop.type'.button
             prop.ariaLabel $"Move {row.item.label} up"
             prop.title $"Move {row.item.label} up"
-            prop.disabled row.isFirst
+            prop.disabled (not row.canMoveUp)
             prop.className "swt:btn swt:btn-xs swt:join-item"
             prop.onClick (fun e ->
                 e.stopPropagation ()
@@ -53,7 +53,7 @@ type RowComponents =
             prop.type'.button
             prop.ariaLabel $"Move {row.item.label} down"
             prop.title $"Move {row.item.label} down"
-            prop.disabled row.isLast
+            prop.disabled (not row.canMoveDown)
             prop.className "swt:btn swt:btn-xs swt:join-item"
             prop.onClick (fun e ->
                 e.stopPropagation ()

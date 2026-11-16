@@ -15,6 +15,7 @@ type SortableList =
             index: int,
             count: int,
             move: int -> int -> unit,
+            isMoveAllowed: int -> int -> bool,
             remove: string -> unit,
             renderRow: SortableListRowRender<'A> -> ReactElement,
             ?rowProps: SortableListItem<'A> -> IReactProperty list,
@@ -42,8 +43,8 @@ type SortableList =
         let row: SortableListRowRender<'A> = {|
             item = item
             index = index
-            isFirst = index = 0
-            isLast = index = count - 1
+            canMoveUp = index > 0 && isMoveAllowed index (index - 1)
+            canMoveDown = index < count - 1 && isMoveAllowed index (index + 1)
             dragHandleProps = [
                 yield! prop.spread sortable.attributes
                 yield! prop.spread sortable.listeners
@@ -64,6 +65,7 @@ type SortableList =
     /// The parent owns items. Reorders and removals emit a new array without mutating the input.
     /// renderRow supplies table cells; rowProps customizes the surrounding sortable row.
     /// Inline row styles are preserved, with transform and transition reserved for sorting.
+    /// isMoveAllowed receives the from and to index of a move. A denied drop keeps the order and the arrow buttons render disabled.
     [<ReactComponent(true)>]
     static member SortableList
         (
@@ -73,10 +75,12 @@ type SortableList =
             ?setSelectedIds: (string list -> string list) -> unit,
             ?renderRow: SortableListRowRender<'A> -> ReactElement,
             ?rowProps: SortableListItem<'A> -> IReactProperty list,
+            ?isMoveAllowed: int -> int -> bool,
             ?className: string
         ) =
 
         let lastInteraction, setLastInteraction = React.useState (None: string option)
+        let isMoveAllowed = defaultArg isMoveAllowed (fun _ _ -> true)
 
         let move oldIndex newIndex =
             if
@@ -85,6 +89,7 @@ type SortableList =
                 && newIndex >= 0
                 && oldIndex < items.Length
                 && newIndex < items.Length
+                && isMoveAllowed oldIndex newIndex
             then
                 let itemId = items.[oldIndex].id
 
@@ -246,6 +251,7 @@ type SortableList =
                                                         index,
                                                         items.Length,
                                                         move,
+                                                        isMoveAllowed,
                                                         remove,
                                                         renderRow = renderRow,
                                                         ?rowProps = rowProps,

@@ -17,11 +17,12 @@ module SortableListItem =
     |}
 
 /// Custom renderers return table cells; SortableList owns the surrounding row.
+/// canMoveUp and canMoveDown are false at the list edges and where isMoveAllowed denies the move.
 type SortableListRowRender<'A> = {|
     item: SortableListItem<'A>
     index: int
-    isFirst: bool
-    isLast: bool
+    canMoveUp: bool
+    canMoveDown: bool
     dragHandleProps: IReactProperty list
     moveUp: unit -> unit
     moveDown: unit -> unit
@@ -33,8 +34,8 @@ module SortableListRowRender =
         (
             item: SortableListItem<'A>,
             index: int,
-            isFirst: bool,
-            isLast: bool,
+            canMoveUp: bool,
+            canMoveDown: bool,
             dragHandleProps: IReactProperty list,
             moveUp: unit -> unit,
             moveDown: unit -> unit,
@@ -43,8 +44,8 @@ module SortableListRowRender =
         {|
             item = item
             index = index
-            isFirst = isFirst
-            isLast = isLast
+            canMoveUp = canMoveUp
+            canMoveDown = canMoveDown
             dragHandleProps = dragHandleProps
             moveUp = moveUp
             moveDown = moveDown
