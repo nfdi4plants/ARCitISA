@@ -305,6 +305,7 @@
     <Compile Include="Composite\Widgets\TemplateWidget.fs" />
     <Compile Include="Composite\Widgets\TemplateWidget.test.rtl.fs" />
     <Compile Include="Composite\Widgets\Widgets.fs" />
+    <Compile Include="Composite\Widgets\Widgets.test.fs" />
     <Compile Include="Composite\Workspace\Types.fs" />
     <Compile Include="Composite\Workspace\WorkspaceModel.fs" />
     <Compile Include="Composite\Workspace\Helper\DndId.fs" />
