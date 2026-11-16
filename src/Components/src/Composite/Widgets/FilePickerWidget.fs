@@ -170,7 +170,7 @@ type FilePickerWidget =
                 "Insert all file names into the currently selected table or DataMap cells."
 
         Html.div [
-            prop.className "swt:ml-auto"
+            prop.className "swt:flex swt:items-center swt:ml-auto"
             prop.children [
                 if not tableCellSelected then
                     Html.span [
@@ -208,7 +208,7 @@ type FilePickerWidget =
                 selectedPathsCtx.setStateUpdater (fun _ -> [])
 
         Html.div [
-            prop.className "swt:flex swt:gap-2 swt:w-full"
+            prop.className "swt:flex swt:flex-wrap swt:gap-2 swt:w-full"
             prop.children [
                 Html.button [
                     prop.className "swt:btn swt:btn-outline"
