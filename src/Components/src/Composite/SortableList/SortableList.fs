@@ -115,6 +115,10 @@ type SortableList =
                                 if lastInteraction.IsSome && item.id = lastInteraction.Value then
                                     "swt:outline swt:outline-primary"
                             ]
+                            prop.onMouseDown (fun event ->
+                                if event.shiftKey then
+                                    event.preventDefault ()
+                            )
                             prop.onClick (fun event ->
                                 let selectRange () =
                                     match lastInteraction with
