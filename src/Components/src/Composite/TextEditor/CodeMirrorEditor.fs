@@ -1,0 +1,323 @@
+namespace Swate.Components.Composite.TextEditor
+
+open Browser.Types
+open Fable.Core
+open Fable.Core.JsInterop
+open Feliz
+
+open Swate.Components.Composite.TextEditor.JsBindings.CodeMirror
+open Swate.Components.Composite.TextEditor.Types
+open Swate.Components.Composite.TextEditor.LanguageDetection
+open Swate.Components.Composite.TextEditor.Theme
+
+module private CodeMirrorEditorHelpers =
+
+    let reconfigure (view: EditorView) (compartment: Compartment) (extension: Extension) =
+        view.dispatch (TransactionSpec(effects = [| compartment.reconfigure extension |]))
+
+    let readOnlyExtension (readOnly: bool) =
+        if readOnly then
+            EditorStateApi.readOnly.``of`` true
+        else
+            noExtension
+
+    /// Prose wraps lines and gets the browser's spellcheck. Code keeps long lines and no spellcheck.
+    let proseExtension (prose: bool) =
+        if prose then
+            extensions [|
+                EditorViewApi.lineWrapping
+                EditorViewApi.contentAttributes.``of`` (createObj [ "spellcheck" ==> "true"; "autocorrect" ==> "on" ])
+            |]
+        else
+            EditorViewApi.contentAttributes.``of`` (createObj [ "spellcheck" ==> "false" ])
+
+    let languageDescription (id: string) =
+        languages |> Array.tryFind (fun d -> languageId d = id)
+
+    let sameView (current: EditorView option) (view: EditorView) =
+        current |> Option.exists (fun v -> obj.ReferenceEquals(v, view))
+
+open CodeMirrorEditorHelpers
+
+[<Erase; Mangle(false)>]
+type CodeMirrorEditor =
+
+    /// A CodeMirror 6 editor on one document. A new documentUri starts a new document from
+    /// initialValue. Other changes of initialValue are ignored. language is an id from
+    /// LanguageDetection. The editor loads that language on demand.
+    /// lint runs 300 ms after the last change. Pass the same function instance across renders,
+    /// a new instance lints again.
+    [<ReactComponent>]
+    static member CodeMirrorEditor
+        (
+            documentUri: string,
+            initialValue: string,
+            language: string,
+            ?readOnly: bool,
+            ?prose: bool,
+            ?lint: string -> LintDiagnostic[],
+            ?onSave: TextEditorSnapshot -> JS.Promise<bool>,
+            ?onDirtyChange: bool -> unit,
+            ?onChange: unit -> unit,
+            ?onDiagnostics: TextEditorDiagnostic[] -> unit,
+            ?handleRef: IRefValue<TextEditorHandle option>,
+            ?className: string,
+            ?ariaLabel: string
+        ) =
+        let readOnly = defaultArg readOnly false
+        let prose = defaultArg prose false
+
+        let hostRef = React.useRef<HTMLElement option> None
+        let viewRef = React.useRef<EditorView option> None
+        let savedDocRef = React.useRef<Text option> None
+        let dirtyRef = React.useRef false
+        let runningSaveRef = React.useRef<JS.Promise<bool> option> None
+        let languageRef = React.useRef noExtension
+        let compartmentsRef = React.useRef<Compartment[] option> None
+
+        let compartments =
+            match compartmentsRef.current with
+            | Some c -> c
+            | None ->
+                let c = Array.init 4 (fun _ -> CompartmentApi.Create())
+                compartmentsRef.current <- Some c
+                c
+
+        let languageSlot, readOnlySlot, proseSlot, lintSlot =
+            compartments.[0], compartments.[1], compartments.[2], compartments.[3]
+
+        // The editor outlives single renders, so its callbacks read the latest props from refs.
+        let onSaveRef = React.useRef onSave
+        let onDirtyChangeRef = React.useRef onDirtyChange
+        let onChangeRef = React.useRef onChange
+        let onDiagnosticsRef = React.useRef onDiagnostics
+        let readOnlyRef = React.useRef readOnly
+        let proseRef = React.useRef prose
+        let lintRef = React.useRef lint
+        onSaveRef.current <- onSave
+        onDirtyChangeRef.current <- onDirtyChange
+        onChangeRef.current <- onChange
+        onDiagnosticsRef.current <- onDiagnostics
+        readOnlyRef.current <- readOnly
+        proseRef.current <- prose
+        lintRef.current <- lint
+
+        let report (diagnostics: TextEditorDiagnostic[]) =
+            onDiagnosticsRef.current |> Option.iter (fun f -> f diagnostics)
+
+        let lintExtension (lint: (string -> LintDiagnostic[]) option) =
+            match lint with
+            | None -> noExtension
+            | Some lint ->
+                extensions [|
+                    linter (
+                        (fun view -> promise {
+                            let doc = view.state.doc
+                            let found = lint (doc.toString ())
+
+                            found
+                            |> Array.map (fun d ->
+                                let line = doc.lineAt d.from
+
+                                {|
+                                    from = d.from
+                                    ``to`` = d.``to``
+                                    line = line.number
+                                    column = d.from - line.from + 1
+                                    severity = d.severity
+                                    message = d.message
+                                    source = d.source
+                                |}
+                            )
+                            |> report
+
+                            return found
+                        }),
+                        {| delay = 300 |}
+                    )
+                    lintGutter ()
+                |]
+
+        let evaluateDirty () =
+            match viewRef.current, savedDocRef.current with
+            | Some view, Some saved ->
+                let dirty = not (view.state.doc.eq saved)
+
+                if dirty <> dirtyRef.current then
+                    dirtyRef.current <- dirty
+                    onDirtyChangeRef.current |> Option.iter (fun f -> f dirty)
+            | _ -> ()
+
+        let save () : JS.Promise<bool> =
+            match onSaveRef.current, viewRef.current with
+            | Some onSave, Some view when not readOnlyRef.current ->
+                match runningSaveRef.current with
+                | Some running -> running
+                | None ->
+                    let doc = view.state.doc
+
+                    let running = promise {
+                        let! ok = promise {
+                            try
+                                return! onSave {| text = doc.toString () |}
+                            with _ ->
+                                return false
+                        }
+
+                        runningSaveRef.current <- None
+
+                        // A different document may be open by now. Its saved state stays.
+                        if ok && sameView viewRef.current view then
+                            savedDocRef.current <- Some doc
+                            evaluateDirty ()
+
+                        return ok
+                    }
+
+                    runningSaveRef.current <- Some running
+                    running
+            | _ -> promise { return false }
+
+        let createState (text: string) : EditorState =
+            EditorStateApi.create {|
+                doc = text
+                extensions =
+                    extensions [|
+                        Prec.highest (
+                            keymap.``of`` [|
+                                {|
+                                    key = "Mod-s"
+                                    run =
+                                        fun _ ->
+                                            save () |> ignore
+                                            true
+                                    preventDefault = true
+                                |}
+                            |]
+                        )
+                        basicSetup
+                        keymap.``of`` [| unbox<KeyBinding> indentWithTab |]
+                        daisyTheme
+                        EditorStateApi.lineSeparator.``of`` (detectLineSeparator text)
+                        EditorViewApi.contentAttributes.``of`` (
+                            createObj [ "aria-label" ==> defaultArg ariaLabel "Text editor" ]
+                        )
+                        EditorViewApi.updateListener.``of`` (fun update ->
+                            if update.docChanged then
+                                evaluateDirty ()
+                                onChangeRef.current |> Option.iter (fun f -> f ())
+                        )
+                        languageSlot.``of`` languageRef.current
+                        readOnlySlot.``of`` (readOnlyExtension readOnlyRef.current)
+                        proseSlot.``of`` (proseExtension proseRef.current)
+                        lintSlot.``of`` (lintExtension lintRef.current)
+                    |]
+            |}
+
+        let handle =
+            { new TextEditorHandle with
+                member _.isDirty() = dirtyRef.current
+                member _.save() = save ()
+
+                member _.getText() =
+                    match viewRef.current with
+                    | Some view -> view.state.doc.toString ()
+                    | None -> ""
+
+                member _.replaceContent(text) =
+                    match viewRef.current with
+                    | Some view ->
+                        let state = createState text
+                        view.setState state
+                        savedDocRef.current <- Some state.doc
+                        evaluateDirty ()
+                    | None -> ()
+
+                member _.focus() =
+                    viewRef.current |> Option.iter (fun v -> v.focus ())
+            }
+
+        React.useEffect (
+            (fun () ->
+                match hostRef.current with
+                | Some host ->
+                    let state = createState initialValue
+                    let view = EditorViewApi.Create {| state = state; parent = host |}
+                    viewRef.current <- Some view
+                    savedDocRef.current <- Some state.doc
+                    evaluateDirty ()
+                    handleRef |> Option.iter (fun r -> r.current <- Some handle)
+
+                    { new System.IDisposable with
+                        member _.Dispose() =
+                            view.destroy ()
+                            viewRef.current <- None
+                            handleRef |> Option.iter (fun r -> r.current <- None)
+                    }
+                | None ->
+                    { new System.IDisposable with
+                        member _.Dispose() = ()
+                    }
+            ),
+            [| box documentUri |]
+        )
+
+        React.useEffect (
+            (fun () ->
+                let cancelled = ref false
+
+                match languageDescription language with
+                | Some description ->
+                    promise {
+                        try
+                            let! loaded = description.load ()
+
+                            if not cancelled.Value then
+                                languageRef.current <- loaded
+                                viewRef.current |> Option.iter (fun v -> reconfigure v languageSlot loaded)
+                        with _ ->
+                            ()
+                    }
+                    |> ignore
+                | None ->
+                    languageRef.current <- noExtension
+                    viewRef.current |> Option.iter (fun v -> reconfigure v languageSlot noExtension)
+
+                { new System.IDisposable with
+                    member _.Dispose() = cancelled.Value <- true
+                }
+            ),
+            [| box language; box documentUri |]
+        )
+
+        React.useEffect (
+            (fun () ->
+                viewRef.current
+                |> Option.iter (fun v -> reconfigure v readOnlySlot (readOnlyExtension readOnly))
+            ),
+            [| box readOnly |]
+        )
+
+        React.useEffect (
+            (fun () ->
+                viewRef.current
+                |> Option.iter (fun v -> reconfigure v proseSlot (proseExtension prose))
+            ),
+            [| box prose |]
+        )
+
+        React.useEffect (
+            (fun () ->
+                viewRef.current
+                |> Option.iter (fun v -> reconfigure v lintSlot (lintExtension lint))
+
+                if lint.IsNone then
+                    report [||]
+            ),
+            [| box lint |]
+        )
+
+        Html.div [
+            prop.className (defaultArg className "swt:size-full swt:min-h-0 swt:overflow-hidden")
+            prop.ref hostRef
+        ]

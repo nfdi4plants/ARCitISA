@@ -50,6 +50,7 @@ export { default as Notes } from './dist/Composite/Notes/Editor/Notes.fs';
 export { default as SortableList } from './dist/Composite/SortableList/SortableList.fs';
 export { DragHandle, MoveUpButton, MoveDownButton, RemoveButton, DefaultRow } from './dist/Composite/SortableList/RowComponents.fs';
 export { default as Table } from './dist/Composite/Table/Table.fs';
+export { default as TextEditor } from './dist/Composite/TextEditor/TextEditor.fs';
 export { default as TemplateBrowser } from './dist/Composite/TemplateBrowser/TemplateBrowser.fs';
 export { default as TemplateCacheProvider } from './dist/Composite/TemplateBrowser/TemplateCacheProvider.fs';
 export { default as TemplateFilter } from './dist/Composite/TemplateBrowser/TemplateFilter.fs';

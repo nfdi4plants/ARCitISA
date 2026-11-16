@@ -28,7 +28,27 @@ export default defineConfig({
     },
     optimizeDeps: {
         // Avoid runtime re-optimization reloads during Vitest browser runs in CI.
-        include: ["react-dom/client", "elkjs/lib/elk.bundled.js"],
+        include: [
+            "react-dom/client",
+            "elkjs/lib/elk.bundled.js",
+            // The TextEditor, and the languages its stories load on demand through @codemirror/language-data.
+            "codemirror",
+            "@codemirror/commands",
+            "@codemirror/language",
+            "@codemirror/language-data",
+            "@codemirror/lint",
+            "@codemirror/state",
+            "@codemirror/view",
+            "@codemirror/lang-json",
+            "@codemirror/lang-markdown",
+            "@codemirror/lang-python",
+            "@codemirror/lang-yaml",
+            "@lezer/highlight",
+            "@lezer/json",
+            "ajv/dist/2020.js",
+            "ajv-formats",
+            "yaml",
+        ],
     },
     build: { // changes to the build config below should be well tested. See README.md for more information.
     // README.md: local dev -> release -> npm -> background info
