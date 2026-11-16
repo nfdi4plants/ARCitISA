@@ -6,6 +6,8 @@ open Browser.Types
 open Fable.Core
 open Feliz
 open Vitest
+open Swate.Components
+open Swate.Components.Composite.AnnotationTable.Context
 open Swate.Components.Shared
 open Swate.Components.Page.ArcFileEditor.Types
 
@@ -230,5 +232,43 @@ Vitest.test (
         press "Enter" false
         do! RTL.waitFor (fun () -> expectSelected 1 2)
         Vitest.expect((status ()).textContent).toBe "1 / 1"
+    }
+)
+
+[<ReactComponent>]
+let private InsertionTarget (arcFile: ArcFiles, activeView: ActiveView) =
+    let ctx = useAnnotationTableStateCtx ()
+
+    let target =
+        Composite.Widgets.CellInsertion.tryGetTarget arcFile activeView.TryTableIndex ctx.state
+
+    Html.output [
+        prop.testId "insertion-target"
+        prop.text (if target.IsSome then "selected" else "none")
+    ]
+
+Vitest.test (
+    "a search jump after switching tables selects the match on the shown table for the widgets",
+    fun () -> promise {
+        mockGeometry Vitest.vi "offsetWidth" 800
+        mockGeometry Vitest.vi "offsetHeight" 600
+
+        RTL.render (
+            Main.ArcFileEditor(
+                createArcFile (),
+                ignore,
+                (fun () -> promise { return [||] }),
+                trailingNavbarElements =
+                    (fun (props: ArcFileEditorHeaderProps) -> InsertionTarget(props.arcFile, props.activeView)),
+                startingActiveView = ActiveView.Table 0
+            )
+        )
+        |> ignore
+
+        RTL.fireEvent.click (RTL.screen.getByTestId "arc-file-editor-table-tab-1")
+        search "alpha"
+        press "Enter" false
+        do! RTL.waitFor (fun () -> expectSelected 1 1)
+        Vitest.expect((RTL.screen.getByTestId "insertion-target").textContent).toBe "selected"
     }
 )

@@ -180,8 +180,7 @@ swt:p-0"""
                             getCount = (fun () -> GridSelect.count)
                         )
                 )
-            ),
-            [| GridSelect.selectedCells |]
+            )
         )
 
         let isSelected = fun (index: CellCoordinate) -> GridSelect.contains index

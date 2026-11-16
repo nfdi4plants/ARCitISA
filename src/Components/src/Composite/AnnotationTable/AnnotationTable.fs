@@ -487,28 +487,18 @@ type AnnotationTable =
         let (modal: ModalTypes option), setModal = React.useState None
         let ctx = useAnnotationTableStateCtx ()
 
-        let hasCtx = isNullOrUndefined ctx |> not
-
         let tableRef = if tableRef.IsSome then tableRef.Value else tableRefInner
 
-        // TODO: Add table to ctx on effect, and remove on unmount
-        // Does currently not work, as the disposable is not correctly setup in feliz, will require feliz v3 to fix
-        React.useEffectOnce (fun _ ->
-            { new System.IDisposable with
-                member _.Dispose() = ()
-            }
+        React.useEffect (
+            (fun () -> FsReact.createDisposable (fun () -> ctx.clearSelection arcTable.Name)),
+            [| box arcTable.Name |]
         )
 
         let setArcTable = fun (newTable: ArcTable) -> setArcTable newTable
 
         let onSelect: GridSelect.OnSelect =
             fun latest range ->
-
-                if hasCtx then
-                    let nextTable: AnnotationTableContext = { SelectedCells = range }
-                    let nextData = ctx.state.Add(arcTable.Name, nextTable)
-                    ctx.setState nextData
-
+                ctx.setSelection arcTable.Name range
                 onCellSelect |> Option.iter (fun f -> f latest range)
 
         Html.div [
@@ -524,140 +514,150 @@ type AnnotationTable =
                     Browser.Dom.document.body
                 )
                 AnnotationTable.ContextMenu(arcTable, setArcTable, tableRef, containerRef, setModal, ?debug = debug)
-                Table.Table(
-                    rowCount = arcTable.RowCount + 1,
-                    columnCount = arcTable.ColumnCount + 1,
-                    renderCell =
-                        (fun (index: CellCoordinate) ->
-                            if index.x = 0 then
-                                React.memoRender (
-                                    AnnotationTableMemo.RenderIndexCell,
-                                    {|
-                                        row = index.y
-                                        column = index.x
-                                        debug = debug
-                                    |},
-                                    withKey = (fun props -> $"index-{props.row}- {props.column}")
-                                )
-                            elif index.y = 0 then
-                                React.memoRender (
-                                    AnnotationTableMemo.RenderHeaderCell,
-                                    {|
-                                        index = index
-                                        header = arcTable.Headers.[index.x - 1].ToString()
-                                        debug = debug
-                                    |},
-                                    withKey = (fun props -> $"header-{props.index.x}- {props.header.GetHashCode()}")
-                                )
-                            else
-                                React.memoRender (
-                                    AnnotationTableMemo.RenderBodyCell,
-                                    {|
-                                        index = index
-                                        cell = arcTable.GetCellAt(index.x - 1, index.y - 1)
-                                        debug = debug
-                                    |},
-                                    withKey =
-                                        (fun props ->
-                                            $"cell-{props.index.x}-{props.index.y}- {props.cell.GetHashCode()}"
+                React.KeyedFragment(
+                    arcTable.Name,
+                    [
+                        Table.Table(
+                            rowCount = arcTable.RowCount + 1,
+                            columnCount = arcTable.ColumnCount + 1,
+                            renderCell =
+                                (fun (index: CellCoordinate) ->
+                                    if index.x = 0 then
+                                        React.memoRender (
+                                            AnnotationTableMemo.RenderIndexCell,
+                                            {|
+                                                row = index.y
+                                                column = index.x
+                                                debug = debug
+                                            |},
+                                            withKey = (fun props -> $"index-{props.row}- {props.column}")
                                         )
-                                )
-                        ),
-                    renderActiveCell =
-                        (fun (index: CellCoordinate) ->
-
-                            if index.y = 0 then
-                                let x = index.x - 1
-
-                                let setHeader =
-                                    fun (ch: CompositeHeader) ->
-                                        let nextTable = arcTable |> ArcTable.updateHeader (x, ch)
-                                        setArcTable nextTable
-
-                                let header = arcTable.Headers.[x]
-
-                                React.memoRender (
-                                    AnnotationTableMemo.RenderActiveHeaderCell,
-                                    {|
-                                        index = index
-                                        header = header
-                                        setHeader = setHeader
-                                        debug = debug
-                                    |},
-                                    withKey =
-                                        (fun props -> $"header-active-{props.index.x}- {props.header.GetHashCode()}")
-                                )
-                            else
-                                let cell = arcTable.GetCellAt(index.x - 1, index.y - 1)
-
-                                let setCell =
-                                    fun (cc: CompositeCell) ->
-                                        let nextTable = arcTable |> ArcTable.setCellAt (index.x - 1, index.y - 1, cc)
-                                        setArcTable nextTable
-
-                                React.memoRender (
-                                    AnnotationTableMemo.RenderActiveBodyCell,
-                                    {|
-                                        index = index
-                                        cell = cell
-                                        setCell = setCell
-                                        debug = debug
-                                    |},
-                                    withKey =
-                                        (fun props ->
-                                            $"cell-active-{props.index.x}-{props.index.y}- {props.cell.GetHashCode()}"
+                                    elif index.y = 0 then
+                                        React.memoRender (
+                                            AnnotationTableMemo.RenderHeaderCell,
+                                            {|
+                                                index = index
+                                                header = arcTable.Headers.[index.x - 1].ToString()
+                                                debug = debug
+                                            |},
+                                            withKey =
+                                                (fun props -> $"header-{props.index.x}- {props.header.GetHashCode()}")
                                         )
-                                )
-                        ),
-                    ref = tableRef,
-                    ?height = height,
-                    onKeydown =
-                        (fun (e, selectedCells, activeCell) ->
+                                    else
+                                        React.memoRender (
+                                            AnnotationTableMemo.RenderBodyCell,
+                                            {|
+                                                index = index
+                                                cell = arcTable.GetCellAt(index.x - 1, index.y - 1)
+                                                debug = debug
+                                            |},
+                                            withKey =
+                                                (fun props ->
+                                                    $"cell-{props.index.x}-{props.index.y}- {props.cell.GetHashCode()}"
+                                                )
+                                        )
+                                ),
+                            renderActiveCell =
+                                (fun (index: CellCoordinate) ->
 
-                            match GridSelect.tryGetKeyboardShortcut e selectedCells activeCell with
-                            | Some GridSelect.KeyboardShortcut.Details ->
-                                e.preventDefault ()
-                                let cell = selectedCells.selectedCellsReducedSet.MinimumElement
-                                setModal (Some(ModalTypes.Details cell))
-                            | Some GridSelect.KeyboardShortcut.Delete ->
-                                e.preventDefault ()
-                                arcTable.ClearSelectedCells(tableRef.current.SelectHandle)
-                                arcTable.Copy() |> setArcTable
-                            | Some GridSelect.KeyboardShortcut.Paste ->
-                                e.preventDefault ()
+                                    if index.y = 0 then
+                                        let x = index.x - 1
 
-                                AnnotationTableContextMenuUtil.tryPasteCopiedCells (
-                                    selectedCells.selectedCellsReducedSet.MinimumElement,
-                                    arcTable,
-                                    tableRef.current.SelectHandle,
-                                    setModal,
-                                    setArcTable
-                                )
-                                |> Promise.start
-                            | Some GridSelect.KeyboardShortcut.Copy ->
-                                e.preventDefault ()
+                                        let setHeader =
+                                            fun (ch: CompositeHeader) ->
+                                                let nextTable = arcTable |> ArcTable.updateHeader (x, ch)
+                                                setArcTable nextTable
 
-                                AnnotationTableContextMenuUtil.copy (
-                                    selectedCells.selectedCellsReducedSet.MinimumElement,
-                                    arcTable,
-                                    tableRef.current.SelectHandle
-                                )
-                                |> Promise.start
-                            | Some GridSelect.KeyboardShortcut.Cut ->
-                                e.preventDefault ()
+                                        let header = arcTable.Headers.[x]
 
-                                AnnotationTableContextMenuUtil.cut (
-                                    selectedCells.selectedCellsReducedSet.MinimumElement,
-                                    arcTable,
-                                    setArcTable,
-                                    tableRef.current.SelectHandle
-                                )
-                                |> Promise.start
-                            | _ -> ()
-                        ),
-                    enableColumnHeaderSelect = true,
-                    onSelect = onSelect,
-                    ?debug = debug
+                                        React.memoRender (
+                                            AnnotationTableMemo.RenderActiveHeaderCell,
+                                            {|
+                                                index = index
+                                                header = header
+                                                setHeader = setHeader
+                                                debug = debug
+                                            |},
+                                            withKey =
+                                                (fun props ->
+                                                    $"header-active-{props.index.x}- {props.header.GetHashCode()}"
+                                                )
+                                        )
+                                    else
+                                        let cell = arcTable.GetCellAt(index.x - 1, index.y - 1)
+
+                                        let setCell =
+                                            fun (cc: CompositeCell) ->
+                                                let nextTable =
+                                                    arcTable |> ArcTable.setCellAt (index.x - 1, index.y - 1, cc)
+
+                                                setArcTable nextTable
+
+                                        React.memoRender (
+                                            AnnotationTableMemo.RenderActiveBodyCell,
+                                            {|
+                                                index = index
+                                                cell = cell
+                                                setCell = setCell
+                                                debug = debug
+                                            |},
+                                            withKey =
+                                                (fun props ->
+                                                    $"cell-active-{props.index.x}-{props.index.y}- {props.cell.GetHashCode()}"
+                                                )
+                                        )
+                                ),
+                            ref = tableRef,
+                            ?height = height,
+                            onKeydown =
+                                (fun (e, selectedCells, activeCell) ->
+
+                                    match GridSelect.tryGetKeyboardShortcut e selectedCells activeCell with
+                                    | Some GridSelect.KeyboardShortcut.Details ->
+                                        e.preventDefault ()
+                                        let cell = selectedCells.selectedCellsReducedSet.MinimumElement
+                                        setModal (Some(ModalTypes.Details cell))
+                                    | Some GridSelect.KeyboardShortcut.Delete ->
+                                        e.preventDefault ()
+                                        arcTable.ClearSelectedCells(tableRef.current.SelectHandle)
+                                        arcTable.Copy() |> setArcTable
+                                    | Some GridSelect.KeyboardShortcut.Paste ->
+                                        e.preventDefault ()
+
+                                        AnnotationTableContextMenuUtil.tryPasteCopiedCells (
+                                            selectedCells.selectedCellsReducedSet.MinimumElement,
+                                            arcTable,
+                                            tableRef.current.SelectHandle,
+                                            setModal,
+                                            setArcTable
+                                        )
+                                        |> Promise.start
+                                    | Some GridSelect.KeyboardShortcut.Copy ->
+                                        e.preventDefault ()
+
+                                        AnnotationTableContextMenuUtil.copy (
+                                            selectedCells.selectedCellsReducedSet.MinimumElement,
+                                            arcTable,
+                                            tableRef.current.SelectHandle
+                                        )
+                                        |> Promise.start
+                                    | Some GridSelect.KeyboardShortcut.Cut ->
+                                        e.preventDefault ()
+
+                                        AnnotationTableContextMenuUtil.cut (
+                                            selectedCells.selectedCellsReducedSet.MinimumElement,
+                                            arcTable,
+                                            setArcTable,
+                                            tableRef.current.SelectHandle
+                                        )
+                                        |> Promise.start
+                                    | _ -> ()
+                                ),
+                            enableColumnHeaderSelect = true,
+                            onSelect = onSelect,
+                            ?debug = debug
+                        )
+                    ]
                 )
             ]
         ]
