@@ -418,7 +418,14 @@ Vitest.describe (
                 Vitest
                     .expect(
                         FileExplorerStateReconciliation.shouldResetPageStateAfterSelectionRemoval (
-                            Some(RendererPageState.MarkdownPage "# md")
+                            Some(
+                                RendererPageState.TextDocumentPage {
+                                    Path = "notes/note.md"
+                                    Content = "# md"
+                                    FileType = FileContentType.Markdown
+                                    Info = None
+                                }
+                            )
                         )
                     )
                     .toBe (true)
@@ -467,7 +474,14 @@ Vitest.describe (
                 Vitest
                     .expect(
                         FileExplorerStateReconciliation.shouldResetPageStateAfterSelectionRemoval (
-                            Some(RendererPageState.TextPage "txt")
+                            Some(
+                                RendererPageState.TextDocumentPage {
+                                    Path = "notes/note.txt"
+                                    Content = "txt"
+                                    FileType = FileContentType.PlainText
+                                    Info = None
+                                }
+                            )
                         )
                     )
                     .toBe (true)
@@ -573,7 +587,7 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "fromFileContentDTO maps markdown files to MarkdownPage",
+            "fromFileContentDTO maps markdown files to TextDocumentPage",
             fun () ->
                 let dto: FileContentDTO = {|
                     fileType = FileContentType.Markdown
@@ -582,11 +596,14 @@ Vitest.describe (
                     noPreview = None
                 |}
 
-                let pageState = RendererPageState.fromFileContentDTO (dto, 0)
+                let pageState = RendererPageState.fromFileContentDTO (dto, 0, None)
 
                 match pageState with
-                | RendererPageState.MarkdownPage markdownContent -> Vitest.expect(markdownContent).toBe ("# My Note")
-                | _ -> failwith "Expected MarkdownPage for markdown file content DTO."
+                | RendererPageState.TextDocumentPage data ->
+                    Vitest.expect(data.Path).toBe ("notes/my-note.md")
+                    Vitest.expect(data.Content).toBe ("# My Note")
+                    Vitest.expect(data.FileType).toEqual (FileContentType.Markdown)
+                | _ -> failwith "Expected TextDocumentPage for markdown file content DTO."
         )
 
         Vitest.test (
@@ -599,7 +616,7 @@ Vitest.describe (
                     noPreview = None
                 |}
 
-                let pageState = RendererPageState.fromFileContentDTO (dto, 0)
+                let pageState = RendererPageState.fromFileContentDTO (dto, 0, None)
 
                 match pageState with
                 | RendererPageState.PDFPage(pdfContent, _) -> Vitest.expect(pdfContent).toBe ("PDF content")
@@ -616,7 +633,7 @@ Vitest.describe (
                     noPreview = None
                 |}
 
-                let pageState = RendererPageState.fromFileContentDTO (dto, 0)
+                let pageState = RendererPageState.fromFileContentDTO (dto, 0, None)
 
                 match pageState with
                 | RendererPageState.ImagePage(FileContentType.PNG, pngContent, _) ->
@@ -634,7 +651,7 @@ Vitest.describe (
                     noPreview = None
                 |}
 
-                let pageState = RendererPageState.fromFileContentDTO (dto, 0)
+                let pageState = RendererPageState.fromFileContentDTO (dto, 0, None)
 
                 match pageState with
                 | RendererPageState.ImagePage(FileContentType.JPG, jpgContent, _) ->
@@ -643,7 +660,7 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "fromFileContentDTO maps svg files to ImagePage",
+            "fromFileContentDTO maps svg files without text info to ImagePage",
             fun () ->
                 let dto: FileContentDTO = {|
                     fileType = FileContentType.SVG
@@ -652,7 +669,7 @@ Vitest.describe (
                     noPreview = None
                 |}
 
-                let pageState = RendererPageState.fromFileContentDTO (dto, 0)
+                let pageState = RendererPageState.fromFileContentDTO (dto, 0, None)
 
                 match pageState with
                 | RendererPageState.ImagePage(FileContentType.SVG, svgContent, _) ->
@@ -670,7 +687,7 @@ Vitest.describe (
                     noPreview = None
                 |}
 
-                let pageState = RendererPageState.fromFileContentDTO (dto, 0)
+                let pageState = RendererPageState.fromFileContentDTO (dto, 0, None)
 
                 match pageState with
                 | RendererPageState.ImagePage(FileContentType.GIF, gifContent, _) ->
@@ -679,7 +696,7 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "fromFileContentDTO maps html files to HtmlPage",
+            "fromFileContentDTO maps html files without text info to HtmlPage",
             fun () ->
                 let dto: FileContentDTO = {|
                     fileType = FileContentType.Html
@@ -688,12 +705,43 @@ Vitest.describe (
                     noPreview = None
                 |}
 
-                let pageState = RendererPageState.fromFileContentDTO (dto, 0)
+                let pageState = RendererPageState.fromFileContentDTO (dto, 0, None)
 
                 match pageState with
                 | RendererPageState.HtmlPage(htmlContent, _) ->
                     Vitest.expect(htmlContent).toBe ("<html><body>Hello</body></html>")
                 | _ -> failwith "Expected HtmlPage for HTML file content DTO."
+        )
+
+        Vitest.test (
+            "fromFileContentDTO opens html and svg files with text info in the text page",
+            fun () ->
+                let info: TextDocumentInfo = {|
+                    encoding = TextFileEncoding.Utf8
+                    contentHash = "hash"
+                    sizeBytes = 6.0
+                    readOnly = None
+                |}
+
+                for fileType, path in
+                    [
+                        FileContentType.Html, "web/my-page.html"
+                        FileContentType.SVG, "images/my-image.svg"
+                    ] do
+                    let dto: FileContentDTO = {|
+                        fileType = fileType
+                        content = "<svg/>"
+                        path = path
+                        noPreview = None
+                    |}
+
+                    match RendererPageState.fromFileContentDTO (dto, 0, Some info) with
+                    | RendererPageState.TextDocumentPage data ->
+                        Vitest.expect(data.Path).toBe (path)
+                        Vitest.expect(data.Content).toBe ("<svg/>")
+                        Vitest.expect(data.FileType).toEqual (fileType)
+                        Vitest.expect(data.Info).toEqual (Some info)
+                    | _ -> failwith $"Expected TextDocumentPage for {path} with text info."
         )
 
 
@@ -707,7 +755,7 @@ Vitest.describe (
                     )
                     |> Option.defaultWith (fun () -> failwith "Expected an assay DTO.")
 
-                match RendererPageState.fromFileContentDTO (dto, 0) with
+                match RendererPageState.fromFileContentDTO (dto, 0, None) with
                 | RendererPageState.ArcFilePage(_, Some ActiveView.Metadata, _) -> ()
                 | _ -> failwith "Expected the Metadata starting view."
         )
@@ -722,7 +770,7 @@ Vitest.describe (
                     Swate.Electron.Shared.FileIOHelper.FileContentDTO.fromArcFile (ArcFiles.Assay assay)
                     |> Option.defaultWith (fun () -> failwith "Expected an assay DTO.")
 
-                match RendererPageState.fromFileContentDTO (dto, 0) with
+                match RendererPageState.fromFileContentDTO (dto, 0, None) with
                 | RendererPageState.ArcFilePage(_, Some ActiveView.Metadata, _) -> ()
                 | _ -> failwith "Expected the metadata starting view."
         )
@@ -738,7 +786,7 @@ Vitest.describe (
                     )
                     |> Option.defaultWith (fun () -> failwith "Expected a DataMap DTO.")
 
-                match RendererPageState.fromFileContentDTO (dto, 0) with
+                match RendererPageState.fromFileContentDTO (dto, 0, None) with
                 | RendererPageState.ArcFilePage(_, Some ActiveView.DataMap, _) -> ()
                 | _ -> failwith "Expected the DataMap starting view."
         )
@@ -785,7 +833,7 @@ Vitest.describe (
                 let dto =
                     FileContentDTO.createNoPreview "data/big.txt" 1234.0 NoPreviewReason.TooLarge
 
-                match RendererPageState.fromFileContentDTO (dto, 0) with
+                match RendererPageState.fromFileContentDTO (dto, 0, None) with
                 | RendererPageState.LargeFilePage(path, sizeBytes, reason) ->
                     Vitest.expect(path).toBe "data/big.txt"
                     Vitest.expect(sizeBytes).toBe 1234.0
@@ -1292,7 +1340,14 @@ Vitest.describe (
                         FileExplorerStateReconciliation.syncChangedOpenPage
                             false
                             [| "assays/A/isa.assay.xlsx" |]
-                            (Some(RendererPageState.TextPage "text"))
+                            (Some(
+                                RendererPageState.TextDocumentPage {
+                                    Path = "assays/A/notes.txt"
+                                    Content = "text"
+                                    FileType = FileContentType.PlainText
+                                    Info = None
+                                }
+                            ))
                     )
                     .toEqual
                     None

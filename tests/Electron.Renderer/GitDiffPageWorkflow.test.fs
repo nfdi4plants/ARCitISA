@@ -38,6 +38,15 @@ let private never<'T> (name: string) : JS.Promise<'T> = promise { return failwit
 
 let private reply value = promise { return Ok value }
 
+/// A text page that another part of the app opened.
+let private textPage (content: string) =
+    PageState.TextDocumentPage {
+        Path = "notes.txt"
+        Content = content
+        FileType = Swate.Electron.Shared.FileIOTypes.FileContentType.PlainText
+        Info = None
+    }
+
 let private succeeded value : OperationResultDto<'T> =
     OperationResultDto.Succeeded {
         Value = value
@@ -1681,7 +1690,7 @@ Vitest.describe (
                 let opening, openCmd =
                     update fake.Dependencies fake.SetPageState (select "a.txt") runningState
 
-                let! left = run fake (diffMsg (GitDiffMsg.PageStateObserved(Some(PageState.TextPage "notes")))) opening
+                let! left = run fake (diffMsg (GitDiffMsg.PageStateObserved(Some(textPage "notes")))) opening
 
                 let! lateMessages = collectMessages openCmd
                 let current = ref left
@@ -1874,7 +1883,7 @@ Vitest.describe (
                 let opening, openCmd =
                     update fake.Dependencies fake.SetPageState (select "a.txt") runningState
 
-                let! left = run fake (diffMsg (GitDiffMsg.PageStateObserved(Some(PageState.TextPage "notes")))) opening
+                let! left = run fake (diffMsg (GitDiffMsg.PageStateObserved(Some(textPage "notes")))) opening
                 let! lateMessages = collectMessages openCmd
                 let current = ref left
 
@@ -2320,8 +2329,7 @@ Vitest.describe (
                 let reopenId = (diffOf reopening).RunningOperations |> List.head
                 Vitest.expect(reopening.DiffReopen.IsSome).toBe (true)
 
-                let! left =
-                    run fake (diffMsg (GitDiffMsg.PageStateObserved(Some(PageState.TextPage "notes")))) reopening
+                let! left = run fake (diffMsg (GitDiffMsg.PageStateObserved(Some(textPage "notes")))) reopening
 
                 let! lateMessages = collectMessages (Cmd.batch (List.ofSeq reopenCmds))
                 let current = ref left
@@ -2419,7 +2427,7 @@ Vitest.describe (
                 let opening, openCmd =
                     update fake.Dependencies fake.SetPageState (select "a.txt") runningState
 
-                let! left = run fake (diffMsg (GitDiffMsg.PageStateObserved(Some(PageState.TextPage "notes")))) opening
+                let! left = run fake (diffMsg (GitDiffMsg.PageStateObserved(Some(textPage "notes")))) opening
                 let! lateMessages = collectMessages openCmd
                 let current = ref left
 
@@ -2458,7 +2466,7 @@ Vitest.describe (
 
                 let! pageMessages = collectMessages loadCmd
                 // Another part of the app shows a text page before the workflow observes it.
-                fake.SetPageState(Some(PageState.TextPage "notes"))
+                fake.SetPageState(Some(textPage "notes"))
                 let current = ref loading
 
                 for message in pageMessages do
@@ -2466,7 +2474,7 @@ Vitest.describe (
                     current.Value <- next
 
                 Vitest.expect((diffOf current.Value).Pages.Length).toBe (2)
-                Vitest.expect(fake.CurrentPageState).toEqual (Some(PageState.TextPage "notes"))
+                Vitest.expect(fake.CurrentPageState).toEqual (Some(textPage "notes"))
             }
         )
 
@@ -2707,7 +2715,7 @@ Vitest.describe (
                     update
                         dependencies
                         fake.SetPageState
-                        (diffMsg (GitDiffMsg.PageStateObserved(Some(PageState.TextPage "other"))))
+                        (diffMsg (GitDiffMsg.PageStateObserved(Some(textPage "other"))))
                         failed
 
                 let! _ = collectMessages leftCmd
@@ -2741,14 +2749,7 @@ Vitest.describe (
 
                 // The load of the first ARC finishes late and must not count for the new ARC.
                 let late, lateCmd =
-                    step
-                        (SelectChangeCompleted(
-                            loadId,
-                            "c.txt",
-                            ignore,
-                            Ok(GitPageChange.Set(PageState.TextPage "stale"))
-                        ))
-                        other
+                    step (SelectChangeCompleted(loadId, "c.txt", ignore, Ok(GitPageChange.Set(textPage "stale")))) other
 
                 let! _ = collectMessages lateCmd
                 Vitest.expect(shown.Count).toBe (0)
