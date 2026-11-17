@@ -33,13 +33,13 @@ type Text =
     /// Compares the content. Shared tree parts make this cheap after an undo back to an earlier version.
     abstract eq: Text -> bool
     abstract lineAt: pos: int -> Line
+    /// The text between from and to, with line breaks written as lineSep.
+    abstract sliceString: from: int * ``to``: int * lineSep: string -> string
 
 [<AllowNullLiteral>]
 type EditorState =
     /// Positions in the document count every line break as one character.
     abstract doc: Text
-    /// The whole text, joined with the configured line separator. doc.toString() always joins with "\n".
-    abstract sliceDoc: unit -> string
 
 [<AllowNullLiteral>]
 type Compartment =
@@ -55,8 +55,6 @@ type EditorStateConfig = {| doc: string; extensions: Extension |}
 type EditorStateStatic =
     abstract create: config: EditorStateConfig -> EditorState
     abstract readOnly: Facet<bool>
-    /// Only this separator splits lines, and doc.toString() joins with it, so CRLF files stay CRLF.
-    abstract lineSeparator: Facet<string>
 
 /// Compiles to a plain object. Unset fields stay out of the object.
 [<Global>]

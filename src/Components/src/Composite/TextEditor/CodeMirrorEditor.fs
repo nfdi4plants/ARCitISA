@@ -34,9 +34,6 @@ module private CodeMirrorEditorHelpers =
     let languageDescription (id: string) =
         languages |> Array.tryFind (fun d -> languageId d = id)
 
-    let sameView (current: EditorView option) (view: EditorView) =
-        current |> Option.exists (fun v -> obj.ReferenceEquals(v, view))
-
 open CodeMirrorEditorHelpers
 
 [<Erase; Mangle(false)>]
@@ -71,7 +68,9 @@ type CodeMirrorEditor =
         let viewRef = React.useRef<EditorView option> None
         let savedDocRef = React.useRef<Text option> None
         let dirtyRef = React.useRef false
-        let runningSaveRef = React.useRef<JS.Promise<bool> option> None
+        let runningSaveRef = React.useRef<(int * JS.Promise<bool>) option> None
+        let generationRef = React.useRef 0
+        let lineSeparatorRef = React.useRef "\n"
         let languageRef = React.useRef noExtension
         let compartmentsRef = React.useRef<Compartment[] option> None
 
@@ -94,6 +93,9 @@ type CodeMirrorEditor =
         let readOnlyRef = React.useRef readOnly
         let proseRef = React.useRef prose
         let lintRef = React.useRef lint
+        let appliedReadOnlyRef = React.useRef readOnly
+        let appliedProseRef = React.useRef prose
+        let appliedLintRef = React.useRef lint
         onSaveRef.current <- onSave
         onDirtyChangeRef.current <- onDirtyChange
         onChangeRef.current <- onChange
@@ -114,7 +116,7 @@ type CodeMirrorEditor =
                         (fun view -> promise {
                             let doc = view.state.doc
                             // Lint offsets must match document positions, which count a line break as one
-                            // character, so lint reads the "\n" text and not sliceDoc.
+                            // character, so lint reads doc.toString(), which joins lines with "\n".
                             let found = lint (doc.toString ())
 
                             found
@@ -150,39 +152,56 @@ type CodeMirrorEditor =
                     onDirtyChangeRef.current |> Option.iter (fun f -> f dirty)
             | _ -> ()
 
+        let textOf (state: EditorState) =
+            state.doc.sliceString (0, state.doc.length, lineSeparatorRef.current)
+
         let save () : JS.Promise<bool> =
             match onSaveRef.current, viewRef.current with
             | Some onSave, Some view when not readOnlyRef.current ->
+                let generation = generationRef.current
+
                 match runningSaveRef.current with
-                | Some running -> running
-                | None ->
+                | Some(g, running) when g = generation -> running
+                | _ ->
                     let state = view.state
                     let doc = state.doc
 
                     let running = promise {
                         let! ok = promise {
                             try
-                                // sliceDoc joins with the file's own line separator, so a CRLF file stays CRLF.
-                                return! onSave {| text = state.sliceDoc () |}
+                                // The saved text joins lines with the separator the file had when it was opened,
+                                // so a CRLF file stays CRLF and pasted lines follow it.
+                                return! onSave {| text = textOf state |}
                             with _ ->
                                 return false
                         }
 
-                        runningSaveRef.current <- None
+                        match runningSaveRef.current with
+                        | Some(g, _) when g = generation -> runningSaveRef.current <- None
+                        | _ -> ()
 
-                        // A different document may be open by now. Its saved state stays.
-                        if ok && sameView viewRef.current view then
+                        // Another documentUri or replaceContent may have installed a newer document state by now.
+                        // Its saved state stays.
+                        if ok && generationRef.current = generation then
                             savedDocRef.current <- Some doc
                             evaluateDirty ()
 
                         return ok
                     }
 
-                    runningSaveRef.current <- Some running
+                    runningSaveRef.current <- Some(generation, running)
                     running
             | _ -> promise { return false }
 
         let createState (text: string) : EditorState =
+            // Every new document state starts a new generation. A save that finishes after a newer state
+            // replaced its own leaves the saved state alone.
+            generationRef.current <- generationRef.current + 1
+            lineSeparatorRef.current <- detectLineSeparator text
+            appliedReadOnlyRef.current <- readOnlyRef.current
+            appliedProseRef.current <- proseRef.current
+            appliedLintRef.current <- lintRef.current
+
             EditorStateApi.create {|
                 doc = text
                 extensions =
@@ -202,7 +221,6 @@ type CodeMirrorEditor =
                         basicSetup
                         keymap.``of`` [| unbox<KeyBinding> indentWithTab |]
                         daisyTheme
-                        EditorStateApi.lineSeparator.``of`` (detectLineSeparator text)
                         EditorViewApi.contentAttributes.``of`` (
                             createObj [ "aria-label" ==> defaultArg ariaLabel "Text editor" ]
                         )
@@ -225,7 +243,7 @@ type CodeMirrorEditor =
 
                 member _.getText() =
                     match viewRef.current with
-                    | Some view -> view.state.sliceDoc ()
+                    | Some view -> textOf view.state
                     | None -> ""
 
                 member _.replaceContent(text) =
@@ -294,26 +312,36 @@ type CodeMirrorEditor =
             [| box language; box documentUri |]
         )
 
+        // createState already applies the current values, so these effects only reconfigure on a later change.
         React.useEffect (
             (fun () ->
-                viewRef.current
-                |> Option.iter (fun v -> reconfigure v readOnlySlot (readOnlyExtension readOnly))
+                match viewRef.current with
+                | Some v when readOnly <> appliedReadOnlyRef.current ->
+                    reconfigure v readOnlySlot (readOnlyExtension readOnly)
+                    appliedReadOnlyRef.current <- readOnly
+                | _ -> ()
             ),
             [| box readOnly |]
         )
 
         React.useEffect (
             (fun () ->
-                viewRef.current
-                |> Option.iter (fun v -> reconfigure v proseSlot (proseExtension prose))
+                match viewRef.current with
+                | Some v when prose <> appliedProseRef.current ->
+                    reconfigure v proseSlot (proseExtension prose)
+                    appliedProseRef.current <- prose
+                | _ -> ()
             ),
             [| box prose |]
         )
 
         React.useEffect (
             (fun () ->
-                viewRef.current
-                |> Option.iter (fun v -> reconfigure v lintSlot (lintExtension lint))
+                match viewRef.current with
+                | Some v when not (obj.ReferenceEquals(lint, appliedLintRef.current)) ->
+                    reconfigure v lintSlot (lintExtension lint)
+                    appliedLintRef.current <- lint
+                | _ -> ()
 
                 if lint.IsNone then
                     report [||]

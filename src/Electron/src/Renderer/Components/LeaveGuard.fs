@@ -15,11 +15,9 @@ module private LeaveGuardHelpers =
     [<Emit("$0.returnValue = false")>]
     let blockUnload (event: Event) : unit = jsNative
 
-    let fileName (path: string) =
-        path.Split([| '/'; '\\' |]) |> Array.last
-
     let notSavedForClose =
-        exn "The text file was not saved. The window stays open so you can resolve it."
+        exn
+            "The text file was not saved. The message at the top of its page says why. The window stays open so you can resolve it."
 
 open LeaveGuardHelpers
 
@@ -27,6 +25,7 @@ type private DialogState = {
     FileName: string
     Saving: bool
     SaveFailed: bool
+    SaveRunning: bool
 }
 
 /// Returns the controller for LeaveGuardCtx and the dialog element to render once in the window.
@@ -77,9 +76,11 @@ let useLeaveGuard () : LeaveGuardController * ReactElement =
 
                                 setDialog (
                                     Some {
-                                        FileName = fileName registration.documentPath
+                                        FileName =
+                                            Swate.Components.Shared.PathHelpers.getFileName registration.documentPath
                                         Saving = false
                                         SaveFailed = false
+                                        SaveRunning = false
                                     }
                                 )
                             )
@@ -164,6 +165,7 @@ let useLeaveGuard () : LeaveGuardController * ReactElement =
                     state with
                         Saving = true
                         SaveFailed = false
+                        SaveRunning = false
                 }
             )
 
@@ -178,6 +180,7 @@ let useLeaveGuard () : LeaveGuardController * ReactElement =
                             state with
                                 Saving = false
                                 SaveFailed = true
+                                SaveRunning = false
                         }
                     )
             }
@@ -185,9 +188,13 @@ let useLeaveGuard () : LeaveGuardController * ReactElement =
         | _ -> ()
 
     let discard () =
-        registrationRef.current |> Option.iter (fun r -> r.discard ())
-        controller.setDirty false
-        finish true
+        match registrationRef.current, dialog with
+        | Some registration, Some state when registration.isSaving () ->
+            setDialog (Some { state with SaveRunning = true })
+        | _ ->
+            registrationRef.current |> Option.iter (fun r -> r.discard ())
+            controller.setDirty false
+            finish true
 
     let saving = dialog |> Option.exists _.Saving
 
@@ -200,19 +207,26 @@ let useLeaveGuard () : LeaveGuardController * ReactElement =
                         finish false
                 ),
             header = Html.text "Unsaved changes",
+            // BaseModal renders the description inside a <p>, so it gets text only. Block content goes in children.
             description =
+                Html.text
+                    $"""{dialog |> Option.map _.FileName |> Option.defaultValue "The file"} has unsaved changes.""",
+            children =
                 Html.div [
-                    Html.p [
-                        prop.text
-                            $"""{dialog |> Option.map _.FileName |> Option.defaultValue "The file"} has unsaved changes."""
-                    ]
                     if dialog |> Option.exists _.SaveFailed then
                         Html.p [
-                            prop.className "swt:text-error swt:mt-2"
-                            prop.text "Saving failed. The changes are still unsaved."
+                            prop.role "alert"
+                            prop.className "swt:text-error"
+                            prop.text
+                                "Saving failed. The changes are still unsaved. The message at the top of the text page says why."
+                        ]
+                    if dialog |> Option.exists _.SaveRunning then
+                        Html.p [
+                            prop.role "alert"
+                            prop.className "swt:text-error"
+                            prop.text "A save is still running. Wait until it finishes, then choose again."
                         ]
                 ],
-            children = Html.none,
             footer =
                 Html.div [
                     prop.className "swt:flex swt:gap-2 swt:w-full"

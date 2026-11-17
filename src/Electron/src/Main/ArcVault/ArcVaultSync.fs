@@ -475,7 +475,7 @@ type ArcVault with
         | Ok(Error error) -> return raise error
     }
 
-    /// Entity delete and import. It is refused while another external operation runs. Other external operations, rename and DataMap delete wait until it ends, because they could change files that the delete or import has already read. Save and add are refused.
+    /// For entity delete and import, and for text editor saves. It is refused while another external operation runs, so a Git pull cannot change a file between the hash check and the rename of a text save. Other external operations, rename and DataMap delete wait until it ends, because they could change files that the delete or import has already read. ARC saves and adds are refused while it holds the vault.
     member this.TryWithExclusiveExternalOperationScope<'T>
         (announce: bool, operation: unit -> JS.Promise<Result<'T, exn>>)
         : JS.Promise<Result<'T, exn>> =

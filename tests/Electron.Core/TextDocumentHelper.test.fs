@@ -27,6 +27,16 @@ Vitest.describe (
         )
 
         Vitest.test (
+            "isSameDocumentPath tells apart paths that differ only in case",
+            fun () -> Vitest.expect(isSameDocumentPath "Docs/A.md" "docs/a.md").toBe false
+        )
+
+        Vitest.test (
+            "isPathOrAncestor ignores case",
+            fun () -> Vitest.expect(isPathOrAncestor "DOCS" "docs/sub/a.md").toBe true
+        )
+
+        Vitest.test (
             "isPathOrAncestor accepts the document itself",
             fun () -> Vitest.expect(isPathOrAncestor "docs/a.md" "docs/a.md").toBe true
         )

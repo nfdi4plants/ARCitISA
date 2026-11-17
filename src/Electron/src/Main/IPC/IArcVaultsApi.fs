@@ -1240,13 +1240,7 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
                             | Ok path ->
                                 let fileType = FileContentDTO.inferFileTypeFromPath relativePath
 
-                                match fileType with
-                                | FileContentType.PDF
-                                | FileContentType.PNG
-                                | FileContentType.JPG
-                                | FileContentType.SVG
-                                | FileContentType.GIF
-                                | FileContentType.Html ->
+                                let readBase64 () = promise {
                                     let! content = Main.Bindings.Filesystem.readFileBase64Async path
 
                                     return
@@ -1255,8 +1249,32 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
                                             revision = revision
                                             text = None
                                         |}
-                                | _ ->
-                                    let! dto, info = ArcVaultHelper.readTextDocumentAsync path relativePath
+                                }
+
+                                // HTML and SVG are text the editor can change. Beyond the text read limit they
+                                // still open in the viewer, as base64. A binary file gets no preview, like other types.
+                                let! textRead = promise {
+                                    match fileType with
+                                    | FileContentType.PDF
+                                    | FileContentType.PNG
+                                    | FileContentType.JPG
+                                    | FileContentType.GIF -> return None
+                                    | FileContentType.Html
+                                    | FileContentType.SVG ->
+                                        let! dto, info = ArcVaultHelper.readTextDocumentAsync path relativePath
+
+                                        return
+                                            match dto.noPreview with
+                                            | Some noPreview when noPreview.reason = NoPreviewReason.TooLarge -> None
+                                            | _ -> Some(dto, info)
+                                    | _ ->
+                                        let! read = ArcVaultHelper.readTextDocumentAsync path relativePath
+                                        return Some read
+                                }
+
+                                match textRead with
+                                | None -> return! readBase64 ()
+                                | Some(dto, info) ->
 
                                     // A file the editor could not save opens read-only. An earlier reason of the read stays.
                                     let! info =

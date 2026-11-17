@@ -21,7 +21,9 @@ let private maxTempNameAttempts = 5
 
 let private staleTempAgeMs = 10.0 * 60.0 * 1000.0
 
-let private tempFilePattern = """^\.swate-save-[0-9a-fA-F]{32}\.tmp$"""
+/// Folders with no save temporaries left after a cleanup in this run. They are not scanned again, so a temporary
+/// that a failed save could not remove stays until the next run.
+let private cleanedTempFolders = System.Collections.Generic.HashSet<string>()
 
 /// Encodes the text the way the file was read. A leading U+FEFF in the content stays part of the text.
 let encodeTextContent (encoding: TextFileEncoding) (content: string) : Result<byte[], string> =
@@ -280,25 +282,32 @@ let private syncDirectoryAsync (directory: string) : JS.Promise<unit> = promise 
         ()
 }
 
-/// Deletes save temporary files that an earlier crash left behind. Only files older than ten minutes go, so a
-/// save that runs right now is safe. Every error is ignored.
-let private removeStaleTempsAsync (folder: string) : JS.Promise<unit> = promise {
+/// Deletes save temporary files that an earlier crash left behind. Only files older than ten minutes go, so a save
+/// that runs right now is safe. True when no save temporary is left. An error counts as a temporary left behind.
+let private removeStaleTempsAsync (folder: string) : JS.Promise<bool> = promise {
+    let leftOver = ref false
+
     try
         let! names = readdirAsync folder
         let now = JS.Constructors.Date.now ()
 
         for name in names do
-            if Regex.IsMatch(name, tempFilePattern) then
+            if Regex.IsMatch(name, textSaveTempPattern) then
                 try
                     let path = join [| folder; name |]
                     let! stats = lstatAsync path
 
-                    if stats.isFile () && now - stats.mtimeMs > staleTempAgeMs then
-                        do! rmAsync path (RmOptions(force = true))
+                    if stats.isFile () then
+                        if now - stats.mtimeMs > staleTempAgeMs then
+                            do! rmAsync path (RmOptions(force = true))
+                        else
+                            leftOver.Value <- true
                 with _ ->
-                    ()
+                    leftOver.Value <- true
+
+        return not leftOver.Value
     with _ ->
-        ()
+        return false
 }
 
 let private saveToResolvedTargetAsync
@@ -349,7 +358,11 @@ let private saveToResolvedTargetAsync
 
                 match published with
                 | Published ->
-                    do! removeStaleTempsAsync realParent
+                    if not (cleanedTempFolders.Contains realParent) then
+                        let! clean = removeStaleTempsAsync realParent
+
+                        if clean then
+                            cleanedTempFolders.Add realParent |> ignore
 
                     if not isWin32 then
                         do! syncDirectoryAsync realParent

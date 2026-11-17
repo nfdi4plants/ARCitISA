@@ -11,6 +11,8 @@ type LeaveGuardRegistration = {
     isDirty: unit -> bool
     /// Resolves true only when the document was saved and is clean.
     save: unit -> JS.Promise<bool>
+    /// True while a save of the document runs.
+    isSaving: unit -> bool
     /// Drops the unsaved edits. The caller leaves the document right after.
     discard: unit -> unit
     /// The file of the document is gone from disk while it has unsaved edits.
@@ -26,7 +28,7 @@ type LeaveGuardController = {
     isDirty: unit -> bool
     /// Resolves true at once when nothing is dirty. Otherwise asks Save, Discard or Cancel. Save resolves true only
     /// when the save succeeded, Discard drops the edits and resolves true, Cancel resolves false. A request while
-    /// the dialog is open resolves false.
+    /// the dialog is open resolves false. The dialog refuses Discard while a save runs.
     confirmLeave: unit -> JS.Promise<bool>
     /// True when the registered document has this path and unsaved edits.
     isDirtyDocument: string -> bool

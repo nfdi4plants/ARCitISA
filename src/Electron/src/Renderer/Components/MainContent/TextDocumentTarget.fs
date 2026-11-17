@@ -34,6 +34,55 @@ module private TextDocumentTargetHelpers =
         | TextReadOnlyReason.WriteProtected -> "This file is write-protected. It opens read-only."
         | TextReadOnlyReason.ChangedWhileReading -> "This file changed while it was read. Reload it to edit."
 
+    /// File types with a rendered side next to the source.
+    type Rendering =
+        | RenderedMarkdown
+        | RenderedHtml
+        | RenderedSvg
+
+    let renderingOf (fileType: FileContentType) =
+        match fileType with
+        | FileContentType.Markdown -> Some RenderedMarkdown
+        | FileContentType.Html -> Some RenderedHtml
+        | FileContentType.SVG -> Some RenderedSvg
+        | _ -> None
+
+    /// Markdown goes through the sanitizer of the Markdown preview. HTML runs in a sandboxed frame: scripts work,
+    /// but without allow-same-origin the page gets an opaque origin and cannot reach the app. SVG is an image, so
+    /// its scripts never run.
+    let renderedView (rendering: Rendering) (text: string) : ReactElement =
+        match rendering with
+        | RenderedMarkdown ->
+            Html.div [
+                prop.className "wmde-markdown-var swt:flex-1 swt:min-h-0 swt:overflow-auto"
+                prop.children [
+                    Swate.Components.Composite.MarkdownText.JsBindings.ReactMDEditor.MarkdownPreview(
+                        text,
+                        className = "swt:p-4",
+                        components = Swate.Components.Composite.MarkdownText.Preview.components,
+                        rehypePlugins = Swate.Components.Composite.MarkdownText.Preview.rehypePlugins
+                    )
+                ]
+            ]
+        | RenderedHtml ->
+            Html.iframe [
+                prop.title "HTML preview"
+                prop.custom ("srcDoc", text)
+                prop.custom ("sandbox", "allow-scripts")
+                prop.className "swt:flex-1 swt:min-h-0 swt:w-full swt:border-none swt:bg-white"
+            ]
+        | RenderedSvg ->
+            Html.div [
+                prop.className "swt:flex-1 swt:min-h-0 swt:overflow-auto swt:p-4 swt:flex swt:justify-center"
+                prop.children [
+                    Html.img [
+                        prop.alt "SVG preview"
+                        prop.src ("data:image/svg+xml;charset=utf-8," + JS.encodeURIComponent text)
+                        prop.className "swt:max-w-full swt:self-start"
+                    ]
+                ]
+            ]
+
     let noticeMessage (notice: DiskNotice) =
         match notice with
         | ChangedOnDisk -> "The file changed on disk since you opened it."
@@ -59,11 +108,28 @@ let TextDocumentTarget (data: TextDocumentPageData) =
 
     let lastSavedTextRef = React.useRef data.Content
     let overwriteNextRef = React.useRef false
+    let savingCountRef = React.useRef 0
+    let focusEditorRef = React.useRef false
     let missingOnDiskRef = React.useRef false
     let dirty, setDirty = React.useState false
     let saving, setSaving = React.useState false
     let error, setError = React.useState (None: string option)
     let notice, setNotice = React.useState (None: DiskNotice option)
+
+    // Markdown opens for writing, HTML and SVG open as they look. The editor mounts on first use and then stays
+    // mounted while the rendered side shows, so cursor and undo history survive the switch.
+    let rendering = renderingOf data.FileType
+
+    let showRendered, setShowRendered =
+        React.useState (
+            match rendering with
+            | Some RenderedHtml
+            | Some RenderedSvg -> true
+            | _ -> false
+        )
+
+    let editorMounted, setEditorMounted = React.useState (not showRendered)
+    let renderedText, setRenderedText = React.useState data.Content
 
     let readOnlyText =
         match data.Info with
@@ -74,6 +140,7 @@ let TextDocumentTarget (data: TextDocumentPageData) =
 
     let onSave (snapshot: TextEditorSnapshot) : JS.Promise<bool> = promise {
         setSaving true
+        savingCountRef.current <- savingCountRef.current + 1
         setError None
 
         let request: SaveTextFileRequest = {|
@@ -94,6 +161,7 @@ let TextDocumentTarget (data: TextDocumentPageData) =
         let! result = Api.ipcArcVaultApi.saveTextFile request |> Promise.catch (fun e -> Error e)
 
         setSaving false
+        savingCountRef.current <- savingCountRef.current - 1
 
         match result with
         | Ok(SaveTextFileOutcome.Saved info) ->
@@ -120,40 +188,48 @@ let TextDocumentTarget (data: TextDocumentPageData) =
         handleRef.current |> Option.iter (fun h -> h.save () |> ignore)
 
     let overwrite () =
-        overwriteNextRef.current <- true
-        save ()
+        match handleRef.current with
+        | Some h ->
+            overwriteNextRef.current <- true
+            // save calls no onSave for a read-only editor or while a save runs, so overwrite clears the flag itself.
+            h.save () |> Promise.map (fun _ -> overwriteNextRef.current <- false) |> ignore
+        | None -> ()
 
     let reloadFromDisk () =
         promise {
             let! result = Api.ipcArcVaultApi.openFile data.Path
 
-            match result, handleRef.current with
-            | Ok opened, Some handle ->
+            match result with
+            | Ok opened ->
                 match opened.text with
                 | Some info ->
-                    handle.replaceContent opened.content.content
+                    handleRef.current
+                    |> Option.iter (fun handle -> handle.replaceContent opened.content.content)
+
                     baseHashRef.current <- info.contentHash
                     lastSavedTextRef.current <- opened.content.content
                     missingOnDiskRef.current <- false
+                    setRenderedText opened.content.content
                     setNotice None
                     setError None
                 | None -> setError (Some "The file could not be read as text.")
-            | Error e, _ -> setError (Some $"Reloading failed: {e.Message}")
-            | Ok _, None -> ()
+            | Error e -> setError (Some $"Reloading failed: {e.Message}")
         }
         |> Promise.start
 
     // The same path opens again after a change on disk. A hash equal to the base is the echo of our own save.
     React.useEffect (
         (fun () ->
-            match data.Info, handleRef.current with
-            | Some info, Some handle when info.contentHash <> baseHashRef.current ->
-                if handle.isDirty () then
-                    setNotice (Some ChangedOnDisk)
-                else
-                    handle.replaceContent data.Content
+            match data.Info with
+            | Some info when info.contentHash <> baseHashRef.current ->
+                match handleRef.current with
+                | Some handle when handle.isDirty () -> setNotice (Some ChangedOnDisk)
+                | handle ->
+                    // Without an editor (an HTML file that was only viewed) the rendered side still follows the disk.
+                    handle |> Option.iter (fun h -> h.replaceContent data.Content)
                     baseHashRef.current <- info.contentHash
                     lastSavedTextRef.current <- data.Content
+                    setRenderedText data.Content
                     setNotice None
             | _ -> ()
         ),
@@ -171,6 +247,7 @@ let TextDocumentTarget (data: TextDocumentPageData) =
                             match handleRef.current with
                             | Some h -> h.save ()
                             | None -> Promise.lift false
+                    isSaving = fun () -> savingCountRef.current > 0
                     discard =
                         fun () ->
                             handleRef.current
@@ -188,6 +265,26 @@ let TextDocumentTarget (data: TextDocumentPageData) =
         [| box data.Path |]
     )
 
+    // The editor takes focus only after the render that shows it. On the first switch it mounts in that render.
+    React.useEffect (
+        (fun () ->
+            if focusEditorRef.current && not showRendered then
+                focusEditorRef.current <- false
+                handleRef.current |> Option.iter (fun h -> h.focus ())
+        ),
+        [| box showRendered; box editorMounted |]
+    )
+
+    let renderedElement =
+        React.useMemo (
+            (fun () ->
+                match rendering with
+                | Some current when showRendered -> renderedView current renderedText
+                | _ -> Html.none
+            ),
+            [| box showRendered; box renderedText; box data.FileType |]
+        )
+
     let status, statusClass =
         match isReadOnly, saving, error with
         | true, _, _ -> "Read-only", "swt:opacity-70"
@@ -195,6 +292,67 @@ let TextDocumentTarget (data: TextDocumentPageData) =
         | _, _, Some message -> message, "swt:text-error"
         | _ when dirty -> "Unsaved changes", "swt:opacity-70"
         | _ -> "Saved", "swt:opacity-70"
+
+    let showEditor () =
+        setEditorMounted true
+        setShowRendered false
+        focusEditorRef.current <- true
+
+    // The rendered side shows the text in the editor, saved or not.
+    let showRenderedView () =
+        setRenderedText (
+            handleRef.current
+            |> Option.map (fun h -> h.getText ())
+            |> Option.defaultValue lastSavedTextRef.current
+        )
+
+        setShowRendered true
+
+    let modeToggle =
+        match rendering with
+        | None -> Html.none
+        | Some current ->
+            // DaisyUI radio buttons: the checked one gets the primary colors, the label comes from aria-label
+            // (drawn in ::after) and the icon is drawn in ::before. Only the unchecked one is a ghost button,
+            // because .btn-ghost would also clear the background of the checked one.
+            let modeRadio (label: string) (iconClass: string) (active: bool) (onSelect: unit -> unit) =
+                Html.input [
+                    prop.type'.radio
+                    prop.key label
+                    prop.name "text-document-mode"
+                    prop.ariaLabel label
+                    prop.isChecked active
+                    prop.onCheckedChange (fun isChecked ->
+                        if isChecked then
+                            onSelect ()
+                    )
+                    prop.className [
+                        "swt:join-item swt:btn swt:btn-sm swt:before:iconify"
+                        iconClass
+                        if not active then
+                            "swt:btn-ghost"
+                    ]
+                ]
+
+            let editRadio =
+                modeRadio "Edit" "swt:before:fluent--edit-24-regular" (not showRendered) showEditor
+
+            let renderedLabel = if current = RenderedMarkdown then "Preview" else "View"
+
+            let renderedRadio =
+                modeRadio renderedLabel "swt:before:fluent--eye-24-regular" showRendered showRenderedView
+
+            Html.div [
+                prop.role "radiogroup"
+                prop.ariaLabel "Show the file as"
+                prop.className "swt:join"
+                prop.children (
+                    if current = RenderedMarkdown then
+                        [ editRadio; renderedRadio ]
+                    else
+                        [ renderedRadio; editRadio ]
+                )
+            ]
 
     let noticeButtons (current: DiskNotice) =
         match current with
@@ -222,12 +380,18 @@ let TextDocumentTarget (data: TextDocumentPageData) =
                         prop.className $"swt:text-xs {statusClass}"
                         prop.text status
                     ]
-                    Html.button [
-                        prop.type'.button
-                        prop.className "swt:btn swt:btn-sm swt:btn-primary swt:ml-auto"
-                        prop.disabled (isReadOnly || saving || not dirty)
-                        prop.text "Save"
-                        prop.onClick (fun _ -> save ())
+                    Html.div [
+                        prop.className "swt:ml-auto swt:flex swt:items-center swt:gap-2"
+                        prop.children [
+                            modeToggle
+                            Html.button [
+                                prop.type'.button
+                                prop.className "swt:btn swt:btn-sm swt:btn-primary"
+                                prop.disabled (isReadOnly || saving || not dirty)
+                                prop.text "Save"
+                                prop.onClick (fun _ -> save ())
+                            ]
+                        ]
                     ]
                 ]
             ]
@@ -258,19 +422,27 @@ let TextDocumentTarget (data: TextDocumentPageData) =
                     ]
                 ]
             | None -> Html.none
-            Html.div [
-                prop.className "swt:flex-1 swt:min-h-0"
-                prop.children [
-                    TextEditor.TextEditor(
-                        TextDocumentHelper.documentUri data.Path,
-                        data.Content,
-                        fileName = data.Path,
-                        readOnly = isReadOnly,
-                        onSave = onSave,
-                        onDirtyChange = onDirtyChange,
-                        handleRef = handleRef
-                    )
+            if editorMounted then
+                Html.div [
+                    prop.className [
+                        "swt:flex-1 swt:min-h-0"
+                        if showRendered then
+                            "swt:hidden"
+                    ]
+                    prop.children [
+                        TextEditor.TextEditor(
+                            TextDocumentHelper.documentUri data.Path,
+                            // The last saved text, so a remount after a switch keeps a save that happened in between.
+                            lastSavedTextRef.current,
+                            fileName = data.Path,
+                            readOnly = isReadOnly,
+                            ?schemaValidator = TextDocumentSchemas.tryFindValidator data.Path,
+                            onSave = onSave,
+                            onDirtyChange = onDirtyChange,
+                            handleRef = handleRef
+                        )
+                    ]
                 ]
-            ]
+            renderedElement
         ]
     ]
