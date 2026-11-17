@@ -1167,6 +1167,49 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
             with e ->
                 return Error e
         }
+    saveTextFile =
+        fun (request: SaveTextFileRequest) -> promise {
+            try
+                let windowId = windowIdFromIpcEvent event
+
+                match ARC_VAULTS.TryGetVault(windowId) with
+                | None -> return Error(exn $"The ARC for window id {windowId} should exist")
+                | Some vault ->
+                    let saveOnce () =
+                        vault.TryWithExclusiveExternalOperationScope(
+                            announce = false,
+                            operation =
+                                fun () -> promise {
+                                    // The path is read inside the scope, because a root rename can move the folder while this call waits.
+                                    match vault.path with
+                                    | None -> return Error(arcNotOpenError ())
+                                    | Some arcPath -> return! TextFileSave.saveTextFileAsync arcPath request
+                                }
+                        )
+
+                    // A busy vault answers with an error that a short wait resolves.
+                    let rec saveWithRetry (delaysMs: int list) (waitedMs: int) = promise {
+                        match! saveOnce () with
+                        | Error busy when ArcVaultSync.isVaultBusyError busy && waitedMs < 8000 ->
+                            let delay, rest =
+                                match delaysMs with
+                                | next :: rest -> next, rest
+                                | [] -> 1000, []
+
+                            do! Promise.sleep delay
+                            return! saveWithRetry rest (waitedMs + delay)
+                        | result -> return result
+                    }
+
+                    match! saveWithRetry [ 100; 200; 400; 800 ] 0 with
+                    | Error error -> return Error error
+                    | Ok(SaveTextFileOutcome.Saved info, parent) ->
+                        do! vault.EnqueueFileTreeDirectoryReconcile parent
+                        return Ok(SaveTextFileOutcome.Saved info)
+                    | Ok(outcome, _) -> return Ok outcome
+            with e ->
+                return Error e
+        }
     openFile =
         fun (relativePath: string) -> promise {
             try
@@ -1180,7 +1223,13 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
                     let arcfileDTO = FileContentDTO.fromArcByPath relativePath vault.arc.Value
 
                     match arcfileDTO with
-                    | Some dto -> return Ok {| content = dto; revision = revision |}
+                    | Some dto ->
+                        return
+                            Ok {|
+                                content = dto
+                                revision = revision
+                                text = None
+                            |}
                     | _ ->
                         // Fallback to text preview for unknown file types
                         try
@@ -1191,19 +1240,59 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
                             | Ok path ->
                                 let fileType = FileContentDTO.inferFileTypeFromPath relativePath
 
-                                let! content =
-                                    match fileType with
-                                    | FileContentType.PDF
-                                    | FileContentType.PNG
-                                    | FileContentType.JPG
-                                    | FileContentType.SVG
-                                    | FileContentType.GIF
-                                    | FileContentType.Html -> Main.Bindings.Filesystem.readFileBase64Async path
-                                    | _ -> ARCtrl.FileSystemHelper.readFileTextAsync path
+                                match fileType with
+                                | FileContentType.PDF
+                                | FileContentType.PNG
+                                | FileContentType.JPG
+                                | FileContentType.SVG
+                                | FileContentType.GIF
+                                | FileContentType.Html ->
+                                    let! content = Main.Bindings.Filesystem.readFileBase64Async path
 
-                                let dto = FileContentDTO.create fileType content relativePath
+                                    return
+                                        Ok {|
+                                            content = FileContentDTO.create fileType content relativePath
+                                            revision = revision
+                                            text = None
+                                        |}
+                                | _ ->
+                                    let! dto, info = ArcVaultHelper.readTextDocumentAsync path relativePath
 
-                                return Ok {| content = dto; revision = revision |}
+                                    // A file the editor could not save opens read-only. An earlier reason of the read stays.
+                                    let! info =
+                                        match info with
+                                        | Some textInfo when textInfo.readOnly.IsNone -> promise {
+                                            match! TextFileSave.checkTargetAsync vault.path.Value path with
+                                            | Ok TextFileSave.SymbolicLink ->
+                                                return
+                                                    Some {|
+                                                        textInfo with
+                                                            readOnly = Some TextReadOnlyReason.SymbolicLink
+                                                    |}
+                                            | Ok TextFileSave.OutsideArc ->
+                                                return
+                                                    Some {|
+                                                        textInfo with
+                                                            readOnly = Some TextReadOnlyReason.OutsideArc
+                                                    |}
+                                            | Ok(TextFileSave.RegularFile(stats, _)) when
+                                                TextFileSave.isWriteProtected stats
+                                                ->
+                                                return
+                                                    Some {|
+                                                        textInfo with
+                                                            readOnly = Some TextReadOnlyReason.WriteProtected
+                                                    |}
+                                            | _ -> return info
+                                          }
+                                        | _ -> promise { return info }
+
+                                    return
+                                        Ok {|
+                                            content = dto
+                                            revision = revision
+                                            text = info
+                                        |}
                         with e ->
                             return Error(exn $"Could not read file {relativePath}: {e.Message}")
                 | _ -> return Error(arcNotOpenError ())
@@ -1215,6 +1304,20 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
             try
                 let windowId = windowIdFromIpcEvent event
                 return! ARC_VAULTS.ResolveCloseRequest(windowId, decision)
+            with e ->
+                return Error e
+        }
+    setHasUnsavedTextChanges =
+        fun (hasChanges: bool) -> promise {
+            try
+                // The window comes from the IPC sender, never from the caller.
+                let windowId = windowIdFromIpcEvent event
+
+                match ARC_VAULTS.TryGetVault(windowId) with
+                | Some vault -> vault.hasUnsavedTextChanges <- hasChanges
+                | None -> ()
+
+                return Ok()
             with e ->
                 return Error e
         }

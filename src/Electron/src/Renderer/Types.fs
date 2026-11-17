@@ -43,6 +43,16 @@ type VersionControlFileChoicePage = {
 
 type GitUnsupportedPageData = { Path: string; Reason: string option }
 
+/// A text file open in the editor.
+type TextDocumentPageData = {
+    /// ARC-relative, normalized.
+    Path: string
+    Content: string
+    FileType: FileContentType
+    /// None when the main process sent no text metadata. The page then opens read-only.
+    Info: TextDocumentInfo option
+}
+
 /// Why a text diff cannot be shown.
 [<RequireQualifiedAccess>]
 type GitDiffBlockReason =
@@ -217,11 +227,10 @@ type GitDiffPageData = {
 [<RequireQualifiedAccess>]
 type PageState =
     | ArcFilePage of arcFile: ArcFiles * requestedView: ActiveView option * revision: int
-    | MarkdownPage of string
     | PDFPage of string * string
     | ImagePage of FileContentType * string * string
     | HtmlPage of string * string
-    | TextPage of string
+    | TextDocumentPage of TextDocumentPageData
     | UnknownPage
     | LargeFilePage of path: string * sizeBytes: float * reason: NoPreviewReason
     //| LandingDraftPage
@@ -239,16 +248,23 @@ type PageState =
     | Changelog of version: string * requestId: string
     | SettingsPage
 
-    static member fromFileContentDTO(dto: FileContentDTO, revision: int) : PageState =
+    /// text is the text metadata of the read, None when the caller only has the DTO.
+    static member fromFileContentDTO(dto: FileContentDTO, revision: int, text: TextDocumentInfo option) : PageState =
         match dto.fileType with
-        | FileContentType.Markdown -> PageState.MarkdownPage dto.content
         | FileContentType.PDF -> PageState.PDFPage(dto.content, dto.path)
         | FileContentType.PNG
         | FileContentType.JPG
         | FileContentType.SVG
         | FileContentType.GIF -> PageState.ImagePage(dto.fileType, dto.content, dto.path)
         | FileContentType.Html -> PageState.HtmlPage(dto.content, dto.path)
-        | FileContentType.FileContentTypeIsPlainTextVariant -> PageState.TextPage dto.content
+        // Markdown is one of the plain text variants.
+        | FileContentType.FileContentTypeIsPlainTextVariant ->
+            PageState.TextDocumentPage {
+                Path = PathHelpers.normalizePath dto.path
+                Content = dto.content
+                FileType = dto.fileType
+                Info = text
+            }
         | FileContentType.FileContentTypeIsISAFileVariant ->
             let arcfile = FileContentDTO.toArcFile dto
 

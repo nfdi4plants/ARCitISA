@@ -36,7 +36,10 @@ type Text =
 
 [<AllowNullLiteral>]
 type EditorState =
+    /// Positions in the document count every line break as one character.
     abstract doc: Text
+    /// The whole text, joined with the configured line separator. doc.toString() always joins with "\n".
+    abstract sliceDoc: unit -> string
 
 [<AllowNullLiteral>]
 type Compartment =

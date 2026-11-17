@@ -154,6 +154,7 @@ type FileStatDto = {| sizeBytes: float; mtimeMs: float |}
 type OpenFileResult = {|
     content: FileContentDTO
     revision: int
+    text: TextDocumentInfo option
 |}
 
 type SetArcFileInMemoryRequest = {|
@@ -230,7 +231,11 @@ type IArcVaultsApi = {
     movePath: MovePathRequest -> JS.Promise<Result<unit, exn>>
     renameOpenArcRoot: string -> JS.Promise<Result<string, exn>>
     writeFile: FileContentDTO -> JS.Promise<Result<unit, exn>>
+    /// Saves a text file the renderer opened. Refuses when the file changed on disk since it was read, unless overwrite is set.
+    saveTextFile: SaveTextFileRequest -> JS.Promise<Result<SaveTextFileOutcome, exn>>
     resolveCloseRequest: SaveBeforeQuitDecision -> JS.Promise<Result<unit, exn>>
+    /// The renderer reports whether its text editor has unsaved edits, so closing the window asks first.
+    setHasUnsavedTextChanges: bool -> JS.Promise<Result<unit, exn>>
 }
 
 /// Two Way Bridge: Renderer <-> Main

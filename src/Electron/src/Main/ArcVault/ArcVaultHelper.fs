@@ -472,39 +472,125 @@ let private readFirstBytesAsync (path: string) (maxBytes: int) : JS.Promise<byte
     return buffer, total
 }
 
+/// Text files above this size open read-only in the editor.
+let maxTextEditBytes = 5.0 * 1024.0 * 1024.0
+
+/// The info of a text document. A file above maxTextEditBytes is read-only unless an earlier reason applies.
+let createTextDocumentInfo
+    (encoding: TextFileEncoding)
+    (contentHash: string)
+    (sizeBytes: float)
+    (readOnly: TextReadOnlyReason option)
+    : TextDocumentInfo =
+    {|
+        encoding = encoding
+        contentHash = contentHash
+        sizeBytes = sizeBytes
+        readOnly =
+            match readOnly with
+            | Some reason -> Some reason
+            | None when sizeBytes > maxTextEditBytes -> Some TextReadOnlyReason.TooLargeToEdit
+            | None -> None
+    |}
+
+/// Reads a file of an ARC for the preview and the text editor. Files above the size limit and files without
+/// text content come back as a NoPreview DTO without info, and so do PDFs, which come back as base64. The info
+/// carries the encoding and the hash of the raw bytes that a later save compares against.
+let readTextDocumentAsync
+    (absolutePath: string)
+    (relativePath: string)
+    : JS.Promise<FileContentDTO * TextDocumentInfo option> =
+    promise {
+        let fileType = FileContentDTO.inferFileTypeFromPath relativePath
+        let isPdf = fileType = FileContentType.PDF
+        let! stats = Filesystem.statAsync absolutePath
+        let limit = if isPdf then maxPdfPreviewBytes else maxTextPreviewBytes
+
+        let noPreview reason =
+            FileContentDTO.createNoPreview relativePath stats.size reason, None
+
+        if not (stats.isFile ()) then
+            return noPreview NoPreviewReason.Binary
+        elif stats.size > limit then
+            return noPreview NoPreviewReason.TooLarge
+        else
+            // The read is capped at the size from the stat plus one byte. A file that grew afterwards is previewed
+            // up to that cap, and one that crossed the limit while it was exactly at it shows as too large.
+            let capacityFor (size: float) = int (min (limit + 1.0) (size + 1.0))
+            let! firstBuffer, firstTotal = readFirstBytesAsync absolutePath (capacityFor stats.size)
+
+            // A full cap means the file grew. One more read picks up the new size. A second growth makes it read-only.
+            let! buffer, total, grew = promise {
+                if float firstTotal > stats.size then
+                    let! newStats = Filesystem.statAsync absolutePath
+                    let! buffer, total = readFirstBytesAsync absolutePath (capacityFor newStats.size)
+                    return buffer, total, float total > newStats.size
+                else
+                    return firstBuffer, firstTotal, false
+            }
+
+            let text (encoding: TextFileEncoding) (content: string) (readOnly: TextReadOnlyReason option) =
+                let readOnly =
+                    if grew then
+                        Some TextReadOnlyReason.ChangedWhileReading
+                    else
+                        readOnly
+
+                FileContentDTO.create fileType content relativePath,
+                Some(
+                    createTextDocumentInfo encoding (Crypto.sha256Hex (Array.sub buffer 0 total)) (float total) readOnly
+                )
+
+            let windows1252 () =
+                text
+                    TextFileEncoding.Windows1252
+                    (Filesystem.decodeLenient buffer 0 total "windows-1252")
+                    (Some TextReadOnlyReason.NotUtf8)
+
+            let hasPrefix (bytes: byte[]) =
+                total >= bytes.Length
+                && bytes |> Array.indexed |> Array.forall (fun (i, b) -> buffer[i] = b)
+
+            let hasNulFrom (offset: int) =
+                buffer
+                |> Array.truncate (min total (offset + binarySniffBytes))
+                |> Array.skip (min offset total)
+                |> Array.exists (fun b -> b = 0uy)
+
+            let utf16 (encoding: TextFileEncoding) (label: string) =
+                match Filesystem.tryDecodeFatal buffer 2 (total - 2) label with
+                | Some content -> text encoding content None
+                | None ->
+                    text
+                        encoding
+                        (Filesystem.decodeLenient buffer 2 (total - 2) label)
+                        (Some TextReadOnlyReason.InvalidUtf16)
+
+            if float total > limit then
+                return noPreview NoPreviewReason.TooLarge
+            elif isPdf then
+                return FileContentDTO.create fileType (Filesystem.bufferToBase64Prefix buffer total) relativePath, None
+            elif hasPrefix [| 0xEFuy; 0xBBuy; 0xBFuy |] then
+                if hasNulFrom 3 then
+                    return noPreview NoPreviewReason.Binary
+                else
+                    match Filesystem.tryDecodeFatal buffer 3 (total - 3) "utf-8" with
+                    | Some content -> return text TextFileEncoding.Utf8Bom content None
+                    | None -> return windows1252 ()
+            elif hasPrefix [| 0xFFuy; 0xFEuy |] then
+                // UTF-16 text has NUL bytes, so a BOM decides before the NUL sniff.
+                return utf16 TextFileEncoding.Utf16LE "utf-16le"
+            elif hasPrefix [| 0xFEuy; 0xFFuy |] then
+                return utf16 TextFileEncoding.Utf16BE "utf-16be"
+            elif hasNulFrom 0 then
+                return noPreview NoPreviewReason.Binary
+            else
+                match Filesystem.tryDecodeFatal buffer 0 total "utf-8" with
+                | Some content -> return text TextFileEncoding.Utf8 content None
+                | None -> return windows1252 ()
+    }
+
 /// Reads a file of an ARC for the preview. Files above the size limit and files without text content come
 /// back as a NoPreview DTO. Their content is not read.
-let readFileForPreviewAsync (absolutePath: string) (relativePath: string) : JS.Promise<FileContentDTO> = promise {
-    let fileType = FileContentDTO.inferFileTypeFromPath relativePath
-    let isPdf = fileType = FileContentType.PDF
-    let! stats = Filesystem.statAsync absolutePath
-    let limit = if isPdf then maxPdfPreviewBytes else maxTextPreviewBytes
-
-    if not (stats.isFile ()) then
-        return FileContentDTO.createNoPreview relativePath stats.size NoPreviewReason.Binary
-    elif stats.size > limit then
-        return FileContentDTO.createNoPreview relativePath stats.size NoPreviewReason.TooLarge
-    else
-        // The read is capped at the size from the stat plus one byte. A file that grew afterwards is previewed
-        // up to that cap, and one that crossed the limit while it was exactly at it shows as too large.
-        let capacity = int (min (limit + 1.0) (stats.size + 1.0))
-        let! buffer, total = readFirstBytesAsync absolutePath capacity
-
-        if float total > limit then
-            return FileContentDTO.createNoPreview relativePath stats.size NoPreviewReason.TooLarge
-        elif isPdf then
-            return FileContentDTO.create fileType (Filesystem.bufferToBase64Prefix buffer total) relativePath
-        elif total >= 2 && buffer[0] = 0xFFuy && buffer[1] = 0xFEuy then
-            // UTF-16 text has NUL bytes, so a BOM decides before the NUL sniff.
-            return FileContentDTO.create fileType (Filesystem.bufferDecodePrefix buffer total "utf-16le") relativePath
-        elif total >= 2 && buffer[0] = 0xFEuy && buffer[1] = 0xFFuy then
-            return FileContentDTO.create fileType (Filesystem.bufferDecodePrefix buffer total "utf-16be") relativePath
-        elif
-            buffer
-            |> Array.truncate (min total binarySniffBytes)
-            |> Array.exists (fun b -> b = 0uy)
-        then
-            return FileContentDTO.createNoPreview relativePath stats.size NoPreviewReason.Binary
-        else
-            return FileContentDTO.create fileType (Filesystem.bufferToUtf8Prefix buffer total) relativePath
-}
+let readFileForPreviewAsync (absolutePath: string) (relativePath: string) : JS.Promise<FileContentDTO> =
+    readTextDocumentAsync absolutePath relativePath |> Promise.map fst

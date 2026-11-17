@@ -289,6 +289,9 @@ type ArcVault(window: BrowserWindow) =
     member val internal SnapshotLoad: string -> Fable.Core.JS.Promise<Result<ARC, string[]>> =
         (fun arcPath -> ARC.LoadAsyncSwate arcPath) with get, set
 
+    /// The text editor of the window has unsaved edits, as the renderer last reported. A reload resets it.
+    member val hasUnsavedTextChanges: bool = false with get, set
+
     /// Indicates whether a close confirmation dialog is currently open.
     member val isCloseRequestPending: bool = false with get, set
     /// Allows a confirmed close to pass through the onClose handler exactly once.

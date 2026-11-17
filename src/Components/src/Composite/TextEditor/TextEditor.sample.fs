@@ -191,6 +191,46 @@ type internal TextEditorSample =
             ]
         ]
 
+    /// Saves a CRLF document and shows the saved text with its line breaks written out.
+    [<ReactComponent>]
+    static member LineEndings() =
+        let saved, setSaved = React.useState ""
+        let handleRef = React.useRef<TextEditorHandle option> None
+
+        let onSave (snapshot: TextEditorSnapshot) : JS.Promise<bool> = promise {
+            setSaved (snapshot.text.Replace("\r", "\\r").Replace("\n", "\\n"))
+            return true
+        }
+
+        Html.div [
+            prop.className "swt:flex swt:flex-col swt:gap-2 swt:p-4"
+            prop.children [
+                Html.div [
+                    prop.className "swt:flex swt:items-center swt:gap-2"
+                    prop.children [
+                        Html.button [
+                            prop.className "swt:btn swt:btn-sm"
+                            prop.text "Save"
+                            prop.onClick (fun _ -> handleRef.current |> Option.iter (fun h -> h.save () |> ignore))
+                        ]
+                        Html.code [ prop.testId "saved-text"; prop.text saved ]
+                    ]
+                ]
+                Html.div [
+                    prop.className "swt:h-32"
+                    prop.children [
+                        TextEditor.TextEditor(
+                            "inmemory://samples/crlf.txt",
+                            "first\r\nsecond\r\n",
+                            fileName = "crlf.txt",
+                            onSave = onSave,
+                            handleRef = handleRef
+                        )
+                    ]
+                ]
+            ]
+        ]
+
     [<ReactComponent>]
     static member Languages() =
         let editor (name: string) (content: string) =
@@ -378,7 +418,7 @@ type internal TextEditorSample =
                 ]
 
         Html.div [
-            prop.className "swt:grid swt:grid-cols-1 swt:lg:grid-cols-2 swt:gap-4 swt:p-4 swt:h-[48rem]"
+            prop.className "swt:grid swt:grid-cols-1 swt:lg:grid-cols-2 swt:gap-4 swt:p-4 swt:h-192"
             prop.children [
                 Html.section [
                     prop.className "swt:flex swt:flex-col swt:gap-2 swt:min-h-0"

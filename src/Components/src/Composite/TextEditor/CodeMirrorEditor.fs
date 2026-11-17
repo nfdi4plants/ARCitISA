@@ -113,6 +113,8 @@ type CodeMirrorEditor =
                     linter (
                         (fun view -> promise {
                             let doc = view.state.doc
+                            // Lint offsets must match document positions, which count a line break as one
+                            // character, so lint reads the "\n" text and not sliceDoc.
                             let found = lint (doc.toString ())
 
                             found
@@ -154,12 +156,14 @@ type CodeMirrorEditor =
                 match runningSaveRef.current with
                 | Some running -> running
                 | None ->
-                    let doc = view.state.doc
+                    let state = view.state
+                    let doc = state.doc
 
                     let running = promise {
                         let! ok = promise {
                             try
-                                return! onSave {| text = doc.toString () |}
+                                // sliceDoc joins with the file's own line separator, so a CRLF file stays CRLF.
+                                return! onSave {| text = state.sliceDoc () |}
                             with _ ->
                                 return false
                         }
@@ -221,7 +225,7 @@ type CodeMirrorEditor =
 
                 member _.getText() =
                     match viewRef.current with
-                    | Some view -> view.state.doc.toString ()
+                    | Some view -> view.state.sliceDoc ()
                     | None -> ""
 
                 member _.replaceContent(text) =

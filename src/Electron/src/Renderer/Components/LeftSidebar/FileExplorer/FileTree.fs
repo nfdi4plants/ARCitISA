@@ -47,6 +47,25 @@ type FileTree =
         let pageStateCtx = Renderer.Context.PageStateContext.usePageStateCtx ()
         let appStateCtx = Renderer.Context.AppStateContext.useAppStateCtx ()
         let fileStateCtx = Renderer.Context.FileStateContext.useFileStateCtx ()
+        let leaveGuard = Renderer.Context.LeaveGuardContext.useLeaveGuardCtx ()
+
+        /// Asks to save or discard the open text document when an operation on path would remove or move it.
+        let confirmLeaveFor (path: string) : JS.Promise<bool> =
+            match leaveGuard.documentPath () with
+            | Some documentPath when
+                leaveGuard.isDirty ()
+                && Swate.Electron.Shared.TextDocumentHelper.isPathOrAncestor path documentPath
+                ->
+                leaveGuard.confirmLeave ()
+            | _ -> Promise.lift true
+
+        /// A dirty text document whose file vanished keeps its page and its selection, so the edits can be saved again.
+        let keepsRemovedDirtyDocument (selectedPath: string option) =
+            match selectedPath with
+            | Some path when leaveGuard.isDirtyDocument path ->
+                leaveGuard.notifyRemoved path
+                true
+            | _ -> false
 
         let expansionCtx =
             Renderer.Context.FileTreeExpansionContext.useFileTreeExpansionCtx ()
@@ -250,7 +269,10 @@ type FileTree =
 
         React.useEffect (
             (fun () ->
-                if FileExplorerStateReconciliation.isKnownAbsent selectionKnown then
+                if
+                    FileExplorerStateReconciliation.isKnownAbsent selectionKnown
+                    && not (keepsRemovedDirtyDocument fileStateCtx.state.Selection.TreePath)
+                then
                     fileStateCtx.setSelection ArcSelection.empty
 
                     if
@@ -428,13 +450,25 @@ type FileTree =
                 // because the open page, such as the Markdown editor, saves to the selected path.
                 | FileTreeClick.Folder -> ()
                 | FileTreeClick.File selectedPath ->
-                    fileStateCtx.setSelection (ArcSelection.forTreePath (Some selectedPath))
+                    let isOpenDocument =
+                        leaveGuard.documentPath ()
+                        |> Option.exists (Swate.Electron.Shared.TextDocumentHelper.isSameDocumentPath selectedPath)
 
-                    if Swate.Components.Page.FileExplorer.Helper.needsLfsDownload item then
-                        pageStateCtx.setState None
-                    else
-                        let! result = openView selectedPath
-                        applyPreviewResult item.Name result
+                    // Cancel in the leave dialog keeps the selection and the page as they are.
+                    let! canLeave =
+                        if isOpenDocument then
+                            Promise.lift true
+                        else
+                            leaveGuard.confirmLeave ()
+
+                    if canLeave then
+                        fileStateCtx.setSelection (ArcSelection.forTreePath (Some selectedPath))
+
+                        if Swate.Components.Page.FileExplorer.Helper.needsLfsDownload item then
+                            pageStateCtx.setState None
+                        else
+                            let! result = openView selectedPath
+                            applyPreviewResult item.Name result
             }
             |> Promise.start
 
@@ -461,7 +495,10 @@ type FileTree =
             pageStateCtx.state
             expansionCtx.contentStamp
             reloadPreviewAfterFileTreeUpdate
-            (fun () -> pageStateCtx.setState None)
+            (fun () ->
+                if not (keepsRemovedDirtyDocument fileStateCtx.state.Selection.TreePath) then
+                    pageStateCtx.setState None
+            )
 
         let handleExpansionChange (item: FileItem) (willExpand: bool) =
             if willExpand then
@@ -620,6 +657,7 @@ type FileTree =
                     setIsDeleting = setIsDialogBusy
                     enqueueError = errorModal.enqueue
                     getLfsActivePaths = fun () -> lfsActivePathsRef.current
+                    confirmLeaveFor = confirmLeaveFor
                     deletePath = Api.ipcArcVaultApi.deletePath
                 }
 
@@ -794,6 +832,7 @@ type FileTree =
                         setSelection = fileStateCtx.setSelection
                         refreshGitStatus = gitStateCtx.refresh
                         reloadPreviewByPath = reloadPreviewByPath
+                        confirmLeaveFor = confirmLeaveFor
                         renamePath = Api.ipcArcVaultApi.renamePath
                         enqueueError = errorModal.enqueue
                     }

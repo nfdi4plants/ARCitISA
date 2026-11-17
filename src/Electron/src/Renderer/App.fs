@@ -282,8 +282,26 @@ let Main () =
 
     React.useEffect ((fun () -> Helper.ArcVaultHelper.migrateLegacyAutoCreateNotesFolder () |> Promise.start), [||])
 
-    let setPageState (pageState: PageState option) = dispatch (PageStateChanged pageState)
+    let leaveGuard, leaveGuardDialog = Renderer.Components.LeaveGuard.useLeaveGuard ()
 
+    // Every page change asks the leave guard first, except a reload of the open text document itself.
+    let setPageState (pageState: PageState option) =
+        let reopensOpenDocument =
+            match pageState, leaveGuard.documentPath () with
+            | Some(PageState.TextDocumentPage data), Some openPath ->
+                Swate.Electron.Shared.TextDocumentHelper.isSameDocumentPath data.Path openPath
+            | _ -> false
+
+        if reopensOpenDocument || not (leaveGuard.isDirty ()) then
+            dispatch (PageStateChanged pageState)
+        else
+            leaveGuard.confirmLeave ()
+            |> Promise.iter (fun canLeave ->
+                if canLeave then
+                    dispatch (PageStateChanged pageState)
+            )
+
+    // Not guarded: its only user replaces a Git diff page, never a text page.
     let updatePageState =
         React.useCallback (
             (fun (update: PageState option -> PageState option) -> dispatch (PageStateUpdated update)),
@@ -344,50 +362,61 @@ let Main () =
                             runImport = Api.ipcArcVaultApi.tryImportExternalFiles
                             cancelImport = Api.ipcArcVaultApi.cancelImportExternalFiles
                         },
-                        Renderer.Context.PageStateContext.PageStateCtx.Provider(
-                            pageCtx,
-                            Renderer.Context.PageStateContext.PageStateUpdateCtx.Provider(
-                                updatePageState,
-                                ErrorModalProvider.ErrorModalProvider(
-                                    Renderer.Context.AuthStateContext.Provider(
-                                        Renderer.Context.LargeObjectStore.LargeObjectStoreProviderWith(
-                                            model.ArcRootPath,
-                                            model.ArcRootIsRename,
-                                            (fun () -> Api.ipcArcVaultApi.getLargeObjectIndex ()),
-                                            Renderer.Context.LfsActivityContext.LfsActivityCtxProvider(
-                                                Renderer.Context.FileTreeExpansionContext.FileTreeExpansionCtxProvider(
-                                                    {
-                                                        loadDirectory = Api.ipcArcVaultApi.loadDirectory
-                                                        revalidateDirectories = Api.ipcArcVaultApi.revalidateDirectories
-                                                        statFile = Api.ipcArcVaultApi.statFile
-                                                    },
-                                                    Renderer.Context.GitStateContext.GitStateCtxProvider(
-                                                        Swate
-                                                            .Components
-                                                            .Composite
-                                                            .AnnotationTable
-                                                            .AnnotationTableContextProvider
-                                                            .AnnotationTableContextProvider(
-                                                                Renderer
-                                                                    .Context
-                                                                    .VersionControlDependencyContext
-                                                                    .Provider(
-                                                                        WindowLayout
-                                                                            (React.Fragment [|
-                                                                                children
-                                                                                CloseWindowController
-                                                                                    .CloseWindowController()
-                                                                            |])
-                                                                            leftSidebar
-                                                                            leftActions
+                        Renderer.Context.LeaveGuardContext.LeaveGuardCtx.Provider(
+                            leaveGuard,
+                            Renderer.Context.PageStateContext.PageStateCtx.Provider(
+                                pageCtx,
+                                Renderer.Context.PageStateContext.PageStateUpdateCtx.Provider(
+                                    updatePageState,
+                                    ErrorModalProvider.ErrorModalProvider(
+                                        Renderer.Context.AuthStateContext.Provider(
+                                            Renderer.Context.LargeObjectStore.LargeObjectStoreProviderWith(
+                                                model.ArcRootPath,
+                                                model.ArcRootIsRename,
+                                                (fun () -> Api.ipcArcVaultApi.getLargeObjectIndex ()),
+                                                Renderer.Context.LfsActivityContext.LfsActivityCtxProvider(
+                                                    Renderer
+                                                        .Context
+                                                        .FileTreeExpansionContext
+                                                        .FileTreeExpansionCtxProvider(
+                                                            {
+                                                                loadDirectory = Api.ipcArcVaultApi.loadDirectory
+                                                                revalidateDirectories =
+                                                                    Api.ipcArcVaultApi.revalidateDirectories
+                                                                statFile = Api.ipcArcVaultApi.statFile
+                                                            },
+                                                            Renderer.Context.GitStateContext.GitStateCtxProvider(
+                                                                Swate
+                                                                    .Components
+                                                                    .Composite
+                                                                    .AnnotationTable
+                                                                    .AnnotationTableContextProvider
+                                                                    .AnnotationTableContextProvider(
+                                                                        Renderer
+                                                                            .Context
+                                                                            .VersionControlDependencyContext
+                                                                            .Provider(
+                                                                                WindowLayout
+                                                                                    (React.Fragment [|
+                                                                                        children
+                                                                                        CloseWindowController
+                                                                                            .CloseWindowController(
+                                                                                                onConfirmSave =
+                                                                                                    leaveGuard.saveForClose
+                                                                                            )
+                                                                                        leaveGuardDialog
+                                                                                    |])
+                                                                                    leftSidebar
+                                                                                    leftActions
+                                                                            )
                                                                     )
                                                             )
-                                                    )
+                                                        )
                                                 )
                                             )
-                                        )
-                                    ),
-                                    ?scopeId = currentArcScopeId
+                                        ),
+                                        ?scopeId = currentArcScopeId
+                                    )
                                 )
                             )
                         )

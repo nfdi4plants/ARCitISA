@@ -27,9 +27,14 @@ let isLegacyDataMapPath (path: string) =
 let private officeLockFilePattern = """(^|/)(\.?~\$[^/]*\.[^/]+|\.~lock\.[^/]+#)$"""
 let private lfsBackupPattern = """\.vcs-lfs-backup-[0-9a-fA-F]{32}$"""
 
+/// Name prefix of the temporary file a text save writes next to its target before it renames it into place.
+let textSaveTempPrefix = ".swate-save-"
+
+let private textSaveTempPattern = """(^|/)\.swate-save-[0-9a-fA-F]{32}\.tmp$"""
+
 /// True for entries that are not part of the ARC inventory. Git metadata (a `.git` directory or a `.git`
 /// gitlink file, anywhere on the path) counts for files and folders. Lock files of Office and LibreOffice count
-/// as files only, and so do LFS backups and the legacy `isa_datamap` file, so a folder with such a name stays in
+/// as files only, and so do LFS backups, the temporary files of a text save and the legacy `isa_datamap` file, so a folder with such a name stays in
 /// the inventory. The tree scan and the note search pass the real entry kind. The file watcher cannot tell files
 /// from folders and always passes false (`ArcVaultHelper.isFileWatcherPathIgnored`). `relativePath` is relative
 /// to the ARC root.
@@ -42,6 +47,7 @@ let isIgnoredInventoryEntry (name: string) (relativePath: string) (isDirectory: 
     || (not isDirectory
         && (System.Text.RegularExpressions.Regex.IsMatch(normalizedPath, lfsBackupPattern)
             || System.Text.RegularExpressions.Regex.IsMatch(normalizedPath, officeLockFilePattern)
+            || System.Text.RegularExpressions.Regex.IsMatch(normalizedPath, textSaveTempPattern)
             || isLegacyDataMapPath normalizedPath))
 
 let isRootFolderPath (rootFolderName: string) (candidateRelativePath: string) =

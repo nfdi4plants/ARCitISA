@@ -177,9 +177,12 @@ Vitest.describe (
         Vitest.test (
             "reports a duplicate YAML key as a syntax error",
             fun () ->
-                let found = yaml "name: A\nname: B\n"
+                let text = "name: A\nname: B\n"
+                let found = yaml text
                 Vitest.expect(found).toHaveLength 1
                 Vitest.expect(found.[0].source).toBe "syntax"
+                // The mark covers the whole second key, not only its first letter.
+                expectSpan text found.[0] "\n" "name"
         )
 
         Vitest.test (

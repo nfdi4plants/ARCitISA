@@ -12,6 +12,10 @@ module private TextEditorHelpers =
 
     let registry = ofDescriptions languages
 
+    /// Linting runs on the main thread until it moves into a Web Worker. A YAML pass takes about 50 ms
+    /// per 500 KB in Chromium, so longer documents (measured when they open) get no lint for now.
+    let maxLintLength = 1_000_000
+
     let firstLine (text: string) =
         let i = text.IndexOf '\n'
         (if i < 0 then text else text.Substring(0, i)).TrimEnd('\r')
@@ -55,7 +59,15 @@ type TextEditor =
             )
 
         let lint =
-            React.useMemo ((fun () -> Lint.forLanguage lang schemaValidator), [| box lang; box schemaValidator |])
+            React.useMemo (
+                (fun () ->
+                    if initialValue.Length > TextEditorHelpers.maxLintLength then
+                        None
+                    else
+                        Lint.forLanguage lang schemaValidator
+                ),
+                [| box documentUri; box lang; box schemaValidator |]
+            )
 
         CodeMirrorEditor.CodeMirrorEditor(
             documentUri,

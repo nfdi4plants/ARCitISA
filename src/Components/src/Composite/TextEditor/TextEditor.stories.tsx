@@ -2,6 +2,7 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 import { within, expect, waitFor, userEvent } from 'storybook/test';
 import {
   DirtySave as DirtySaveSample,
+  LineEndings as LineEndingsSample,
   Languages as LanguagesSample,
   ThemeSwitch as ThemeSwitchSample,
   SchemaPlayground as SchemaPlaygroundSample,
@@ -36,6 +37,19 @@ export const DirtySave: Story = {
     await userEvent.keyboard('{Control>}s{/Control}');
     await waitFor(() => expect(canvas.getByText('Saved')).toBeInTheDocument());
     expect(content.textContent).toContain('x');
+  },
+};
+
+/** A file with CRLF line breaks keeps them when it is saved. */
+export const LineEndings: Story = {
+  render: () => <LineEndingsSample />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const content = await editorContent(canvasElement);
+    await userEvent.click(content);
+    await userEvent.keyboard('{Control>}{End}{/Control}x');
+    await userEvent.click(canvas.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(canvas.getByTestId('saved-text')).toHaveTextContent('first\\r\\nsecond\\r\\nx'));
   },
 };
 

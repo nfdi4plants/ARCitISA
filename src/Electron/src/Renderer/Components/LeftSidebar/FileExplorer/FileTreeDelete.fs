@@ -17,6 +17,8 @@ module FileTreeDeleteWorkflow =
         /// Returns the paths of the running Download and Free actions when the user confirms.
         /// A function keeps the check current, because an action can start while the modal is open.
         getLfsActivePaths: unit -> Renderer.Context.LfsActivityContext.LfsActivePathIndex
+        /// Resolves false when the user keeps the open text document, which cancels the delete.
+        confirmLeaveFor: string -> JS.Promise<bool>
         deletePath: string -> JS.Promise<Result<unit, exn>>
     }
 
@@ -52,9 +54,15 @@ module FileTreeDeleteWorkflow =
                     config.setIsDeleting
                     applyError
                     (fun () -> promise {
-                        match! config.deletePath deletePath with
-                        | Ok() ->
+                        let! canLeave = config.confirmLeaveFor deletePath
+
+                        if not canLeave then
                             config.closeDeleteModal ()
                             return Ok()
-                        | Error exn -> return Error exn.Message
+                        else
+                            match! config.deletePath deletePath with
+                            | Ok() ->
+                                config.closeDeleteModal ()
+                                return Ok()
+                            | Error exn -> return Error exn.Message
                     })

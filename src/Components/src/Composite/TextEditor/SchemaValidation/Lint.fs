@@ -93,7 +93,17 @@ let private yamlError (text: string) (e: YamlError) : LintDiagnostic =
         else
             e.pos.[0], e.pos.[1]
 
-    syntaxDiagnostic text from ``to`` $"YAML syntax error: {first}."
+    // yaml often reports one character, such as the first letter of a duplicate key. The mark then covers the
+    // word that starts there, so it is visible.
+    let isWordChar (c: char) =
+        System.Char.IsLetterOrDigit c || c = '_' || c = '-' || c = '.'
+
+    let mutable wordEnd = from
+
+    while ``to`` - from <= 1 && wordEnd < text.Length && isWordChar text.[wordEnd] do
+        wordEnd <- wordEnd + 1
+
+    syntaxDiagnostic text from (max ``to`` wordEnd) $"YAML syntax error: {first}."
 
 /// Lints YAML (version 1.2, so "yes" is a string). Without a validator only syntax errors are reported.
 let lintYaml (validator: SchemaValidator option) (text: string) : LintDiagnostic[] =

@@ -15,7 +15,6 @@ open Renderer.Components.MainContent.GitUnsupportedTarget
 open Renderer.Components.MainContent.NotesDraftTarget
 open Renderer.Components.MainContent.NotesSearchTarget
 open Renderer.Components.MainContent.ProvenanceGroupingTarget
-open Renderer.Components.MainContent.TextPreviewTarget
 open Renderer.Components.MainContent.UnknownPreviewTarget
 open Renderer.Components.MainContent.LargeFilePreviewTarget
 open Renderer.Components.MainContent.SettingsPageTarget
@@ -71,8 +70,8 @@ module private LazyComponents =
         Renderer.Components.MainContent.ChangelogTarget.ChangelogTarget(version)
 
     [<ReactLazyComponent>]
-    let LazyMarkdownEditorTarget (content: string) =
-        Renderer.Components.MainContent.MarkdownEditorTargetView.MarkdownEditorTarget(content)
+    let LazyTextDocumentTarget (data: TextDocumentPageData) =
+        Renderer.Components.MainContent.TextDocumentTargetView.TextDocumentTarget(data)
 
     [<ReactLazyComponent>]
     let ProvenanceGroupingTarget () =
@@ -121,15 +120,21 @@ let Main (appRootPath: ArcRootPath, pageState: PageState option) =
                             ]
                         | Some _, Some(PageState.ArcFilePage(arcFile, requestedView, revision)) ->
                             ArcFilePreviewTarget(arcFile, requestedView, revision)
-                        | Some _, Some(PageState.MarkdownPage content) ->
-                            React.Suspense(
-                                [ LazyComponents.LazyMarkdownEditorTarget(content) ],
-                                fallback = LazyComponents.FullPageLoadingSpinner("Loading markdown editor...")
-                            )
+                        | Some _, Some(PageState.TextDocumentPage data) ->
+                            // Keyed by path, so another file gets a fresh editor and leave guard registration.
+                            Html.div [
+                                prop.key data.Path
+                                prop.className "swt:flex swt:grow swt:min-w-0 swt:min-h-0"
+                                prop.children [
+                                    React.Suspense(
+                                        [ LazyComponents.LazyTextDocumentTarget(data) ],
+                                        fallback = LazyComponents.FullPageLoadingSpinner("Loading editor...")
+                                    )
+                                ]
+                            ]
                         | Some _,
                           Some((PageState.PDFPage _ | PageState.ImagePage _ | PageState.HtmlPage _) as pageState) ->
                             FileViewerTarget.FileViewerTarget pageState
-                        | Some _, Some(PageState.TextPage content) -> TextPreviewTarget content
                         | Some _, Some PageState.UnknownPage -> UnknownPreviewTarget()
                         | Some _, Some(PageState.LargeFilePage(path, sizeBytes, reason)) ->
                             LargeFilePreviewTarget(path, sizeBytes, reason)

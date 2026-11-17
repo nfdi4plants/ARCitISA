@@ -11,6 +11,7 @@
     <Compile Include="Bindings\Abort.fs" />
     <Compile Include="Bindings\Filesystem.fs" />
     <Compile Include="Bindings\Path.fs" />
+    <Compile Include="Bindings\Crypto.fs" />
     <Compile Include="Bindings\NodeBindings.fs" />
     <Compile Include="Bindings\ChildProcess.fs" />
     <Compile Include="Bindings\Menu.fs" />
@@ -77,6 +78,7 @@
     <Compile Include="IPC\Rename.fs" />
     <Compile Include="IPC\IVersionControlApi.fs" />
     <Compile Include="IPC\IGitLabApi.fs" />
+    <Compile Include="IPC\TextFileSave.fs" />
     <Compile Include="IPC\IArcVaultsApi.fs" />
     <Compile Include="IPC\IAuthApi.fs" />
     <Compile Include="IPC\ITemplateApi.fs" />

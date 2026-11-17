@@ -16,6 +16,7 @@
     <Compile Include="Context\AppStateContext.fs" />
     <Compile Include="Context\LargeObjectStore.fs" />
     <Compile Include="Context\PageStateContext.fs" />
+    <Compile Include="Context\LeaveGuardContext.fs" />
     <Compile Include="Context\FileTreeStore.fs" />
     <Compile Include="Context\ArcSyncContext.fs" />
     <Compile Include="Context\FileStateContext.fs" />
@@ -69,8 +70,7 @@
     <Compile Include="Components\MainContent\ChangelogTarget.fs" />
     <Compile Include="Components\MainContent\ArcFilePreviewTargetHelper.fs" />
     <Compile Include="Components\MainContent\ArcFilePreviewTarget.fs" />
-    <Compile Include="Components\MainContent\TextPreviewTarget.fs" />
-    <Compile Include="Components\MainContent\MarkdownEditorTarget.fs" />
+    <Compile Include="Components\MainContent\TextDocumentTarget.fs" />
     <Compile Include="Components\MainContent\FileViewerTarget.fs" />
     <Compile Include="Components\MainContent\UnknownPreviewTarget.fs" />
     <Compile Include="Components\MainContent\LargeFilePreviewTarget.fs" />
@@ -89,6 +89,7 @@
     <Compile Include="Components\MainContent\ValidationPackageBrowserTarget.fs" />
     <Compile Include="Components\MainContent\Main.fs" />
     <Compile Include="Components\CloseWindowController.fs" />
+    <Compile Include="Components\LeaveGuard.fs" />
     <Compile Include="Components\Navbar.fs" />
     <Compile Include="Components\VersionControlDependencyBanner.fs" />
     <Compile Include="App.fs" />

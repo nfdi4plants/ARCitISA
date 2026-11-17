@@ -7402,3 +7402,48 @@ Vitest.describe (
                     })
         )
 )
+
+Vitest.describe (
+    "Text editor close protection",
+    fun () ->
+        Vitest.test (
+            "unsaved text edits alone make closing ask first",
+            fun () ->
+                let windowState = createTestWindow (testWindowOptions 141)
+                let vault = ArcVault(windowState.Window)
+                ARC_VAULTS.OnCloseWindow(windowState.Window, vault, 141)
+                vault.hasUnsavedTextChanges <- true
+
+                windowState.TriggerClose()
+
+                Vitest.expect(windowState.PreventedCloseCount()).toBe 1
+                Vitest.expect((sentMessageTexts windowState "requestSaveBeforeQuit").Length).toBe 1
+        )
+
+        Vitest.test (
+            "closing during ARC initialization still asks while text edits are unsaved",
+            fun () ->
+                let windowState = createTestWindow (testWindowOptions 142)
+                let vault = ArcVault(windowState.Window)
+                ARC_VAULTS.OnCloseWindow(windowState.Window, vault, 142)
+                vault.isInitializingArc <- true
+                vault.hasUnsavedTextChanges <- true
+
+                windowState.TriggerClose()
+
+                Vitest.expect(windowState.PreventedCloseCount()).toBe 1
+        )
+
+        Vitest.test (
+            "a window without unsaved text or ARC edits closes without asking",
+            fun () ->
+                let windowState = createTestWindow (testWindowOptions 143)
+                let vault = ArcVault(windowState.Window)
+                ARC_VAULTS.OnCloseWindow(windowState.Window, vault, 143)
+
+                windowState.TriggerClose()
+
+                Vitest.expect(windowState.PreventedCloseCount()).toBe 0
+                Vitest.expect((sentMessageTexts windowState "requestSaveBeforeQuit").Length).toBe 0
+        )
+)
