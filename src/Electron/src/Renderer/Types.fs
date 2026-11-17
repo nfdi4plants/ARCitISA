@@ -252,6 +252,16 @@ type PageState =
     static member fromFileContentDTO(dto: FileContentDTO, revision: int, text: TextDocumentInfo option) : PageState =
         match dto.fileType with
         | FileContentType.PDF -> PageState.PDFPage(dto.content, dto.path)
+        // HTML and SVG with text metadata open in the text page, which shows and edits them. Without it (a file above
+        // the text read limit) the content is base64 for the viewer.
+        | FileContentType.Html
+        | FileContentType.SVG when text.IsSome ->
+            PageState.TextDocumentPage {
+                Path = PathHelpers.normalizePath dto.path
+                Content = dto.content
+                FileType = dto.fileType
+                Info = text
+            }
         | FileContentType.PNG
         | FileContentType.JPG
         | FileContentType.SVG

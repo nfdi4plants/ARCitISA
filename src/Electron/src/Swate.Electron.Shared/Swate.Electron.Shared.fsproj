@@ -19,6 +19,7 @@
     <Compile Include="RenamePathRules.fs" />
     <Compile Include="FileIOHelper.fs" />
     <Compile Include="TextDocumentHelper.fs" />
+    <Compile Include="TextDocumentSchemas.fs" />
   </ItemGroup>
 
   <ItemGroup>

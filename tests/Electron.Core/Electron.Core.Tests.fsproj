@@ -44,6 +44,7 @@
     <Compile Include="FilesystemBindings.test.fs" />
     <Compile Include="TextDocumentIO.test.fs" />
     <Compile Include="TextDocumentHelper.test.fs" />
+    <Compile Include="TextDocumentSchemas.test.fs" />
     <Compile Include="RenamePathRules.test.fs" />
     <Compile Include="ProvenanceGroupingReader.test.fs" />
     <Compile Include="ProvenanceGraphReader.test.fs" />
