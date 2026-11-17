@@ -18,6 +18,22 @@ module Preview =
 
             MermaidInitialized <- true
 
+    /// The element Mermaid measures a diagram in. At the end of document.body that element makes the page taller
+    /// while the diagram renders, so the page shows a scrollbar and the whole layout narrows and snaps back. This host
+    /// is fixed to the top of the viewport, has no height and clips its content, so the page never grows. The
+    /// diagram keeps the viewport width to lay out in, like it had in document.body.
+    let private createMeasureHost () =
+        let host = Browser.Dom.document.createElement "div"
+        host.setAttribute ("aria-hidden", "true")
+
+        host.setAttribute (
+            "style",
+            "position:fixed;top:0;left:0;right:0;height:0;overflow:hidden;visibility:hidden;pointer-events:none"
+        )
+
+        Browser.Dom.document.body.appendChild host |> ignore
+        host
+
     let private tryGetClassName (props: obj) =
         let className: obj = props?className
 
@@ -77,15 +93,20 @@ module Preview =
                     else
                         ensureMermaidInitialized ()
 
-                        Mermaid.instance.render (renderId.current, code)
-                        |> Promise.map (fun result ->
-                            setRenderError None
-                            setSvg (Some result.svg)
-                        )
-                        |> Promise.catch (fun err ->
-                            setSvg None
-                            setRenderError (Some $"Mermaid render error: {string err}")
-                        )
+                        promise {
+                            let host = createMeasureHost ()
+
+                            try
+                                try
+                                    let! result = Mermaid.instance.render (renderId.current, code, host)
+                                    setRenderError None
+                                    setSvg (Some result.svg)
+                                with err ->
+                                    setSvg None
+                                    setRenderError (Some $"Mermaid render error: {string err}")
+                            finally
+                                host.remove ()
+                        }
                         |> Promise.start
             ),
             [| box isMermaid; box code |]

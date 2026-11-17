@@ -10,7 +10,11 @@ type IMermaidRenderResult =
 [<AllowNullLiteral>]
 type IMermaid =
     abstract member initialize: obj -> unit
-    abstract member render: string * string -> JS.Promise<IMermaidRenderResult>
+
+    /// Mermaid draws the diagram into a temporary element to measure it and removes that element afterwards. The
+    /// element goes into svgContainingElement, which Mermaid empties first, or at the end of document.body without one.
+    abstract member render:
+        id: string * text: string * ?svgContainingElement: Browser.Types.HTMLElement -> JS.Promise<IMermaidRenderResult>
 
 [<Erase>]
 type Mermaid =

@@ -21,6 +21,8 @@ type HtmlViewer =
             prop.children [
                 Html.iframe [
                     prop.src htmlContent
+                    // Scripts run, but in an opaque origin, so the page cannot reach the app.
+                    prop.custom ("sandbox", "allow-scripts")
                     prop.title "HTML preview"
                     prop.className "swt:block swt:w-full swt:h-full swt:border-none"
                     prop.onError (fun (_: Browser.Types.Event) -> setFailedHtmlUrl (Some htmlContent))
