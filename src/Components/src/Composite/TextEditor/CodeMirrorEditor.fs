@@ -34,6 +34,67 @@ module private CodeMirrorEditorHelpers =
     let languageDescription (id: string) =
         languages |> Array.tryFind (fun d -> languageId d = id)
 
+    let editStateOf (state: EditorState) : TextEditState =
+        let main = state.selection.main
+
+        {|
+            text = state.doc.toString ()
+            selection = {|
+                anchor = main.anchor
+                head = main.head
+            |}
+        |}
+
+    /// One transaction is one undo step. Isolating it keeps the history from joining it with typing just
+    /// before or after.
+    let applyEditTo (view: EditorView) (edit: TextEdit) : bool =
+        if view.state.readOnly then
+            false
+        elif
+            edit.changes.Length = 0
+            && edit.selection.anchor = view.state.selection.main.anchor
+            && edit.selection.head = view.state.selection.main.head
+        then
+            // A refused key returns such an edit. Dispatching it would split the undo group of the typing around it.
+            true
+        else
+            view.dispatch (
+                TransactionSpec(
+                    changes = box edit.changes,
+                    selection = box edit.selection,
+                    scrollIntoView = true,
+                    userEvent = "input.format",
+                    annotations = [| isolateHistory.``of`` "full" |]
+                )
+            )
+
+            true
+
+    /// Prec.high puts these keys ahead of basicSetup's defaults, so for example Mod-i no longer selects
+    /// the parent syntax node.
+    let keyBindingsExtension (bindings: TextEditorKeyBinding[] option) : Extension =
+        match bindings with
+        | None -> noExtension
+        | Some b when b.Length = 0 -> noExtension
+        | Some b ->
+            Prec.high (
+                keymap.``of`` (
+                    b
+                    |> Array.map (fun binding -> {|
+                        key = binding.key
+                        run =
+                            fun (view: EditorView) ->
+                                if view.state.readOnly then
+                                    false
+                                else
+                                    match binding.run (editStateOf view.state) with
+                                    | Some edit -> applyEditTo view edit
+                                    | None -> false
+                        preventDefault = false
+                    |})
+                )
+            )
+
 open CodeMirrorEditorHelpers
 
 [<Erase; Mangle(false)>]
@@ -44,6 +105,8 @@ type CodeMirrorEditor =
     /// LanguageDetection. The editor loads that language on demand.
     /// lint runs 300 ms after the last change. Pass the same function instance across renders,
     /// a new instance lints again.
+    /// keyBindings take precedence over the default keys. Pass the same array instance across renders,
+    /// a new instance reconfigures the keys.
     [<ReactComponent>]
     static member CodeMirrorEditor
         (
@@ -53,6 +116,7 @@ type CodeMirrorEditor =
             ?readOnly: bool,
             ?prose: bool,
             ?lint: string -> LintDiagnostic[],
+            ?keyBindings: TextEditorKeyBinding[],
             ?onSave: TextEditorSnapshot -> JS.Promise<bool>,
             ?onDirtyChange: bool -> unit,
             ?onChange: unit -> unit,
@@ -78,12 +142,12 @@ type CodeMirrorEditor =
             match compartmentsRef.current with
             | Some c -> c
             | None ->
-                let c = Array.init 4 (fun _ -> CompartmentApi.Create())
+                let c = Array.init 5 (fun _ -> CompartmentApi.Create())
                 compartmentsRef.current <- Some c
                 c
 
-        let languageSlot, readOnlySlot, proseSlot, lintSlot =
-            compartments.[0], compartments.[1], compartments.[2], compartments.[3]
+        let languageSlot, readOnlySlot, proseSlot, lintSlot, keyBindingsSlot =
+            compartments.[0], compartments.[1], compartments.[2], compartments.[3], compartments.[4]
 
         // The editor outlives single renders, so its callbacks read the latest props from refs.
         let onSaveRef = React.useRef onSave
@@ -93,9 +157,11 @@ type CodeMirrorEditor =
         let readOnlyRef = React.useRef readOnly
         let proseRef = React.useRef prose
         let lintRef = React.useRef lint
+        let keyBindingsRef = React.useRef keyBindings
         let appliedReadOnlyRef = React.useRef readOnly
         let appliedProseRef = React.useRef prose
         let appliedLintRef = React.useRef lint
+        let appliedKeyBindingsRef = React.useRef keyBindings
         onSaveRef.current <- onSave
         onDirtyChangeRef.current <- onDirtyChange
         onChangeRef.current <- onChange
@@ -103,6 +169,7 @@ type CodeMirrorEditor =
         readOnlyRef.current <- readOnly
         proseRef.current <- prose
         lintRef.current <- lint
+        keyBindingsRef.current <- keyBindings
 
         let report (diagnostics: TextEditorDiagnostic[]) =
             onDiagnosticsRef.current |> Option.iter (fun f -> f diagnostics)
@@ -201,6 +268,7 @@ type CodeMirrorEditor =
             appliedReadOnlyRef.current <- readOnlyRef.current
             appliedProseRef.current <- proseRef.current
             appliedLintRef.current <- lintRef.current
+            appliedKeyBindingsRef.current <- keyBindingsRef.current
 
             EditorStateApi.create {|
                 doc = text
@@ -233,6 +301,7 @@ type CodeMirrorEditor =
                         readOnlySlot.``of`` (readOnlyExtension readOnlyRef.current)
                         proseSlot.``of`` (proseExtension proseRef.current)
                         lintSlot.``of`` (lintExtension lintRef.current)
+                        keyBindingsSlot.``of`` (keyBindingsExtension keyBindingsRef.current)
                     |]
             |}
 
@@ -245,6 +314,19 @@ type CodeMirrorEditor =
                     match viewRef.current with
                     | Some view -> textOf view.state
                     | None -> ""
+
+                member _.getEditState() =
+                    match viewRef.current with
+                    | Some view -> editStateOf view.state
+                    | None -> {|
+                        text = ""
+                        selection = {| anchor = 0; head = 0 |}
+                      |}
+
+                member _.applyEdit(edit) =
+                    match viewRef.current with
+                    | Some view -> applyEditTo view edit
+                    | None -> false
 
                 member _.replaceContent(text) =
                     match viewRef.current with
@@ -347,6 +429,17 @@ type CodeMirrorEditor =
                     report [||]
             ),
             [| box lint |]
+        )
+
+        React.useEffect (
+            (fun () ->
+                match viewRef.current with
+                | Some v when not (obj.ReferenceEquals(keyBindings, appliedKeyBindingsRef.current)) ->
+                    reconfigure v keyBindingsSlot (keyBindingsExtension keyBindings)
+                    appliedKeyBindingsRef.current <- keyBindings
+                | _ -> ()
+            ),
+            [| box keyBindings |]
         )
 
         Html.div [

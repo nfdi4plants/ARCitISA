@@ -1,0 +1,136 @@
+namespace Swate.Components.Composite.MarkdownToolbarSample
+
+open Fable.Core
+open Feliz
+
+open Swate.Components.Composite.TextEditor
+open Swate.Components.Composite.TextEditor.Types
+open Swate.Components.Composite.TermSearch.Types
+open Swate.Components.Composite.MarkdownText
+open Swate.Components.Composite.MarkdownText.Editing
+open Swate.Components.Composite.MarkdownText.Editing.Types
+
+module private MarkdownToolbarSampleHelpers =
+
+    /// Built once, so the editor keeps its keymap. The read-only sample shows no messages.
+    let readOnlyKeyBindings = MarkdownCommands.keyBindingsWith ignore
+
+open MarkdownToolbarSampleHelpers
+
+[<Erase; Mangle(false)>]
+type internal MarkdownToolbarSample =
+
+    /// The toolbar over a Markdown editor. The keys of the toolbar commands work in the editor too.
+    [<ReactComponent>]
+    static member Editor() =
+        let handleRef = React.useRef<TextEditorHandle option> None
+        let surface = MarkdownSurface.ofTextEditor handleRef
+        let message, setMessage = React.useState (None: string option)
+
+        let keyBindings =
+            React.useMemo ((fun () -> MarkdownCommands.keyBindingsWith setMessage), [||])
+
+        Html.div [
+            prop.className "swt:flex swt:flex-col swt:gap-2 swt:p-4"
+            prop.children [
+                MarkdownToolbar.MarkdownToolbar(surface, ?message = message, setMessage = setMessage)
+                Html.div [
+                    prop.className "swt:h-48"
+                    prop.children [
+                        TextEditor.TextEditor(
+                            "inmemory://samples/toolbar.md",
+                            "format me",
+                            fileName = "toolbar.md",
+                            keyBindings = keyBindings,
+                            onChange = (fun () -> setMessage None),
+                            handleRef = handleRef
+                        )
+                    ]
+                ]
+            ]
+        ]
+
+    /// The Ontology reference button inserts a link for a term of a stubbed search. The IRI comes from the term.
+    [<ReactComponent>]
+    static member WithOntologyReference() =
+        let handleRef = React.useRef<TextEditorHandle option> None
+        let surface = MarkdownSurface.ofTextEditor handleRef
+        let message, setMessage = React.useState (None: string option)
+
+        let keyBindings =
+            React.useMemo ((fun () -> MarkdownCommands.keyBindingsWith setMessage), [||])
+
+        let termSearchQueries =
+            ResizeArray<string * SearchCall>(
+                [
+                    "stub",
+                    fun (_: string) -> promise {
+                        return
+                            ResizeArray [
+                                Term(
+                                    name = "instrument model",
+                                    id = "MS:1000031",
+                                    source = "MS",
+                                    href = "http://purl.obolibrary.org/obo/MS_1000031"
+                                )
+                            ]
+                    }
+                ]
+            )
+
+        Html.div [
+            prop.className "swt:flex swt:flex-col swt:gap-2 swt:p-4"
+            prop.children [
+                MarkdownToolbar.MarkdownToolbar(
+                    surface,
+                    ?message = message,
+                    setMessage = setMessage,
+                    termSearchQueries = termSearchQueries,
+                    disableDefaultSearch = true,
+                    lookupIri = (fun _ -> promise { return None })
+                )
+                Html.div [
+                    prop.className "swt:h-48"
+                    prop.children [
+                        TextEditor.TextEditor(
+                            "inmemory://samples/toolbar-ontology.md",
+                            "The sample was measured with an ",
+                            fileName = "toolbar.md",
+                            keyBindings = keyBindings,
+                            onChange = (fun () -> setMessage None),
+                            handleRef = handleRef
+                        )
+                    ]
+                ]
+            ]
+        ]
+
+    /// A read-only editor disables every button.
+    [<ReactComponent>]
+    static member ReadOnly() =
+        let handleRef = React.useRef<TextEditorHandle option> None
+        let surface = MarkdownSurface.ofTextEditor handleRef
+
+        Html.div [
+            prop.className "swt:flex swt:flex-col swt:gap-2 swt:p-4"
+            prop.children [
+                MarkdownToolbar.MarkdownToolbar(
+                    surface,
+                    disabled = true,
+                    disabledReason = "This file is write-protected."
+                )
+                Html.div [
+                    prop.className "swt:h-48"
+                    prop.children [
+                        TextEditor.TextEditor(
+                            "inmemory://samples/toolbar-readonly.md",
+                            "format me",
+                            fileName = "toolbar.md",
+                            readOnly = true,
+                            keyBindings = readOnlyKeyBindings,
+                            handleRef = handleRef
+                        )
+                    ]
+                ]
+            ]
+        ]

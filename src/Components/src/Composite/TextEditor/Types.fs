@@ -6,6 +6,37 @@ open Fable.Core
 /// version counts as saved when the save succeeds, also if the user typed while it ran.
 type TextEditorSnapshot = {| text: string |}
 
+/// A selection as offsets into the text. head is the end where the cursor sits. A cursor has anchor = head.
+type TextSelection = {| anchor: int; head: int |}
+
+/// One replacement. from and to are offsets into the text before the edit.
+type TextChange = {|
+    from: int
+    ``to``: int
+    insert: string
+|}
+
+/// Changes that apply together as one undo step. The changes are sorted by from and do not overlap. Their offsets
+/// refer to the text before the edit, and selection refers to the text after it.
+type TextEdit = {|
+    changes: TextChange[]
+    selection: TextSelection
+|}
+
+/// The input of an edit command: the text with every line break written as "\n", and the main selection.
+type TextEditState = {|
+    text: string
+    selection: TextSelection
+|}
+
+/// A key that runs an edit command. key uses CodeMirror's notation, for example "Mod-b". When run returns None,
+/// the key goes on to the editor's other bindings. A read-only editor runs no binding, so its keys go to the
+/// editor's default bindings.
+type TextEditorKeyBinding = {|
+    key: string
+    run: TextEditState -> TextEdit option
+|}
+
 /// Imperative access for the host page. All members are safe to call before the editor exists
 /// (they then do nothing, return false or "").
 type TextEditorHandle =
@@ -13,6 +44,12 @@ type TextEditorHandle =
     /// Runs the onSave callback for the current snapshot. Resolves true when the host reported success.
     abstract save: unit -> JS.Promise<bool>
     abstract getText: unit -> string
+    /// The text and the main selection that edit commands work on. Unlike getText, the text writes every line break
+    /// as "\n", so its offsets are editor positions. Before the editor exists the text is empty.
+    abstract getEditState: unit -> TextEditState
+    /// Applies the edit as one undo step and scrolls the selection into view. Returns false and changes nothing when
+    /// the editor does not exist or is read-only.
+    abstract applyEdit: edit: TextEdit -> bool
     /// Replaces the whole content, for example after a reload from disk. The new content counts as saved and the undo history starts over.
     abstract replaceContent: text: string -> unit
     abstract focus: unit -> unit

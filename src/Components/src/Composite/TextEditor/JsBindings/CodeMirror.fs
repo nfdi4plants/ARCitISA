@@ -37,9 +37,23 @@ type Text =
     abstract sliceString: from: int * ``to``: int * lineSep: string -> string
 
 [<AllowNullLiteral>]
+type SelectionRange =
+    abstract from: int
+    abstract ``to``: int
+    abstract anchor: int
+    abstract head: int
+
+[<AllowNullLiteral>]
+type EditorSelection =
+    abstract main: SelectionRange
+
+[<AllowNullLiteral>]
 type EditorState =
     /// Positions in the document count every line break as one character.
     abstract doc: Text
+    abstract selection: EditorSelection
+    /// True when the readOnly facet is set.
+    abstract readOnly: bool
 
 [<AllowNullLiteral>]
 type Compartment =
@@ -56,15 +70,30 @@ type EditorStateStatic =
     abstract create: config: EditorStateConfig -> EditorState
     abstract readOnly: Facet<bool>
 
+/// A transaction annotation, made by an AnnotationType.
+type Annotation = interface end
+
+type AnnotationType<'T> =
+    abstract ``of``: 'T -> Annotation
+
 /// Compiles to a plain object. Unset fields stay out of the object.
 [<Global>]
 type TransactionSpec
     [<ParamObject; Emit("$0")>]
-    (?effects: StateEffect[], ?changes: obj, ?selection: obj, ?scrollIntoView: bool) =
+    (
+        ?effects: StateEffect[],
+        ?changes: obj,
+        ?selection: obj,
+        ?scrollIntoView: bool,
+        ?annotations: Annotation[],
+        ?userEvent: string
+    ) =
     member val effects: StateEffect[] option = jsNative with get, set
     member val changes: obj option = jsNative with get, set
     member val selection: obj option = jsNative with get, set
     member val scrollIntoView: bool option = jsNative with get, set
+    member val annotations: Annotation[] option = jsNative with get, set
+    member val userEvent: string option = jsNative with get, set
 
 [<AllowNullLiteral>]
 type EditorView =
@@ -106,6 +135,7 @@ type KeyBinding = {|
 
 type PrecStatic =
     abstract highest: Extension -> Extension
+    abstract high: Extension -> Extension
 
 [<Import("EditorState", "@codemirror/state")>]
 let EditorStateApi: EditorStateStatic = jsNative
@@ -131,6 +161,10 @@ type CommandBinding = interface end
 
 [<Import("indentWithTab", "@codemirror/commands")>]
 let indentWithTab: CommandBinding = jsNative
+
+/// Annotation that keeps the history from joining a transaction with its neighbors. Values are "before", "after" or "full".
+[<Import("isolateHistory", "@codemirror/commands")>]
+let isolateHistory: AnnotationType<string> = jsNative
 
 // Languages and highlighting
 

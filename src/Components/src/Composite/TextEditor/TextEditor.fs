@@ -25,7 +25,8 @@ type TextEditor =
 
     /// A CodeMirror 6 editor that finds the language of the document from its file name and first
     /// line, unless a language is given. JSON and YAML get syntax diagnostics. With a
-    /// schemaValidator they also get diagnostics from the JSON Schema.
+    /// schemaValidator they also get diagnostics from the JSON Schema. keyBindings run edit commands
+    /// ahead of the editor's default keys. A read-only editor runs no binding, so its keys go to the default keys.
     [<ReactComponent(true)>]
     static member TextEditor
         (
@@ -35,6 +36,7 @@ type TextEditor =
             ?language: string,
             ?readOnly: bool,
             ?schemaValidator: Validator.SchemaValidator,
+            ?keyBindings: TextEditorKeyBinding[],
             ?onSave: TextEditorSnapshot -> JS.Promise<bool>,
             ?onDirtyChange: bool -> unit,
             ?onChange: unit -> unit,
@@ -76,6 +78,7 @@ type TextEditor =
             ?readOnly = readOnly,
             prose = (lang = "markdown" || lang = "plaintext"),
             ?lint = lint,
+            ?keyBindings = keyBindings,
             ?onSave = onSave,
             ?onDirtyChange = onDirtyChange,
             ?onChange = onChange,

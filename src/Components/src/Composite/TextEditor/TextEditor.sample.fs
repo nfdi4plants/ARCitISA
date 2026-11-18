@@ -107,6 +107,45 @@ keywords: [proteomics, proteomics]
 }}
 """
 
+module private EditApiHelpers =
+
+    /// A module-level array keeps the same instance across renders, so the editor does not reconfigure its keys.
+    let keyBindings: TextEditorKeyBinding[] = [|
+        {|
+            key = "Mod-i"
+            run =
+                fun state ->
+                    let head = state.selection.head
+
+                    Some {|
+                        changes = [|
+                            {|
+                                from = head
+                                ``to`` = head
+                                insert = "_"
+                            |}
+                        |]
+                        selection = {| anchor = head + 1; head = head + 1 |}
+                    |}
+        |}
+    |]
+
+    let wrapFirstWord: TextEdit = {|
+        changes = [|
+            {|
+                from = 0
+                ``to`` = 0
+                insert = "**"
+            |}
+            {|
+                from = 5
+                ``to`` = 5
+                insert = "**"
+            |}
+        |]
+        selection = {| anchor = 2; head = 7 |}
+    |}
+
 module private SchemaPlaygroundHelpers =
 
     type SchemaTab = { Key: int; Text: string }
@@ -142,10 +181,92 @@ module private SchemaPlaygroundHelpers =
             | None -> Error "The root schema has no $id."
             | Some rootId -> Validator.create schemas rootId
 
+open EditApiHelpers
 open SchemaPlaygroundHelpers
 
 [<Erase; Mangle(false)>]
 type internal TextEditorSample =
+
+    /// A key binding and a button that both change the text through the edit API.
+    [<ReactComponent>]
+    static member EditApi() =
+        let editState, setEditState = React.useState ""
+        let handleRef = React.useRef<TextEditorHandle option> None
+
+        Html.div [
+            prop.className "swt:flex swt:flex-col swt:gap-2 swt:p-4"
+            prop.children [
+                Html.div [
+                    prop.className "swt:flex swt:items-center swt:gap-2"
+                    prop.children [
+                        Html.button [
+                            prop.className "swt:btn swt:btn-sm"
+                            prop.text "Wrap first word"
+                            prop.onClick (fun _ ->
+                                handleRef.current
+                                |> Option.iter (fun h ->
+                                    h.applyEdit wrapFirstWord |> ignore
+                                    setEditState (JS.JSON.stringify (h.getEditState ()))
+                                    h.focus ()
+                                )
+                            )
+                        ]
+                        Html.span [ prop.testId "edit-state"; prop.text editState ]
+                    ]
+                ]
+                Html.div [
+                    prop.className "swt:h-32"
+                    prop.children [
+                        TextEditor.TextEditor(
+                            "inmemory://samples/edit.txt",
+                            "hello world",
+                            fileName = "edit.txt",
+                            keyBindings = keyBindings,
+                            handleRef = handleRef
+                        )
+                    ]
+                ]
+            ]
+        ]
+
+    /// The edit API refuses to change a read-only editor.
+    [<ReactComponent>]
+    static member EditApiReadOnly() =
+        let result, setResult = React.useState ""
+        let handleRef = React.useRef<TextEditorHandle option> None
+
+        Html.div [
+            prop.className "swt:flex swt:flex-col swt:gap-2 swt:p-4"
+            prop.children [
+                Html.div [
+                    prop.className "swt:flex swt:items-center swt:gap-2"
+                    prop.children [
+                        Html.button [
+                            prop.className "swt:btn swt:btn-sm"
+                            prop.text "Wrap first word"
+                            prop.onClick (fun _ ->
+                                handleRef.current
+                                |> Option.iter (fun h -> setResult (string (h.applyEdit wrapFirstWord)))
+                            )
+                        ]
+                        Html.span [ prop.testId "apply-result"; prop.text result ]
+                    ]
+                ]
+                Html.div [
+                    prop.className "swt:h-32"
+                    prop.children [
+                        TextEditor.TextEditor(
+                            "inmemory://samples/edit-readonly.txt",
+                            "hello world",
+                            fileName = "edit.txt",
+                            readOnly = true,
+                            keyBindings = keyBindings,
+                            handleRef = handleRef
+                        )
+                    ]
+                ]
+            ]
+        ]
 
     [<ReactComponent>]
     static member DirtySave() =

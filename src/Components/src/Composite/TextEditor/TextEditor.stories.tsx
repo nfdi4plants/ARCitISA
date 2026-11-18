@@ -6,6 +6,8 @@ import {
   Languages as LanguagesSample,
   ThemeSwitch as ThemeSwitchSample,
   SchemaPlayground as SchemaPlaygroundSample,
+  EditApi as EditApiSample,
+  EditApiReadOnly as EditApiReadOnlySample,
 } from './TextEditor.sample.fs.js';
 
 const meta = {
@@ -50,6 +52,41 @@ export const LineEndings: Story = {
     await userEvent.keyboard('{Control>}{End}{/Control}x');
     await userEvent.click(canvas.getByRole('button', { name: 'Save' }));
     await waitFor(() => expect(canvas.getByTestId('saved-text')).toHaveTextContent('first\\r\\nsecond\\r\\nx'));
+  },
+};
+
+/** A button and a key binding change the text through the edit API. Each edit is one undo step. */
+export const EditApi: Story = {
+  render: () => <EditApiSample />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const content = await editorContent(canvasElement);
+    await userEvent.click(canvas.getByRole('button', { name: 'Wrap first word' }));
+    await waitFor(() => expect(content.textContent).toBe('**hello** world'));
+    const state = canvas.getByTestId('edit-state');
+    expect(state).toHaveTextContent('"anchor":2');
+    expect(state).toHaveTextContent('"head":7');
+
+    await userEvent.keyboard('{Control>}z{/Control}');
+    await waitFor(() => expect(content.textContent).toBe('hello world'));
+
+    // The binding runs ahead of selectParentSyntax, which basicSetup binds to Mod-i.
+    await userEvent.click(content);
+    await userEvent.keyboard('{Control>}{End}{/Control}');
+    await userEvent.keyboard('{Control>}i{/Control}');
+    await waitFor(() => expect(content.textContent!.endsWith('_')).toBe(true));
+  },
+};
+
+/** The edit API changes nothing in a read-only editor. */
+export const EditApiReadOnly: Story = {
+  render: () => <EditApiReadOnlySample />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const content = await editorContent(canvasElement);
+    await userEvent.click(canvas.getByRole('button', { name: 'Wrap first word' }));
+    await waitFor(() => expect(canvas.getByTestId('apply-result')).toHaveTextContent('false'));
+    expect(content.textContent).toBe('hello world');
   },
 };
 

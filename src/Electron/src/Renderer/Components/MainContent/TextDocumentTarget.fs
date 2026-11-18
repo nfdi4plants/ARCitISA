@@ -4,6 +4,9 @@ open Fable.Core
 open Feliz
 open Swate.Components.Composite.TextEditor
 open Swate.Components.Composite.TextEditor.Types
+open Swate.Components.Composite.MarkdownText
+open Swate.Components.Composite.MarkdownText.Editing
+open Swate.Components.Composite.MarkdownText.Editing.Types
 open Swate.Electron.Shared
 open Swate.Electron.Shared.FileIOTypes
 open Renderer.Types
@@ -67,7 +70,11 @@ module private TextDocumentTargetHelpers =
         | RenderedHtml ->
             Html.iframe [
                 prop.title "HTML preview"
-                prop.custom ("srcDoc", text)
+                // A srcdoc page resolves URLs against the app's URL, so a link to #section loaded the app into the
+                // frame. Against about:srcdoc, #section scrolls inside the page, and other relative URLs no longer
+                // resolve at all, so they cannot reach the app's files. It also replaces a base URL the page sets.
+                // A srcdoc page never renders in quirks mode, so markup before its doctype changes nothing.
+                prop.custom ("srcDoc", """<base href="about:srcdoc">""" + text)
                 prop.custom ("sandbox", "allow-scripts")
                 prop.className "swt:flex-1 swt:min-h-0 swt:w-full swt:border-none swt:bg-white"
             ]
@@ -137,6 +144,15 @@ let TextDocumentTarget (data: TextDocumentPageData) =
         | Some info -> info.readOnly |> Option.map readOnlyMessage
 
     let isReadOnly = readOnlyText.IsSome
+    let isMarkdown = rendering = Some RenderedMarkdown
+
+    let surface =
+        React.useMemo ((fun () -> MarkdownSurface.ofTextEditor handleRef), [||])
+
+    let markdownMessage, setMarkdownMessage = React.useState (None: string option)
+
+    let markdownKeyBindings =
+        React.useMemo ((fun () -> MarkdownCommands.keyBindingsWith setMarkdownMessage), [||])
 
     let onSave (snapshot: TextEditorSnapshot) : JS.Promise<bool> = promise {
         setSaving true
@@ -206,6 +222,8 @@ let TextDocumentTarget (data: TextDocumentPageData) =
                     handleRef.current
                     |> Option.iter (fun handle -> handle.replaceContent opened.content.content)
 
+                    setMarkdownMessage None
+
                     baseHashRef.current <- info.contentHash
                     lastSavedTextRef.current <- opened.content.content
                     missingOnDiskRef.current <- false
@@ -227,6 +245,7 @@ let TextDocumentTarget (data: TextDocumentPageData) =
                 | handle ->
                     // Without an editor (an HTML file that was only viewed) the rendered side still follows the disk.
                     handle |> Option.iter (fun h -> h.replaceContent data.Content)
+                    setMarkdownMessage None
                     baseHashRef.current <- info.contentHash
                     lastSavedTextRef.current <- data.Content
                     setRenderedText data.Content
@@ -252,6 +271,8 @@ let TextDocumentTarget (data: TextDocumentPageData) =
                         fun () ->
                             handleRef.current
                             |> Option.iter (fun h -> h.replaceContent lastSavedTextRef.current)
+
+                            setMarkdownMessage None
                     onRemovedFromDisk =
                         fun () ->
                             missingOnDiskRef.current <- true
@@ -300,6 +321,8 @@ let TextDocumentTarget (data: TextDocumentPageData) =
 
     // The rendered side shows the text in the editor, saved or not.
     let showRenderedView () =
+        setMarkdownMessage None
+
         setRenderedText (
             handleRef.current
             |> Option.map (fun h -> h.getText ())
@@ -395,6 +418,19 @@ let TextDocumentTarget (data: TextDocumentPageData) =
                     ]
                 ]
             ]
+            if isMarkdown && not showRendered then
+                Html.div [
+                    prop.className "swt:px-3 swt:py-1 swt:border-b swt:border-base-300"
+                    prop.children [
+                        MarkdownToolbar.MarkdownToolbar(
+                            surface,
+                            disabled = isReadOnly,
+                            ?disabledReason = readOnlyText,
+                            ?message = markdownMessage,
+                            setMessage = setMarkdownMessage
+                        )
+                    ]
+                ]
             match readOnlyText with
             | Some text ->
                 Html.div [
@@ -439,6 +475,8 @@ let TextDocumentTarget (data: TextDocumentPageData) =
                             ?schemaValidator = TextDocumentSchemas.tryFindValidator data.Path,
                             onSave = onSave,
                             onDirtyChange = onDirtyChange,
+                            ?keyBindings = (if isMarkdown then Some markdownKeyBindings else None),
+                            onChange = (fun () -> setMarkdownMessage None),
                             handleRef = handleRef
                         )
                     ]
