@@ -204,6 +204,7 @@ type Changelog =
                         // scrollable markdown content
                         ReactMDEditor.MarkdownPreview(
                             markdown,
+                            components = Swate.Components.Composite.MarkdownText.Preview.components,
                             rehypePlugins = [| ReactMDEditor.rehypeSanitize |],
                             style = {|
                                 padding = 16

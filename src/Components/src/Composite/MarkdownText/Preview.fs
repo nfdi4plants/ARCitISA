@@ -6,6 +6,7 @@ open Fable.Core.JsInterop
 open Feliz
 
 open Swate.Components.Composite.MarkdownText.JsBindings
+open Swate.Components.Composite.TextEditor
 
 [<RequireQualifiedAccess>]
 module Preview =
@@ -66,6 +67,16 @@ module Preview =
             else
                 Some(ReactMDEditor.getCodeString children)
 
+    /// The fence name of a code block, such as "python" for the class "language-python".
+    let private tryGetFenceName (className: string) =
+        className.Split([| ' ' |], StringSplitOptions.RemoveEmptyEntries)
+        |> Array.tryPick (fun c ->
+            if c.StartsWith("language-", StringComparison.Ordinal) then
+                Some(c.Substring "language-".Length)
+            else
+                None
+        )
+
     [<ReactComponent>]
     let private CodeRenderer (props: obj) =
         let className = tryGetClassName props |> Option.defaultValue ""
@@ -73,6 +84,39 @@ module Preview =
 
         let isMermaid =
             className.StartsWith("language-mermaid", StringComparison.OrdinalIgnoreCase)
+
+        let fenceName = tryGetFenceName className
+
+        // The runs remember the fence name and code they came from, so changed code shows as plain text until its
+        // own runs arrive, never with the colors of the old code.
+        let highlighted, setHighlighted =
+            React.useState (None: (string * string * CodeHighlight.Segment[]) option)
+
+        React.useEffect (
+            (fun () ->
+                let cancelled = ref false
+
+                match fenceName with
+                | Some name when not isMermaid ->
+                    promise {
+                        try
+                            let! result = CodeHighlight.highlight name code
+
+                            if not cancelled.Value then
+                                setHighlighted (result |> Option.map (fun segments -> name, code, segments))
+                        with error ->
+                            // The block stays plain text.
+                            Browser.Dom.console.error ($"Highlighting a {name} code block failed:", error)
+                    }
+                    |> Promise.start
+                | _ -> ()
+
+                { new IDisposable with
+                    member _.Dispose() = cancelled.Value <- true
+                }
+            ),
+            [| box fenceName; box code; box isMermaid |]
+        )
 
         // Mermaid uses the id in querySelector, so keep a non-digit prefix to avoid invalid selectors.
         let renderId =
@@ -133,7 +177,19 @@ module Preview =
             Html.code [
                 if className <> "" then
                     prop.className className
-                prop.text code
+                match highlighted, fenceName with
+                | Some(forName, forCode, segments), Some name when forName = name && forCode = code ->
+                    prop.children [
+                        for i, segment in Array.indexed segments ->
+                            Html.span [
+                                prop.key i
+                                match segment.style with
+                                | Some style -> prop.custom ("style", style)
+                                | None -> ()
+                                prop.text segment.text
+                            ]
+                    ]
+                | _ -> prop.text code
             ]
 
     let components = createObj [ "code" ==> CodeRenderer ]

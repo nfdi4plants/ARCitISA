@@ -131,30 +131,32 @@ let private editorTheme: Extension =
         ]
     )
 
-let private highlight: Extension =
+/// The syntax colors. The editor uses them, and CodeHighlight uses them for code outside of an editor.
+let tagStyles: TagStyle[] =
     let t = tags
 
-    syntaxHighlighting (
-        HighlightStyleApi.define [|
-            TagStyle([| t.propertyName; t.definition t.propertyName |], color = tint "--color-info")
-            TagStyle([| t.string; t.special t.string |], color = tint "--color-success")
-            TagStyle([| t.number; t.integer; t.float |], color = tint "--color-warning")
-            TagStyle([| t.bool; t.``null``; t.atom; t.keyword |], color = tint "--color-accent")
-            TagStyle(
-                [| t.comment; t.lineComment; t.blockComment |],
-                color = mix "--color-base-content" 55,
-                fontStyle = "italic"
-            )
-            TagStyle([| t.punctuation; t.separator; t.brace; t.squareBracket |], color = mix "--color-base-content" 70)
-            TagStyle([| t.meta; t.labelName; t.typeName |], color = tint "--color-primary")
-            TagStyle([| t.heading |], color = tint "--color-primary", fontWeight = "bold")
-            TagStyle([| t.emphasis |], fontStyle = "italic")
-            TagStyle([| t.strong |], fontWeight = "bold")
-            TagStyle([| t.link; t.url |], color = tint "--color-info", textDecoration = "underline")
-            TagStyle([| t.monospace; t.quote |], color = mix "--color-base-content" 80)
-            TagStyle([| t.invalid |], color = tint "--color-error")
-        |]
-    )
+    [|
+        TagStyle([| t.propertyName; t.definition t.propertyName |], color = tint "--color-info")
+        TagStyle([| t.string; t.special t.string |], color = tint "--color-success")
+        TagStyle([| t.number; t.integer; t.float |], color = tint "--color-warning")
+        TagStyle([| t.bool; t.``null``; t.atom; t.keyword |], color = tint "--color-accent")
+        TagStyle(
+            [| t.comment; t.lineComment; t.blockComment |],
+            color = mix "--color-base-content" 55,
+            fontStyle = "italic"
+        )
+        TagStyle([| t.punctuation; t.separator; t.brace; t.squareBracket |], color = mix "--color-base-content" 70)
+        TagStyle([| t.meta; t.labelName; t.typeName |], color = tint "--color-primary")
+        TagStyle([| t.heading |], color = tint "--color-primary", fontWeight = "bold")
+        TagStyle([| t.emphasis |], fontStyle = "italic")
+        TagStyle([| t.strong |], fontWeight = "bold")
+        TagStyle([| t.link; t.url |], color = tint "--color-info", textDecoration = "underline")
+        TagStyle([| t.monospace; t.quote |], color = mix "--color-base-content" 80)
+        TagStyle([| t.invalid |], color = tint "--color-error")
+    |]
+
+let private highlight: Extension =
+    syntaxHighlighting (HighlightStyleApi.define tagStyles)
 
 /// The editor colors, the syntax colors and the lint marks.
 let daisyTheme: Extension = extensions [| editorTheme; highlight |]

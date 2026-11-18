@@ -29,7 +29,7 @@ type ICommand =
     abstract member buttonProps: obj with get
     abstract member execute: ITextState -> ITextAreaTextApi -> unit
 
-[<Import("TextAreaCommandOrchestrator", "@uiw/react-md-editor")>]
+[<Import("TextAreaCommandOrchestrator", "@uiw/react-md-editor/nohighlight")>]
 type TextAreaCommandOrchestrator(textArea: HTMLTextAreaElement) =
     member _.textArea: HTMLTextAreaElement = jsNative
     member _.executeCommand(command: ICommand) : unit = jsNative
@@ -37,13 +37,13 @@ type TextAreaCommandOrchestrator(textArea: HTMLTextAreaElement) =
 [<Erase>]
 type ReactMDEditor =
 
-    [<Import("commands", "@uiw/react-md-editor")>]
+    [<Import("commands", "@uiw/react-md-editor/nohighlight")>]
     static member commands: obj = jsNative
 
-    [<Import("handleKeyDown", "@uiw/react-md-editor")>]
+    [<Import("handleKeyDown", "@uiw/react-md-editor/nohighlight")>]
     static member handleKeyDown(e: KeyboardEvent, ?tabSize: int, ?defaultTabEnable: bool) : unit = jsNative
 
-    [<Import("shortcuts", "@uiw/react-md-editor")>]
+    [<Import("shortcuts", "@uiw/react-md-editor/nohighlight")>]
     static member shortcuts(e: KeyboardEvent, commands: ICommand[], orchestrator: TextAreaCommandOrchestrator) : unit =
         jsNative
 
@@ -53,7 +53,7 @@ type ReactMDEditor =
     [<ImportDefault("rehype-sanitize")>]
     static member rehypeSanitize: obj = jsNative
 
-    [<ReactComponent("default", "@uiw/react-markdown-preview")>]
+    [<ReactComponent("default", "@uiw/react-markdown-preview/nohighlight")>]
     static member MarkdownPreview
         (source: string, ?className: string, ?components: obj, ?rehypePlugins: obj[], ?wrapperElement: obj, ?style: obj)
         =
