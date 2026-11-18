@@ -2,6 +2,7 @@ module internal Swate.Components.Composite.MarkdownText.MarkdownToolbarTests
 
 open Browser.Types
 open Vitest
+open Swate.Components.Composite.TextEditor
 open Swate.Components.Composite.TextEditor.Types
 open Swate.Components.Composite.TermSearch.Types
 open Swate.Components.Composite.MarkdownText
@@ -129,7 +130,7 @@ Vitest.test (
     "keyBindingsWith reports the reason of a refused key and changes nothing",
     fun () ->
         let reported = ResizeArray<string option>()
-        let bindings = keyBindingsWith (fun m -> reported.Add m)
+        let bindings = keyBindingsWith (fun m -> reported.Add m) ignore
         let bold = bindings |> Array.find (fun b -> b.key = "Mod-b")
 
         let refused = stateOf "one\ntwo" 0 7
@@ -155,6 +156,112 @@ Vitest.test (
         let surface = FakeSurface(stateOf "hello" 0 5)
         RTL.render (MarkdownToolbar.MarkdownToolbar(surface)) |> ignore
         Vitest.expect((button "Bold").getAttribute "title").toBe "Bold (Ctrl+B)"
+)
+
+Vitest.test (
+    "every command and the ontology reference have a key of their own, and every button title shows it",
+    fun () ->
+        let surface = FakeSurface(stateOf "hello" 0 5)
+        RTL.render (MarkdownToolbar.MarkdownToolbar(surface)) |> ignore
+        let isMac = Shortcuts.isMac ()
+
+        let keys = [|
+            for cmd in all do
+                match cmd.Key with
+                | Some key -> key
+                | None -> failwith $"{cmd.Label} has no key."
+            ontologyReferenceKey
+        |]
+
+        Vitest.expect((Array.distinct keys).Length).toBe keys.Length
+
+        for cmd in Array.concat groups do
+            Vitest.expect((button cmd.Label).getAttribute "title").toBe (Shortcuts.title isMac cmd.Label cmd.Key.Value)
+
+        Vitest.expect((button "Strikethrough").getAttribute "title").toBe "Strikethrough (Ctrl+Shift+X)"
+        Vitest.expect((button "Quote").getAttribute "title").toBe "Quote (Ctrl+Shift+.)"
+
+        Vitest.expect((button "Ontology reference").getAttribute "title").toBe "Ontology reference (Ctrl+Shift+O)"
+)
+
+Vitest.test (
+    "the heading menu and its items show the keys of the headings",
+    fun () ->
+        let surface = FakeSurface(stateOf "hello" 0 5)
+        RTL.render (MarkdownToolbar.MarkdownToolbar(surface)) |> ignore
+        Vitest.expect((button "Heading").getAttribute "title").toBe "Heading (Ctrl+1, Ctrl+2, Ctrl+3)"
+        RTL.fireEvent.click (button "Heading")
+        Vitest.expect((button "Heading 2").getAttribute "title").toBe "Heading 2 (Ctrl+2)"
+)
+
+Vitest.test (
+    "a heading key applies setHeading",
+    fun () ->
+        let state = stateOf "hello" 0 5
+        let bindings = keyBindingsWith ignore ignore
+        let heading2 = bindings |> Array.find (fun b -> b.key = "Mod-2")
+        Vitest.expect(heading2.run state).toEqual (Some(okEdit (MarkdownEdits.setHeading 2 state)))
+)
+
+Vitest.test (
+    "the ontology reference key opens the dialog through openOntologyReference and changes nothing",
+    fun () ->
+        let opened = ref 0
+        let bindings = keyBindingsWith ignore (fun () -> opened.Value <- opened.Value + 1)
+        let reference = bindings |> Array.find (fun b -> b.key = ontologyReferenceKey)
+        let state = stateOf "hello" 2 2
+
+        match reference.run state with
+        | Some edit ->
+            Vitest.expect(edit.changes.Length).toBe 0
+            Vitest.expect(edit.selection).toEqual state.selection
+        | None -> failwith "The key must be consumed."
+
+        Vitest.expect(opened.Value).toBe 1
+)
+
+Vitest.test (
+    "a host that owns the dialog state opens the dialog and hears the button",
+    fun () ->
+        let surface = FakeSurface(stateOf "hello" 0 0)
+        let requested = ResizeArray<bool>()
+
+        let queries =
+            ResizeArray<string * SearchCall>(
+                [
+                    "stub", fun (_: string) -> promise { return ResizeArray<Term>() }
+                ]
+            )
+
+        RTL.render (
+            MarkdownToolbar.MarkdownToolbar(
+                surface,
+                isOntologyReferenceOpen = false,
+                setOntologyReferenceOpen = requested.Add,
+                termSearchQueries = queries,
+                disableDefaultSearch = true
+            )
+        )
+        |> ignore
+
+        RTL.fireEvent.click (button "Ontology reference")
+        Vitest.expect(requested.ToArray()).toEqual [| true |]
+        // The host did not open it, so the dialog stays closed.
+        Vitest.expect((RTL.screen.queryByText "Ontology reference").IsNone).toBe true
+        RTL.cleanup ()
+
+        RTL.render (
+            MarkdownToolbar.MarkdownToolbar(
+                surface,
+                isOntologyReferenceOpen = true,
+                setOntologyReferenceOpen = requested.Add,
+                termSearchQueries = queries,
+                disableDefaultSearch = true
+            )
+        )
+        |> ignore
+
+        RTL.screen.getByText "Ontology reference" |> ignore
 )
 
 Vitest.test (
@@ -190,8 +297,9 @@ Vitest.test (
 )
 
 Vitest.test (
-    "shortcutLabel writes the command symbol on a Mac and keeps the other modifiers",
+    "Shortcuts.label writes the command symbol on a Mac and keeps the other modifiers",
     fun () ->
-        Vitest.expect(shortcutLabel true "Mod-b").toBe "⌘+B"
-        Vitest.expect(shortcutLabel false "Mod-Shift-o").toBe "Ctrl+Shift+O"
+        Vitest.expect(Shortcuts.label true "Mod-b").toBe "⌘+B"
+        Vitest.expect(Shortcuts.label false "Mod-Shift-o").toBe "Ctrl+Shift+O"
+        Vitest.expect(Shortcuts.title true "Save" Shortcuts.saveKey).toBe "Save (⌘+S)"
 )

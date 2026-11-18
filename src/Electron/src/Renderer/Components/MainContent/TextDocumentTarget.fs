@@ -150,9 +150,13 @@ let TextDocumentTarget (data: TextDocumentPageData) =
         React.useMemo ((fun () -> MarkdownSurface.ofTextEditor handleRef), [||])
 
     let markdownMessage, setMarkdownMessage = React.useState (None: string option)
+    let ontologyReferenceOpen, setOntologyReferenceOpen = React.useState false
 
     let markdownKeyBindings =
-        React.useMemo ((fun () -> MarkdownCommands.keyBindingsWith setMarkdownMessage), [||])
+        React.useMemo (
+            (fun () -> MarkdownCommands.keyBindingsWith setMarkdownMessage (fun () -> setOntologyReferenceOpen true)),
+            [||]
+        )
 
     let onSave (snapshot: TextEditorSnapshot) : JS.Promise<bool> = promise {
         setSaving true
@@ -411,6 +415,7 @@ let TextDocumentTarget (data: TextDocumentPageData) =
                                 prop.type'.button
                                 prop.className "swt:btn swt:btn-sm swt:btn-primary"
                                 prop.disabled (isReadOnly || saving || not dirty)
+                                prop.title (Shortcuts.title (Shortcuts.isMac ()) "Save" Shortcuts.saveKey)
                                 prop.text "Save"
                                 prop.onClick (fun _ -> save ())
                             ]
@@ -427,7 +432,9 @@ let TextDocumentTarget (data: TextDocumentPageData) =
                             disabled = isReadOnly,
                             ?disabledReason = readOnlyText,
                             ?message = markdownMessage,
-                            setMessage = setMarkdownMessage
+                            setMessage = setMarkdownMessage,
+                            isOntologyReferenceOpen = ontologyReferenceOpen,
+                            setOntologyReferenceOpen = setOntologyReferenceOpen
                         )
                     ]
                 ]

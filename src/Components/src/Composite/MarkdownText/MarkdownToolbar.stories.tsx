@@ -95,6 +95,30 @@ export const WithOntologyReference: Story = {
   },
 };
 
+/** Without a mouse: the key opens the dialog, Enter picks a hit, the next Enter inserts it and typing goes on. */
+export const OntologyReferenceByKeyboard: Story = {
+  render: () => <WithOntologyReferenceSample />,
+  play: async ({ canvasElement }) => {
+    const content = await editorContent(canvasElement);
+    await userEvent.click(content);
+    await userEvent.keyboard('{Control>}{End}{/Control}');
+    await userEvent.keyboard('{Control>}{Shift>}o{/Shift}{/Control}');
+
+    const body = within(canvasElement.ownerDocument.body);
+    const search = await body.findByTestId('term-search-input');
+    await waitFor(() => expect(search).toHaveFocus());
+    await userEvent.keyboard('instrument');
+    await body.findByText('instrument model', undefined, { timeout: 10_000 });
+    await userEvent.keyboard('{ArrowDown}{Enter}');
+    await waitFor(() => expect(body.getByRole('button', { name: 'Insert' })).toBeEnabled());
+    await userEvent.keyboard('{Enter}');
+
+    await waitFor(() => expect(content).toHaveFocus());
+    await userEvent.keyboard('x');
+    await waitFor(() => expect(content.textContent).toContain('[instrument model][MS:1000031]x'));
+  },
+};
+
 /** A read-only editor disables the toolbar. */
 export const ReadOnly: Story = {
   render: () => <ReadOnlySample />,

@@ -240,6 +240,7 @@
     <Compile Include="Composite\TextEditor\JsBindings\Yaml.fs" />
     <Compile Include="Composite\TextEditor\JsBindings\Ajv.fs" />
     <Compile Include="Composite\TextEditor\Types.fs" />
+    <Compile Include="Composite\TextEditor\Shortcuts.fs" />
     <Compile Include="Composite\TextEditor\LanguageDetection.fs" />
     <Compile Include="Composite\TextEditor\SchemaValidation\Types.fs" />
     <Compile Include="Composite\TextEditor\SchemaValidation\SchemaIndex.fs" />

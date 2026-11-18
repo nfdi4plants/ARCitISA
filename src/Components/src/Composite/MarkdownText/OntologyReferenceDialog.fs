@@ -23,7 +23,7 @@ open OntologyReferenceDialogTypes
 type OntologyReferenceDialog =
 
     /// A modal with a term search that writes the chosen term as a reference link on the surface.
-    /// lookupIri finds the IRI of a CURIE when a search hit has none (default: the TIB terminology service).
+    /// Enter in the search inserts the chosen term once its IRI is known. lookupIri finds the IRI of a CURIE when a search hit has none (default: the TIB terminology service).
     /// The search uses the app's TermSearchConfigProvider sources plus any termSearchQueries given here.
     [<ReactComponent>]
     static member OntologyReferenceDialog
@@ -128,6 +128,19 @@ type OntologyReferenceDialog =
             else
                 setInsertError (Some "The editor did not accept the change.")
 
+        // Enter in the search inserts the chosen term once its IRI is known, so the dialog works without a mouse:
+        // Enter picks a hit, the next Enter inserts it. The Enter that picks a hit reaches this handler too, right
+        // after choose. chosenRef then already holds the new hit, while chosen and resolution of this render still
+        // describe the earlier one, so that Enter inserts nothing. preventDefault keeps the Enter from reaching the
+        // surface, which takes the focus while the key is still down.
+        let onSearchKeyDown (e: Browser.Types.KeyboardEvent) =
+            if e.key = "Enter" then
+                match resolution, chosen with
+                | Resolved(Ok iri), Some t when chosenRef.current |> Option.exists (fun c -> obj.ReferenceEquals(c, t)) ->
+                    e.preventDefault ()
+                    insert t iri
+                | _ -> ()
+
         let details (t: Term) =
             // The dl takes the dt and dd pairs directly, so each element carries its own key.
             let row (label: string) (value: ReactElement) = [
@@ -180,6 +193,7 @@ type OntologyReferenceDialog =
                         term,
                         onTermChange,
                         onTermSelect = choose,
+                        onKeyDown = onSearchKeyDown,
                         autoFocus = true,
                         ?termSearchQueries = termSearchQueries,
                         ?disableDefaultSearch = disableDefaultSearch

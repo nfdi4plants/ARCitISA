@@ -12,8 +12,8 @@ open Swate.Components.Composite.MarkdownText.Editing.Types
 
 module private MarkdownToolbarSampleHelpers =
 
-    /// Built once, so the editor keeps its keymap. The read-only sample shows no messages.
-    let readOnlyKeyBindings = MarkdownCommands.keyBindingsWith ignore
+    /// Built once, so the editor keeps its keymap. The read-only sample shows no messages and runs no key.
+    let readOnlyKeyBindings = MarkdownCommands.keyBindingsWith ignore ignore
 
 open MarkdownToolbarSampleHelpers
 
@@ -26,14 +26,24 @@ type internal MarkdownToolbarSample =
         let handleRef = React.useRef<TextEditorHandle option> None
         let surface = MarkdownSurface.ofTextEditor handleRef
         let message, setMessage = React.useState (None: string option)
+        let referenceOpen, setReferenceOpen = React.useState false
 
         let keyBindings =
-            React.useMemo ((fun () -> MarkdownCommands.keyBindingsWith setMessage), [||])
+            React.useMemo (
+                (fun () -> MarkdownCommands.keyBindingsWith setMessage (fun () -> setReferenceOpen true)),
+                [||]
+            )
 
         Html.div [
             prop.className "swt:flex swt:flex-col swt:gap-2 swt:p-4"
             prop.children [
-                MarkdownToolbar.MarkdownToolbar(surface, ?message = message, setMessage = setMessage)
+                MarkdownToolbar.MarkdownToolbar(
+                    surface,
+                    ?message = message,
+                    setMessage = setMessage,
+                    isOntologyReferenceOpen = referenceOpen,
+                    setOntologyReferenceOpen = setReferenceOpen
+                )
                 Html.div [
                     prop.className "swt:h-48"
                     prop.children [
@@ -50,15 +60,20 @@ type internal MarkdownToolbarSample =
             ]
         ]
 
-    /// The Ontology reference button inserts a link for a term of a stubbed search. The IRI comes from the term.
+    /// The Ontology reference button, or its key in the editor, inserts a link for a term of a stubbed search.
+    /// The IRI comes from the term.
     [<ReactComponent>]
     static member WithOntologyReference() =
         let handleRef = React.useRef<TextEditorHandle option> None
         let surface = MarkdownSurface.ofTextEditor handleRef
         let message, setMessage = React.useState (None: string option)
+        let referenceOpen, setReferenceOpen = React.useState false
 
         let keyBindings =
-            React.useMemo ((fun () -> MarkdownCommands.keyBindingsWith setMessage), [||])
+            React.useMemo (
+                (fun () -> MarkdownCommands.keyBindingsWith setMessage (fun () -> setReferenceOpen true)),
+                [||]
+            )
 
         let termSearchQueries =
             ResizeArray<string * SearchCall>(
@@ -85,6 +100,8 @@ type internal MarkdownToolbarSample =
                     surface,
                     ?message = message,
                     setMessage = setMessage,
+                    isOntologyReferenceOpen = referenceOpen,
+                    setOntologyReferenceOpen = setReferenceOpen,
                     termSearchQueries = termSearchQueries,
                     disableDefaultSearch = true,
                     lookupIri = (fun _ -> promise { return None })

@@ -452,3 +452,77 @@ Vitest.test (
         Vitest.expect((insert :?> HTMLButtonElement).disabled).toBe true
     }
 )
+
+let private pressInSearch (key: string) =
+    RTL.fireEvent.custom ("keyDown", RTL.screen.getByTestId "term-search-input", {| key = key; code = key |})
+
+Vitest.test (
+    "Enter in the search inserts the chosen term once its IRI is known and gives the focus back",
+    fun () -> promise {
+        let state = stateOf "measured with an " 17 17
+        let surface = FakeSurface(state)
+        let openStates = ResizeArray<bool>()
+        do! renderAndChoose surface openStates "instrument model"
+        do! eventually (fun () -> Vitest.expect(isDisabled "Insert").toBe false)
+        pressInSearch "Enter"
+
+        let expected =
+            OntologyReferences.insert
+                (OntologyReferences.referenceOf instrumentModel "http://purl.obolibrary.org/obo/MS_1000031")
+                state
+            |> okEdit
+
+        Vitest.expect(surface.Applied.ToArray()).toEqual [| expected |]
+        Vitest.expect(openStates.ToArray()).toEqual [| false |]
+        Vitest.expect(surface.Focused).toBe 1
+    }
+)
+
+Vitest.test (
+    "Enter while the IRI is still looked up inserts nothing",
+    fun () -> promise {
+        let surface = FakeSurface(stateOf "" 0 0)
+
+        RTL.render (
+            OntologyReferenceDialog.OntologyReferenceDialog(
+                true,
+                ignore,
+                surface,
+                lookupIri = (fun _ -> Promise.create (fun _ _ -> ())),
+                termSearchQueries = termSearchQueries,
+                disableDefaultSearch = true
+            )
+        )
+        |> ignore
+
+        RTL.fireEvent.change (RTL.screen.getByTestId "term-search-input", {| target = {| value = "x" |} |})
+        do! eventually (fun () -> RTL.screen.getByText "data" |> ignore)
+        RTL.fireEvent.click (RTL.screen.getByText "data")
+        do! eventually (fun () -> RTL.screen.getByText "Looking up the IRI..." |> ignore)
+        pressInSearch "Enter"
+        Vitest.expect(surface.Applied.Count).toBe 0
+    }
+)
+
+Vitest.test (
+    "the Enter that picks another hit does not insert the earlier choice",
+    fun () -> promise {
+        let surface = FakeSurface(stateOf "" 0 0)
+        let openStates = ResizeArray<bool>()
+        do! renderAndChoose surface openStates "data"
+        do! eventually (fun () -> RTL.screen.getByText "http://edamontology.org/data_0006" |> ignore)
+
+        // A double click opens the hits again for the text in the search. The first hit is instrument model.
+        RTL.fireEvent.custom ("dblClick", RTL.screen.getByTestId "term-search-input")
+        do! eventually (fun () -> RTL.screen.getByText "instrument model" |> ignore)
+        pressInSearch "ArrowDown"
+        pressInSearch "Enter"
+        Vitest.expect(surface.Applied.Count).toBe 0
+        Vitest.expect(openStates.Count).toBe 0
+
+        do! eventually (fun () -> RTL.screen.getByText "http://purl.obolibrary.org/obo/MS_1000031" |> ignore)
+        pressInSearch "Enter"
+        Vitest.expect(surface.Applied.Count).toBe 1
+        Vitest.expect(surface.Applied.[0].changes.[0].insert).toContain "[instrument model][MS:1000031]"
+    }
+)

@@ -277,7 +277,7 @@ type CodeMirrorEditor =
                         Prec.highest (
                             keymap.``of`` [|
                                 {|
-                                    key = "Mod-s"
+                                    key = Shortcuts.saveKey
                                     run =
                                         fun _ ->
                                             save () |> ignore
