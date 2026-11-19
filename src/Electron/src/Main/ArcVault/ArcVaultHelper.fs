@@ -459,7 +459,7 @@ let private binarySniffBytes = 8192
 
 /// Reads up to maxBytes bytes from the start of the file through one handle. The handle is closed on success
 /// and on failure. The close is awaited so the file is released before the caller continues.
-let private readFirstBytesAsync (path: string) (maxBytes: int) : JS.Promise<byte[] * int> = promise {
+let readFirstBytesAsync (path: string) (maxBytes: int) : JS.Promise<byte[] * int> = promise {
     let! handle = Filesystem.openAsync path "r"
     let buffer = Filesystem.allocBuffer maxBytes
 
@@ -504,6 +504,63 @@ let createTextDocumentInfo
             | None -> None
     |}
 
+/// Decodes the first total bytes of a file the way the editor opens it. None means bytes without text content.
+/// Otherwise the result holds the text and the document info, whose readOnly field says why the editor must not
+/// save the file. changedWhileReading marks a read that saw the file change, which makes the file read-only.
+let describeTextBytes (buffer: byte[]) (total: int) (changedWhileReading: bool) : (string * TextDocumentInfo) option =
+    let text (encoding: TextFileEncoding) (content: string) (readOnly: TextReadOnlyReason option) =
+        let readOnly =
+            if changedWhileReading then
+                Some TextReadOnlyReason.ChangedWhileReading
+            else
+                readOnly
+
+        Some(
+            content,
+            createTextDocumentInfo encoding (Crypto.sha256Hex (Array.sub buffer 0 total)) (float total) readOnly
+        )
+
+    let windows1252 () =
+        text
+            TextFileEncoding.Windows1252
+            (Filesystem.decodeLenient buffer 0 total "windows-1252")
+            (Some TextReadOnlyReason.NotUtf8)
+
+    let hasPrefix (bytes: byte[]) =
+        total >= bytes.Length
+        && bytes |> Array.indexed |> Array.forall (fun (i, b) -> buffer[i] = b)
+
+    let hasNulFrom (offset: int) =
+        buffer
+        |> Array.truncate (min total (offset + binarySniffBytes))
+        |> Array.skip (min offset total)
+        |> Array.exists (fun b -> b = 0uy)
+
+    let utf16 (encoding: TextFileEncoding) (label: string) =
+        match Filesystem.tryDecodeFatal buffer 2 (total - 2) label with
+        | Some content -> text encoding content None
+        | None ->
+            text encoding (Filesystem.decodeLenient buffer 2 (total - 2) label) (Some TextReadOnlyReason.InvalidUtf16)
+
+    if hasPrefix [| 0xEFuy; 0xBBuy; 0xBFuy |] then
+        if hasNulFrom 3 then
+            None
+        else
+            match Filesystem.tryDecodeFatal buffer 3 (total - 3) "utf-8" with
+            | Some content -> text TextFileEncoding.Utf8Bom content None
+            | None -> windows1252 ()
+    elif hasPrefix [| 0xFFuy; 0xFEuy |] then
+        // UTF-16 text has NUL bytes, so a BOM decides before the NUL sniff.
+        utf16 TextFileEncoding.Utf16LE "utf-16le"
+    elif hasPrefix [| 0xFEuy; 0xFFuy |] then
+        utf16 TextFileEncoding.Utf16BE "utf-16be"
+    elif hasNulFrom 0 then
+        None
+    else
+        match Filesystem.tryDecodeFatal buffer 0 total "utf-8" with
+        | Some content -> text TextFileEncoding.Utf8 content None
+        | None -> windows1252 ()
+
 /// Reads a file of an ARC for the preview and the text editor. Files above the size limit and files without
 /// text content come back as a NoPreview DTO without info, and so do PDFs, which come back as base64. The info
 /// carries the encoding and the hash of the raw bytes that a later save compares against.
@@ -540,65 +597,14 @@ let readTextDocumentAsync
                     return firstBuffer, firstTotal, false
             }
 
-            let text (encoding: TextFileEncoding) (content: string) (readOnly: TextReadOnlyReason option) =
-                let readOnly =
-                    if grew then
-                        Some TextReadOnlyReason.ChangedWhileReading
-                    else
-                        readOnly
-
-                FileContentDTO.create fileType content relativePath,
-                Some(
-                    createTextDocumentInfo encoding (Crypto.sha256Hex (Array.sub buffer 0 total)) (float total) readOnly
-                )
-
-            let windows1252 () =
-                text
-                    TextFileEncoding.Windows1252
-                    (Filesystem.decodeLenient buffer 0 total "windows-1252")
-                    (Some TextReadOnlyReason.NotUtf8)
-
-            let hasPrefix (bytes: byte[]) =
-                total >= bytes.Length
-                && bytes |> Array.indexed |> Array.forall (fun (i, b) -> buffer[i] = b)
-
-            let hasNulFrom (offset: int) =
-                buffer
-                |> Array.truncate (min total (offset + binarySniffBytes))
-                |> Array.skip (min offset total)
-                |> Array.exists (fun b -> b = 0uy)
-
-            let utf16 (encoding: TextFileEncoding) (label: string) =
-                match Filesystem.tryDecodeFatal buffer 2 (total - 2) label with
-                | Some content -> text encoding content None
-                | None ->
-                    text
-                        encoding
-                        (Filesystem.decodeLenient buffer 2 (total - 2) label)
-                        (Some TextReadOnlyReason.InvalidUtf16)
-
             if float total > limit then
                 return noPreview NoPreviewReason.TooLarge
             elif isPdf then
                 return FileContentDTO.create fileType (Filesystem.bufferToBase64Prefix buffer total) relativePath, None
-            elif hasPrefix [| 0xEFuy; 0xBBuy; 0xBFuy |] then
-                if hasNulFrom 3 then
-                    return noPreview NoPreviewReason.Binary
-                else
-                    match Filesystem.tryDecodeFatal buffer 3 (total - 3) "utf-8" with
-                    | Some content -> return text TextFileEncoding.Utf8Bom content None
-                    | None -> return windows1252 ()
-            elif hasPrefix [| 0xFFuy; 0xFEuy |] then
-                // UTF-16 text has NUL bytes, so a BOM decides before the NUL sniff.
-                return utf16 TextFileEncoding.Utf16LE "utf-16le"
-            elif hasPrefix [| 0xFEuy; 0xFFuy |] then
-                return utf16 TextFileEncoding.Utf16BE "utf-16be"
-            elif hasNulFrom 0 then
-                return noPreview NoPreviewReason.Binary
             else
-                match Filesystem.tryDecodeFatal buffer 0 total "utf-8" with
-                | Some content -> return text TextFileEncoding.Utf8 content None
-                | None -> return windows1252 ()
+                match describeTextBytes buffer total grew with
+                | None -> return noPreview NoPreviewReason.Binary
+                | Some(content, info) -> return FileContentDTO.create fileType content relativePath, Some info
     }
 
 /// Reads a file of an ARC for the preview. Files above the size limit and files without text content come

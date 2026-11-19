@@ -83,6 +83,47 @@ Vitest.describe (
         )
 
         Vitest.test (
+            "validateNewItemPath accepts a name and a path of trimmed parts",
+            fun () ->
+                Vitest.expect(validateNewItemPath " notes.md ").toEqual (Ok "notes.md")
+                Vitest.expect(validateNewItemPath " docs / guide.md ").toEqual (Ok "docs/guide.md")
+                Vitest.expect(validateNewItemPath "data/raw/day 1").toEqual (Ok "data/raw/day 1")
+        )
+
+        Vitest.test (
+            "validateNewItemPath rejects backslashes, empty parts and leading or trailing slashes",
+            fun () ->
+                Vitest.expect(validateNewItemPath "docs\\guide.md").toEqual (Error "Use / to separate folders.")
+
+                Vitest
+                    .expect(validateNewItemPath "/docs/guide.md")
+                    .toEqual (Error "Start with a folder or file name, not with /.")
+
+                Vitest.expect(validateNewItemPath "docs/").toEqual (Error "End with a file or folder name, not with /.")
+
+                Vitest
+                    .expect(validateNewItemPath "docs//guide.md")
+                    .toEqual (Error "A folder name is missing between two /.")
+
+                Vitest
+                    .expect(validateNewItemPath "docs/ /guide.md")
+                    .toEqual (Error "A folder name is missing between two /.")
+        )
+
+        Vitest.test (
+            "validateNewItemPath names the part that breaks a rule of validateRenameName",
+            fun () ->
+                Vitest
+                    .expect(validateNewItemPath "docs/../guide.md")
+                    .toEqual (Error "'..': The name must not be '.' or '..'.")
+
+                validateNewItemPath "docs/a:b/guide.md" |> expectErrorContaining "'a:b':"
+                validateNewItemPath "aux/guide.md" |> expectErrorContaining "'aux':"
+                // A single name keeps the message of validateRenameName.
+                Vitest.expect(validateNewItemPath "a:b").toEqual (validateRenameName "a:b")
+        )
+
+        Vitest.test (
             "validateRenameName rejects characters Windows does not allow",
             fun () ->
                 [

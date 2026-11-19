@@ -2,13 +2,10 @@ module Main.Helper.ArcPathContainment
 
 open System
 open Fable.Core
-open Fable.Core.JsInterop
 open Swate.Components.Shared
 open Main.Bindings
 open Main.Bindings.Filesystem
 open Main.Bindings.Path
-
-let private pathDynamic: obj = importAll "path"
 
 let private isWin32 = Node.processPlatform () = "win32"
 
@@ -26,32 +23,25 @@ module ArcPathValidation =
 
         not (String.IsNullOrWhiteSpace normalizedPath)
         && normalizedPath <> "."
-        && not (pathDynamic?isAbsolute (normalizedPath) |> unbox<bool>)
+        && not (isAbsolute normalizedPath)
         && not (containsTraversalSegments normalizedPath)
 
     let isWithinRootPath (rootPath: string) (candidatePath: string) =
-        let normalizedRootPath =
-            pathDynamic?resolve (rootPath) |> unbox<string> |> normalizePathForComparison
+        let normalizedRootPath = resolve [| rootPath |] |> normalizePathForComparison
 
         let normalizedCandidatePath =
-            pathDynamic?resolve (candidatePath)
-            |> unbox<string>
-            |> normalizePathForComparison
+            resolve [| candidatePath |] |> normalizePathForComparison
 
         normalizedCandidatePath = normalizedRootPath
         || normalizedCandidatePath.StartsWith(normalizedRootPath + "/")
 
-let resolveAbsolutePath (pathValue: string) =
-    pathDynamic?resolve (pathValue) |> unbox<string>
+let resolveAbsolutePath (pathValue: string) = resolve [| pathValue |]
 
 let tryGetArcRelativePath (arcPath: string) (requestedAbsolutePath: string) =
     let arcRoot = resolveAbsolutePath arcPath
     let absolutePath = resolveAbsolutePath requestedAbsolutePath
 
-    let relativePath =
-        pathDynamic?relative (arcRoot, absolutePath)
-        |> unbox<string>
-        |> PathHelpers.normalizePath
+    let relativePath = relative arcRoot absolutePath |> PathHelpers.normalizePath
 
     if String.IsNullOrWhiteSpace relativePath || relativePath = "." then
         Ok ""
@@ -69,13 +59,13 @@ let tryResolveArcRelativePath (arcPath: string) (requestedRelativePath: string) 
     if String.IsNullOrWhiteSpace relativePath then
         Error(exn "RelativePath must not be empty.")
     elif not (ArcPathValidation.isSafeRelativePathCandidate relativePath) then
-        if pathDynamic?isAbsolute (relativePath) |> unbox<bool> then
+        if isAbsolute relativePath then
             Error(exn "RelativePath must not be absolute.")
         else
             Error(exn "RelativePath must not contain path traversal segments.")
     else
         let arcRoot = resolveAbsolutePath arcPath
-        let absolutePath = pathDynamic?resolve (arcRoot, relativePath) |> unbox<string>
+        let absolutePath = resolve [| arcRoot; relativePath |]
 
         if ArcPathValidation.isWithinRootPath arcRoot absolutePath then
             Ok absolutePath

@@ -397,10 +397,7 @@ type SettingsPage =
         React.useEffect ((fun () -> setScalingDraft uiScaling), [| box uiScaling |])
 
         let modifierKey =
-            match getUserOS () with
-            | MacOS
-            | IOS -> "⌘"
-            | _ -> "Ctrl"
+            Swate.Components.Util.Shortcuts.modLabel (Swate.Components.Util.Shortcuts.isMac ())
 
         SettingsPage.SettingColumnElement(
             "UI Scaling",

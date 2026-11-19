@@ -37,18 +37,24 @@ let useLeaveGuard () : LeaveGuardController * ReactElement =
     let pushChainRef = React.useRef<JS.Promise<unit>> (Promise.lift ())
     let resolverRef = React.useRef<(bool -> unit) option> None
     let dialog, setDialog = React.useState (None: DialogState option)
+    let pushError, setPushError = React.useState (None: string option)
 
     let controller =
         React.useMemo (
             (fun () ->
                 // Main decides about closing the window from this flag. Pushes are chained so they arrive in order.
+                // A failed push is shown, because Main then closes the window without asking about the edits.
                 let pushDirty (value: bool) : JS.Promise<unit> =
                     let next =
                         pushChainRef.current
                         |> Promise.bind (fun () ->
                             Api.ipcArcVaultApi.setHasUnsavedTextChanges value
-                            |> Promise.map ignore
-                            |> Promise.catch ignore
+                            |> Promise.catch (fun e -> Error e)
+                            |> Promise.map (fun result ->
+                                match result with
+                                | Ok() -> ()
+                                | Error e -> setPushError (Some e.Message)
+                            )
                         )
 
                     pushChainRef.current <- next
@@ -198,7 +204,31 @@ let useLeaveGuard () : LeaveGuardController * ReactElement =
 
     let saving = dialog |> Option.exists _.Saving
 
-    let element =
+    let pushErrorElement =
+        BaseModal.Modal(
+            isOpen = pushError.IsSome,
+            setIsOpen =
+                (fun isOpen ->
+                    if not isOpen then
+                        setPushError None
+                ),
+            header = Html.text "Unsaved changes are not tracked",
+            description =
+                Html.text (
+                    "The app could not record whether the text file has unsaved changes"
+                    + (pushError |> Option.map (fun m -> $" ({m})") |> Option.defaultValue "")
+                    + ". Closing the window may not ask you to save. Save the file before you close the window."
+                ),
+            children = Html.none,
+            footer =
+                Html.button [
+                    prop.className "swt:btn swt:btn-primary swt:ml-auto"
+                    prop.text "OK"
+                    prop.onClick (fun _ -> setPushError None)
+                ]
+        )
+
+    let leaveElement =
         BaseModal.Modal(
             isOpen = dialog.IsSome,
             setIsOpen =
@@ -253,4 +283,4 @@ let useLeaveGuard () : LeaveGuardController * ReactElement =
                 ]
         )
 
-    controller, element
+    controller, React.Fragment [ leaveElement; pushErrorElement ]

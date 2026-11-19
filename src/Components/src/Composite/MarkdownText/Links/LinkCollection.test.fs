@@ -68,6 +68,14 @@ Vitest.describe (
         )
 
         Vitest.test (
+            "gives offsets into the text when it starts with a byte order mark",
+            fun () ->
+                let text = "\uFEFFsee [a](b.md)\n\n<img src=\"c.png\">"
+                let links = LinkCollection.collect text
+                Vitest.expect(links |> Array.map (slice text)).toEqual [| "[a](b.md)"; "<img src=\"c.png\">" |]
+        )
+
+        Vitest.test (
             "keeps document order",
             fun () ->
                 Vitest.expect(urls "![i](1.png)\n\n[l](2.md)\n\n<img src=3.png>").toEqual [| "1.png"; "2.md"; "3.png" |]

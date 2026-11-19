@@ -3,11 +3,14 @@ module Swate.Components.Composite.MarkdownText.Links.LinkDiagnostics
 
 open Fable.Core
 open Swate.Components.Composite.TextEditor.Types
+open Swate.Components.Composite.MarkdownText.Links.Types
 
 [<Literal>]
 let Source = "links"
 
 /// The host checks at most this many distinct paths per run. Links to later paths get no diagnostic.
+/// A literal, so the Electron main process can use the same value without importing the Markdown parser.
+[<Literal>]
 let maxCheckedPaths = 500
 
 let private outsideArcMessage = "This link points outside the ARC."

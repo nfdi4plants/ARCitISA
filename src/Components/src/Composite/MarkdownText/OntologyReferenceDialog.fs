@@ -5,6 +5,7 @@ open Feliz
 
 open Swate.Components
 open Swate.Components.Primitive.BaseModal
+open Swate.Components.Primitive.ComboBox.Types
 open Swate.Components.Composite.TermSearch
 open Swate.Components.Composite.TermSearch.Types
 open Swate.Components.Composite.MarkdownText.Editing
@@ -129,14 +130,13 @@ type OntologyReferenceDialog =
                 setInsertError (Some "The editor did not accept the change.")
 
         // Enter in the search inserts the chosen term once its IRI is known, so the dialog works without a mouse:
-        // Enter picks a hit, the next Enter inserts it. The Enter that picks a hit reaches this handler too, right
-        // after choose. chosenRef then already holds the new hit, while chosen and resolution of this render still
-        // describe the earlier one, so that Enter inserts nothing. preventDefault keeps the Enter from reaching the
-        // surface, which takes the focus while the key is still down.
+        // Enter picks a hit, the next Enter inserts it. The Enter that picks a hit reaches this handler too. The list
+        // marks it as used, so it inserts nothing, whichever of the two handlers runs first. preventDefault keeps
+        // the Enter from reaching the surface, which takes the focus while the key is still down.
         let onSearchKeyDown (e: Browser.Types.KeyboardEvent) =
-            if e.key = "Enter" then
+            if e.key = "Enter" && not (ComboBoxKey.usedByList e) then
                 match resolution, chosen with
-                | Resolved(Ok iri), Some t when chosenRef.current |> Option.exists (fun c -> obj.ReferenceEquals(c, t)) ->
+                | Resolved(Ok iri), Some t ->
                     e.preventDefault ()
                     insert t iri
                 | _ -> ()

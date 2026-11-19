@@ -94,7 +94,8 @@ for platform, modifier, ctrl, meta in
         fun () ->
             mockPlatform Vitest.vi platform
             renderEditor () |> ignore
-            Vitest.expect((RTL.screen.getByText $"{modifier} + F").tagName).toBe "KBD"
+            // The hint names the key like every other toolbar title, through Shortcuts.label.
+            Vitest.expect((RTL.screen.getByText $"{modifier}+F").tagName).toBe "KBD"
             search "alpha"
             let input = searchInput ()
             let event = findEvent ctrl meta false false

@@ -31,6 +31,9 @@ let private htmlUrls (value: string) =
 let collect (text: string) : CollectedLink[] =
     let found = ResizeArray<CollectedLink>()
 
+    // micromark drops a leading U+FEFF before it counts offsets, but the ranges are offsets into text, which keeps it.
+    let shift = if text.Length > 0 && text.[0] = '\uFEFF' then 1 else 0
+
     let rec walk (node: Mdast.MdastNode) =
         match node.position with
         | Some position when not (isNull position.start) && not (isNull position.``end``) ->
@@ -42,8 +45,8 @@ let collect (text: string) : CollectedLink[] =
                 | Some url ->
                     found.Add {
                         Url = url
-                        From = position.start.offset
-                        To = position.``end``.offset
+                        From = position.start.offset + shift
+                        To = position.``end``.offset + shift
                     }
                 | None -> ()
             | "html" ->
@@ -52,8 +55,8 @@ let collect (text: string) : CollectedLink[] =
                     for url in htmlUrls value do
                         found.Add {
                             Url = url
-                            From = position.start.offset
-                            To = position.``end``.offset
+                            From = position.start.offset + shift
+                            To = position.``end``.offset + shift
                         }
                 | None -> ()
             | _ -> ()

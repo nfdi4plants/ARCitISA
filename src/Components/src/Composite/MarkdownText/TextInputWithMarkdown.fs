@@ -9,7 +9,7 @@ open Feliz
 open Swate.Components
 open Swate.Components.Composite.MarkdownText.Types
 open Swate.Components.Composite.MarkdownText.JsBindings
-open Swate.Components.Composite.MarkdownText.Links
+open Swate.Components.Composite.MarkdownText.Links.Types
 open Swate.Components.Composite.MarkdownText.Plugins
 open Swate.Components.Primitive.LayoutComponents
 

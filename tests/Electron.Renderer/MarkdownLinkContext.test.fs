@@ -5,6 +5,7 @@ open Fable.Core.JsInterop
 open Renderer.Types
 open Renderer.Components.Helper.MarkdownLinkContext
 open Swate.Components.Composite.MarkdownText.Links
+open Swate.Components.Composite.MarkdownText.Links.Types
 open Swate.Electron.Shared.DTOs.MarkdownResolverDto
 open Vitest
 
@@ -189,21 +190,24 @@ let private depsWith
             fun p ->
                 calls.Add $"CheckPath {p}"
                 Promise.lift check
-        DocumentPath = fun () -> documentPath
-        ConfirmLeave =
-            fun () ->
-                calls.Add "ConfirmLeave"
-                Promise.lift confirm
-        SetSelection = fun p -> calls.Add $"SetSelection {p}"
-        OpenView =
-            fun p ->
-                calls.Add $"OpenView {p}"
-                Promise.lift opened
-        SetPage =
-            fun state ->
-                match state with
-                | PageState.ErrorPage message -> calls.Add $"SetPage {message}"
-                | _ -> calls.Add "SetPage"
+        Navigation = {
+            DocumentPath = fun () -> documentPath
+            ConfirmLeave =
+                fun () ->
+                    calls.Add "ConfirmLeave"
+                    Promise.lift confirm
+            SetSelection = fun p -> calls.Add $"""SetSelection {defaultArg p "none"}"""
+            OpenView =
+                fun p ->
+                    calls.Add $"OpenView {p}"
+                    Promise.lift opened
+            SetPage =
+                fun state ->
+                    match state with
+                    | Some(PageState.ErrorPage message) -> calls.Add $"SetPage {message}"
+                    | Some _ -> calls.Add "SetPage"
+                    | None -> calls.Add "SetPage none"
+        }
         RevealFolder = fun p -> calls.Add $"RevealFolder {p}"
         OnError = fun message -> calls.Add $"OnError {message}"
     }

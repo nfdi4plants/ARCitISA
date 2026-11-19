@@ -7,7 +7,28 @@ open Feliz
 
 open Swate.Components.Composite.MarkdownText.JsBindings
 open Swate.Components.Composite.MarkdownText.Links
+open Swate.Components.Composite.MarkdownText.Links.Types
 open Swate.Components.Composite.TextEditor
+
+module private PreviewTypes =
+
+    /// The props react-markdown passes to the "a" and "img" renderers. The sanitizer has already dropped what is
+    /// unsafe, so every member can be missing.
+    [<AllowNullLiteral>]
+    type IElementProps =
+        abstract href: string option
+        abstract src: string option
+        abstract alt: string option
+        abstract title: string option
+        abstract className: string option
+        abstract id: string option
+        abstract width: obj
+        abstract height: obj
+        abstract tabIndex: obj
+        abstract ``aria-hidden``: obj
+        abstract children: obj
+
+open PreviewTypes
 
 [<RequireQualifiedAccess>]
 module Preview =
@@ -78,137 +99,6 @@ module Preview =
                 None
         )
 
-    [<ReactComponent>]
-    let private CodeRenderer (props: obj) =
-        let className = tryGetClassName props |> Option.defaultValue ""
-        let code = tryGetCode props |> Option.defaultValue ""
-
-        let isMermaid =
-            className.StartsWith("language-mermaid", StringComparison.OrdinalIgnoreCase)
-
-        let fenceName = tryGetFenceName className
-
-        // The runs remember the fence name and code they came from, so changed code shows as plain text until its
-        // own runs arrive, never with the colors of the old code.
-        let highlighted, setHighlighted =
-            React.useState (None: (string * string * CodeHighlight.Segment[]) option)
-
-        React.useEffect (
-            (fun () ->
-                let cancelled = ref false
-
-                match fenceName with
-                | Some name when not isMermaid ->
-                    promise {
-                        try
-                            let! result = CodeHighlight.highlight name code
-
-                            if not cancelled.Value then
-                                setHighlighted (result |> Option.map (fun segments -> name, code, segments))
-                        with error ->
-                            // The block stays plain text.
-                            Browser.Dom.console.error ($"Highlighting a {name} code block failed:", error)
-                    }
-                    |> Promise.start
-                | _ -> ()
-
-                { new IDisposable with
-                    member _.Dispose() = cancelled.Value <- true
-                }
-            ),
-            [| box fenceName; box code; box isMermaid |]
-        )
-
-        // Mermaid uses the id in querySelector, so keep a non-digit prefix to avoid invalid selectors.
-        let renderId =
-            React.useRef (
-                let rawId = Guid.NewGuid().ToString "N"
-                sprintf "mermaid-%s" rawId
-            )
-
-        let svg, setSvg = React.useState (None: string option)
-        let renderError, setRenderError = React.useState (None: string option)
-
-        React.useEffect (
-            (fun () ->
-                if isMermaid then
-                    if String.IsNullOrWhiteSpace code then
-                        setSvg None
-                        setRenderError (Some "Mermaid code block is empty.")
-                    else
-                        ensureMermaidInitialized ()
-
-                        promise {
-                            let host = createMeasureHost ()
-
-                            try
-                                try
-                                    let! result = Mermaid.instance.render (renderId.current, code, host)
-                                    setRenderError None
-                                    setSvg (Some result.svg)
-                                with err ->
-                                    setSvg None
-                                    setRenderError (Some $"Mermaid render error: {string err}")
-                            finally
-                                host.remove ()
-                        }
-                        |> Promise.start
-            ),
-            [| box isMermaid; box code |]
-        )
-
-        if isMermaid then
-            match renderError, svg with
-            | Some message, _ ->
-                Html.pre [
-                    prop.className "swt:p-3 swt:rounded-box swt:bg-base-200 swt:text-error swt:text-sm"
-                    prop.text message
-                ]
-            | None, Some renderedSvg ->
-                Html.div [
-                    prop.className "swt:my-2"
-                    prop.dangerouslySetInnerHTML renderedSvg
-                ]
-            | None, None ->
-                Html.pre [
-                    prop.className "swt:p-3 swt:rounded-box swt:bg-base-200 swt:text-sm"
-                    prop.text "Rendering Mermaid diagram..."
-                ]
-        else
-            Html.code [
-                if className <> "" then
-                    prop.className className
-                match highlighted, fenceName with
-                | Some(forName, forCode, segments), Some name when forName = name && forCode = code ->
-                    prop.children [
-                        for i, segment in Array.indexed segments ->
-                            Html.span [
-                                prop.key i
-                                match segment.style with
-                                | Some style -> prop.custom ("style", style)
-                                | None -> ()
-                                prop.text segment.text
-                            ]
-                    ]
-                | _ -> prop.text code
-            ]
-
-    /// The props react-markdown passes to the "a" and "img" renderers. The sanitizer has already dropped what is
-    /// unsafe, so every member can be missing.
-    [<AllowNullLiteral>]
-    type IElementProps =
-        abstract href: string option
-        abstract src: string option
-        abstract alt: string option
-        abstract title: string option
-        abstract className: string option
-        abstract id: string option
-        abstract width: obj
-        abstract height: obj
-        abstract tabIndex: obj
-        abstract ``aria-hidden``: obj
-        abstract children: obj
-
     let private customIf (name: string) (value: obj) =
         if isNullOrUndefined value then
             []
@@ -251,68 +141,6 @@ module Preview =
 
         LinkResolution.resolve baseFolder raw
 
-    [<ReactComponent>]
-    let private LinkRenderer (props: IElementProps) =
-        let context = LinkContext.useLinkCtx ()
-
-        match props.href with
-        | None ->
-            Html.a [
-                yield! optionalProps props
-                yield! customIf "children" props.children
-            ]
-        | Some raw ->
-            let anchor (extra: IReactProperty list) =
-                Html.a [
-                    prop.href raw
-                    yield! optionalProps props
-                    yield! extra
-                    yield! customIf "children" props.children
-                ]
-
-            match resolveWith context raw with
-            | LinkTarget.External url ->
-                anchor [
-                    prop.rel "noreferrer"
-                    match context with
-                    | Some c ->
-                        prop.onClick (fun e ->
-                            e.preventDefault ()
-                            c.openExternal url
-                        )
-                    | None -> ()
-                ]
-            | LinkTarget.Fragment id ->
-                anchor [
-                    prop.onClick (fun e ->
-                        e.preventDefault ()
-                        // The sanitizer prefixes every heading id.
-                        let target = Browser.Dom.document.getElementById ("user-content-" + id)
-
-                        if not (isNull target) then
-                            target.scrollIntoView ()
-                    )
-                ]
-            | LinkTarget.ArcPath(path, _) ->
-                match context with
-                | Some c ->
-                    anchor [
-                        prop.onClick (fun e ->
-                            e.preventDefault ()
-                            c.openArcPath path
-                        )
-                        prop.custom (
-                            "onAuxClick",
-                            fun (e: Browser.Types.MouseEvent) ->
-                                if e.button = 1.0 then
-                                    e.preventDefault ()
-                                    c.openArcPath path
-                        )
-                    ]
-                | None -> deadLink props "Links to files work only in a file of an open ARC."
-            | LinkTarget.OutsideArc _ -> deadLink props "This link points outside the ARC."
-            | LinkTarget.Unsupported(_, reason) -> deadLink props reason
-
     let private imageNotice (alt: string option) (message: string) =
         Html.span [
             prop.role "img"
@@ -327,76 +155,257 @@ module Preview =
             ]
         ]
 
-    [<ReactComponent>]
-    let private ImageRenderer (props: IElementProps) =
-        let context = LinkContext.useLinkCtx ()
-        // The failure remembers its path, so a new path starts without one.
-        let failure, setFailure = React.useState (None: (string * string) option)
+    /// The renderers react-markdown uses for code, a and img elements.
+    [<Erase; Mangle(false)>]
+    type private Renderers =
 
-        let image (src: string) (onError: (Browser.Types.Event -> unit) option) =
-            Html.img [
-                prop.src src
-                match props.alt with
-                | Some alt -> prop.alt alt
-                | None -> ()
-                match props.title with
-                | Some title -> prop.title title
-                | None -> ()
-                match props.className with
-                | Some className -> prop.className className
-                | None -> ()
-                yield! customIf "width" props.width
-                yield! customIf "height" props.height
-                prop.custom ("loading", "lazy")
-                prop.custom ("decoding", "async")
-                match onError with
-                | Some handler -> prop.onError (handler: Browser.Types.Event -> unit)
-                | None -> ()
-            ]
+        [<ReactComponent>]
+        static member CodeRenderer(props: obj) =
+            let className = tryGetClassName props |> Option.defaultValue ""
+            let code = tryGetCode props |> Option.defaultValue ""
 
-        match props.src with
-        | None -> imageNotice props.alt "This image has no source that can be shown."
-        | Some raw ->
-            match resolveWith context raw with
-            | LinkTarget.External url -> image url None
-            | LinkTarget.ArcPath(path, _) ->
-                match context with
-                | None -> imageNotice props.alt "Images of the ARC are shown only for a file of an open ARC."
-                | Some c ->
-                    match failure with
-                    | Some(failedPath, message) when failedPath = path -> imageNotice props.alt message
-                    | _ ->
-                        match c.assetUrl path with
-                        | None -> imageNotice props.alt "Images of the ARC cannot be shown here."
-                        | Some url ->
-                            let fallback = $"The image could not be loaded: {path}"
+            let isMermaid =
+                className.StartsWith("language-mermaid", StringComparison.OrdinalIgnoreCase)
 
-                            image
-                                url
-                                (Some(fun (_: Browser.Types.Event) ->
-                                    setFailure (Some(path, fallback))
+            let fenceName = tryGetFenceName className
 
-                                    promise {
-                                        try
-                                            let! described = c.describeAsset path
+            // The runs remember the fence name and code they came from, so changed code shows as plain text until its
+            // own runs arrive, never with the colors of the old code.
+            let highlighted, setHighlighted =
+                React.useState (None: (string * string * CodeHighlight.Segment[]) option)
 
-                                            match described with
-                                            | Some message -> setFailure (Some(path, message))
-                                            | None -> ()
-                                        with _ ->
-                                            ()
-                                    }
-                                    |> Promise.start
-                                ))
-            | LinkTarget.OutsideArc _ -> imageNotice props.alt "This image lies outside the ARC."
-            | LinkTarget.Fragment _ -> imageNotice props.alt "This image has no path."
-            | LinkTarget.Unsupported(_, reason) -> imageNotice props.alt reason
+            React.useEffect (
+                (fun () ->
+                    let cancelled = ref false
+
+                    match fenceName with
+                    | Some name when not isMermaid ->
+                        promise {
+                            try
+                                let! result = CodeHighlight.highlight name code
+
+                                if not cancelled.Value then
+                                    setHighlighted (result |> Option.map (fun segments -> name, code, segments))
+                            with error ->
+                                // The block stays plain text.
+                                Browser.Dom.console.error ($"Highlighting a {name} code block failed:", error)
+                        }
+                        |> Promise.start
+                    | _ -> ()
+
+                    { new IDisposable with
+                        member _.Dispose() = cancelled.Value <- true
+                    }
+                ),
+                [| box fenceName; box code; box isMermaid |]
+            )
+
+            // Mermaid uses the id in querySelector, so keep a non-digit prefix to avoid invalid selectors.
+            let renderId =
+                React.useRef (
+                    let rawId = Guid.NewGuid().ToString "N"
+                    sprintf "mermaid-%s" rawId
+                )
+
+            let svg, setSvg = React.useState (None: string option)
+            let renderError, setRenderError = React.useState (None: string option)
+
+            React.useEffect (
+                (fun () ->
+                    if isMermaid then
+                        if String.IsNullOrWhiteSpace code then
+                            setSvg None
+                            setRenderError (Some "Mermaid code block is empty.")
+                        else
+                            ensureMermaidInitialized ()
+
+                            promise {
+                                let host = createMeasureHost ()
+
+                                try
+                                    try
+                                        let! result = Mermaid.instance.render (renderId.current, code, host)
+                                        setRenderError None
+                                        setSvg (Some result.svg)
+                                    with err ->
+                                        setSvg None
+                                        setRenderError (Some $"Mermaid render error: {string err}")
+                                finally
+                                    host.remove ()
+                            }
+                            |> Promise.start
+                ),
+                [| box isMermaid; box code |]
+            )
+
+            if isMermaid then
+                match renderError, svg with
+                | Some message, _ ->
+                    Html.pre [
+                        prop.className "swt:p-3 swt:rounded-box swt:bg-base-200 swt:text-error swt:text-sm"
+                        prop.text message
+                    ]
+                | None, Some renderedSvg ->
+                    Html.div [
+                        prop.className "swt:my-2"
+                        prop.dangerouslySetInnerHTML renderedSvg
+                    ]
+                | None, None ->
+                    Html.pre [
+                        prop.className "swt:p-3 swt:rounded-box swt:bg-base-200 swt:text-sm"
+                        prop.text "Rendering Mermaid diagram..."
+                    ]
+            else
+                Html.code [
+                    if className <> "" then
+                        prop.className className
+                    match highlighted, fenceName with
+                    | Some(forName, forCode, segments), Some name when forName = name && forCode = code ->
+                        prop.children [
+                            for i, segment in Array.indexed segments ->
+                                Html.span [
+                                    prop.key i
+                                    match segment.style with
+                                    | Some style -> prop.custom ("style", style)
+                                    | None -> ()
+                                    prop.text segment.text
+                                ]
+                        ]
+                    | _ -> prop.text code
+                ]
+
+        [<ReactComponent>]
+        static member LinkRenderer(props: IElementProps) =
+            let context = LinkContext.useLinkCtx ()
+
+            match props.href with
+            | None ->
+                Html.a [
+                    yield! optionalProps props
+                    yield! customIf "children" props.children
+                ]
+            | Some raw ->
+                let anchor (extra: IReactProperty list) =
+                    Html.a [
+                        prop.href raw
+                        yield! optionalProps props
+                        yield! extra
+                        yield! customIf "children" props.children
+                    ]
+
+                match resolveWith context raw with
+                | LinkTarget.External url ->
+                    anchor [
+                        prop.rel "noreferrer"
+                        match context with
+                        | Some c ->
+                            prop.onClick (fun e ->
+                                e.preventDefault ()
+                                c.openExternal url
+                            )
+                        | None -> ()
+                    ]
+                | LinkTarget.Fragment id ->
+                    anchor [
+                        prop.onClick (fun e ->
+                            e.preventDefault ()
+                            // The sanitizer prefixes every heading id.
+                            let target = Browser.Dom.document.getElementById ("user-content-" + id)
+
+                            if not (isNull target) then
+                                target.scrollIntoView ()
+                        )
+                    ]
+                | LinkTarget.ArcPath(path, _) ->
+                    match context with
+                    | Some c ->
+                        anchor [
+                            prop.onClick (fun e ->
+                                e.preventDefault ()
+                                c.openArcPath path
+                            )
+                            prop.custom (
+                                "onAuxClick",
+                                fun (e: Browser.Types.MouseEvent) ->
+                                    if e.button = 1.0 then
+                                        e.preventDefault ()
+                                        c.openArcPath path
+                            )
+                        ]
+                    | None -> deadLink props "Links to files work only in a file of an open ARC."
+                | LinkTarget.OutsideArc _ -> deadLink props "This link points outside the ARC."
+                | LinkTarget.Unsupported(_, reason) -> deadLink props reason
+
+        [<ReactComponent>]
+        static member ImageRenderer(props: IElementProps) =
+            let context = LinkContext.useLinkCtx ()
+            // The failure remembers its path, so a new path starts without one.
+            let failure, setFailure = React.useState (None: (string * string) option)
+
+            let image (src: string) (onError: (Browser.Types.Event -> unit) option) =
+                Html.img [
+                    prop.src src
+                    match props.alt with
+                    | Some alt -> prop.alt alt
+                    | None -> ()
+                    match props.title with
+                    | Some title -> prop.title title
+                    | None -> ()
+                    match props.className with
+                    | Some className -> prop.className className
+                    | None -> ()
+                    yield! customIf "width" props.width
+                    yield! customIf "height" props.height
+                    prop.custom ("loading", "lazy")
+                    prop.custom ("decoding", "async")
+                    match onError with
+                    | Some handler -> prop.onError (handler: Browser.Types.Event -> unit)
+                    | None -> ()
+                ]
+
+            match props.src with
+            | None -> imageNotice props.alt "This image has no source that can be shown."
+            | Some raw ->
+                match resolveWith context raw with
+                | LinkTarget.External url -> image url None
+                | LinkTarget.ArcPath(path, _) ->
+                    match context with
+                    | None -> imageNotice props.alt "Images of the ARC are shown only for a file of an open ARC."
+                    | Some c ->
+                        match failure with
+                        | Some(failedPath, message) when failedPath = path -> imageNotice props.alt message
+                        | _ ->
+                            match c.assetUrl path with
+                            | None -> imageNotice props.alt "Images of the ARC cannot be shown here."
+                            | Some url ->
+                                let fallback = $"The image could not be loaded: {path}"
+
+                                image
+                                    url
+                                    (Some(fun (_: Browser.Types.Event) ->
+                                        setFailure (Some(path, fallback))
+
+                                        promise {
+                                            try
+                                                let! described = c.describeAsset path
+
+                                                match described with
+                                                | Some message -> setFailure (Some(path, message))
+                                                | None -> ()
+                                            with _ ->
+                                                ()
+                                        }
+                                        |> Promise.start
+                                    ))
+                | LinkTarget.OutsideArc _ -> imageNotice props.alt "This image lies outside the ARC."
+                | LinkTarget.Fragment _ -> imageNotice props.alt "This image has no path."
+                | LinkTarget.Unsupported(_, reason) -> imageNotice props.alt reason
 
     let components =
         createObj [
-            "code" ==> CodeRenderer
-            "a" ==> LinkRenderer
-            "img" ==> ImageRenderer
+            "code" ==> Renderers.CodeRenderer
+            "a" ==> Renderers.LinkRenderer
+            "img" ==> Renderers.ImageRenderer
         ]
 
     /// The default schema keeps picture and source, whose srcset is not checked for its protocol. Dropping both

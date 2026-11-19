@@ -221,14 +221,17 @@ Vitest.describe (
                 fun () ->
                     withDirectory (fun dir -> promise {
                         let path = join [| dir; "a.txt" |]
-                        do! writeBytesAsync path (utf8 "old")
-                        let hash = sha256Hex (utf8 "old")
-                        let! outcome = saveOutcome dir (saveRequest "a.txt" "new ä" encoding (Some hash) false)
 
-                        let expected =
-                            match encodeTextContent encoding "new ä" with
+                        let encoded (content: string) =
+                            match encodeTextContent encoding content with
                             | Ok bytes -> bytes
                             | Error message -> failwith message
+
+                        // The file on disk has the encoding of the request, as when the editor opened it.
+                        do! writeBytesAsync path (encoded "old")
+                        let hash = sha256Hex (encoded "old")
+                        let! outcome = saveOutcome dir (saveRequest "a.txt" "new ä" encoding (Some hash) false)
+                        let expected = encoded "new ä"
 
                         let! onDisk = readBytesAsync path
                         Vitest.expect(sha256Hex onDisk).toBe (sha256Hex expected)
@@ -530,6 +533,98 @@ Vitest.describe (
                     let! names = readdirAsync dir
                     Vitest.expect(names |> Array.sort).toEqual [| freshName; "a.txt" |]
                 })
+        )
+)
+
+Vitest.describe (
+    "saveTextFileAsync read-only rules",
+    fun () ->
+        let lowSurrogateFile = [| 0xFFuy; 0xFEuy; 0x61uy; 0uy; 0uy; 0xD8uy; 0x62uy; 0uy |]
+
+        // Each file opens read-only or not at all. The request claims the encoding and hash of an editable file,
+        // as a renderer with stale state would send them.
+        for name, bytes, encoding, message in
+            [
+                "a file that is not valid UTF-8",
+                [| 0x63uy; 0x61uy; 0x66uy; 0xE9uy |],
+                TextFileEncoding.Utf8,
+                "This file is read-only because it is not valid UTF-8."
+                "a UTF-16 file with a lone surrogate",
+                lowSurrogateFile,
+                TextFileEncoding.Utf16LE,
+                "This file is read-only because it is not valid UTF-16."
+                "a file larger than 5 MB",
+                utf8 (String.replicate (6 * 1024 * 1024) "a"),
+                TextFileEncoding.Utf8,
+                "This file is larger than 5 MB and is read-only."
+                "a file with binary content",
+                [| 0x61uy; 0uy; 0x62uy |],
+                TextFileEncoding.Utf8,
+                "This file holds binary data and cannot be saved as text."
+            ] do
+            for overwrite in [ false; true ] do
+                Vitest.test (
+                    $"refuses {name} with overwrite {overwrite} and keeps it",
+                    fun () ->
+                        withDirectory (fun dir -> promise {
+                            let path = join [| dir; "a.txt" |]
+                            do! writeBytesAsync path bytes
+
+                            let! result =
+                                saveTextFileAsync
+                                    dir
+                                    (saveRequest "a.txt" "mine" encoding (Some(sha256Hex bytes)) overwrite)
+
+                            expectError message result
+                            let! onDisk = readBytesAsync path
+                            Vitest.expect(sha256Hex onDisk).toBe (sha256Hex bytes)
+                        })
+                )
+
+        Vitest.test (
+            "refuses an encoding other than the one on disk unless overwrite is set",
+            fun () ->
+                withDirectory (fun dir -> promise {
+                    let path = join [| dir; "a.txt" |]
+
+                    let original =
+                        bufferConcat [| [| 0xFFuy; 0xFEuy |]; bufferFromString "old" "utf16le" |]
+
+                    do! writeBytesAsync path original
+
+                    let request =
+                        saveRequest "a.txt" "mine" TextFileEncoding.Utf8 (Some(sha256Hex original))
+
+                    let! refused = saveTextFileAsync dir (request false)
+
+                    expectError
+                        "The file's encoding changed since it was opened. Reload the file before saving."
+                        refused
+
+                    let! unchanged = readBytesAsync path
+                    Vitest.expect(sha256Hex unchanged).toBe (sha256Hex original)
+
+                    match! saveOutcome dir (request true) with
+                    | SaveTextFileOutcome.Saved _ -> ()
+                    | SaveTextFileOutcome.Conflict _ -> failwith "Expected Saved"
+
+                    let! replaced = readBytesAsync path
+                    Vitest.expect(sha256Hex replaced).toBe (sha256Hex (utf8 "mine"))
+                })
+        )
+
+        Vitest.test (
+            "describeTextBytes marks a read that saw a change as read-only, over the other reasons",
+            fun () ->
+                let reasonOf (bytes: byte[]) (changed: bool) =
+                    describeTextBytes bytes bytes.Length changed
+                    |> Option.bind (fun (_, info) -> info.readOnly)
+
+                Vitest.expect(reasonOf (utf8 "abc") false).toEqual None
+                Vitest.expect(reasonOf (utf8 "abc") true).toEqual (Some TextReadOnlyReason.ChangedWhileReading)
+                Vitest.expect(reasonOf lowSurrogateFile false).toEqual (Some TextReadOnlyReason.InvalidUtf16)
+                Vitest.expect(reasonOf lowSurrogateFile true).toEqual (Some TextReadOnlyReason.ChangedWhileReading)
+                Vitest.expect(describeTextBytes [| 0x61uy; 0uy |] 2 true).toEqual None
         )
 )
 

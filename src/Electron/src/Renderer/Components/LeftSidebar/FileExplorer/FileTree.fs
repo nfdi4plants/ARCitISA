@@ -28,6 +28,7 @@ module private FileTreeHelper =
         | DeleteDialog of FileItem
         | FreeLfsDialog of string
         | FreeLfsFolderDialog of string
+        | CreateNoteDialog of NoteCreation.NoteLocation
 
 open FileTreeHelper
 
@@ -41,13 +42,20 @@ type FileTree =
             prop.text "No files found."
         ]
 
+    /// createNoteHandle receives the function that opens the note dialog for a note in notes/<date>/, so the sidebar
+    /// toolbar can open it.
     [<ReactComponent>]
-    static member FileTree(rootContextMenuRef: IRefValue<Browser.Types.HTMLElement option>) =
+    static member FileTree
+        (
+            rootContextMenuRef: IRefValue<Browser.Types.HTMLElement option>,
+            ?createNoteHandle: IRefValue<(unit -> unit) option>
+        ) =
 
         let pageStateCtx = Renderer.Context.PageStateContext.usePageStateCtx ()
         let appStateCtx = Renderer.Context.AppStateContext.useAppStateCtx ()
         let fileStateCtx = Renderer.Context.FileStateContext.useFileStateCtx ()
         let leaveGuard = Renderer.Context.LeaveGuardContext.useLeaveGuardCtx ()
+        let navigation = Renderer.Components.Helper.FileNavigation.useFileNavigation ()
 
         /// Asks to save or discard the open text document when an operation on path would remove or move it.
         let confirmLeaveFor (path: string) : JS.Promise<bool> =
@@ -60,12 +68,18 @@ type FileTree =
             | _ -> Promise.lift true
 
         /// A dirty text document whose file vanished keeps its page and its selection, so the edits can be saved again.
-        let keepsRemovedDirtyDocument (selectedPath: string option) =
-            match selectedPath with
-            | Some path when leaveGuard.isDirtyDocument path ->
+        let isDirtyDocument (selectedPath: string option) =
+            selectedPath |> Option.exists leaveGuard.isDirtyDocument
+
+        // The open document hears once that its file is gone, when the tree first knows it. Effects that run again
+        // while the tree still says so do not repeat it, because a repeat after a save that recreated the file would
+        // mark it missing again.
+        let reportedRemovalRef = React.useRef (None: string option)
+
+        let reportRemovedOnce (path: string) =
+            if reportedRemovalRef.current <> Some path then
+                reportedRemovalRef.current <- Some path
                 leaveGuard.notifyRemoved path
-                true
-            | _ -> false
 
         let expansionCtx =
             Renderer.Context.FileTreeExpansionContext.useFileTreeExpansionCtx ()
@@ -269,16 +283,21 @@ type FileTree =
 
         React.useEffect (
             (fun () ->
-                if
-                    FileExplorerStateReconciliation.isKnownAbsent selectionKnown
-                    && not (keepsRemovedDirtyDocument fileStateCtx.state.Selection.TreePath)
-                then
-                    fileStateCtx.setSelection ArcSelection.empty
+                let selection = fileStateCtx.state.Selection.TreePath
 
-                    if
-                        FileExplorerStateReconciliation.shouldResetPageStateAfterSelectionRemoval pageStateCtx.state
-                    then
-                        pageStateCtx.setState None
+                if FileExplorerStateReconciliation.isKnownAbsent selectionKnown then
+                    match selection with
+                    | Some path when isDirtyDocument selection -> reportRemovedOnce path
+                    | _ ->
+                        fileStateCtx.setSelection ArcSelection.empty
+
+                        if
+                            FileExplorerStateReconciliation.shouldResetPageStateAfterSelectionRemoval
+                                pageStateCtx.state
+                        then
+                            pageStateCtx.setState None
+                else
+                    reportedRemovalRef.current <- None
             ),
             [|
                 box selectionKnown
@@ -431,46 +450,18 @@ type FileTree =
                 [| box loadStateRoot; box busyDetails |]
             )
 
-        let applyPreviewResult itemName result =
-            match result with
-            | Ok pageState -> pageStateCtx.setState (Some pageState)
-            | Error errorMessage ->
-                let fullErrorMessage = $"Could not open preview for '{itemName}': {errorMessage}"
-                console.log ($"[Renderer] Error: {fullErrorMessage}")
-                pageStateCtx.setState (Some(Renderer.Types.PageState.ErrorPage fullErrorMessage))
-
         let openPreview (item: FileItem) =
-            promise {
-                match FileTreeClick.targetOfClick item with
-                | FileTreeClick.MissingPath ->
-                    errorModal.enqueue (
-                        ErrorModalRequest.create ($"File '{item.Name}' has no path.", title = "Preview failed")
-                    )
-                // A click on a folder only expands or collapses it. The open page and the selection stay,
-                // because the open page, such as the Markdown editor, saves to the selected path.
-                | FileTreeClick.Folder -> ()
-                | FileTreeClick.File selectedPath ->
-                    let isOpenDocument =
-                        leaveGuard.documentPath ()
-                        |> Option.exists (Swate.Electron.Shared.TextDocumentHelper.isSameDocumentPath selectedPath)
-
-                    // Cancel in the leave dialog keeps the selection and the page as they are.
-                    let! canLeave =
-                        if isOpenDocument then
-                            Promise.lift true
-                        else
-                            leaveGuard.confirmLeave ()
-
-                    if canLeave then
-                        fileStateCtx.setSelection (ArcSelection.forTreePath (Some selectedPath))
-
-                        if Swate.Components.Page.FileExplorer.Helper.needsLfsDownload item then
-                            pageStateCtx.setState None
-                        else
-                            let! result = openView selectedPath
-                            applyPreviewResult item.Name result
-            }
-            |> Promise.start
+            match FileTreeClick.targetOfClick item with
+            | FileTreeClick.MissingPath ->
+                errorModal.enqueue (
+                    ErrorModalRequest.create ($"File '{item.Name}' has no path.", title = "Preview failed")
+                )
+            // A click on a folder only expands or collapses it. The open page and the selection stay,
+            // because the open page, such as the Markdown editor, saves to the selected path.
+            | FileTreeClick.Folder -> ()
+            | FileTreeClick.File selectedPath ->
+                navigation.OpenFile selectedPath (Swate.Components.Page.FileExplorer.Helper.needsLfsDownload item)
+                |> Promise.start
 
         let reloadPreviewAfterFileTreeUpdate path transformPageState =
             let applyReloadError details =
@@ -495,9 +486,11 @@ type FileTree =
             pageStateCtx.state
             expansionCtx.contentStamp
             reloadPreviewAfterFileTreeUpdate
+            // The reconciliation calls this once per change, when the selected file became a large file pointer.
             (fun () ->
-                if not (keepsRemovedDirtyDocument fileStateCtx.state.Selection.TreePath) then
-                    pageStateCtx.setState None
+                match fileStateCtx.state.Selection.TreePath with
+                | Some path when isDirtyDocument (Some path) -> leaveGuard.notifyRemoved path
+                | _ -> pageStateCtx.setState None
             )
 
         let handleExpansionChange (item: FileItem) (willExpand: bool) =
@@ -525,6 +518,23 @@ type FileTree =
 
         let requestFreeLfsFolder (folderPath: string) =
             openDialog (FreeLfsFolderDialog folderPath)
+
+        let openNoteDialog (folderPath: string) =
+            openDialog (CreateNoteDialog(NoteCreation.locationOf folderPath))
+
+        // The dialog state setters never change, so the handle can be set once.
+        React.useEffect (
+            (fun () ->
+                createNoteHandle
+                |> Option.iter (fun handle -> handle.current <- Some(fun () -> openNoteDialog ""))
+
+                { new System.IDisposable with
+                    member _.Dispose() =
+                        createNoteHandle |> Option.iter (fun handle -> handle.current <- None)
+                }
+            ),
+            [||]
+        )
 
         // The row getters below keep their identity until their inputs change. A new identity re-renders every row.
         // The dialog state setters never change, so the workflows that only open dialogs can be created once.
@@ -609,7 +619,13 @@ type FileTree =
             | Some(DeleteDialog item) -> None, None, None, Some item
             | Some(FreeLfsDialog _)
             | Some(FreeLfsFolderDialog _)
+            | Some(CreateNoteDialog _)
             | None -> None, None, None, None
+
+        let activeNoteLocation =
+            match activeDialog with
+            | Some(CreateNoteDialog location) -> Some location
+            | _ -> None
 
         let activeFreeLfsPath =
             match activeDialog with
@@ -701,6 +717,29 @@ type FileTree =
                                 kind = draft.Kind
                             }
 
+        let noteDate = System.DateTime.Today
+
+        let createNote (title: string) =
+            if not isDialogBusy then
+                match activeNoteLocation with
+                | None -> closeDialog ()
+                | Some location ->
+                    FileTreeCreateWorkflow.createNote
+                        (createConfig (fun message ->
+                            errorModal.enqueue (ErrorModalRequest.create (message, title = "Could not create note"))
+                        ))
+                        (fun () ->
+                            NoteCreation.create
+                                {
+                                    pathExists = Api.ipcArcVaultApi.pathExists
+                                    writeFile = Api.ipcArcVaultApi.writeFile
+                                    createFileSystemItem = Api.ipcArcVaultApi.createFileSystemItem
+                                }
+                                location
+                                noteDate
+                                title
+                        )
+
         let createDataMap (parentInfo: DatamapParentInfo) =
             FileTreeCreateWorkflow.createDataMap
                 {
@@ -731,15 +770,11 @@ type FileTree =
                             "notes"
                             "Create new item in"
                             "swt:fluent--note-add-24-regular"
-                            (fun () -> pageStateCtx.setState (Some Renderer.Types.PageState.NotesDraftPage))
+                            (fun () -> openNoteDialog "notes")
                             item
                     yield! FileTreeContextMenu.renameContextMenuItems lfsActivePaths requestRenameItem item
                 ]),
-                [|
-                    box lfsActivePaths
-                    box requestRenameItem
-                    box pageStateCtx.setState
-                |]
+                [| box lfsActivePaths; box requestRenameItem |]
             )
 
         let runToggleLfsMark (relativePath: string) (markAsLfs: bool) = promise {
@@ -763,7 +798,7 @@ type FileTree =
             openItem = openPreview
             arcRootPath = appStateCtx
             openCreateModal = (fun kind -> openDialog (CreateDialog kind))
-            openNoteDraft = (fun () -> pageStateCtx.setState (Some Renderer.Types.PageState.NotesDraftPage))
+            openNoteDialog = (fun item -> openNoteDialog (item.Path |> Option.defaultValue ""))
             createDataMap = createDataMap
             tryFindDataMapItemByPath = tryFindDataMapItemByPath
             openFileSystemCreateModal = openFileSystemCreateModal
@@ -892,6 +927,16 @@ type FileTree =
                 submit = confirmFreeLfsFolder
             )
 
+        let createNoteModal =
+            CreateNoteModal.Main(
+                isOpen = activeNoteLocation.IsSome,
+                location = (activeNoteLocation |> Option.defaultValue NoteCreation.NoteLocation.NotesFolder),
+                date = noteDate,
+                close = closeDialog,
+                submit = createNote,
+                isCreating = isDialogBusy
+            )
+
         let renameModal =
             FileTreeRenameModal.Main(
                 isOpen = activeRenameDraft.IsSome,
@@ -926,7 +971,9 @@ type FileTree =
                             selectedItemId = fileStateCtx.state.Selection.TreePath,
                             includeDefaultContextMenuItems = false,
                             delegateHorizontalScrollToParent = true,
-                            truncateOverflowingItemNames = true
+                            truncateOverflowingItemNames = true,
+                            ?revealRequest = expansionCtx.focusRequest,
+                            onRevealDone = expansionCtx.completeFocusRequest
                         )
                     ]
                 ]
@@ -934,6 +981,7 @@ type FileTree =
                 arcCreateModal
                 fileSystemCreateModal
                 renameModal
+                createNoteModal
                 deleteConfirmModal
                 freeLfsModal
                 freeLfsFolderModal
@@ -944,6 +992,7 @@ type FileTree =
                 arcCreateModal
                 fileSystemCreateModal
                 renameModal
+                createNoteModal
                 deleteConfirmModal
                 freeLfsModal
                 freeLfsFolderModal

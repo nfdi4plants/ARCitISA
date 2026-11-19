@@ -1,4 +1,4 @@
-namespace Swate.Components.Composite.MarkdownText.Links
+module Swate.Components.Composite.MarkdownText.Links.Types
 
 /// Where a link or image reference of a Markdown document points.
 [<RequireQualifiedAccess>]

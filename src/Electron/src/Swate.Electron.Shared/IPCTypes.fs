@@ -245,7 +245,7 @@ type IMarkdownResolverApi = {
     getAssetBaseUrl: unit -> JS.Promise<Result<string, exn>>
     /// Why the image at an ARC-relative path is not served, or None when it is.
     describeAsset: string -> JS.Promise<Result<AssetRefusal option, exn>>
-    /// One result per ARC-relative path, in order. At most 500 paths per call.
+    /// One result per ARC-relative path, in order. At most LinkDiagnostics.maxCheckedPaths paths per call.
     checkPaths: string[] -> JS.Promise<Result<PathCheck[], exn>>
 }
 

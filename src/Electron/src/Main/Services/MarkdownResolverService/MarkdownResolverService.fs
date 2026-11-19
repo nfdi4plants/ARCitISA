@@ -41,7 +41,10 @@ type MarkdownResolverService(windowId: int, getArcRoot: unit -> string option, ?
     let maxBytes = defaultArg maxImageBytes AssetPolicy.defaultMaxImageBytes
     let mutable nonce = Crypto.randomHex 16
 
-    let maxCheckedPaths = 500
+    // The same limit the link lint sends at most. It is a literal there, so Fable inlines it and Main does not
+    // import the Markdown modules.
+    let maxCheckedPaths =
+        Swate.Components.Composite.MarkdownText.Links.LinkDiagnostics.maxCheckedPaths
 
     let refuseAndClose (handle: FileHandle) (refusal: AssetRefusal) = promise {
         try
@@ -176,7 +179,8 @@ type MarkdownResolverService(windowId: int, getArcRoot: unit -> string option, ?
     /// One result per path, in the order of the input. Links of the Markdown documents use it to mark broken targets.
     member _.CheckPaths(arcPaths: string[]) : JS.Promise<Result<PathCheck[], exn>> = promise {
         match getArcRoot () with
-        | _ when arcPaths.Length > maxCheckedPaths -> return Error(exn "At most 500 paths can be checked at once.")
+        | _ when arcPaths.Length > maxCheckedPaths ->
+            return Error(exn $"At most {maxCheckedPaths} paths can be checked at once.")
         | None -> return Error(exn "No ARC is open.")
         | Some root ->
             try
@@ -200,11 +204,12 @@ type MarkdownResolverService(windowId: int, getArcRoot: unit -> string option, ?
                                 else
                                     let! stats = statAsync realPath
                                     let isDirectory = stats.isDirectory ()
+                                    let isRegularFile = stats.isFile ()
 
                                     let onDisk = realPath.Replace('\\', '/').Substring(realRootPrefixLength).Trim('/')
 
                                     let! isPointer = promise {
-                                        if isDirectory || stats.size >= float AssetPolicy.lfsPointerProbeBytes then
+                                        if not (AssetPolicy.shouldProbeForLfsPointer isRegularFile stats.size) then
                                             return false
                                         else
                                             let! handle = openAsync realPath "r"
@@ -229,7 +234,10 @@ type MarkdownResolverService(windowId: int, getArcRoot: unit -> string option, ?
                                             | Error error -> return raise error
                                     }
 
-                                    if isPointer then
+                                    if not isDirectory && not isRegularFile then
+                                        // A FIFO, socket or device. ServeAsset refuses these as well.
+                                        return PathCheck.Unreadable "This is not a regular file or a folder."
+                                    elif isPointer then
                                         return PathCheck.LfsPointer
                                     elif
                                         onDisk <> normalized

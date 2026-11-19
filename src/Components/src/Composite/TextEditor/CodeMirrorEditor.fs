@@ -9,6 +9,7 @@ open Swate.Components.Composite.TextEditor.JsBindings.CodeMirror
 open Swate.Components.Composite.TextEditor.Types
 open Swate.Components.Composite.TextEditor.LanguageDetection
 open Swate.Components.Composite.TextEditor.Theme
+open Swate.Components.Util
 
 module private CodeMirrorEditorHelpers =
 
@@ -21,15 +22,25 @@ module private CodeMirrorEditorHelpers =
         else
             noExtension
 
-    /// Prose wraps lines and gets the browser's spellcheck. Code keeps long lines and no spellcheck.
-    let proseExtension (prose: bool) =
+    /// Prose wraps lines and gets the browser's spellcheck, except on the syntax nodes that the prose rules of the
+    /// language name. Code keeps long lines and no spellcheck.
+    let proseExtension (prose: bool) (rules: ProseRules option) =
         if prose then
+            let skipped =
+                match rules with
+                | Some rules -> ProseSpellcheck.extension rules
+                | None -> noExtension
+
             extensions [|
                 EditorViewApi.lineWrapping
                 EditorViewApi.contentAttributes.``of`` (createObj [ "spellcheck" ==> "true"; "autocorrect" ==> "on" ])
+                skipped
             |]
         else
             EditorViewApi.contentAttributes.``of`` (createObj [ "spellcheck" ==> "false" ])
+
+    let ariaLabelExtension (label: string) =
+        EditorViewApi.contentAttributes.``of`` (createObj [ "aria-label" ==> label ])
 
     let languageDescription (id: string) =
         languages |> Array.tryFind (fun d -> languageId d = id)
@@ -95,85 +106,49 @@ module private CodeMirrorEditorHelpers =
                 )
             )
 
-open CodeMirrorEditorHelpers
+    /// The props of one render, as the editor reads them after that render.
+    type EditorProps = {
+        ReadOnly: bool
+        Prose: bool
+        /// The prose rules of the language, None for a code language.
+        ProseRules: ProseRules option
+        Lint: (string -> JS.Promise<LintDiagnostic[]>) option
+        KeyBindings: TextEditorKeyBinding[] option
+        AriaLabel: string
+        OnSave: (TextEditorSnapshot -> JS.Promise<bool>) option
+        OnDirtyChange: (bool -> unit) option
+        OnChange: (unit -> unit) option
+        OnHistoryChange: (TextEditorHistory -> unit) option
+        OnDiagnostics: (TextEditorDiagnostic[] -> unit) option
+    }
 
-[<Erase; Mangle(false)>]
-type CodeMirrorEditor =
+    /// Owns the CodeMirror view of one editor and the state that outlives a render. The view's callbacks and the
+    /// handle read every prop through latest, which the component sets on each render, so none of them keeps the
+    /// props of an earlier render. A prop that lives in the editor state gets a compartment, and Sync reconfigures
+    /// it when the prop changes.
+    type EditorController(latest: IRefValue<EditorProps>) =
+        let languageSlot = CompartmentApi.Create()
+        let readOnlySlot = CompartmentApi.Create()
+        let proseSlot = CompartmentApi.Create()
+        let lintSlot = CompartmentApi.Create()
+        let keyBindingsSlot = CompartmentApi.Create()
+        let ariaLabelSlot = CompartmentApi.Create()
 
-    /// A CodeMirror 6 editor on one document. A new documentUri starts a new document from
-    /// initialValue. Other changes of initialValue are ignored. language is an id from
-    /// LanguageDetection. The editor loads that language on demand.
-    /// lint runs 300 ms after the last change and may take longer. Its result reaches onDiagnostics only while the
-    /// document it read is still the current one. Pass the same function instance across renders,
-    /// a new instance lints again.
-    /// keyBindings take precedence over the default keys. Pass the same array instance across renders,
-    /// a new instance reconfigures the keys.
-    [<ReactComponent>]
-    static member CodeMirrorEditor
-        (
-            documentUri: string,
-            initialValue: string,
-            language: string,
-            ?readOnly: bool,
-            ?prose: bool,
-            ?lint: string -> JS.Promise<LintDiagnostic[]>,
-            ?keyBindings: TextEditorKeyBinding[],
-            ?onSave: TextEditorSnapshot -> JS.Promise<bool>,
-            ?onDirtyChange: bool -> unit,
-            ?onChange: unit -> unit,
-            ?onDiagnostics: TextEditorDiagnostic[] -> unit,
-            ?handleRef: IRefValue<TextEditorHandle option>,
-            ?className: string,
-            ?ariaLabel: string
-        ) =
-        let readOnly = defaultArg readOnly false
-        let prose = defaultArg prose false
+        let mutable view: EditorView option = None
+        let mutable savedDoc: Text option = None
+        let mutable dirty = false
+        let mutable runningSave: (int * JS.Promise<bool>) option = None
+        let mutable generation = 0
+        let mutable lineSeparator = "\n"
+        let mutable language = noExtension
 
-        let hostRef = React.useRef<HTMLElement option> None
-        let viewRef = React.useRef<EditorView option> None
-        let savedDocRef = React.useRef<Text option> None
-        let dirtyRef = React.useRef false
-        let runningSaveRef = React.useRef<(int * JS.Promise<bool>) option> None
-        let generationRef = React.useRef 0
-        let lineSeparatorRef = React.useRef "\n"
-        let languageRef = React.useRef noExtension
-        let compartmentsRef = React.useRef<Compartment[] option> None
+        let mutable history: TextEditorHistory = {| canUndo = false; canRedo = false |}
 
-        let compartments =
-            match compartmentsRef.current with
-            | Some c -> c
-            | None ->
-                let c = Array.init 5 (fun _ -> CompartmentApi.Create())
-                compartmentsRef.current <- Some c
-                c
-
-        let languageSlot, readOnlySlot, proseSlot, lintSlot, keyBindingsSlot =
-            compartments.[0], compartments.[1], compartments.[2], compartments.[3], compartments.[4]
-
-        // The editor outlives single renders, so its callbacks read the latest props from refs.
-        let onSaveRef = React.useRef onSave
-        let onDirtyChangeRef = React.useRef onDirtyChange
-        let onChangeRef = React.useRef onChange
-        let onDiagnosticsRef = React.useRef onDiagnostics
-        let readOnlyRef = React.useRef readOnly
-        let proseRef = React.useRef prose
-        let lintRef = React.useRef lint
-        let keyBindingsRef = React.useRef keyBindings
-        let appliedReadOnlyRef = React.useRef readOnly
-        let appliedProseRef = React.useRef prose
-        let appliedLintRef = React.useRef lint
-        let appliedKeyBindingsRef = React.useRef keyBindings
-        onSaveRef.current <- onSave
-        onDirtyChangeRef.current <- onDirtyChange
-        onChangeRef.current <- onChange
-        onDiagnosticsRef.current <- onDiagnostics
-        readOnlyRef.current <- readOnly
-        proseRef.current <- prose
-        lintRef.current <- lint
-        keyBindingsRef.current <- keyBindings
+        /// The props that the compartments of the current state were built from.
+        let mutable applied = latest.current
 
         let report (diagnostics: TextEditorDiagnostic[]) =
-            onDiagnosticsRef.current |> Option.iter (fun f -> f diagnostics)
+            latest.current.OnDiagnostics |> Option.iter (fun f -> f diagnostics)
 
         let lintExtension (lint: (string -> JS.Promise<LintDiagnostic[]>) option) =
             match lint with
@@ -213,25 +188,36 @@ type CodeMirrorEditor =
                 |]
 
         let evaluateDirty () =
-            match viewRef.current, savedDocRef.current with
+            match view, savedDoc with
             | Some view, Some saved ->
-                let dirty = not (view.state.doc.eq saved)
+                let isDirty = not (view.state.doc.eq saved)
 
-                if dirty <> dirtyRef.current then
-                    dirtyRef.current <- dirty
-                    onDirtyChangeRef.current |> Option.iter (fun f -> f dirty)
+                if isDirty <> dirty then
+                    dirty <- isDirty
+                    latest.current.OnDirtyChange |> Option.iter (fun f -> f isDirty)
             | _ -> ()
 
+        // Runs after every update, so it reports only a change.
+        let reportHistory (state: EditorState) =
+            let next: TextEditorHistory = {|
+                canUndo = undoDepth state > 0
+                canRedo = redoDepth state > 0
+            |}
+
+            if next <> history then
+                history <- next
+                latest.current.OnHistoryChange |> Option.iter (fun f -> f next)
+
         let textOf (state: EditorState) =
-            state.doc.sliceString (0, state.doc.length, lineSeparatorRef.current)
+            state.doc.sliceString (0, state.doc.length, lineSeparator)
 
         let save () : JS.Promise<bool> =
-            match onSaveRef.current, viewRef.current with
-            | Some onSave, Some view when not readOnlyRef.current ->
-                let generation = generationRef.current
+            match latest.current.OnSave, view with
+            | Some onSave, Some view when not latest.current.ReadOnly ->
+                let started = generation
 
-                match runningSaveRef.current with
-                | Some(g, running) when g = generation -> running
+                match runningSave with
+                | Some(g, running) when g = started -> running
                 | _ ->
                     let state = view.state
                     let doc = state.doc
@@ -246,32 +232,30 @@ type CodeMirrorEditor =
                                 return false
                         }
 
-                        match runningSaveRef.current with
-                        | Some(g, _) when g = generation -> runningSaveRef.current <- None
+                        match runningSave with
+                        | Some(g, _) when g = started -> runningSave <- None
                         | _ -> ()
 
                         // Another documentUri or replaceContent may have installed a newer document state by now.
                         // Its saved state stays.
-                        if ok && generationRef.current = generation then
-                            savedDocRef.current <- Some doc
+                        if ok && generation = started then
+                            savedDoc <- Some doc
                             evaluateDirty ()
 
                         return ok
                     }
 
-                    runningSaveRef.current <- Some(generation, running)
+                    runningSave <- Some(started, running)
                     running
             | _ -> promise { return false }
 
         let createState (text: string) : EditorState =
             // Every new document state starts a new generation. A save that finishes after a newer state
             // replaced its own leaves the saved state alone.
-            generationRef.current <- generationRef.current + 1
-            lineSeparatorRef.current <- detectLineSeparator text
-            appliedReadOnlyRef.current <- readOnlyRef.current
-            appliedProseRef.current <- proseRef.current
-            appliedLintRef.current <- lintRef.current
-            appliedKeyBindingsRef.current <- keyBindingsRef.current
+            generation <- generation + 1
+            lineSeparator <- detectLineSeparator text
+            let props = latest.current
+            applied <- props
 
             EditorStateApi.create {|
                 doc = text
@@ -292,34 +276,35 @@ type CodeMirrorEditor =
                         basicSetup
                         keymap.``of`` [| unbox<KeyBinding> indentWithTab |]
                         daisyTheme
-                        EditorViewApi.contentAttributes.``of`` (
-                            createObj [ "aria-label" ==> defaultArg ariaLabel "Text editor" ]
-                        )
+                        ariaLabelSlot.``of`` (ariaLabelExtension props.AriaLabel)
                         EditorViewApi.updateListener.``of`` (fun update ->
                             if update.docChanged then
                                 evaluateDirty ()
-                                onChangeRef.current |> Option.iter (fun f -> f ())
+                                latest.current.OnChange |> Option.iter (fun f -> f ())
+
+                            reportHistory update.state
                         )
-                        languageSlot.``of`` languageRef.current
-                        readOnlySlot.``of`` (readOnlyExtension readOnlyRef.current)
-                        proseSlot.``of`` (proseExtension proseRef.current)
-                        lintSlot.``of`` (lintExtension lintRef.current)
-                        keyBindingsSlot.``of`` (keyBindingsExtension keyBindingsRef.current)
+                        languageSlot.``of`` language
+                        readOnlySlot.``of`` (readOnlyExtension props.ReadOnly)
+                        proseSlot.``of`` (proseExtension props.Prose props.ProseRules)
+                        lintSlot.``of`` (lintExtension props.Lint)
+                        keyBindingsSlot.``of`` (keyBindingsExtension props.KeyBindings)
                     |]
             |}
 
-        let handle =
+        /// Stays the same object for the life of the editor, so a host may keep it.
+        member val Handle: TextEditorHandle =
             { new TextEditorHandle with
-                member _.isDirty() = dirtyRef.current
+                member _.isDirty() = dirty
                 member _.save() = save ()
 
                 member _.getText() =
-                    match viewRef.current with
+                    match view with
                     | Some view -> textOf view.state
                     | None -> ""
 
                 member _.getEditState() =
-                    match viewRef.current with
+                    match view with
                     | Some view -> editStateOf view.state
                     | None -> {|
                         text = ""
@@ -327,38 +312,151 @@ type CodeMirrorEditor =
                       |}
 
                 member _.applyEdit(edit) =
-                    match viewRef.current with
+                    match view with
                     | Some view -> applyEditTo view edit
                     | None -> false
 
+                member _.undo() =
+                    match view with
+                    | Some view -> undo view
+                    | None -> false
+
+                member _.redo() =
+                    match view with
+                    | Some view -> redo view
+                    | None -> false
+
                 member _.replaceContent(text) =
-                    match viewRef.current with
+                    match view with
                     | Some view ->
                         let state = createState text
                         view.setState state
-                        savedDocRef.current <- Some state.doc
+                        savedDoc <- Some state.doc
                         evaluateDirty ()
+                        // setState runs no update listener, and the new document has no history.
+                        reportHistory state
                     | None -> ()
 
                 member _.focus() =
-                    viewRef.current |> Option.iter (fun v -> v.focus ())
+                    view |> Option.iter (fun v -> v.focus ())
             }
+
+        /// Creates the view in host with a new document state of text.
+        member _.Mount(host: HTMLElement, text: string) =
+            let state = createState text
+            view <- Some(EditorViewApi.Create {| state = state; parent = host |})
+            savedDoc <- Some state.doc
+            evaluateDirty ()
+            reportHistory state
+
+        member _.Unmount() =
+            view |> Option.iter (fun v -> v.destroy ())
+            view <- None
+
+        /// The loaded language also goes into the next document state.
+        member _.SetLanguage(extension: Extension) =
+            language <- extension
+            view |> Option.iter (fun v -> reconfigure v languageSlot extension)
+
+        /// Reconfigures the compartments whose props changed since the current state was built or last synced.
+        member _.Sync() =
+            match view with
+            | Some v ->
+                let props = latest.current
+
+                if props.ReadOnly <> applied.ReadOnly then
+                    reconfigure v readOnlySlot (readOnlyExtension props.ReadOnly)
+
+                if props.Prose <> applied.Prose || props.ProseRules <> applied.ProseRules then
+                    reconfigure v proseSlot (proseExtension props.Prose props.ProseRules)
+
+                if not (obj.ReferenceEquals(props.Lint, applied.Lint)) then
+                    reconfigure v lintSlot (lintExtension props.Lint)
+
+                if not (obj.ReferenceEquals(props.KeyBindings, applied.KeyBindings)) then
+                    reconfigure v keyBindingsSlot (keyBindingsExtension props.KeyBindings)
+
+                if props.AriaLabel <> applied.AriaLabel then
+                    reconfigure v ariaLabelSlot (ariaLabelExtension props.AriaLabel)
+
+                applied <- props
+            | None -> ()
+
+        member _.Report(diagnostics: TextEditorDiagnostic[]) = report diagnostics
+
+open CodeMirrorEditorHelpers
+
+[<Erase; Mangle(false)>]
+type CodeMirrorEditor =
+
+    /// A CodeMirror 6 editor on one document. A new documentUri starts a new document from
+    /// initialValue. Other changes of initialValue are ignored. language is an id from
+    /// LanguageDetection. The editor loads that language on demand. prose wraps lines and turns the browser's
+    /// spellcheck on, except on the syntax nodes that the prose rules of the language name.
+    /// lint runs 300 ms after the last change and may take longer. Its result reaches onDiagnostics only while the
+    /// document it read is still the current one. Pass the same function instance across renders,
+    /// a new instance lints again.
+    /// keyBindings take precedence over the default keys. Pass the same array instance across renders,
+    /// a new instance reconfigures the keys.
+    /// onHistoryChange reports when undo or redo becomes possible or impossible, also when a new document starts
+    /// the history over.
+    [<ReactComponent>]
+    static member CodeMirrorEditor
+        (
+            documentUri: string,
+            initialValue: string,
+            language: string,
+            ?readOnly: bool,
+            ?prose: bool,
+            ?lint: string -> JS.Promise<LintDiagnostic[]>,
+            ?keyBindings: TextEditorKeyBinding[],
+            ?onSave: TextEditorSnapshot -> JS.Promise<bool>,
+            ?onDirtyChange: bool -> unit,
+            ?onChange: unit -> unit,
+            ?onHistoryChange: TextEditorHistory -> unit,
+            ?onDiagnostics: TextEditorDiagnostic[] -> unit,
+            ?handleRef: IRefValue<TextEditorHandle option>,
+            ?className: string,
+            ?ariaLabel: string
+        ) =
+        let props: EditorProps = {
+            ReadOnly = defaultArg readOnly false
+            Prose = defaultArg prose false
+            ProseRules = proseOf registry language
+            Lint = lint
+            KeyBindings = keyBindings
+            AriaLabel = defaultArg ariaLabel "Text editor"
+            OnSave = onSave
+            OnDirtyChange = onDirtyChange
+            OnChange = onChange
+            OnHistoryChange = onHistoryChange
+            OnDiagnostics = onDiagnostics
+        }
+
+        let hostRef = React.useRef<HTMLElement option> None
+        // The editor outlives single renders, so it reads the props of the latest render from here.
+        let latest = React.useRef props
+        latest.current <- props
+        let controllerRef = React.useRef<EditorController option> None
+
+        let controller =
+            match controllerRef.current with
+            | Some c -> c
+            | None ->
+                let c = EditorController latest
+                controllerRef.current <- Some c
+                c
 
         React.useEffect (
             (fun () ->
                 match hostRef.current with
                 | Some host ->
-                    let state = createState initialValue
-                    let view = EditorViewApi.Create {| state = state; parent = host |}
-                    viewRef.current <- Some view
-                    savedDocRef.current <- Some state.doc
-                    evaluateDirty ()
-                    handleRef |> Option.iter (fun r -> r.current <- Some handle)
+                    controller.Mount(host, initialValue)
+                    handleRef |> Option.iter (fun r -> r.current <- Some controller.Handle)
 
                     { new System.IDisposable with
                         member _.Dispose() =
-                            view.destroy ()
-                            viewRef.current <- None
+                            controller.Unmount()
                             handleRef |> Option.iter (fun r -> r.current <- None)
                     }
                 | None ->
@@ -380,15 +478,12 @@ type CodeMirrorEditor =
                             let! loaded = description.load ()
 
                             if not cancelled.Value then
-                                languageRef.current <- loaded
-                                viewRef.current |> Option.iter (fun v -> reconfigure v languageSlot loaded)
+                                controller.SetLanguage loaded
                         with _ ->
                             ()
                     }
                     |> ignore
-                | None ->
-                    languageRef.current <- noExtension
-                    viewRef.current |> Option.iter (fun v -> reconfigure v languageSlot noExtension)
+                | None -> controller.SetLanguage noExtension
 
                 { new System.IDisposable with
                     member _.Dispose() = cancelled.Value <- true
@@ -397,52 +492,25 @@ type CodeMirrorEditor =
             [| box language; box documentUri |]
         )
 
-        // createState already applies the current values, so these effects only reconfigure on a later change.
+        // A new document state takes the latest props, so this only reconfigures on a later change.
         React.useEffect (
-            (fun () ->
-                match viewRef.current with
-                | Some v when readOnly <> appliedReadOnlyRef.current ->
-                    reconfigure v readOnlySlot (readOnlyExtension readOnly)
-                    appliedReadOnlyRef.current <- readOnly
-                | _ -> ()
-            ),
-            [| box readOnly |]
+            (fun () -> controller.Sync()),
+            [|
+                box props.ReadOnly
+                box props.Prose
+                box props.ProseRules
+                box lint
+                box keyBindings
+                box props.AriaLabel
+            |]
         )
 
         React.useEffect (
             (fun () ->
-                match viewRef.current with
-                | Some v when prose <> appliedProseRef.current ->
-                    reconfigure v proseSlot (proseExtension prose)
-                    appliedProseRef.current <- prose
-                | _ -> ()
-            ),
-            [| box prose |]
-        )
-
-        React.useEffect (
-            (fun () ->
-                match viewRef.current with
-                | Some v when not (obj.ReferenceEquals(lint, appliedLintRef.current)) ->
-                    reconfigure v lintSlot (lintExtension lint)
-                    appliedLintRef.current <- lint
-                | _ -> ()
-
                 if lint.IsNone then
-                    report [||]
+                    controller.Report [||]
             ),
             [| box lint |]
-        )
-
-        React.useEffect (
-            (fun () ->
-                match viewRef.current with
-                | Some v when not (obj.ReferenceEquals(keyBindings, appliedKeyBindingsRef.current)) ->
-                    reconfigure v keyBindingsSlot (keyBindingsExtension keyBindings)
-                    appliedKeyBindingsRef.current <- keyBindings
-                | _ -> ()
-            ),
-            [| box keyBindings |]
         )
 
         Html.div [

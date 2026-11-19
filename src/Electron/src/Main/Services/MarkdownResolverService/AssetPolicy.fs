@@ -31,6 +31,11 @@ let lfsPointerProbeBytes = 1024
 
 let private lfsPointerPrefix = "version https://git-lfs.github.com/spec/v1"
 
+/// True when a link check opens the target to look for an LFS pointer. Only a regular file below the probe size
+/// qualifies. A FIFO also reports a small size, and opening it would block until a writer appears.
+let shouldProbeForLfsPointer (isRegularFile: bool) (sizeBytes: float) : bool =
+    isRegularFile && sizeBytes < float lfsPointerProbeBytes
+
 /// True when the first length bytes start with the LFS pointer header.
 let isLfsPointer (bytes: byte[]) (length: int) : bool =
     length >= lfsPointerPrefix.Length

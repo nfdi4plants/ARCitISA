@@ -3,6 +3,7 @@ module internal Swate.Components.Composite.MarkdownText.Links.LinkDiagnosticsTes
 open Fable.Core
 open Vitest
 open Swate.Components.Composite.MarkdownText.Links
+open Swate.Components.Composite.MarkdownText.Links.Types
 
 /// A fake host that answers with the given state for every path and records each call.
 let private fakeHost (stateOf: string -> LinkTargetState) =

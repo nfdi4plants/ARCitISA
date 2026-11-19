@@ -22,6 +22,7 @@
     <Compile Include="Context\FileStateContext.fs" />
     <Compile Include="Context\FileTreeHooks.fs" />
     <Compile Include="Context\FileTreeExpansionContext.fs" />
+    <Compile Include="Context\LeftSidebarNavigationContext.fs" />
     <Compile Include="Context\AuthStateContext.fs" />
     <Compile Include="Context\VersionControlDependencyContext.fs" />
     <Compile Include="Context\OperationLog.fs" />
@@ -31,10 +32,12 @@
     <Compile Include="Context\LastGitLog.fs" />
     <Compile Include="Components\Helper\ArcViewSelection.fs" />
     <Compile Include="Components\Helper\ArcViewHelper.fs" />
+    <Compile Include="Components\Helper\FileNavigation.fs" />
     <Compile Include="Components\Helper\GitLfsHelper.fs" />
     <Compile Include="Components\Helper\ArcVaultHelper.fs" />
     <Compile Include="Components\Helper\ArcFileApiHelper.fs" />
     <Compile Include="Components\Helper\FileSystemHelper.fs" />
+    <Compile Include="Components\Helper\NoteCreation.fs" />
     <Compile Include="Components\Helper\FileTargetConflictModal.fs" />
     <Compile Include="Components\Helper\GitMergeAbandonConfirmation.fs" />
     <Compile Include="Components\Helper\FileExplorerStateReconciliation.fs" />
@@ -51,6 +54,7 @@
     <Compile Include="Components\LeftSidebar\FileExplorer\Modals\CreateArcFileModal.fs" />
     <Compile Include="Components\LeftSidebar\FileExplorer\Modals\CreateFileSystemItemModal.fs" />
     <Compile Include="Components\LeftSidebar\FileExplorer\Modals\FileTreeRenameModal.fs" />
+    <Compile Include="Components\LeftSidebar\FileExplorer\Modals\CreateNoteModal.fs" />
     <Compile Include="Components\LeftSidebar\FileExplorer\Modals\FileTreeDeleteModal.fs" />
     <Compile Include="Components\LeftSidebar\FileExplorer\Modals\FileTreeFreeLfsModal.fs" />
     <Compile Include="Components\LeftSidebar\FileExplorer\FileTreeRename.fs" />
@@ -71,12 +75,13 @@
     <Compile Include="Components\MainContent\ChangelogTarget.fs" />
     <Compile Include="Components\MainContent\ArcFilePreviewTargetHelper.fs" />
     <Compile Include="Components\MainContent\ArcFilePreviewTarget.fs" />
-    <Compile Include="Components\MainContent\TextDocumentTarget.fs" />
+    <Compile Include="Components\MainContent\TextDocument\TextDocumentState.fs" />
+    <Compile Include="Components\MainContent\TextDocument\TextDocumentSync.fs" />
+    <Compile Include="Components\MainContent\TextDocument\TextDocumentTarget.fs" />
     <Compile Include="Components\MainContent\FileViewerTarget.fs" />
     <Compile Include="Components\MainContent\UnknownPreviewTarget.fs" />
     <Compile Include="Components\MainContent\LargeFilePreviewTarget.fs" />
     <Compile Include="Components\MainContent\ErrorViewTarget.fs" />
-    <Compile Include="Components\MainContent\NotesDraftTarget.fs" />
     <Compile Include="Components\MainContent\NotesSearchTarget.fs" />
     <Compile Include="Components\MainContent\GitDiffTarget.fs" />
     <Compile Include="Components\MainContent\GitMergeConflictTarget.fs" />

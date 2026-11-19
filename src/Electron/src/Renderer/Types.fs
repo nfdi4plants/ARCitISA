@@ -234,7 +234,6 @@ type PageState =
     | UnknownPage
     | LargeFilePage of path: string * sizeBytes: float * reason: NoPreviewReason
     //| LandingDraftPage
-    | NotesDraftPage
     | NotesSearchPage
     | ProvenanceGroupingPage
     | ProvenanceGraphPage of requestId: string

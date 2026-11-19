@@ -27,15 +27,21 @@ type CreateFileSystemItemModal =
         let actionLabel = $"Create {label}"
         let parentDisplayName = parentName |> Option.defaultValue "this folder"
 
+        let example =
+            match kind with
+            | FileSystemItemKind.File -> "docs/guide.md"
+            | FileSystemItemKind.Folder -> "data/raw"
+
         Dialog.StringSubmissionDialog(
             isOpen = isOpen,
             title = actionLabel,
-            description = $"Create a new {label.ToLowerInvariant()} in '{parentDisplayName}'.",
+            description =
+                $"Create a new {label.ToLowerInvariant()} in '{parentDisplayName}'. Use / to put it in new folders, such as {example}.",
             fieldLabel = "Name",
             initialValue = "",
             close = close,
             submit = submit,
-            validate = validateRenameName,
+            validate = validateNewItemPath,
             submitLabel = actionLabel,
             validationMessage = "Enter a valid name.",
             isBusy = isCreating,

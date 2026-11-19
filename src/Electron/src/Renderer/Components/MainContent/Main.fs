@@ -12,7 +12,6 @@ open Renderer.Components.MainContent.GitDiffTarget
 open Renderer.Components.MainContent.GitFileChoiceConflictTarget
 open Renderer.Components.MainContent.GitMergeConflictTarget
 open Renderer.Components.MainContent.GitUnsupportedTarget
-open Renderer.Components.MainContent.NotesDraftTarget
 open Renderer.Components.MainContent.NotesSearchTarget
 open Renderer.Components.MainContent.ProvenanceGroupingTarget
 open Renderer.Components.MainContent.UnknownPreviewTarget
@@ -71,7 +70,7 @@ module private LazyComponents =
 
     [<ReactLazyComponent>]
     let LazyTextDocumentTarget (data: TextDocumentPageData) =
-        Renderer.Components.MainContent.TextDocumentTargetView.TextDocumentTarget(data)
+        Renderer.Components.MainContent.TextDocument.TextDocumentTargetView.TextDocumentTarget(data)
 
     [<ReactLazyComponent>]
     let ProvenanceGroupingTarget () =
@@ -140,7 +139,6 @@ let Main (appRootPath: ArcRootPath, pageState: PageState option) =
                             LargeFilePreviewTarget(path, sizeBytes, reason)
                         | Some _, Some(PageState.ErrorPage errMsg) -> ErrorViewTarget errMsg
                         // | Some _, Some PageState.LandingDraftPage -> LandingDraftTarget()
-                        | Some _, Some PageState.NotesDraftPage -> NotesDraftTarget()
                         | Some _, Some PageState.NotesSearchPage -> NotesSearchTarget()
                         | Some _, Some PageState.ProvenanceGroupingPage ->
                             React.Suspense(

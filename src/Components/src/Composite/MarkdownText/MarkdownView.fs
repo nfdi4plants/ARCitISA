@@ -4,7 +4,7 @@ open Fable.Core
 open Feliz
 
 open Swate.Components.Composite.MarkdownText.JsBindings
-open Swate.Components.Composite.MarkdownText.Links
+open Swate.Components.Composite.MarkdownText.Links.Types
 
 [<Erase; Mangle(false)>]
 type MarkdownView =

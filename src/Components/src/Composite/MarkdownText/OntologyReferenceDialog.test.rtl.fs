@@ -21,6 +21,9 @@ type private FakeSurface(state: TextEditState) =
             this.Applied.Add edit
             this.Accepts
 
+        member _.undo() = false
+        member _.redo() = false
+
         member this.focus() = this.Focused <- this.Focused + 1
 
 let private stateOf (text: string) (anchor: int) (head: int) : TextEditState = {|

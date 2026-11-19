@@ -614,6 +614,37 @@ Vitest.describe (
         )
 
         Vitest.test (
+            "a failed nested create still adds the folders it made to the tree",
+            fun () ->
+                withRegisteredVault
+                    73
+                    (fun vault -> promise {
+                        let api = Main.IPC.ArcVaultsApi.api (TestHelpers.ipcEvent 73)
+                        let! loaded = api.loadDirectory "assays/A1/dataset"
+                        Vitest.expect(loaded.IsOk).toBe (true)
+                        // No file system accepts a name of 300 characters, so the file write fails after the folder.
+                        let longName = String.replicate 300 "a"
+
+                        let! created =
+                            api.createFileSystemItem {
+                                parentPath = "assays/A1/dataset"
+                                name = $"kept/{longName}.txt"
+                                kind = FileSystemItemKind.File
+                            }
+
+                        match created with
+                        | Ok createdPath -> failwith $"Expected the create to fail: {createdPath}"
+                        | Error error -> Vitest.expect(error.Message).toContain "'assays/A1/dataset/kept'"
+
+                        let root = FileTreeCreator.normalizeRootPath vault.path.Value
+
+                        Vitest
+                            .expect((vault.FileTreeWriter.Tree.TryFind(root + "/assays/A1/dataset/kept")).IsSome)
+                            .toBe (true)
+                    })
+        )
+
+        Vitest.test (
             "moving a file between payload folders updates both sides",
             fun () ->
                 withRegisteredVault

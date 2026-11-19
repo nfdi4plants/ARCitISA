@@ -2,6 +2,7 @@ module internal Swate.Components.Composite.MarkdownText.Links.LinkResolutionTest
 
 open Vitest
 open Swate.Components.Composite.MarkdownText.Links
+open Swate.Components.Composite.MarkdownText.Links.Types
 
 let private guide = "docs/guide"
 

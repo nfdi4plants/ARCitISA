@@ -13,8 +13,10 @@
     <Compile Include="FileStateContextReload.test.fs" />
     <Compile Include="FileImportProgressBar.test.rtl.fs" />
     <Compile Include="FileSystemHelper.test.fs" />
+    <Compile Include="NoteCreation.test.fs" />
     <Compile Include="FileTreeFileTargetWorkflow.test.fs" />
     <Compile Include="FileTreeClick.test.fs" />
+    <Compile Include="FileNavigation.test.fs" />
     <Compile Include="MarkdownLinkContext.test.fs" />
     <Compile Include="FileTreeMaterialization.test.fs" />
     <Compile Include="FileTreePerformance.test.fs" />
@@ -43,6 +45,8 @@
     <Compile Include="LargeObjectStore.test.rtl.fs" />
     <Compile Include="FileExplorerStateReconciliation.test.rtl.fs" />
     <Compile Include="FileTreeExpansionContext.test.rtl.fs" />
+    <Compile Include="TextDocumentState.test.fs" />
+    <Compile Include="TextDocumentTarget.test.rtl.fs" />
     <Compile Include="NoteSearchInterop.test.fs" />
     <Compile Include="ProvenanceGraphPage.test.fs" />
   </ItemGroup>

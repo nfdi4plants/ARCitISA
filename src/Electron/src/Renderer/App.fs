@@ -260,6 +260,26 @@ let private LeftActionButtons (leftSidebarTarget: LeftSidebarPage) setLeftSideba
             )
     ]
 
+/// Lets the page bring a sidebar page to the front. It renders inside the layout, which holds whether the sidebar is
+/// open.
+[<ReactComponent>]
+let private LeftSidebarNavigationProvider (setLeftSidebarTarget: LeftSidebarPage -> unit, children: ReactElement) =
+    let leftSidebarCtx =
+        Swate.Components.Composite.Layout.LeftSidebarContext.useLeftSidebarCtx ()
+
+    let navigation: Renderer.Context.LeftSidebarNavigationContext.LeftSidebarNavigation =
+        React.useMemo (
+            (fun () -> {
+                showPage =
+                    fun page ->
+                        leftSidebarCtx.setState true
+                        setLeftSidebarTarget page
+            }),
+            [| box leftSidebarCtx.setState; box setLeftSidebarTarget |]
+        )
+
+    Renderer.Context.LeftSidebarNavigationContext.LeftSidebarNavigationCtx.Provider(navigation, children)
+
 /// The window's layout with the app's banners. It renders inside the context providers, so the banner
 /// hooks read their contexts. Each banner source adds its entry to the list.
 [<ReactComponent>]
@@ -397,15 +417,18 @@ let Main () =
                                                                             .VersionControlDependencyContext
                                                                             .Provider(
                                                                                 WindowLayout
-                                                                                    (React.Fragment [|
-                                                                                        children
-                                                                                        CloseWindowController
-                                                                                            .CloseWindowController(
-                                                                                                onConfirmSave =
-                                                                                                    leaveGuard.saveForClose
-                                                                                            )
-                                                                                        leaveGuardDialog
-                                                                                    |])
+                                                                                    (LeftSidebarNavigationProvider(
+                                                                                        setLeftSidebarTarget,
+                                                                                        React.Fragment [|
+                                                                                            children
+                                                                                            CloseWindowController
+                                                                                                .CloseWindowController(
+                                                                                                    onConfirmSave =
+                                                                                                        leaveGuard.saveForClose
+                                                                                                )
+                                                                                            leaveGuardDialog
+                                                                                        |]
+                                                                                    ))
                                                                                     leftSidebar
                                                                                     leftActions
                                                                             )

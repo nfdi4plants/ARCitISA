@@ -3,14 +3,11 @@ namespace Swate.Components.Composite.TextEditor
 open Fable.Core
 open Feliz
 
-open Swate.Components.Composite.TextEditor.JsBindings.CodeMirror
 open Swate.Components.Composite.TextEditor.Types
 open Swate.Components.Composite.TextEditor.LanguageDetection
 open Swate.Components.Composite.TextEditor.SchemaValidation
 
 module internal TextEditorHelpers =
-
-    let registry = ofDescriptions languages
 
     /// Linting runs on the main thread until it moves into a Web Worker. A YAML pass takes about 50 ms
     /// per 500 KB in Chromium, so longer documents (measured when they open) get no lint for now.
@@ -43,6 +40,7 @@ type TextEditor =
     /// schemaValidator they also get diagnostics from the JSON Schema. extraLint adds async diagnostics of the host
     /// for any language. Pass the same function instance across renders, a new instance lints again. keyBindings run edit commands
     /// ahead of the editor's default keys. A read-only editor runs no binding, so its keys go to the default keys.
+    /// onHistoryChange reports when undo or redo becomes possible or impossible, for example for toolbar buttons.
     [<ReactComponent(true)>]
     static member TextEditor
         (
@@ -57,6 +55,7 @@ type TextEditor =
             ?onSave: TextEditorSnapshot -> JS.Promise<bool>,
             ?onDirtyChange: bool -> unit,
             ?onChange: unit -> unit,
+            ?onHistoryChange: TextEditorHistory -> unit,
             ?onDiagnostics: TextEditorDiagnostic[] -> unit,
             ?handleRef: IRefValue<TextEditorHandle option>,
             ?className: string
@@ -72,7 +71,7 @@ type TextEditor =
                 (fun () ->
                     match language with
                     | Some l -> l
-                    | None -> detectLanguage TextEditorHelpers.registry name (TextEditorHelpers.firstLine initialValue)
+                    | None -> detectLanguage registry name (TextEditorHelpers.firstLine initialValue)
                 ),
                 [| box documentUri; box name; box language |]
             )
@@ -98,12 +97,13 @@ type TextEditor =
             initialValue,
             lang,
             ?readOnly = readOnly,
-            prose = (lang = "markdown" || lang = "plaintext"),
+            prose = (proseOf registry lang).IsSome,
             ?lint = lint,
             ?keyBindings = keyBindings,
             ?onSave = onSave,
             ?onDirtyChange = onDirtyChange,
             ?onChange = onChange,
+            ?onHistoryChange = onHistoryChange,
             ?onDiagnostics = onDiagnostics,
             ?handleRef = handleRef,
             ?className = className,

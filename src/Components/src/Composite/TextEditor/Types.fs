@@ -37,6 +37,9 @@ type TextEditorKeyBinding = {|
     run: TextEditState -> TextEdit option
 |}
 
+/// Whether the editor's undo history holds a change to undo or to redo.
+type TextEditorHistory = {| canUndo: bool; canRedo: bool |}
+
 /// Imperative access for the host page. All members are safe to call before the editor exists
 /// (they then do nothing, return false or "").
 type TextEditorHandle =
@@ -50,6 +53,12 @@ type TextEditorHandle =
     /// Applies the edit as one undo step and scrolls the selection into view. Returns false and changes nothing when
     /// the editor does not exist or is read-only.
     abstract applyEdit: edit: TextEdit -> bool
+    /// Undoes the last change, like the editor's undo key. Returns false when there is nothing to undo, the editor
+    /// does not exist or is read-only.
+    abstract undo: unit -> bool
+    /// Redoes the last undone change, like the editor's redo key. Returns false when there is nothing to redo, the
+    /// editor does not exist or is read-only.
+    abstract redo: unit -> bool
     /// Replaces the whole content, for example after a reload from disk. The new content counts as saved and the undo history starts over.
     abstract replaceContent: text: string -> unit
     abstract focus: unit -> unit

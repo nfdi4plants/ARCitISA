@@ -7,7 +7,7 @@ open Swate.Components
 open Swate.Components.Shared
 open Swate.Components.Composite.Table.Types
 open Swate.Components.Page.ArcFileEditor.Types
-open Swate.Components.Util.UserOS
+open Swate.Components.Util
 
 [<Erase; Mangle(false)>]
 type SearchField =
@@ -17,13 +17,8 @@ type SearchField =
         let query, setQuery = React.useState ""
         let inputRef = React.useInputRef ()
 
-        let isMac =
-            match getUserOS () with
-            | MacOS
-            | IOS -> true
-            | _ -> false
-
-        let modifierKey = if isMac then "⌘" else "Ctrl"
+        let isMac = Shortcuts.isMac ()
+        let findKey = Shortcuts.label isMac "Mod-f"
 
         React.useListener.onKeyDown (
             (fun event ->
@@ -108,7 +103,7 @@ type SearchField =
                     prop.ariaLabel "Search cells"
                     prop.placeholder "Search cells..."
                     prop.title
-                        $"{modifierKey}+F: search cells. Enter: next match. Shift+Enter: previous match. Escape: clear."
+                        $"{findKey}: search cells. Enter: next match. Shift+Enter: previous match. Escape: clear."
                     prop.custom ("aria-keyshortcuts", if isMac then "Meta+f" else "Control+f")
                     prop.className "swt:min-w-0 swt:grow"
                     prop.disabled target.IsNone
@@ -120,7 +115,7 @@ type SearchField =
                     Html.kbd [
                         prop.className "swt:kbd swt:kbd-xs swt:whitespace-nowrap"
                         prop.ariaHidden true
-                        prop.text $"{modifierKey} + F"
+                        prop.text findKey
                     ]
                 Html.span [
                     prop.role.status

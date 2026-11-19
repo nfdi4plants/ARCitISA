@@ -7,6 +7,10 @@ open Swate.Components.Composite.TextEditor.Types
 type MarkdownSurface =
     abstract getState: unit -> TextEditState
     abstract apply: edit: TextEdit -> bool
+    /// Takes back the last change. False when there is nothing to undo.
+    abstract undo: unit -> bool
+    /// Applies the last undone change again. False when there is nothing to redo.
+    abstract redo: unit -> bool
     abstract focus: unit -> unit
 
 module MarkdownSurface =
@@ -25,6 +29,16 @@ module MarkdownSurface =
             member _.apply edit =
                 match handleRef.current with
                 | Some handle -> handle.applyEdit edit
+                | None -> false
+
+            member _.undo() =
+                match handleRef.current with
+                | Some handle -> handle.undo ()
+                | None -> false
+
+            member _.redo() =
+                match handleRef.current with
+                | Some handle -> handle.redo ()
                 | None -> false
 
             member _.focus() =

@@ -26,6 +26,18 @@ let private staleTempAgeMs = 10.0 * 60.0 * 1000.0
 /// that a failed save could not remove stays until the next run.
 let private cleanedTempFolders = System.Collections.Generic.HashSet<string>()
 
+/// The error of a save that Main refuses because the editor opens the file read-only. The save refuses these
+/// files itself and does not rely on the renderer, and overwrite does not skip them.
+let readOnlyErrorMessage (reason: TextReadOnlyReason) : string =
+    match reason with
+    | TextReadOnlyReason.NotUtf8 -> "This file is read-only because it is not valid UTF-8."
+    | TextReadOnlyReason.TooLargeToEdit -> "This file is larger than 5 MB and is read-only."
+    | TextReadOnlyReason.InvalidUtf16 -> "This file is read-only because it is not valid UTF-16."
+    | TextReadOnlyReason.ChangedWhileReading -> "This file changed while it was read for the save. Save again."
+    | TextReadOnlyReason.SymbolicLink -> "Only regular files can be saved."
+    | TextReadOnlyReason.OutsideArc -> "The file is outside the open ARC."
+    | TextReadOnlyReason.WriteProtected -> "This file is write-protected."
+
 /// Encodes the text the way the file was read. A leading U+FEFF in the content stays part of the text.
 let encodeTextContent (encoding: TextFileEncoding) (content: string) : Result<byte[], string> =
     match encoding with
@@ -51,7 +63,7 @@ let encodeTextContent (encoding: TextFileEncoding) (content: string) : Result<by
                 bufferSwap16 (bufferFromString content "utf16le")
             |]
         )
-    | TextFileEncoding.Windows1252 -> Error "This file is read-only because it is not valid UTF-8."
+    | TextFileEncoding.Windows1252 -> Error(readOnlyErrorMessage TextReadOnlyReason.NotUtf8)
 
 type private PublishResult =
     | Published
@@ -92,6 +104,44 @@ let private tryFindTargetChangeAsync (target: string) (baseline: Baseline) : JS.
             match tryGetNodeErrorCode error with
             | Some "ENOENT" -> return Some None
             | _ -> return raise error
+}
+
+/// An existing target as the save read it. Encoding is the one the editor would open the bytes with.
+type private EditableFile = {
+    Hash: string
+    Mode: int
+    Encoding: TextFileEncoding
+}
+
+/// Reads an existing target before a save and applies the rules the editor opens files with. Error holds why
+/// the save is refused: the reason the editor would open the file read-only, or bytes without text content.
+let private readEditableAsync (path: string) : JS.Promise<Result<EditableFile, string>> = promise {
+    let! before = statAsync path
+
+    if before.size > Main.ArcVaultHelper.maxTextEditBytes then
+        return Error(readOnlyErrorMessage TextReadOnlyReason.TooLargeToEdit)
+    else
+        // One byte more than the size shows a file that grew during the read.
+        let! buffer, total = Main.ArcVaultHelper.readFirstBytesAsync path (int before.size + 1)
+        let! after = statAsync path
+
+        let changed =
+            float total <> before.size
+            || after.size <> before.size
+            || after.mtimeMs <> before.mtimeMs
+
+        match Main.ArcVaultHelper.describeTextBytes buffer total changed with
+        | None -> return Error "This file holds binary data and cannot be saved as text."
+        | Some(_, info) ->
+            match info.readOnly with
+            | Some reason -> return Error(readOnlyErrorMessage reason)
+            | None ->
+                return
+                    Ok {
+                        Hash = info.contentHash
+                        Mode = before.mode
+                        Encoding = info.encoding
+                    }
 }
 
 let private tryOpenTempAsync (tempPath: string) (mode: int) : JS.Promise<FileHandle option> = promise {
@@ -255,21 +305,23 @@ let private saveToResolvedTargetAsync
     promise {
         let realParent = dirname realTarget
 
-        // Ok None is a new file. Ok (hash, mode) is the file as read. Error holds the hash of a conflict.
+        // Ok None is a new file. Ok (Some file) is the file as read. Error is a refusal that overwrite does not skip.
         let! existing = promise {
             if not existingFile then
                 return Ok None
             else
-                let! hash, stats, stable = readStableAsync realTarget
-
-                if not stable || (not request.overwrite && request.expectedHash <> Some hash) then
-                    return Error(Some hash)
-                else
-                    return Ok(Some(hash, stats.mode))
+                let! read = readEditableAsync realTarget
+                return read |> Result.map Some
         }
 
         match existing with
-        | Error currentHash -> return Ok(SaveTextFileOutcome.Conflict currentHash, parent)
+        | Error message -> return Error(exn message)
+        | Ok(Some file) when not request.overwrite && request.expectedHash <> Some file.Hash ->
+            return Ok(SaveTextFileOutcome.Conflict(Some file.Hash), parent)
+        // The same bytes with another encoding mean the renderer holds stale file info. Overwrite replaces the file
+        // on purpose, so the request's encoding wins there.
+        | Ok(Some file) when not request.overwrite && file.Encoding <> request.encoding ->
+            return Error(exn "The file's encoding changed since it was opened. Reload the file before saving.")
         | Ok existing ->
             match encodeTextContent request.encoding request.content with
             | Error message -> return Error(exn message)
@@ -279,13 +331,13 @@ let private saveToResolvedTargetAsync
 
                 let recheck =
                     match existing with
-                    | Some(hash, _) -> Some(ExistingFile hash)
+                    | Some file -> Some(ExistingFile file.Hash)
                     | None when not request.overwrite -> Some NewFile
                     | None -> None
 
                 let! published = promise {
                     try
-                        do! writeTempAsync handle bytes (existing |> Option.map snd)
+                        do! writeTempAsync handle bytes (existing |> Option.map (fun file -> file.Mode))
                         return! publishAsync realTarget tempPath recheck
                     with error ->
                         do! removeTempAsync tempPath
@@ -340,7 +392,7 @@ let saveTextFileAsync
                     match! checkTargetAsync arcRoot target with
                     | Error error -> return Error error
                     | Ok ParentMissing -> return Error(exn "The folder of this file no longer exists.")
-                    | Ok OutsideArc -> return Error(exn "The file is outside the open ARC.")
+                    | Ok OutsideArc -> return Error(exn (readOnlyErrorMessage TextReadOnlyReason.OutsideArc))
                     | Ok SymbolicLink
                     | Ok NotRegularFile -> return Error(exn "Only regular files can be saved.")
                     | Ok(Missing _) when request.expectedHash.IsSome && not request.overwrite ->
@@ -348,7 +400,7 @@ let saveTextFileAsync
                     | Ok(Missing realParent) ->
                         return! saveToResolvedTargetAsync request parent (join [| realParent; basename target |]) false
                     | Ok(RegularFile(stats, _)) when isWriteProtected stats ->
-                        return Error(exn "This file is write-protected.")
+                        return Error(exn (readOnlyErrorMessage TextReadOnlyReason.WriteProtected))
                     | Ok(RegularFile(_, realParent)) ->
                         return! saveToResolvedTargetAsync request parent (join [| realParent; basename target |]) true
         with error ->

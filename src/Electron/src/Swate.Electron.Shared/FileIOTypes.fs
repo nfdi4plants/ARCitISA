@@ -101,7 +101,8 @@ type TextDocumentInfo = {|
 
 /// expectedHash is the contentHash the renderer loaded, None when it expects the file not to exist. A missing file is created
 /// when expectedHash is None or overwrite is set. An existing file is replaced when overwrite is set or the hash matches.
-/// overwrite skips the hash comparison.
+/// overwrite skips the hash comparison. It does not skip the read-only rules: Main refuses an existing file that the
+/// editor would open read-only, whatever the renderer sends.
 type SaveTextFileRequest = {|
     path: string
     content: string
@@ -114,8 +115,8 @@ type SaveTextFileRequest = {|
 type SaveTextFileOutcome =
     | Saved of TextDocumentInfo
     /// The save was refused because the file on disk is not the one the renderer loaded. This happens when the hash differs,
-    /// when expectedHash is None but the file exists, when expectedHash is set but the file is missing, when the file changed
-    /// while it was read, and when it was changed or replaced right before the rename. currentHash is None when the file is missing.
+    /// when expectedHash is None but the file exists, when expectedHash is set but the file is missing, and when it was changed
+    /// or replaced right before the rename. currentHash is None when the file is missing.
     | Conflict of currentHash: string option
 
 type RenamePathRequest = {

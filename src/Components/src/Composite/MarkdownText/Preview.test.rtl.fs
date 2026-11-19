@@ -4,7 +4,7 @@ open Fable.Core
 open Browser.Types
 open Vitest
 open Swate.Components.Composite.MarkdownText
-open Swate.Components.Composite.MarkdownText.Links
+open Swate.Components.Composite.MarkdownText.Links.Types
 
 type private FakeContext() =
     member val OpenedArcPaths = ResizeArray<string>()

@@ -95,15 +95,46 @@ type TransactionSpec
     member val annotations: Annotation[] option = jsNative with get, set
     member val userEvent: string option = jsNative with get, set
 
+/// A document range the view has drawn.
+type VisibleRange =
+    abstract from: int
+    abstract ``to``: int
+
 [<AllowNullLiteral>]
 type EditorView =
     abstract state: EditorState
     abstract dom: HTMLElement
     abstract contentDOM: HTMLElement
+    /// The drawn ranges of the document, in order. Folded parts and lines outside the viewport are left out.
+    abstract visibleRanges: VisibleRange[]
     abstract dispatch: TransactionSpec -> unit
     abstract setState: EditorState -> unit
     abstract focus: unit -> unit
     abstract destroy: unit -> unit
+
+/// A decoration placed on a document range, see Decoration.range.
+type DecorationRange = interface end
+
+/// An immutable set of decorations.
+type DecorationSet = interface end
+
+type Decoration =
+    /// The decoration on from..to. A mark needs from < to, an empty range throws a RangeError.
+    abstract range: from: int * ``to``: int -> DecorationRange
+
+/// The spec of a mark decoration. Compiles to a plain object, unset fields stay out.
+[<Global>]
+type MarkDecorationSpec [<ParamObject; Emit("$0")>] (?attributes: obj) =
+    member val attributes: obj option = jsNative with get, set
+
+type DecorationStatic =
+    /// Wraps the text of its range in an element with the attributes of the spec.
+    abstract mark: spec: MarkDecorationSpec -> Decoration
+    /// With sort true the ranges may come in any order.
+    abstract set: ranges: DecorationRange[] * sort: bool -> DecorationSet
+
+[<Import("Decoration", "@codemirror/view")>]
+let DecorationApi: DecorationStatic = jsNative
 
 [<AllowNullLiteral>]
 type ViewUpdate =
@@ -126,6 +157,8 @@ type EditorViewStatic =
     abstract updateListener: Facet<ViewUpdate -> unit>
     abstract contentAttributes: Facet<obj>
     abstract editable: Facet<bool>
+    /// The view calls the function after each update and draws the decorations it returns.
+    abstract decorations: Facet<EditorView -> DecorationSet>
 
 type KeyBinding = {|
     key: string
@@ -165,6 +198,22 @@ let indentWithTab: CommandBinding = jsNative
 /// Annotation that keeps the history from joining a transaction with its neighbors. Values are "before", "after" or "full".
 [<Import("isolateHistory", "@codemirror/commands")>]
 let isolateHistory: AnnotationType<string> = jsNative
+
+/// Undoes one history event of the view. False when there is none or the state is read-only.
+[<Import("undo", "@codemirror/commands")>]
+let undo (view: EditorView) : bool = jsNative
+
+/// Redoes one undone history event of the view. False when there is none or the state is read-only.
+[<Import("redo", "@codemirror/commands")>]
+let redo (view: EditorView) : bool = jsNative
+
+/// The number of history events undo can take back. 0 without the history of basicSetup.
+[<Import("undoDepth", "@codemirror/commands")>]
+let undoDepth (state: EditorState) : int = jsNative
+
+/// The number of undone history events redo can apply again.
+[<Import("redoDepth", "@codemirror/commands")>]
+let redoDepth (state: EditorState) : int = jsNative
 
 // Languages and highlighting
 

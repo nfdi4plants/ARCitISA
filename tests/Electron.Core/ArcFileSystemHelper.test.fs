@@ -17,21 +17,8 @@ let private newGuidN () = Guid.NewGuid().ToString("N")
 [<Emit("Object.assign(new Error($0), { code: $1 })")>]
 let private nodeError (message: string) (code: string) : exn = jsNative
 
-type private ISpawnSyncResult =
-    abstract error: exn option
-    abstract status: int
-
-[<Import("spawnSync", "node:child_process")>]
-let private spawnSync (command: string, args: string[]) : ISpawnSyncResult = jsNative
-
 [<Import("symlink", "fs/promises")>]
 let private symlinkAsync (target: string, path: string) : JS.Promise<unit> = jsNative
-
-let private hasMkfifo () =
-    (spawnSync ("mkfifo", [| "--help" |])).error.IsNone
-
-let private makeFifo (path: string) =
-    (spawnSync ("mkfifo", [| path |])).status
 
 /// File modes and special files behave differently on Windows, and root ignores file modes.
 let private skipOnWindowsOrRoot () =
@@ -73,8 +60,13 @@ let private renameItemOrFail arcPath request = promise {
     | Ok() -> return ()
 }
 
+/// The create without the folders that a failed create leaves behind.
+let private createItem arcPath request =
+    ArcFileSystemHelper.createFileSystemItemOnDisk arcPath request
+    |> Promise.map (Result.mapError fst)
+
 let private createItemOrFail arcPath request = promise {
-    match! ArcFileSystemHelper.createFileSystemItemOnDisk arcPath request with
+    match! createItem arcPath request with
     | Error error -> return failwith error.Message
     | Ok createdPath -> return createdPath
 }
@@ -331,9 +323,7 @@ Vitest.describe (
             fun () ->
                 withAssayArc (fun arcPath -> promise {
                     match!
-                        ArcFileSystemHelper.createFileSystemItemOnDisk
-                            arcPath
-                            (createItemRequest "assays/AssayA" "attachments" FileSystemItemKind.Folder)
+                        createItem arcPath (createItemRequest "assays/AssayA" "attachments" FileSystemItemKind.Folder)
                     with
                     | Error error -> failwith error.Message
                     | Ok createdPath ->
@@ -344,6 +334,137 @@ Vitest.describe (
 
                         Vitest.expect(isDirectory).toBe (true)
                 })
+        )
+
+        Vitest.test (
+            "creates the missing folders of a nested name and reuses the folders that exist",
+            fun () ->
+                withAssayArc (fun arcPath -> promise {
+                    let! guidePath =
+                        createItemOrFail arcPath (createItemRequest "" "docs/guide.md" FileSystemItemKind.File)
+
+                    Vitest.expect(guidePath).toBe "docs/guide.md"
+                    do! expectRelativePathExists arcPath "docs/guide.md" true
+
+                    let! setupPath =
+                        createItemOrFail arcPath (createItemRequest "" "docs/howto/setup.md" FileSystemItemKind.File)
+
+                    Vitest.expect(setupPath).toBe "docs/howto/setup.md"
+                    do! expectRelativePathExists arcPath "docs/howto/setup.md" true
+                    do! expectRelativePathExists arcPath "docs/guide.md" true
+
+                    let! folderPath =
+                        createItemOrFail
+                            arcPath
+                            (createItemRequest "assays/AssayA" "attachments/raw/day1" FileSystemItemKind.Folder)
+
+                    Vitest.expect(folderPath).toBe "assays/AssayA/attachments/raw/day1"
+
+                    let! isDirectory =
+                        ARCtrl.FileSystemHelper.directoryExistsAsync (absoluteArcPath arcPath folderPath)
+
+                    Vitest.expect(isDirectory).toBe true
+                })
+        )
+
+        Vitest.test (
+            "refuses a nested name that breaks a rule on the way and writes no folder of it",
+            fun () ->
+                withAssayArc (fun arcPath -> promise {
+                    // assays exists and is used as it is, but NewAssay would be a new entity folder.
+                    let! entityResult =
+                        createItem arcPath (createItemRequest "" "assays/NewAssay/notes.md" FileSystemItemKind.File)
+
+                    expectErrorContaining "only allowed inside safe ARC directories" entityResult
+                    do! expectRelativePathExists arcPath "assays/NewAssay" false
+
+                    // docs would be new and is allowed, .git below it is not, so docs is not written either.
+                    let! gitResult =
+                        createItem arcPath (createItemRequest "" "docs/.git/notes.md" FileSystemItemKind.File)
+
+                    expectErrorContaining "'.git' is not allowed" gitResult
+                    do! expectRelativePathExists arcPath "docs" false
+
+                    let! _ = createItemOrFail arcPath (createItemRequest "" "readme.txt" FileSystemItemKind.File)
+
+                    let! fileResult =
+                        createItem arcPath (createItemRequest "" "readme.txt/notes.md" FileSystemItemKind.File)
+
+                    expectErrorContaining "'readme.txt' is a file" fileResult
+
+                    let! existingResult =
+                        createItem arcPath (createItemRequest "" "readme.txt" FileSystemItemKind.File)
+
+                    expectErrorContaining "already exists" existingResult
+                })
+        )
+
+        Vitest.test (
+            "tryFindOtherCaseEntry finds an entry that differs only in case and prefers an exact match",
+            fun () ->
+                let find = ArcFileSystemHelper.tryFindOtherCaseEntry
+                Vitest.expect(find [| "data"; "docs" |] "Docs").toEqual (Some "docs")
+                Vitest.expect(find [| "docs"; "Docs" |] "Docs").toEqual None
+                Vitest.expect(find [| "data" |] "docs").toEqual None
+        )
+
+        Vitest.test (
+            "refuses a nested name that reaches an existing folder with another case",
+            fun () ->
+                withAssayArc (fun arcPath -> promise {
+                    let! _ = createItemOrFail arcPath (createItemRequest "" "docs" FileSystemItemKind.Folder)
+                    let! caseInsensitive = TestHelpers.pathExistsAsync (absoluteArcPath arcPath "DOCS")
+
+                    // A file system that compares case has no folder 'Docs' yet, so the create is valid there.
+                    if caseInsensitive then
+                        let! result = createItem arcPath (createItemRequest "" "Docs/guide.md" FileSystemItemKind.File)
+
+                        match result with
+                        | Error error ->
+                            Vitest.expect(error.Message).toBe
+                                "A folder named 'docs' already exists. Use that spelling."
+                        | Ok createdPath -> failwith $"Expected the create to be refused: {createdPath}"
+
+                        do! expectRelativePathExists arcPath "docs/guide.md" false
+                })
+        )
+
+        Vitest.test (
+            "keeps the folders a failed create made and names them in the error",
+            fun () ->
+                withAssayArc (fun arcPath -> promise {
+                    // No file system accepts a name of 300 characters, so the file write fails after the folders.
+                    let longName = String.replicate 300 "a"
+                    let name = $"kept/deeper/{longName}.md"
+
+                    match!
+                        ArcFileSystemHelper.createFileSystemItemOnDisk
+                            arcPath
+                            (createItemRequest "" name FileSystemItemKind.File)
+                    with
+                    | Ok createdPath -> failwith $"Expected the create to fail: {createdPath}"
+                    | Error(error, createdFolders) ->
+                        Vitest.expect(createdFolders).toEqual [ "kept"; "kept/deeper" ]
+
+                        Vitest.expect(error.Message).toContain
+                            "The folders created before the error are still there: 'kept', 'kept/deeper'."
+
+                    do! expectRelativePathExists arcPath "kept/deeper" true
+                })
+        )
+
+        Vitest.test (
+            "createdPathChain lists the paths from below the parent down to the target",
+            fun () ->
+                Vitest.expect(ArcFileSystemHelper.createdPathChain "" "docs/howto/setup.md").toEqual [
+                    "docs"
+                    "docs/howto"
+                    "docs/howto/setup.md"
+                ]
+
+                Vitest.expect(ArcFileSystemHelper.createdPathChain "assays/AssayA" "assays/AssayA/notes.md").toEqual [
+                    "assays/AssayA/notes.md"
+                ]
         )
 
         Vitest.test (
@@ -1569,11 +1690,11 @@ Vitest.describe (
 
         Vitest.test (
             "rejects a nested named pipe and writes nothing",
-            TestOptions(skip = (TestHelpers.nodePlatform () = "win32" || not (hasMkfifo ()))),
+            TestOptions(skip = (TestHelpers.nodePlatform () = "win32" || not (TestHelpers.hasMkfifo ()))),
             fun () ->
                 withAssayArc (fun arcPath -> promise {
                     let! sourcePath = createExternalRunFolderAsync arcPath
-                    Vitest.expect(makeFifo (join [| sourcePath; "raw"; "pipe" |])).toBe 0
+                    Vitest.expect(TestHelpers.makeFifo (join [| sourcePath; "raw"; "pipe" |])).toBe 0
                     do! createRelativeDirectoryAsync arcPath "assays/AssayA/dataset"
                     let! result = importWithoutCancellation arcPath "assays/AssayA/dataset" [| sourcePath |]
 
@@ -1891,9 +2012,7 @@ Vitest.describe (
             fun () ->
                 withAssayArc (fun arcPath -> promise {
                     match!
-                        ArcFileSystemHelper.createFileSystemItemOnDisk
-                            arcPath
-                            (createItemRequest "assays/AssayA" "dataset" FileSystemItemKind.Folder)
+                        createItem arcPath (createItemRequest "assays/AssayA" "dataset" FileSystemItemKind.Folder)
                     with
                     | Ok createdPath -> failwith $"Expected structural folder creation to be rejected: {createdPath}"
                     | Error error -> Vitest.expect(error.Message.Length).toBeGreaterThan (0)
@@ -1969,9 +2088,7 @@ Vitest.describe (
                     do! expectRelativePathExists arcPath assayReadmePath true
 
                     let! existingReadmeResult =
-                        ArcFileSystemHelper.createFileSystemItemOnDisk
-                            arcPath
-                            (createItemRequest "" "README.md" FileSystemItemKind.File)
+                        createItem arcPath (createItemRequest "" "README.md" FileSystemItemKind.File)
 
                     expectErrorContaining "already exists" existingReadmeResult
 
@@ -2125,25 +2242,19 @@ Vitest.describe (
             fun () ->
                 withAssayArc (fun arcPath -> promise {
                     let! entityFolderResult =
-                        ArcFileSystemHelper.createFileSystemItemOnDisk
-                            arcPath
-                            (createItemRequest "assays" "NewAssay" FileSystemItemKind.Folder)
+                        createItem arcPath (createItemRequest "assays" "NewAssay" FileSystemItemKind.Folder)
 
                     expectErrorContaining "only allowed inside safe ARC directories" entityFolderResult
                     do! expectRelativePathExists arcPath "assays/NewAssay" false
 
                     let! canonicalFileResult =
-                        ArcFileSystemHelper.createFileSystemItemOnDisk
-                            arcPath
-                            (createItemRequest "assays" "isa.assay.xlsx" FileSystemItemKind.File)
+                        createItem arcPath (createItemRequest "assays" "isa.assay.xlsx" FileSystemItemKind.File)
 
                     expectErrorContaining "is reserved for ARC metadata" canonicalFileResult
                     do! expectRelativePathExists arcPath "assays/isa.assay.xlsx" false
 
                     let! extensionlessFileResult =
-                        ArcFileSystemHelper.createFileSystemItemOnDisk
-                            arcPath
-                            (createItemRequest "assays" "Assay1" FileSystemItemKind.File)
+                        createItem arcPath (createItemRequest "assays" "Assay1" FileSystemItemKind.File)
 
                     expectErrorContaining "file extension" extensionlessFileResult
                     do! expectRelativePathExists arcPath "assays/Assay1" false
@@ -2278,9 +2389,7 @@ Vitest.describe (
 
                         // New files need an extension and then use the generic operations.
                         let! extensionlessResult =
-                            ArcFileSystemHelper.createFileSystemItemOnDisk
-                                arcPath
-                                (createItemRequest zone "Entity1" FileSystemItemKind.File)
+                            createItem arcPath (createItemRequest zone "Entity1" FileSystemItemKind.File)
 
                         expectErrorContaining "file extension" extensionlessResult
                         do! expectRelativePathExists arcPath $"{zone}/Entity1" false

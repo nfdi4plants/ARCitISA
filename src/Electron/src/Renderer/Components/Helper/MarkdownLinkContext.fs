@@ -2,7 +2,7 @@ module Renderer.Components.Helper.MarkdownLinkContext
 
 open Fable.Core
 open Feliz
-open Swate.Components.Composite.MarkdownText.Links
+open Swate.Components.Composite.MarkdownText.Links.Types
 open Swate.Electron.Shared
 open Swate.Electron.Shared.DTOs.MarkdownResolverDto
 open Renderer.Types
@@ -50,16 +50,15 @@ let targetStateOf (check: PathCheck) : LinkTargetState =
 /// What a link click needs from the app. The hook fills it from the contexts.
 type LinkOpenDeps = {
     CheckPath: string -> JS.Promise<Result<PathCheck[], exn>>
-    DocumentPath: unit -> string option
-    ConfirmLeave: unit -> JS.Promise<bool>
-    SetSelection: string -> unit
-    OpenView: string -> JS.Promise<Result<PageState, string>>
-    SetPage: PageState -> unit
+    /// Opens a file target, after the leave guard.
+    Navigation: FileNavigation.FileNavigationDeps
+    /// Shows the folder in the File Explorer and focuses its row. The page and the selection stay.
     RevealFolder: string -> unit
     OnError: string -> unit
 }
 
-/// Checks the target of a link and acts on it. A file that is not the open document asks the leave guard first.
+/// Checks the target of a link and acts on it. A file opens like a click in the File Explorer, so a file that is not
+/// the open document asks the leave guard first.
 let openArcPathWith (deps: LinkOpenDeps) (path: string) : JS.Promise<unit> = promise {
     let! result = deps.CheckPath path |> Promise.catch (fun e -> Error e)
 
@@ -67,22 +66,8 @@ let openArcPathWith (deps: LinkOpenDeps) (path: string) : JS.Promise<unit> = pro
     | Ok [| check |] ->
         match linkActionOf path check with
         | OpenFile p ->
-            let isOpenDocument =
-                deps.DocumentPath() |> Option.exists (TextDocumentHelper.isSameDocumentPath p)
-
-            let! canLeave =
-                if isOpenDocument then
-                    Promise.lift true
-                else
-                    deps.ConfirmLeave()
-
-            if canLeave then
-                deps.SetSelection p
-                let! opened = deps.OpenView p
-
-                match opened with
-                | Ok state -> deps.SetPage state
-                | Error message -> deps.SetPage(PageState.ErrorPage $"Could not open '{p}': {message}")
+            let! _ = FileNavigation.openFileWith deps.Navigation p false
+            ()
         | RevealFolder p -> deps.RevealFolder p
         | Fail message -> deps.OnError message
     | Ok _ -> deps.OnError "The link target could not be checked."
@@ -102,25 +87,22 @@ let checkTargets (paths: string[]) : JS.Promise<LinkTargetState[]> = promise {
 [<Hook>]
 let useMarkdownLinkContext (baseFolder: string) (onLinkError: string -> unit) : IMarkdownLinkContext option =
     let arcRoot = Renderer.Context.AppStateContext.useAppStateCtx ()
-    let fileState = Renderer.Context.FileStateContext.useFileStateCtx ()
-    let pageState = Renderer.Context.PageStateContext.usePageStateCtx ()
-    let leaveGuard = Renderer.Context.LeaveGuardContext.useLeaveGuardCtx ()
+    let navigation = FileNavigation.useFileNavigationDeps ()
 
     let expansion = Renderer.Context.FileTreeExpansionContext.useFileTreeExpansionCtx ()
+
+    let sidebarNavigation =
+        Renderer.Context.LeftSidebarNavigationContext.useLeftSidebarNavigationCtx ()
 
     let assetBase, setAssetBase = React.useState (None: string option)
     let hasArc = arcRoot.IsSome
 
     // The callbacks of the context read these refs, so the context changes only with the memo deps.
-    let fileStateRef = React.useRef fileState
-    let pageStateRef = React.useRef pageState
-    let leaveGuardRef = React.useRef leaveGuard
     let expansionRef = React.useRef expansion
+    let sidebarNavigationRef = React.useRef sidebarNavigation
     let onLinkErrorRef = React.useRef onLinkError
-    fileStateRef.current <- fileState
-    pageStateRef.current <- pageState
-    leaveGuardRef.current <- leaveGuard
     expansionRef.current <- expansion
+    sidebarNavigationRef.current <- sidebarNavigation
     onLinkErrorRef.current <- onLinkError
 
     // The latest base URL. A context built with an older one belongs to an ARC that is no longer open.
@@ -155,12 +137,12 @@ let useMarkdownLinkContext (baseFolder: string) (onLinkError: string -> unit) : 
     let openArcPath (path: string) =
         let deps = {
             CheckPath = fun p -> Api.ipcMarkdownResolverApi.checkPaths [| p |]
-            DocumentPath = fun () -> leaveGuardRef.current.documentPath ()
-            ConfirmLeave = fun () -> leaveGuardRef.current.confirmLeave ()
-            SetSelection = fun p -> fileStateRef.current.setSelection (ArcSelection.forTreePath (Some p))
-            OpenView = ArcViewHelper.openView
-            SetPage = fun state -> pageStateRef.current.setState (Some state)
-            RevealFolder = fun p -> expansionRef.current.revealPaths [ p ]
+            Navigation = navigation
+            // The folder opens in the File Explorer and its row takes the focus, so the click shows where it is.
+            RevealFolder =
+                fun p ->
+                    sidebarNavigationRef.current.showPage LeftSidebarPage.FileExplorer
+                    expansionRef.current.revealAndFocus p
             OnError = fun message -> onLinkErrorRef.current message
         }
 

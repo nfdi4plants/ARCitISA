@@ -961,11 +961,21 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
                         (fun vault -> promise {
                             let! created = ArcFileSystemHelper.createFileSystemItemOnDisk vault.path.Value request
 
+                            // A name such as docs/guide.md can add folders too, which changes the listing of each
+                            // folder on the way.
                             match created with
-                            | Ok targetPath -> do! reconcileParentsOfRelativePaths vault [ targetPath ]
-                            | Error _ -> ()
+                            | Ok targetPath ->
+                                do!
+                                    reconcileParentsOfRelativePaths
+                                        vault
+                                        (ArcFileSystemHelper.createdPathChain request.parentPath targetPath)
 
-                            return created
+                                return Ok targetPath
+                            | Error(error, createdFolders) ->
+                                // A failed create keeps the folders it made. The tree shows them, and the error
+                                // names them.
+                                do! reconcileParentsOfRelativePaths vault createdFolders
+                                return Error error
                         })
             with e ->
                 return Error e

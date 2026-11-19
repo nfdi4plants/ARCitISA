@@ -15,18 +15,22 @@ module private MarkdownToolbarSampleHelpers =
     /// Built once, so the editor keeps its keymap. The read-only sample shows no messages and runs no key.
     let readOnlyKeyBindings = MarkdownCommands.keyBindingsWith ignore ignore
 
+    let noHistory: TextEditorHistory = {| canUndo = false; canRedo = false |}
+
 open MarkdownToolbarSampleHelpers
 
 [<Erase; Mangle(false)>]
 type internal MarkdownToolbarSample =
 
-    /// The toolbar over a Markdown editor. The keys of the toolbar commands work in the editor too.
+    /// The toolbar over a Markdown editor. The keys of the toolbar commands work in the editor too, and Undo and Redo
+    /// follow the editor's history.
     [<ReactComponent>]
     static member Editor() =
         let handleRef = React.useRef<TextEditorHandle option> None
         let surface = MarkdownSurface.ofTextEditor handleRef
         let message, setMessage = React.useState (None: string option)
         let referenceOpen, setReferenceOpen = React.useState false
+        let history, setHistory = React.useState noHistory
 
         let keyBindings =
             React.useMemo (
@@ -39,6 +43,7 @@ type internal MarkdownToolbarSample =
             prop.children [
                 MarkdownToolbar.MarkdownToolbar(
                     surface,
+                    history,
                     ?message = message,
                     setMessage = setMessage,
                     isOntologyReferenceOpen = referenceOpen,
@@ -53,6 +58,7 @@ type internal MarkdownToolbarSample =
                             fileName = "toolbar.md",
                             keyBindings = keyBindings,
                             onChange = (fun () -> setMessage None),
+                            onHistoryChange = setHistory,
                             handleRef = handleRef
                         )
                     ]
@@ -68,6 +74,7 @@ type internal MarkdownToolbarSample =
         let surface = MarkdownSurface.ofTextEditor handleRef
         let message, setMessage = React.useState (None: string option)
         let referenceOpen, setReferenceOpen = React.useState false
+        let history, setHistory = React.useState noHistory
 
         let keyBindings =
             React.useMemo (
@@ -98,6 +105,7 @@ type internal MarkdownToolbarSample =
             prop.children [
                 MarkdownToolbar.MarkdownToolbar(
                     surface,
+                    history,
                     ?message = message,
                     setMessage = setMessage,
                     isOntologyReferenceOpen = referenceOpen,
@@ -115,6 +123,7 @@ type internal MarkdownToolbarSample =
                             fileName = "toolbar.md",
                             keyBindings = keyBindings,
                             onChange = (fun () -> setMessage None),
+                            onHistoryChange = setHistory,
                             handleRef = handleRef
                         )
                     ]
@@ -127,12 +136,14 @@ type internal MarkdownToolbarSample =
     static member ReadOnly() =
         let handleRef = React.useRef<TextEditorHandle option> None
         let surface = MarkdownSurface.ofTextEditor handleRef
+        let history, setHistory = React.useState noHistory
 
         Html.div [
             prop.className "swt:flex swt:flex-col swt:gap-2 swt:p-4"
             prop.children [
                 MarkdownToolbar.MarkdownToolbar(
                     surface,
+                    history,
                     disabled = true,
                     disabledReason = "This file is write-protected."
                 )
@@ -145,6 +156,7 @@ type internal MarkdownToolbarSample =
                             fileName = "toolbar.md",
                             readOnly = true,
                             keyBindings = readOnlyKeyBindings,
+                            onHistoryChange = setHistory,
                             handleRef = handleRef
                         )
                     ]

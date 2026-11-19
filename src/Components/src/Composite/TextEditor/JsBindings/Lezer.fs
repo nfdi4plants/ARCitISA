@@ -28,6 +28,11 @@ type Tree =
 type Parser =
     abstract parse: string -> Tree
 
+/// The syntax tree of the state's language as far as it is parsed, at least the viewport. Without a language the
+/// tree is empty.
+[<Import("syntaxTree", "@codemirror/language")>]
+let syntaxTree (state: EditorState) : Tree = jsNative
+
 /// The parser that @codemirror/lang-json uses, so its node names match the editor's tree.
 [<Import("parser", "@lezer/json")>]
 let jsonParser: Parser = jsNative

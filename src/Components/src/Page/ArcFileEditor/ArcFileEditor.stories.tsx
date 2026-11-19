@@ -40,8 +40,8 @@ export const IntegratedNavbar: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
 
-    const navbar = canvas.getByRole('navigation', { name: 'arc navigation' });
-    expect(navbar).toBeInTheDocument();
+    const toolbar = canvas.getByRole('toolbar', { name: 'ARC file' });
+    expect(toolbar).toBeInTheDocument();
 
     expect(getWidgetButton(canvas, 'Add Building Block')).toBeEnabled();
     expect(getWidgetButton(canvas, 'Add Template')).toBeEnabled();

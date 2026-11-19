@@ -4,7 +4,7 @@ open Fable.Core
 open Feliz
 
 open Swate.Components.Composite.MarkdownText
-open Swate.Components.Composite.MarkdownText.Links
+open Swate.Components.Composite.MarkdownText.Links.Types
 
 module private MarkdownPreviewSampleHelpers =
 

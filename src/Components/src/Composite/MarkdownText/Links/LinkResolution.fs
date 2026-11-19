@@ -3,6 +3,7 @@ module Swate.Components.Composite.MarkdownText.Links.LinkResolution
 
 open System
 open System.Text.RegularExpressions
+open Swate.Components.Composite.MarkdownText.Links.Types
 
 let private schemeRegex = Regex(@"^[A-Za-z][A-Za-z0-9+.-]*:")
 

@@ -385,6 +385,52 @@ Vitest.describe (
         )
 
         Vitest.test (
+            "accepts as many paths as the link lint sends at most",
+            fun () ->
+                withDirectory (fun dir -> promise {
+                    let limit =
+                        Swate.Components.Composite.MarkdownText.Links.LinkDiagnostics.maxCheckedPaths
+
+                    let! atLimit = (serviceFor dir).CheckPaths(Array.create limit "a.md")
+                    let! aboveLimit = (serviceFor dir).CheckPaths(Array.create (limit + 1) "a.md")
+                    Vitest.expect(atLimit.IsOk).toBe true
+                    Vitest.expect(aboveLimit.IsError).toBe true
+                })
+        )
+
+        Vitest.test (
+            "probes only small regular files for an LFS pointer",
+            fun () ->
+                Vitest.expect(AssetPolicy.shouldProbeForLfsPointer true 100.0).toBe true
+                Vitest.expect(AssetPolicy.shouldProbeForLfsPointer true 1024.0).toBe false
+                // A FIFO, socket or device is not a regular file, whatever size it reports.
+                Vitest.expect(AssetPolicy.shouldProbeForLfsPointer false 0.0).toBe false
+        )
+
+        Vitest.test (
+            "reports a named pipe as unreadable without opening it",
+            TestOptions(skip = (isWin32 () || not (TestHelpers.hasMkfifo ()))),
+            fun () ->
+                withDirectory (fun dir -> promise {
+                    Vitest.expect(TestHelpers.makeFifo (join [| dir; "pipe" |])).toBe 0
+
+                    let! result = (serviceFor dir).CheckPaths [| "pipe" |]
+
+                    match result with
+                    | Ok checks ->
+                        Vitest
+                            .expect(
+                                (checks = [|
+                                    PathCheck.Unreadable "This is not a regular file or a folder."
+                                |])
+                            )
+                            .toBe
+                            true
+                    | Error error -> failwith error.Message
+                })
+        )
+
+        Vitest.test (
             "recognizes a Git LFS pointer file",
             fun () ->
                 withDirectory (fun dir -> promise {

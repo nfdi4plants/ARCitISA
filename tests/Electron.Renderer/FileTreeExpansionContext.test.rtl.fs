@@ -1122,6 +1122,50 @@ Vitest.describe (
         )
 
         Vitest.test (
+            "every focus request gets a new token, also after the last one was completed",
+            fun () -> promise {
+                let ctx = ref None
+                let store = storeWithNestedFile ()
+                let view = Probe(fun value -> ctx.Value <- Some value)
+
+                mount store (apiWith (newCalls ()) unusedLoad) view |> ignore
+
+                do! RTL.act (fun () -> promise { ctx.Value.Value.revealAndFocus "data" })
+                let first = ctx.Value.Value.focusRequest.Value
+                do! RTL.act (fun () -> promise { ctx.Value.Value.completeFocusRequest first })
+                Vitest.expect(ctx.Value.Value.focusRequest).toEqual None
+
+                do! RTL.act (fun () -> promise { ctx.Value.Value.revealAndFocus "data/sub" })
+                let second = ctx.Value.Value.focusRequest.Value
+
+                Vitest.expect(second.ItemId).toBe "data/sub"
+                Vitest.expect(second.Token > first.Token).toBe true
+            }
+        )
+
+        Vitest.test (
+            "a focus request ends when a folder above its row fails to load",
+            fun () -> promise {
+                let calls = newCalls ()
+                let ctx = ref None
+                let store = newStore ()
+                let view = Probe(fun value -> ctx.Value <- Some value)
+                let pending, fail = deferred ()
+                let load (_: string) = pending
+
+                mount store (apiWith calls load) view |> ignore
+
+                do! RTL.act (fun () -> promise { ctx.Value.Value.revealAndFocus "data/sub" })
+                do! waitFor (fun () -> calls.Loads.Count = 1)
+                // The load of "data" still runs, so the request waits for its row.
+                Vitest.expect(ctx.Value.Value.focusRequest.IsSome).toBe true
+
+                do! RTL.act (fun () -> promise { fail (Error(exn "no access")) })
+                do! waitFor (fun () -> ctx.Value.Value.focusRequest.IsNone)
+            }
+        )
+
+        Vitest.test (
             "a selection change keeps a create or import reveal that waits for the tree push",
             fun () -> promise {
                 let ctx = ref None
@@ -1429,6 +1473,67 @@ Vitest.describe (
                 do! Promise.sleep 30
 
                 Vitest.expect(ctx.Value.Value.expandedIds.Contains "data").toBe true
+            }
+        )
+)
+
+Vitest.describe (
+    "FileTreeExpansionContext revealAndFocus",
+    fun () ->
+        Vitest.test (
+            "opens a folder and the folders above it and asks the tree to focus its row",
+            fun () -> promise {
+                let ctx = ref None
+                let store = storeWithNestedFile ()
+                let view = Probe(fun value -> ctx.Value <- Some value)
+
+                mount store (apiWith (newCalls ()) unusedLoad) view |> ignore
+
+                do! RTL.act (fun () -> promise { ctx.Value.Value.revealAndFocus "data/sub/" })
+
+                do!
+                    waitFor (fun () ->
+                        ctx.Value.Value.expandedIds.Contains "data"
+                        && ctx.Value.Value.expandedIds.Contains "data/sub"
+                    )
+
+                Vitest.expect(ctx.Value.Value.focusRequest).toEqual (Some { ItemId = "data/sub"; Token = 1 })
+            }
+        )
+
+        Vitest.test (
+            "a second request for the same folder gets a new token, so the tree focuses the row again",
+            fun () -> promise {
+                let ctx = ref None
+                let view = Probe(fun value -> ctx.Value <- Some value)
+
+                mount (storeWithNestedFile ()) (apiWith (newCalls ()) unusedLoad) view |> ignore
+
+                do! RTL.act (fun () -> promise { ctx.Value.Value.revealAndFocus "data/sub" })
+                do! RTL.act (fun () -> promise { ctx.Value.Value.revealAndFocus "data/sub" })
+
+                Vitest.expect(ctx.Value.Value.focusRequest).toEqual (Some { ItemId = "data/sub"; Token = 2 })
+            }
+        )
+
+        Vitest.test (
+            "a done request is dropped, while a done older request leaves the newer one",
+            fun () -> promise {
+                let ctx = ref None
+                let view = Probe(fun value -> ctx.Value <- Some value)
+
+                mount (storeWithNestedFile ()) (apiWith (newCalls ()) unusedLoad) view |> ignore
+
+                do! RTL.act (fun () -> promise { ctx.Value.Value.revealAndFocus "data" })
+                let first = ctx.Value.Value.focusRequest.Value
+                do! RTL.act (fun () -> promise { ctx.Value.Value.revealAndFocus "data/sub" })
+                let second = ctx.Value.Value.focusRequest.Value
+
+                do! RTL.act (fun () -> promise { ctx.Value.Value.completeFocusRequest first })
+                Vitest.expect(ctx.Value.Value.focusRequest).toEqual (Some second)
+
+                do! RTL.act (fun () -> promise { ctx.Value.Value.completeFocusRequest second })
+                Vitest.expect(ctx.Value.Value.focusRequest).toEqual None
             }
         )
 )

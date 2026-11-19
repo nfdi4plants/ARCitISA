@@ -513,7 +513,7 @@ Vitest.describe (
                 Vitest
                     .expect(
                         FileExplorerStateReconciliation.shouldResetPageStateAfterSelectionRemoval (
-                            Some RendererPageState.NotesDraftPage
+                            Some RendererPageState.NotesSearchPage
                         )
                     )
                     .toBe (false)

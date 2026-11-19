@@ -110,6 +110,11 @@ type GitLfsActionFailure = {
 
     static member ofMessage(message: string) = { Message = message; Details = None }
 
+/// Asks the file explorer to scroll the row of ItemId into view and focus it. The request waits until the row is
+/// part of the visible rows, for example while the folders above it load. A new Token repeats it for the same item.
+/// The explorer reports a request it carried out through onRevealDone, and the owner should drop it then.
+type FileExplorerRevealRequest = { ItemId: string; Token: int }
+
 // ============================================================================
 // FILE TREE OPERATIONS
 // ============================================================================

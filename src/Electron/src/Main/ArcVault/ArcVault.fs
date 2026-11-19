@@ -859,10 +859,12 @@ type ArcVaults() =
                         Dialog.ShowMessageBoxSync.Options(
                             "You have unsaved changes.",
                             ``type`` = Enums.Dialog.ShowMessageBoxSync.Options.Type.Warning,
-                            buttons = [| "Stay"; "Discard changes and reload" |],
+                            // A reload asks here, and so does a close that Main let through because the renderer's
+                            // unsaved flag did not arrive, so the words fit both.
+                            buttons = [| "Stay"; "Discard changes" |],
                             defaultId = 0,
                             cancelId = 0,
-                            detail = "Reloading discards the unsaved changes in the text editor.",
+                            detail = "Leaving discards the unsaved changes in the text editor.",
                             noLink = true
                         )
                     )
