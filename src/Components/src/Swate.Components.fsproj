@@ -233,6 +233,7 @@
     <Compile Include="Composite\Authentication\Helper.fs" />
     <Compile Include="Composite\Authentication\Helper.test.fs" />
     <Compile Include="Composite\Authentication\AccountManager.fs" />
+    <Compile Include="Composite\Authentication\AccountManager.test.rtl.fs" />
     <Compile Include="Composite\Authentication\Authentication.fs" />
     <Compile Include="Composite\ArcSelector\ArcSelector.fs" />
     <Compile Include="Composite\ArcVaultActions\ArcVaultActions.fs" />

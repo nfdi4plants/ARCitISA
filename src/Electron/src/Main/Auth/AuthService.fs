@@ -349,16 +349,6 @@ let signIn (request: AuthSignInRequest) : JS.Promise<AuthResult> = promise {
                         return toAuthResult (Ok authStateDto)
 }
 
-/// Sign out: remove active account from memory and disk, pick next or clear.
-let signOut () : unit =
-    match activeLocalSwateAccountId with
-    | Some id ->
-        SecureAuthStore.remove id
-        accounts <- accounts |> Map.remove id
-        reconcileActiveAccountInvariant ()
-        invalidateRevalidationWindow ()
-    | None -> ()
-
 /// Set a different account as active.
 let setActiveAccount (localSwateAccountId: string) : AuthStateDto =
     match accounts |> Map.tryFind localSwateAccountId with
@@ -370,13 +360,33 @@ let setActiveAccount (localSwateAccountId: string) : AuthStateDto =
 
     getState ()
 
-/// Remove a specific account (by local key). If it was active, switch to next or clear.
-let removeAccount (localSwateAccountId: string) : unit =
+/// The outcome of deleting a token on its DataHUB. A token the DataHUB no longer accepts can't be used
+/// anywhere, so it counts as deleted.
+let tokenDeletionOutcome (result: Result<unit, AuthFailure>) : TokenDeletionOutcome =
+    match result with
+    | Ok()
+    | Error { Kind = AuthFailureKind.Unauthorized } -> TokenDeletionOutcome.Deleted
+    | Error failure -> TokenDeletionOutcome.Failed failure.Message
+
+/// Remove a specific account (by local key). If it was active, switch to next or clear. Returns the DataHUB
+/// and the token of the removed account, so the token can still be deleted there.
+let removeAccount (localSwateAccountId: string) : (string * string) option =
+    let removed =
+        accounts
+        |> Map.tryFind localSwateAccountId
+        |> Option.map (fun accountState -> accountState.Summary.User.TargetDataHub, accountState.Token)
+
     SecureAuthStore.remove localSwateAccountId
     accounts <- accounts |> Map.remove localSwateAccountId
 
     reconcileActiveAccountInvariant ()
     invalidateRevalidationWindow ()
+    removed
+
+/// Delete a token on its DataHUB.
+let deleteToken (dataHub: string) (token: string) : JS.Promise<TokenDeletionOutcome> =
+    GitLabApi.revokeCurrentPersonalAccessToken dataHub token
+    |> Promise.map tokenDeletionOutcome
 
 /// Rotate PAT for a specific account and replace the stored token.
 let rotatePersonalAccessToken (localSwateAccountId: string) : JS.Promise<Result<AuthStateDto, AuthFailure>> = promise {

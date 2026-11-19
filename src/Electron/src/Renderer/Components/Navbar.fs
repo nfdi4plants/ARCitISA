@@ -145,14 +145,6 @@ module private Authentication =
             }
             |> Promise.start
 
-        let onLogout () =
-            promise {
-                match! Api.ipcAuthApi.signOut () with
-                | Ok _ -> ()
-                | Error ex -> errorModalCtx.enqueue (ErrorModalRequest.create (ex.Message, title = "Sign Out Error"))
-            }
-            |> Promise.start
-
         let onSwitchAccount (localSwateAccountId: string) =
             promise {
                 match! Api.ipcAuthApi.setActiveAccount localSwateAccountId with
@@ -168,9 +160,11 @@ module private Authentication =
             }
             |> Promise.start
 
-        let onRemoveAccount (localSwateAccountId: string) =
+        let onRemoveAccount (request: RemoveAccountRequest) =
             promise {
-                match! Api.ipcAuthApi.removeAccount localSwateAccountId with
+                match! Api.ipcAuthApi.removeAccount request with
+                | Ok(TokenDeletionOutcome.Failed reason) ->
+                    errorModalCtx.enqueue (ErrorModalRequest.create (reason, title = "Could not delete the token"))
                 | Ok _ -> ()
                 | Error ex ->
                     errorModalCtx.enqueue (ErrorModalRequest.create (ex.Message, title = "Error removing account"))
@@ -189,7 +183,6 @@ module private Authentication =
         Swate.Components.Composite.Authentication.Authentication.UserAvatar(
             authStateCtx,
             onSignIn,
-            onLogout,
             isLoading = isLoading,
             dropdownClassName = "swt:dropdown-bottom swt:dropdown-end swt:h-8",
             onRotateToken = onRotateToken,

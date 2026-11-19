@@ -19,6 +19,14 @@ type AuthFailureKind =
     | StorageUnavailable
     | Unknown
 
+/// What happened to the token on the DataHUB when its account was removed.
+[<RequireQualifiedAccess>]
+type TokenDeletionOutcome =
+    | Kept
+    | Deleted
+    /// The reason is a message for the user.
+    | Failed of reason: string
+
 /// Result returned by auth sign-in / revalidate operations.
 type AuthResult = {
     Success: bool

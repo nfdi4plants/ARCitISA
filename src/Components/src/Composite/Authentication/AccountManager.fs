@@ -14,9 +14,9 @@ type AccountManager =
             account: AccountSummary,
             isActive: bool,
             onRegenerateToken: AccountSummary -> unit,
+            ?askRemoval: AccountSummary -> bool -> unit,
             ?onRotateToken: string -> unit,
-            ?onSwitch: string -> unit,
-            ?onRemove: string -> unit
+            ?onSwitch: string -> unit
         ) =
 
         let isInvalid = account.TokenStatus = TokenStatus.Invalid
@@ -88,12 +88,13 @@ type AccountManager =
                                                 )
                                                 prop.onClick (fun e ->
                                                     e.stopPropagation ()
-                                                    onRegenerateToken account
 
-                                                    onRemove
-                                                    |> Option.iter (fun removeFn ->
-                                                        removeFn account.User.LocalSwateAccountId
-                                                    )
+                                                    // With a removal to ask about, GitLab opens after the answer.
+                                                    match askRemoval with
+                                                    | Some ask ->
+                                                        e.preventDefault ()
+                                                        ask account true
+                                                    | None -> onRegenerateToken account
                                                 )
                                                 prop.title
                                                     "Regenerate token with correct scopes. You will have to add the account again after regenerating."
@@ -147,16 +148,54 @@ type AccountManager =
                                 prop.onClick (fun _ -> switchFn account.User.LocalSwateAccountId)
                             ]
                         | _ -> ()
-                        match onRemove with
-                        | Some removeFn ->
+                        match askRemoval with
+                        | Some ask ->
                             Html.button [
                                 prop.testId $"RemoveAccountButton-{account.User.LocalSwateAccountId}"
                                 prop.className "swt:btn swt:btn-xs swt:btn-ghost swt:text-error"
                                 prop.title "Remove this account"
                                 prop.text "✕"
-                                prop.onClick (fun _ -> removeFn account.User.LocalSwateAccountId)
+                                prop.onClick (fun _ -> ask account false)
                             ]
                         | None -> ()
+                    ]
+                ]
+            ]
+        ]
+
+    /// Asks whether the token of a removed account is deleted on its DataHUB as well.
+    [<ReactComponent>]
+    static member private RemovalPrompt(account: AccountSummary, onAnswer: bool -> unit, onCancel: unit -> unit) =
+        Html.div [
+            prop.testId "RemoveAccountPrompt"
+            prop.className "swt:flex swt:flex-col swt:gap-2 swt:p-1.5"
+            prop.children [
+                Html.p [
+                    prop.className "swt:text-sm"
+                    prop.text
+                        $"Do you want to delete the token of {account.User.Name} on {account.User.TargetDataHub} as well?"
+                ]
+                Html.div [
+                    prop.className "swt:flex swt:flex-wrap swt:gap-1"
+                    prop.children [
+                        Html.button [
+                            prop.testId "RemoveAccountDeleteToken"
+                            prop.className "swt:btn swt:btn-sm swt:btn-error"
+                            prop.text "Delete token"
+                            prop.onClick (fun _ -> onAnswer true)
+                        ]
+                        Html.button [
+                            prop.testId "RemoveAccountKeepToken"
+                            prop.className "swt:btn swt:btn-sm"
+                            prop.text "Keep token"
+                            prop.onClick (fun _ -> onAnswer false)
+                        ]
+                        Html.button [
+                            prop.testId "RemoveAccountCancel"
+                            prop.className "swt:btn swt:btn-sm swt:btn-ghost"
+                            prop.text "Cancel"
+                            prop.onClick (fun _ -> onCancel ())
+                        ]
                     ]
                 ]
             ]
@@ -169,31 +208,62 @@ type AccountManager =
             onRegenerateToken: AccountSummary -> unit,
             ?onRotateToken: string -> unit,
             ?onSwitchAccount: string -> unit,
-            ?onRemoveAccount: string -> unit
+            ?onRemoveAccount: RemoveAccountRequest -> unit
         ) =
         let activeLocalSwateAccountId =
             accounts.ActiveAccount
             |> Option.map (fun account -> account.User.LocalSwateAccountId)
 
+        // The account waiting for the answer, and whether a new token is generated for it afterwards.
+        let pendingRemoval, setPendingRemoval =
+            React.useState (None: (AccountSummary * bool) option)
+
+        let askRemoval (account: AccountSummary) (regenerate: bool) =
+            setPendingRemoval (Some(account, regenerate))
+
+        let remove (account: AccountSummary) (regenerate: bool) (deleteTokenOnDataHub: bool) =
+            setPendingRemoval None
+
+            onRemoveAccount
+            |> Option.iter (fun removeFn ->
+                removeFn {
+                    LocalSwateAccountId = account.User.LocalSwateAccountId
+                    DeleteTokenOnDataHub = deleteTokenOnDataHub
+                }
+            )
+
+            if regenerate then
+                Browser.Dom.window.``open`` (
+                    Helper.GitLabUrls.prefillGitLabPATScopes account.User.TargetDataHub,
+                    "_blank"
+                )
+                |> ignore
+
+                onRegenerateToken account
+
         Html.div [
             prop.className "swt:flex swt:flex-col swt:gap-1 swt:mt-1 swt:pt-1 swt:border-t swt:border-base-content/10"
             prop.children [
-                if accounts.StoredAccounts.Length > 1 then
-                    Html.div [
-                        prop.className "swt:text-xs swt:text-base-content/60 swt:px-1"
-                        prop.textf "Accounts (%d)" accounts.StoredAccounts.Length
-                    ]
+                match pendingRemoval with
+                | Some(account, regenerate) ->
+                    AccountManager.RemovalPrompt(account, remove account regenerate, fun () -> setPendingRemoval None)
+                | None ->
+                    if accounts.StoredAccounts.Length > 1 then
+                        Html.div [
+                            prop.className "swt:text-xs swt:text-base-content/60 swt:px-1"
+                            prop.textf "Accounts (%d)" accounts.StoredAccounts.Length
+                        ]
 
-                for acct in accounts.StoredAccounts do
-                    let isActive = activeLocalSwateAccountId = Some acct.User.LocalSwateAccountId
+                    for acct in accounts.StoredAccounts do
+                        let isActive = activeLocalSwateAccountId = Some acct.User.LocalSwateAccountId
 
-                    AccountManager.AccountRow(
-                        acct,
-                        isActive,
-                        onRegenerateToken = onRegenerateToken,
-                        ?onRotateToken = onRotateToken,
-                        ?onSwitch = onSwitchAccount,
-                        ?onRemove = onRemoveAccount
-                    )
+                        AccountManager.AccountRow(
+                            acct,
+                            isActive,
+                            onRegenerateToken = onRegenerateToken,
+                            ?askRemoval = (onRemoveAccount |> Option.map (fun _ -> askRemoval)),
+                            ?onRotateToken = onRotateToken,
+                            ?onSwitch = onSwitchAccount
+                        )
             ]
         ]

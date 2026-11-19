@@ -5,6 +5,7 @@ open Main
 open Swate.Electron.Shared.IPCTypes
 open Swate.Electron.Shared.IPCTypes.MainToRendererIpc
 open Swate.Electron.Shared.AuthTypes
+open Swate.Components.Composite.Authentication.Types
 open Main.Auth
 
 let private broadcastAccountsUpdate () =
@@ -36,15 +37,6 @@ let api: IAuthApi = {
                 return Ok(AuthService.getState ())
             with _ ->
                 return Error(exn "Failed to retrieve auth state.")
-        }
-    signOut =
-        fun () -> promise {
-            try
-                AuthService.signOut ()
-                broadcastAccountsUpdate ()
-                return Ok()
-            with _ ->
-                return Error(exn "Sign-out failed due to an unexpected error.")
         }
     revalidate =
         fun () -> promise {
@@ -89,11 +81,17 @@ let api: IAuthApi = {
                 return Error(exn "Failed to switch active account.")
         }
     removeAccount =
-        fun (localSwateAccountId: string) -> promise {
+        fun (request: RemoveAccountRequest) -> promise {
             try
-                AuthService.removeAccount localSwateAccountId
+                // The account goes at once. Deleting the token waits for the DataHUB.
+                let removed = AuthService.removeAccount request.LocalSwateAccountId
                 broadcastAccountsUpdate ()
-                return Ok()
+
+                match removed with
+                | Some(dataHub, token) when request.DeleteTokenOnDataHub ->
+                    let! outcome = AuthService.deleteToken dataHub token
+                    return Ok outcome
+                | _ -> return Ok TokenDeletionOutcome.Kept
             with _ ->
                 return Error(exn "Failed to remove account.")
         }

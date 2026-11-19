@@ -241,15 +241,6 @@ type Authentication =
         ]
 
     [<ReactComponent>]
-    static member LogoutBtn(onLogout: unit -> unit) =
-        Html.button [
-            prop.testId "LogoutButton"
-            prop.className "swt:btn swt:btn-error swt:btn-outline swt:btn-sm swt:w-full"
-            prop.text "Logout"
-            prop.onClick (fun _ -> onLogout ())
-        ]
-
-    [<ReactComponent>]
     static member AddAnotherAccountBtn(onAddAccount: unit -> unit) =
         Html.button [
             prop.testId "AddAnotherAccountButton"
@@ -263,12 +254,11 @@ type Authentication =
         (
             accounts: AuthStateDto,
             onSignIn: SignInInformation -> unit,
-            onLogout: unit -> unit,
             ?isLoading: bool,
             ?dropdownClassName: string,
             ?onRotateToken: string -> unit,
             ?onSwitchAccount: string -> unit,
-            ?onRemoveAccount: string -> unit,
+            ?onRemoveAccount: RemoveAccountRequest -> unit,
             ?customDataHubUrls: string[]
         ) =
 
@@ -354,7 +344,6 @@ type Authentication =
                                         ?onSwitchAccount = onSwitchAccount,
                                         ?onRemoveAccount = onRemoveAccount
                                     )
-                                    Authentication.LogoutBtn onLogout
                                     Authentication.AddAnotherAccountBtn(fun () -> setShowAddAccount true)
                                 ]
                             ]
@@ -548,7 +537,7 @@ type Authentication =
                 }
                 |> Promise.start
 
-        let onLogout () = setAccounts AuthStateDto.Empty
+        let deletedTokens, setDeletedTokens = React.useState 0
 
         let onSwitchAccount (localSwateAccountId: string) =
             let nextActive =
@@ -564,7 +553,12 @@ type Authentication =
 
             setAccounts next
 
-        let onRemoveAccount (localSwateAccountId: string) =
+        let onRemoveAccount (request: RemoveAccountRequest) =
+            let localSwateAccountId = request.LocalSwateAccountId
+
+            if request.DeleteTokenOnDataHub then
+                setDeletedTokens (deletedTokens + 1)
+
             let filteredAccounts =
                 accounts.StoredAccounts
                 |> Array.filter (fun account -> account.User.LocalSwateAccountId <> localSwateAccountId)
@@ -625,10 +619,13 @@ type Authentication =
                     prop.testId "SignedInInfo"
                     prop.textf "Signed In: %b" (accounts.ActiveUser() |> Option.isSome)
                 ]
+                Html.p [
+                    prop.testId "DeletedTokensInfo"
+                    prop.textf "Deleted tokens: %i" deletedTokens
+                ]
                 Authentication.UserAvatar(
                     accounts,
                     onSignIn,
-                    onLogout,
                     isLoading = isLoading,
                     onSwitchAccount = onSwitchAccount,
                     onRemoveAccount = onRemoveAccount,

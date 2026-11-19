@@ -38,18 +38,16 @@ const expectSignedIn = async (canvas: ReturnType<typeof within>) => {
   }, { timeout: 4000 });
 };
 
-const expectLoggedOut = async (canvas: ReturnType<typeof within>) => {
+const expectDeletedTokens = async (canvas: ReturnType<typeof within>, count: number) => {
   await waitFor(async () => {
-    const signedInInfo = await canvas.findByTestId('SignedInInfo');
-    expect(signedInInfo).toHaveTextContent('Signed In: false');
-  }, { timeout: 4000 });
+    expect(await canvas.findByTestId('DeletedTokensInfo')).toHaveTextContent(`Deleted tokens: ${count}`);
+  });
 };
 
 const expectAuthenticatedActions = async (canvas: ReturnType<typeof within>) => {
   await openUserMenu(canvas);
 
-  const logoutButton = await canvas.findByTestId('LogoutButton');
-  expect(logoutButton).toBeInTheDocument();
+  expect(await canvas.findByTestId('RemoveAccountButton-acc-1')).toBeInTheDocument();
 
   const addAnotherButton = await canvas.findByTestId('AddAnotherAccountButton');
   expect(addAnotherButton).toBeInTheDocument();
@@ -218,27 +216,50 @@ export const AddAnotherAccountFlow: Story = {
 
     await userEvent.click(backButton);
 
-    const logoutButton = await canvas.findByTestId('LogoutButton');
-    expect(logoutButton).toBeInTheDocument();
+    expect(await canvas.findByTestId('AccountRow-acc-1')).toBeInTheDocument();
   },
 };
 
-export const LogoutFlow: Story = {
-  name: 'Logout flow',
+export const RemoveAndDeleteTokenFlow: Story = {
+  name: 'Remove an account and delete its token',
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
 
     await signInWithPat(canvas);
-
     await expectSignedIn(canvas);
 
     await openUserMenu(canvas);
-    const logoutButton = await canvas.findByTestId('LogoutButton');
-    expect(logoutButton).toBeInTheDocument();
+    await userEvent.click(await canvas.findByTestId('RemoveAccountButton-acc-2'));
 
-    await userEvent.click(logoutButton);
+    expect(await canvas.findByTestId('RemoveAccountPrompt')).toBeInTheDocument();
+    expect(canvas.queryByTestId('AccountRow-acc-2')).not.toBeInTheDocument();
 
-    await expectLoggedOut(canvas);
+    await userEvent.click(await canvas.findByTestId('RemoveAccountDeleteToken'));
+
+    await waitFor(() => {
+      expect(canvas.queryByTestId('RemoveAccountPrompt')).not.toBeInTheDocument();
+      expect(canvas.queryByTestId('AccountRow-acc-2')).not.toBeInTheDocument();
+      expect(canvas.getByTestId('AccountRow-acc-1')).toBeInTheDocument();
+    });
+    await expectDeletedTokens(canvas, 1);
+  },
+};
+
+export const CancelRemoveFlow: Story = {
+  name: 'Cancel removing an account',
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    await signInWithPat(canvas);
+    await expectSignedIn(canvas);
+
+    await openUserMenu(canvas);
+    await userEvent.click(await canvas.findByTestId('RemoveAccountButton-acc-2'));
+    await userEvent.click(await canvas.findByTestId('RemoveAccountCancel'));
+
+    expect(await canvas.findByTestId('AccountRow-acc-2')).toBeInTheDocument();
+    expect(canvas.queryByTestId('RemoveAccountPrompt')).not.toBeInTheDocument();
+    await expectDeletedTokens(canvas, 0);
   },
 };
 
@@ -274,10 +295,12 @@ export const MultiAccountRemoveFlow: Story = {
 
     const removeSecondAccountButton = await canvas.findByTestId('RemoveAccountButton-acc-2');
     await userEvent.click(removeSecondAccountButton);
+    await userEvent.click(await canvas.findByTestId('RemoveAccountKeepToken'));
 
     await waitFor(() => {
       expect(canvas.queryByTestId('AccountRow-acc-2')).not.toBeInTheDocument();
       expect(canvas.getByTestId('AccountRow-acc-1')).toBeInTheDocument();
     });
+    await expectDeletedTokens(canvas, 0);
   },
 };

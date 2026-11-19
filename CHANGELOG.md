@@ -20,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The sign-in remembers custom DataHUB addresses you signed in to and offers them next to the built-in ones. You can add or remove them in the Git defaults of the settings. (by @caroott)
 
+### 🔄 Changed
+
+- Removing an account or regenerating its token asks whether to delete the token on the DataHUB as well. The Logout button is gone, since removing the account does the same. (by @caroott)
+
 ## 3.3.0 - 2026-11-19
 
 ### ✨ Added

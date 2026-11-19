@@ -319,12 +319,12 @@ type IGitLabApi = {
 type IAuthApi = {
     signIn: AuthSignInRequest -> Fable.Core.JS.Promise<Result<AuthResult, exn>>
     getAuthState: unit -> Fable.Core.JS.Promise<Result<AuthStateDto, exn>>
-    signOut: unit -> Fable.Core.JS.Promise<Result<unit, exn>>
     revalidate: unit -> Fable.Core.JS.Promise<Result<AuthResult, exn>>
     listAccounts: unit -> Fable.Core.JS.Promise<Result<AccountSummary array, exn>>
     rotatePersonalAccessToken: string -> Fable.Core.JS.Promise<Result<AuthStateDto, exn>>
     setActiveAccount: string -> Fable.Core.JS.Promise<Result<AuthStateDto, exn>>
-    removeAccount: string -> Fable.Core.JS.Promise<Result<unit, exn>>
+    /// Removes the account in every case. The outcome says whether its token was deleted on the DataHUB.
+    removeAccount: RemoveAccountRequest -> Fable.Core.JS.Promise<Result<TokenDeletionOutcome, exn>>
 }
 
 /// One Way Bridge: Main -> Renderer
