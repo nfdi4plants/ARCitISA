@@ -10,23 +10,23 @@ Version control operations run in the Electron main process through the VersionC
 - Composition root: `src/Electron/src/Main/VersionControl/ProviderComposition.fs` builds the Git factory (credentials and commit identity from the DataHub accounts, see `DataHubStrategies.fs`) and the lakeFS factory, and `VersionControlRuntime.fs` holds the catalog, the binding store and the resolver. This folder is the only place that knows provider ids or provider types.
 - Session host: `src/Electron/src/Main/VersionControl/WorkspaceSessionHost.fs` keeps one open session per vault root, adopts unbound repositories on first open, persists the workspace binding, owns the registry of running operations for cancellation, and holds the per-session settings.
 - IPC handler: `src/Electron/src/Main/IPC/IVersionControlApi.fs` implements `IVersionControlApi` from `src/Electron/src/Swate.Electron.Shared/IPCTypes.fs` over the DTOs in `VersionControlTypes.fs`. `Mappings.fs` translates every library type to its DTO and validates paths, refs and revisions before a provider call.
-- Renderer client: `src/Electron/src/Renderer/VersionControlApiClient.fs` wraps the bridge, generates operation ids and maps `Result<'T, exn>` to `Result<'T, string>`.
+- Renderer calls: the renderer calls `Api.ipcVersionControlApi` (the `IVersionControlApi` bridge) directly. The renderer picks the operation ids itself (a new GUID per call), and the transport error stays an `exn`.
 - Renderer workflow: `src/Electron/src/Renderer/Context/GitWorkflow.fs` is the Elmish state machine behind the Git sidebar, wired in `GitStateContext.fs`. Feature code reaches it through `GitWorkflow.GitDependencies`.
 
 The DataHub specific pieces stay in ARCitISA: the GitLab API client (`Main/Auth/GitLabApi.fs`), the account store, and the Git LFS ruleset in `src/Shared/GitLfsRules.fs`.
 
 ## 2. Renderer API
 
-Every function of `Renderer.VersionControlApiClient` takes a request DTO that carries an `OperationId`. The renderer allocates the id with `VersionControlApiClient.newOperationId ()` before the call, so the cancel button knows the key before the main process has started the operation.
+Every operation call of `Api.ipcVersionControlApi` takes a request DTO that carries an `OperationId`. The upload right away calls and the dependency state calls are not operations and take no request. The renderer allocates the id (a new GUID) before the call, so the cancel button knows the key before the main process has started the operation.
 
 ```fsharp
-getSessionInfo: OperationRequestDto -> JS.Promise<Result<OperationResultDto<WorkspaceSessionInfoDto>, string>>
-cloneWorkspace: CloneWorkspaceRequestDto -> JS.Promise<Result<OperationResultDto<string>, string>>
-initializeWorkspace: InitializeWorkspaceRequestDto -> JS.Promise<Result<OperationResultDto<string>, string>>
-bindWorkspace: BindWorkspaceRequestDto -> JS.Promise<Result<OperationResultDto<WorkspaceSessionInfoDto>, string>>
-cancelOperation: OperationRequestDto -> JS.Promise<Result<bool, string>>
-checkDependencies: OperationRequestDto -> JS.Promise<Result<OperationResultDto<DependencyStatusDto[]>, string>>
-installDependency: InstallDependencyRequestDto -> JS.Promise<Result<OperationResultDto<DependencyStatusDto>, string>>
+getSessionInfo: OperationRequestDto -> JS.Promise<Result<OperationResultDto<WorkspaceSessionInfoDto>, exn>>
+cloneWorkspace: CloneWorkspaceRequestDto -> JS.Promise<Result<OperationResultDto<string>, exn>>
+initializeWorkspace: InitializeWorkspaceRequestDto -> JS.Promise<Result<OperationResultDto<string>, exn>>
+bindWorkspace: BindWorkspaceRequestDto -> JS.Promise<Result<OperationResultDto<WorkspaceSessionInfoDto>, exn>>
+cancelOperation: OperationRequestDto -> JS.Promise<Result<bool, exn>>
+checkDependencies: OperationRequestDto -> JS.Promise<Result<OperationResultDto<DependencyStatusDto[]>, exn>>
+installDependency: InstallDependencyRequestDto -> JS.Promise<Result<OperationResultDto<DependencyStatusDto>, exn>>
 getStatus, listRefs, createRef, preflightSwitchRef, switchRef
 createRevision, restorePaths
 openTextDiff, readTextDiffPage, replayTextDiffPage, expandTextDiff, readTextDiffLine, getTextDiffSourceInfo, closeTextDiff
@@ -39,11 +39,11 @@ getRepositoryWebUrl, clearStaleLock
 
 The main process sends events to the renderer (`MainToRendererIpc.IVersionControlRendererApi`): `versionControlOperationStarted` with the operation id the renderer sent as soon as the operation is registered, and `versionControlProgress` with float `Completed` and `Total` counters plus a phase code. A third event, `versionControlOutput`, carries a batch of raw output lines of an operation (section 11). Progress and output carry the id of their operation, and they go to the window that started it.
 
-Do not call `Api.ipcVersionControlApi` from feature code. Go through the client, or through `GitWorkflow.GitDependencies` when the sidebar state has to follow.
+Feature code that has to follow the sidebar state goes through `GitWorkflow.GitDependencies`. Other renderer code calls `Api.ipcVersionControlApi` directly.
 
 ## 3. Result shapes
 
-Every call returns `Result<OperationResultDto<'T>, string>`. The outer `Error` is a transport failure (the IPC call itself failed). The inner value has three shapes:
+Every operation call returns `Result<OperationResultDto<'T>, exn>`, and `cancelOperation` returns `Result<bool, exn>`. The outer `Error` is a transport failure (the IPC call itself failed). The inner value has three shapes:
 
 ```fsharp
 type OperationResultDto<'T> =
@@ -71,10 +71,10 @@ Refresh the sidebar state:
 
 ```fsharp
 promise {
-    let operationRequest () : OperationRequestDto = { OperationId = VersionControlApiClient.newOperationId () }
-    let! status = VersionControlApiClient.getStatus (operationRequest ())
-    let! refs = VersionControlApiClient.listRefs (operationRequest ())
-    let! settings = VersionControlApiClient.getStoragePolicySettings (operationRequest ())
+    let operationRequest () : OperationRequestDto = { OperationId = System.Guid.NewGuid().ToString() }
+    let! status = Api.ipcVersionControlApi.getStatus (operationRequest ())
+    let! refs = Api.ipcVersionControlApi.listRefs (operationRequest ())
+    let! settings = Api.ipcVersionControlApi.getStoragePolicySettings (operationRequest ())
 
     match status, refs, settings with
     | Ok(OperationResultDto.Succeeded status), Ok(OperationResultDto.Succeeded refs), Ok(OperationResultDto.Succeeded settings) ->
@@ -138,7 +138,7 @@ The file tree context menu disables blocked toggles, `GitLfsHelper` checks the r
 
 File actions of the explorer: "Download LFS file" calls `materializeObject`, "Free local LFS copy" calls `dematerializeObject`. Both need a clean file. "Clean LFS Cache" (`pruneStorage`) and "Deduplicate Large Files" (`deduplicateStorage`) need a clean working tree. Deduplication fails on file systems without copy on write support, for example NTFS or ext4. When an ARC opens and its session offers storage maintenance, the sidebar asks once through `canDeduplicateStorage`. When the answer is no, it disables "Deduplicate Large Files" and its tooltip gives the reason. When the check fails, the button stays enabled and a failing deduplication is shown to the user. The folder menu offers "Download all LFS files" and "Free all local LFS copies". They call `materializeObjects` with the files below the folder that are not on disk and `dematerializeObjects` with the files that have a local copy, and the session answers `service_unavailable` when its provider offers no batch service. The folder and the files the action takes show the busy state until the call returns, and both entries stay disabled on the folder and on every folder above a running action. Free asks for a confirmation first. When some files fail, the error dialog gives the count of failed files and one line naming the cause for each of the first ten failed files, and the technical details hold the full text.
 
-Each file or folder action allocates its operation id with `newOperationId` before the call and registers itself with `LfsActivityContext.track` as an `LfsRunningAction` until the call settles. The record holds the operation id, the kind (download or free), the target path, whether the target is a folder, the file count, the latest `Count` (files done and files requested), the latest `StepPercent` and `StartedAt`, the `Date.now ()` value from the moment `track` listed the action. The context subscribes to `versionControlProgress` and `versionControlOutput` itself and applies only the events whose operation id belongs to a running action. The output of the actions lives apart from the records, in `LfsRunningLogsCtx`, a map from operation id to `OperationLog` that only the Git sidebar reads. `LfsRunningActionsCtx` changes when an action starts or ends and when its `Count` or `StepPercent` changes, so a batch of output does not render the file tree. `LfsRunningActionsState.forScope` hands back the previous array while the scoped records are the same ones. A folder download reads `Count` from the `lfs-materialize-files` events and `StepPercent` from the `lfs-materialize-transfer` and `lfs-materialize-checkout` meters. Any other event clears `StepPercent`, because the step that it measured is over. A folder free reads `Count` from the `lfs-dematerialize-files` events and has no step percent. The busy row of a folder shows "done/total" with the step percent appended, for example "3/40 45%". Before the first count event it reads 0 of the file count. The library sends count events only for batches of more than one path, so a folder action with exactly one path keeps reading "0/1" until it is done. The busy row of a single file shows no text. `FileTreeMaterialization.overlayBusyDetails` sets this text on the busy rows only, so a progress event does not rebuild the item cache or the path indexes.
+Each file or folder action allocates its operation id before the call and registers itself with `LfsActivityContext.track` as an `LfsRunningAction` until the call settles. The record holds the operation id, the kind (download or free), the target path, whether the target is a folder, the file count, the latest `Count` (files done and files requested), the latest `StepPercent` and `StartedAt`, the `Date.now ()` value from the moment `track` listed the action. The context subscribes to `versionControlProgress` and `versionControlOutput` itself and applies only the events whose operation id belongs to a running action. The output of the actions lives apart from the records, in `LfsRunningLogsCtx`, a map from operation id to `OperationLog` that only the Git sidebar reads. `LfsRunningActionsCtx` changes when an action starts or ends and when its `Count` or `StepPercent` changes, so a batch of output does not render the file tree. `LfsRunningActionsState.forScope` hands back the previous array while the scoped records are the same ones. A folder download reads `Count` from the `lfs-materialize-files` events and `StepPercent` from the `lfs-materialize-transfer` and `lfs-materialize-checkout` meters. Any other event clears `StepPercent`, because the step that it measured is over. A folder free reads `Count` from the `lfs-dematerialize-files` events and has no step percent. The busy row of a folder shows "done/total" with the step percent appended, for example "3/40 45%". Before the first count event it reads 0 of the file count. The library sends count events only for batches of more than one path, so a folder action with exactly one path keeps reading "0/1" until it is done. The busy row of a single file shows no text. `FileTreeMaterialization.overlayBusyDetails` sets this text on the busy rows only, so a progress event does not rebuild the item cache or the path indexes.
 
 Clone and synchronize hydrate large objects when `MaterializeAllObjects` (clone) or the materialize setting (synchronize) is on. A cancel during hydration keeps the update and reports a partial result with `retry_materialization`. The sidebar keeps the pulled state and offers the download again.
 
@@ -195,7 +195,7 @@ When adding an operation:
 1. Add or reuse DTOs in `VersionControlTypes.fs`. No Git or lakeFS type may appear in a DTO.
 2. Add the function to `IVersionControlApi` in `IPCTypes.fs` with a request DTO that carries `OperationId`.
 3. Implement it in `src/Electron/src/Main/IPC/IVersionControlApi.fs` through `withSession` or `withMutatingSession`, and map through `Mappings.fs`.
-4. Add the wrapper in `Renderer/VersionControlApiClient.fs`.
+4. Call it from the renderer through `Api.ipcVersionControlApi`.
 5. Wire it into `GitWorkflow.GitDependencies` when the sidebar state needs it.
 6. Add tests in `tests/Electron.Core` (mappings, session host or IPC over a real repository) and `tests/Electron.Renderer` (workflow).
 7. Update this guide.

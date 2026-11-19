@@ -739,12 +739,12 @@ type Msg =
 
 /// The text diff calls of the main process, kept in one record so tests can replace them.
 type GitTextDiffClient = {
-    openTextDiff: OpenTextDiffRequestDto -> JS.Promise<Result<OperationResultDto<ResumableOpenDto>, string>>
-    readTextDiffPage: ReadTextDiffPageRequestDto -> JS.Promise<Result<OperationResultDto<ResumablePageDto>, string>>
-    replayTextDiffPage: ReplayTextDiffPageRequestDto -> JS.Promise<Result<OperationResultDto<DiffPageDto>, string>>
-    expandTextDiff: ExpandTextDiffRequestDto -> JS.Promise<Result<OperationResultDto<ResumablePartsDto>, string>>
-    readTextDiffLine: ReadTextDiffLineRequestDto -> JS.Promise<Result<OperationResultDto<ResumableLineDto>, string>>
-    closeTextDiff: TextDiffHandleRequestDto -> JS.Promise<Result<OperationResultDto<unit>, string>>
+    openTextDiff: OpenTextDiffRequestDto -> JS.Promise<Result<OperationResultDto<ResumableOpenDto>, exn>>
+    readTextDiffPage: ReadTextDiffPageRequestDto -> JS.Promise<Result<OperationResultDto<ResumablePageDto>, exn>>
+    replayTextDiffPage: ReplayTextDiffPageRequestDto -> JS.Promise<Result<OperationResultDto<DiffPageDto>, exn>>
+    expandTextDiff: ExpandTextDiffRequestDto -> JS.Promise<Result<OperationResultDto<ResumablePartsDto>, exn>>
+    readTextDiffLine: ReadTextDiffLineRequestDto -> JS.Promise<Result<OperationResultDto<ResumableLineDto>, exn>>
+    closeTextDiff: TextDiffHandleRequestDto -> JS.Promise<Result<OperationResultDto<unit>, exn>>
 }
 
 /// What the renderer needs from the main process. Every function returns the
@@ -752,49 +752,47 @@ type GitTextDiffClient = {
 /// Calls that can be canceled take the request with the operation id the workflow
 /// allocated, so the cancel button knows the id before the call has started.
 type GitDependencies = {
-    getSessionInfo: OperationRequestDto -> JS.Promise<Result<OperationResultDto<WorkspaceSessionInfoDto>, string>>
-    getStatus: OperationRequestDto -> JS.Promise<Result<OperationResultDto<WorkspaceStatusDto>, string>>
-    listRefs: OperationRequestDto -> JS.Promise<Result<OperationResultDto<LogicalRefDto[]>, string>>
-    getRepositoryWebUrl: OperationRequestDto -> JS.Promise<Result<OperationResultDto<string option>, string>>
+    getSessionInfo: OperationRequestDto -> JS.Promise<Result<OperationResultDto<WorkspaceSessionInfoDto>, exn>>
+    getStatus: OperationRequestDto -> JS.Promise<Result<OperationResultDto<WorkspaceStatusDto>, exn>>
+    listRefs: OperationRequestDto -> JS.Promise<Result<OperationResultDto<LogicalRefDto[]>, exn>>
+    getRepositoryWebUrl: OperationRequestDto -> JS.Promise<Result<OperationResultDto<string option>, exn>>
     getStoragePolicySettings:
-        OperationRequestDto -> JS.Promise<Result<OperationResultDto<StoragePolicySettingsDto>, string>>
-    setStoragePolicySettings: StoragePolicySettingsRequestDto -> JS.Promise<Result<OperationResultDto<unit>, string>>
+        OperationRequestDto -> JS.Promise<Result<OperationResultDto<StoragePolicySettingsDto>, exn>>
+    setStoragePolicySettings: StoragePolicySettingsRequestDto -> JS.Promise<Result<OperationResultDto<unit>, exn>>
     /// The checkbox value the main process holds for the open ARC. These two calls are not
     /// operations: they take no operation id and the main process runs them without a lock.
-    getUploadRightAway: unit -> JS.Promise<Result<OperationResultDto<bool>, string>>
-    setUploadRightAway: bool -> JS.Promise<Result<OperationResultDto<unit>, string>>
+    getUploadRightAway: unit -> JS.Promise<Result<OperationResultDto<bool>, exn>>
+    setUploadRightAway: bool -> JS.Promise<Result<OperationResultDto<unit>, exn>>
     loadConflictPage: ConflictSessionSummaryDto -> string -> string -> JS.Promise<Result<PageState, string>>
     /// Replaces the page state with the result of the function, applied to the page state the
     /// app holds when the update runs.
     updatePageState: (PageState option -> PageState option) -> unit
-    initializeWorkspace: InitializeWorkspaceRequestDto -> JS.Promise<Result<OperationResultDto<string>, string>>
-    bindWorkspace: BindWorkspaceRequestDto -> JS.Promise<Result<OperationResultDto<WorkspaceSessionInfoDto>, string>>
+    initializeWorkspace: InitializeWorkspaceRequestDto -> JS.Promise<Result<OperationResultDto<string>, exn>>
+    bindWorkspace: BindWorkspaceRequestDto -> JS.Promise<Result<OperationResultDto<WorkspaceSessionInfoDto>, exn>>
     createRemoteProject: CreateProjectRequest -> JS.Promise<Result<ExploreProjectDto, CreateProjectError>>
     loadPublishOwners: unit -> JS.Promise<Result<PublishOwnersDto, GitLabError>>
     renameOpenArcRoot: string -> JS.Promise<Result<string, string>>
-    checkDependencies: OperationRequestDto -> JS.Promise<Result<OperationResultDto<DependencyStatusDto[]>, string>>
-    installDependency:
-        InstallDependencyRequestDto -> JS.Promise<Result<OperationResultDto<DependencyStatusDto>, string>>
-    refreshSynchronization:
-        OperationRequestDto -> JS.Promise<Result<OperationResultDto<SynchronizationStateDto>, string>>
-    synchronize: SynchronizeRequestDto -> JS.Promise<Result<OperationResultDto<SynchronizationStateDto>, string>>
-    cancelOperation: OperationRequestDto -> JS.Promise<Result<bool, string>>
-    cloneWorkspace: CloneWorkspaceRequestDto -> JS.Promise<Result<OperationResultDto<string>, string>>
-    createRef: CreateRefRequestDto -> JS.Promise<Result<OperationResultDto<LogicalRefDto>, string>>
-    switchRef: SwitchRefRequestDto -> JS.Promise<Result<OperationResultDto<WorkspaceStatusDto>, string>>
-    preflightSwitchRef: SwitchRefRequestDto -> JS.Promise<Result<OperationResultDto<SwitchPreflightDto>, string>>
-    createRevision: CreateRevisionRequestDto -> JS.Promise<Result<OperationResultDto<string>, string>>
-    restorePaths: RestorePathsRequestDto -> JS.Promise<Result<OperationResultDto<unit>, string>>
+    checkDependencies: OperationRequestDto -> JS.Promise<Result<OperationResultDto<DependencyStatusDto[]>, exn>>
+    installDependency: InstallDependencyRequestDto -> JS.Promise<Result<OperationResultDto<DependencyStatusDto>, exn>>
+    refreshSynchronization: OperationRequestDto -> JS.Promise<Result<OperationResultDto<SynchronizationStateDto>, exn>>
+    synchronize: SynchronizeRequestDto -> JS.Promise<Result<OperationResultDto<SynchronizationStateDto>, exn>>
+    cancelOperation: OperationRequestDto -> JS.Promise<Result<bool, exn>>
+    cloneWorkspace: CloneWorkspaceRequestDto -> JS.Promise<Result<OperationResultDto<string>, exn>>
+    createRef: CreateRefRequestDto -> JS.Promise<Result<OperationResultDto<LogicalRefDto>, exn>>
+    switchRef: SwitchRefRequestDto -> JS.Promise<Result<OperationResultDto<WorkspaceStatusDto>, exn>>
+    preflightSwitchRef: SwitchRefRequestDto -> JS.Promise<Result<OperationResultDto<SwitchPreflightDto>, exn>>
+    createRevision: CreateRevisionRequestDto -> JS.Promise<Result<OperationResultDto<string>, exn>>
+    restorePaths: RestorePathsRequestDto -> JS.Promise<Result<OperationResultDto<unit>, exn>>
     resolveConflict:
-        ResolveConflictRequestDto -> JS.Promise<Result<OperationResultDto<ConflictResolutionOutcomeDto>, string>>
-    finalizeConflict: FinalizeConflictRequestDto -> JS.Promise<Result<OperationResultDto<string option>, string>>
-    cancelConflict: CancelConflictRequestDto -> JS.Promise<Result<OperationResultDto<unit>, string>>
-    listObjects: OperationRequestDto -> JS.Promise<Result<OperationResultDto<ObjectStateDto[]>, string>>
-    materializeObjects: ObjectPathsRequestDto -> JS.Promise<Result<OperationResultDto<unit>, string>>
-    pruneStorage: OperationRequestDto -> JS.Promise<Result<OperationResultDto<string>, string>>
-    deduplicateStorage: OperationRequestDto -> JS.Promise<Result<OperationResultDto<string>, string>>
-    canDeduplicateStorage: OperationRequestDto -> JS.Promise<Result<OperationResultDto<bool>, string>>
-    clearStaleLock: OperationRequestDto -> JS.Promise<Result<OperationResultDto<WorkspaceStatusDto>, string>>
+        ResolveConflictRequestDto -> JS.Promise<Result<OperationResultDto<ConflictResolutionOutcomeDto>, exn>>
+    finalizeConflict: FinalizeConflictRequestDto -> JS.Promise<Result<OperationResultDto<string option>, exn>>
+    cancelConflict: CancelConflictRequestDto -> JS.Promise<Result<OperationResultDto<unit>, exn>>
+    listObjects: OperationRequestDto -> JS.Promise<Result<OperationResultDto<ObjectStateDto[]>, exn>>
+    materializeObjects: ObjectPathsRequestDto -> JS.Promise<Result<OperationResultDto<unit>, exn>>
+    pruneStorage: OperationRequestDto -> JS.Promise<Result<OperationResultDto<string>, exn>>
+    deduplicateStorage: OperationRequestDto -> JS.Promise<Result<OperationResultDto<string>, exn>>
+    canDeduplicateStorage: OperationRequestDto -> JS.Promise<Result<OperationResultDto<bool>, exn>>
+    clearStaleLock: OperationRequestDto -> JS.Promise<Result<OperationResultDto<WorkspaceStatusDto>, exn>>
     textDiff: GitTextDiffClient
     hasUsableAccount: unit -> bool
     delay: int -> JS.Promise<unit>
@@ -1076,9 +1074,9 @@ let failureMessage (failure: OperationFailureDto) =
 /// A partial success counts as a success here. The explorer actions have no warning
 /// channel, so a partial that lands on one of these calls (a session-open failure the
 /// host reports once) is dropped on this path.
-let toUnitResult (result: Result<OperationResultDto<unit>, string>) : Result<unit, string> =
+let toUnitResult (result: Result<OperationResultDto<unit>, exn>) : Result<unit, string> =
     match result with
-    | Error message -> Error message
+    | Error error -> Error error.Message
     | Ok(OperationResultDto.Succeeded _) -> Ok()
     | Ok(OperationResultDto.PartiallySucceeded _) -> Ok()
     | Ok(OperationResultDto.Failed failure) -> Error(failureMessage failure)
@@ -1516,9 +1514,9 @@ let private reportErrorCmd (deps: GitDependencies) (title: string) (message: str
 let private logUploadRightAwayFailure (action: string) (detail: string) =
     Browser.Dom.console.error ($"Could not {action} the Upload right away choice: {detail}")
 
-let private failureOfResult (result: Result<OperationResultDto<'T>, string>) =
+let private failureOfResult (result: Result<OperationResultDto<'T>, exn>) =
     match result with
-    | Error message -> Some message
+    | Error error -> Some error.Message
     | Ok(OperationResultDto.Failed failure) -> Some failure.Message
     | Ok _ -> None
 
@@ -1549,7 +1547,7 @@ let private loadUploadRightAwayCmd (deps: GitDependencies) (arcSessionId: int) :
                     dispatch (UploadRightAwayLoaded(arcSessionId, outcome.Value))
                 // A failed result means the main process holds no value, so the checkbox keeps its own.
                 | Ok(OperationResultDto.Failed _) -> ()
-                | Error message -> logUploadRightAwayFailure "load" message
+                | Error error -> logUploadRightAwayFailure "load" error.Message
             with err ->
                 logUploadRightAwayFailure "load" (string err)
         }
@@ -1701,12 +1699,12 @@ let private transportFailure (message: string) : OperationFailureDto = {
 
 /// Flattens the transport error and the structured result: Ok carries the outcome and
 /// the partial failure when there is one, Error carries the failure.
-let private toResult (call: JS.Promise<Result<OperationResultDto<'T>, string>>) = promise {
+let private toResult (call: JS.Promise<Result<OperationResultDto<'T>, exn>>) = promise {
     let! result = call
 
     return
         match result with
-        | Error message -> Error(transportFailure message)
+        | Error error -> Error(transportFailure error.Message)
         | Ok(OperationResultDto.Succeeded outcome) -> Ok(outcome, None)
         | Ok(OperationResultDto.PartiallySucceeded(outcome, failure)) -> Ok(outcome, Some failure)
         | Ok(OperationResultDto.Failed failure) -> Error failure
@@ -2004,14 +2002,14 @@ module GitDiffPageLoader =
     ]
 
     let private send
-        (call: 'Request -> JS.Promise<Result<'T, string>>)
+        (call: 'Request -> JS.Promise<Result<'T, exn>>)
         (request: 'Request)
         (toMsg: 'Request -> Result<'T, string> -> GitDiffMsg)
         : Cmd<Msg> =
         Cmd.OfPromise.either
             call
             request
-            (fun result -> DiffPageMsg(toMsg request result))
+            (fun result -> DiffPageMsg(toMsg request (result |> Result.mapError _.Message)))
             (fun error -> DiffPageMsg(toMsg request (Error error.Message)))
 
     let private track (operationId: string) (page: GitDiffPageData) = {
@@ -2031,7 +2029,7 @@ module GitDiffPageLoader =
             HandleId = handle.Id
             HandleVersion = handle.Version
         }
-        |> Promise.catch (fun error -> Error error.Message)
+        |> Promise.catch (fun error -> Error error)
         |> Promise.start
 
     let private closeHandleCmd (deps: GitDependencies) (handle: DiffHandleDto) : Cmd<Msg> = [
@@ -2044,7 +2042,7 @@ module GitDiffPageLoader =
         for operationId in page.RunningOperations do
             fun _ ->
                 deps.cancelOperation { OperationId = operationId }
-                |> Promise.catch (fun error -> Error error.Message)
+                |> Promise.catch (fun error -> Error error)
                 |> Promise.start
         match page.Handle with
         | Some handle -> yield! closeHandleCmd deps handle
@@ -2706,16 +2704,20 @@ module GitDiffPageLoader =
                 Continuation = Some continuation
         }
         |> Promise.map (fun result ->
-            match valueOf result with
-            | Ok(ResumableOpenDto.Ready(OpenDiffResultDto.Opened(handle, _, _, _, _))) -> closeHandle deps handle
-            | Ok(ResumableOpenDto.Scanning(_, next, _)) -> abandonOpen deps request next
+            match result with
+            | Ok(OperationResultDto.Succeeded outcome)
+            | Ok(OperationResultDto.PartiallySucceeded(outcome, _)) ->
+                match outcome.Value with
+                | ResumableOpenDto.Ready(OpenDiffResultDto.Opened(handle, _, _, _, _)) -> closeHandle deps handle
+                | ResumableOpenDto.Scanning(_, next, _) -> abandonOpen deps request next
+                | _ -> ()
             | _ -> ()
         )
         |> Promise.catch ignore
         |> Promise.start
 
         deps.cancelOperation { OperationId = operationId }
-        |> Promise.catch (fun error -> Error error.Message)
+        |> Promise.catch (fun error -> Error error)
         |> Promise.start
 
     /// Releases what an Open answer holds when its page was left or replaced.
@@ -3839,7 +3841,7 @@ let private acceptanceConfirmation
 /// routed structurally.
 let private runTrackedWriteAsync
     (deps: GitDependencies)
-    (call: unit -> JS.Promise<Result<OperationResultDto<'T>, string>>)
+    (call: unit -> JS.Promise<Result<OperationResultDto<'T>, exn>>)
     (onSuccess: OperationOutcomeDto<'T> -> OperationFailureDto option -> JS.Promise<Result<WriteAttemptOutcome, string>>)
     : JS.Promise<Result<WriteAttemptOutcome, string>> =
     promise {
@@ -3850,10 +3852,7 @@ let private runTrackedWriteAsync
         | Error failure -> return! routedToOutcome deps (routeFailure None failure)
     }
 
-let private simpleWriteAsync
-    (deps: GitDependencies)
-    (call: unit -> JS.Promise<Result<OperationResultDto<'T>, string>>)
-    =
+let private simpleWriteAsync (deps: GitDependencies) (call: unit -> JS.Promise<Result<OperationResultDto<'T>, exn>>) =
     runTrackedWriteAsync deps call (fun _ partial -> refreshAfterSuccess deps partial GitPageChange.NoChange None None)
 
 let private requireWorkspaceVersion (state: GitState) =
@@ -5953,7 +5952,9 @@ let private updateCore
                 Cmd.OfPromise.either
                     deps.cancelOperation
                     key
-                    (fun result -> CancelCurrentOperationCompleted(model.ArcSessionId, key, result))
+                    (fun result ->
+                        CancelCurrentOperationCompleted(model.ArcSessionId, key, result |> Result.mapError _.Message)
+                    )
                     (fun err -> CancelCurrentOperationCompleted(model.ArcSessionId, key, Error(string err)))
 
             model, cmd
@@ -6244,7 +6245,13 @@ let private updateCore
                             TargetRef = providerRef
                             ExpectedWorkspaceVersion = version
                         }
-                        (fun result -> SwitchBranchPreflightCompleted(model.ArcSessionId, normalizedBranchName, result))
+                        (fun result ->
+                            SwitchBranchPreflightCompleted(
+                                model.ArcSessionId,
+                                normalizedBranchName,
+                                result |> Result.mapError _.Message
+                            )
+                        )
                         (fun err ->
                             SwitchBranchPreflightCompleted(model.ArcSessionId, normalizedBranchName, Error(string err))
                         )
@@ -6535,7 +6542,9 @@ let private updateCore
                     OperationId = installOperationId
                     Component = componentName
                 }
-                (fun installResult -> WriteInstallCompleted(sessionId, writeRequest, installResult))
+                (fun installResult ->
+                    WriteInstallCompleted(sessionId, writeRequest, installResult |> Result.mapError _.Message)
+                )
                 (fun err -> WriteInstallCompleted(sessionId, writeRequest, Error(string err)))
 
         nextModel, cmd

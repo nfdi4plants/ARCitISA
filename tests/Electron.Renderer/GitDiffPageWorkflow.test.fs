@@ -2680,7 +2680,7 @@ Vitest.describe (
 
                 let dependencies = {
                     fake.Dependencies with
-                        getStatus = fun _ -> promise { return Error "no status" }
+                        getStatus = fun _ -> promise { return Error(exn "no status") }
                 }
 
                 let conflicted = {
