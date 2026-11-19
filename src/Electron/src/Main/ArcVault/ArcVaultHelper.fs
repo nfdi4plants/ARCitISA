@@ -278,6 +278,13 @@ let renameOpenArcRootDirectoryOnDisk arcPath newName : JS.Promise<Result<string,
                     return Error(mapArcRootRenameDiskError plan.SourcePath plan.TargetPath renameError)
 }
 
+/// True for the URLs that go to the system handler. Only http, https and mailto URLs pass. The caller drops every
+/// other URL, for example a relative Markdown link that resolved against the app's file: URL. In development the app
+/// runs on an http URL, so its own URLs pass this check too.
+let isExternalUrlAllowed (url: string) : bool =
+    [ "http:"; "https:"; "mailto:" ]
+    |> List.exists (fun scheme -> url.StartsWith(scheme, StringComparison.OrdinalIgnoreCase))
+
 let createWindow () =
     printfn "[ARCitISA] Creating new window"
     let screenSize = screen.getPrimaryDisplay().workAreaSize
@@ -301,7 +308,9 @@ let createWindow () =
 
     // Prevent links from opening new Electron windows
     window.webContents.setWindowOpenHandler (fun details ->
-        Fable.Electron.Main.shell.openExternal details.url |> Promise.start
+        if isExternalUrlAllowed details.url then
+            Fable.Electron.Main.shell.openExternal details.url |> Promise.start
+
         WindowOpenHandlerResponse(Enums.Types.WindowOpenHandlerResponse.Action.Deny)
     )
 
@@ -311,7 +320,9 @@ let createWindow () =
 
         if url <> currentUrl then
             event.preventDefault ()
-            Fable.Electron.Main.shell.openExternal url |> Promise.start
+
+            if isExternalUrlAllowed url then
+                Fable.Electron.Main.shell.openExternal url |> Promise.start
     )
 
     // A reload starts a renderer that knows none of the diff handles the old one opened.

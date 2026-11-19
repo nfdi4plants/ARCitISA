@@ -7447,3 +7447,28 @@ Vitest.describe (
                 Vitest.expect((sentMessageTexts windowState "requestSaveBeforeQuit").Length).toBe 0
         )
 )
+
+Vitest.describe (
+    "isExternalUrlAllowed",
+    fun () ->
+        Vitest.test (
+            "allows http, https and mailto in any case",
+            fun () ->
+                for url in
+                    [
+                        "http://a.org"
+                        "https://a.org/x"
+                        "mailto:a@b.org"
+                        "HTTPS://A.ORG"
+                        "MailTo:a@b.org"
+                    ] do
+                    Vitest.expect(isExternalUrlAllowed url).toBe true
+        )
+
+        Vitest.test (
+            "refuses file, javascript, relative and drive paths",
+            fun () ->
+                for url in [ "file:///x"; "javascript:x"; "docs/a.md"; "C:/x"; "" ] do
+                    Vitest.expect(isExternalUrlAllowed url).toBe false
+        )
+)
