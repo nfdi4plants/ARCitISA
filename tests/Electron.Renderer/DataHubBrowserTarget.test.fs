@@ -7,7 +7,6 @@ open Swate.Components.Api.GitLabApi
 open Vitest
 
 // Importing the target pulls in the IPC bridges, which only exist inside Electron.
-// The version control client reads its bridge when its module loads.
 Vitest.vi.mock (
     "./src/Electron/src/Renderer/Api.js",
     box (fun () -> createObj [ "ipcVersionControlApi" ==> createObj [] ])

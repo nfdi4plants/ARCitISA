@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 3.3.0 - 2026-11-19
+
 ### ✨ Added
 
 - The JSON import opens a dialog that lists the tables of the file with their columns and values. You choose which tables and columns to import, and whether each table becomes a new table or is appended to the table open in the editor. (by @Etschbeijer)
@@ -47,6 +49,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Improve visual feedback in data annotator and file picker components. #1437 (by @Freymaurer)
 - Typing into an already-filled table cell will now overwrite its content instead of appending to it. #924 (by @Freymaurer)
 - Changed "Move Column" UI to reuse the same component as "File Picker" and "Data Annotator". Columns move only within their group, so the order stays after saving. (by @Freymaurer + @caroott)
+- The Git sidebar uses plainer names: "Version Control" as its title and on hover, "Fetch Changes", "Create Branch", "Switch To Branch" and "Deduplicate Large Files". The button tooltips list the Git commands that really run. (by @caroott)
+- The Git sidebar disables "Deduplicate Large Files" and gives the reason in its tooltip when the file system of the ARC cannot deduplicate files. ARCitISA checks this once when an ARC opens. (by @caroott)
+- The Git sidebar shows the online namespace and ARC next to the branch, and the "Open ARC in DataHUB" tooltip shows the address it opens. (by @caroott)
 
 ### 🐛 Fixed
 

@@ -33,7 +33,7 @@ let private answered
         return Ok answer
     }
 
-// The helper module pulls in the version control client, which reads its IPC bridge when it loads.
+// The helper calls Api.ipcVersionControlApi, and Api.js reads its IPC bridges when it loads.
 // The bridge only exists inside Electron, so the test replaces the two array calls with recorders.
 Vitest.vi.mock (
     "./src/Electron/src/Renderer/Api.js",
@@ -122,7 +122,7 @@ Vitest.describe (
         Vitest.test (
             "turns a transport error into a failure without detail lines",
             fun () ->
-                match toBatchResult (Error "service unavailable") with
+                match toBatchResult (Error(exn "service unavailable")) with
                 | Error failure ->
                     Vitest.expect(failure.Message).toBe "service unavailable"
                     Vitest.expect(failure.Details.Length).toBe 0

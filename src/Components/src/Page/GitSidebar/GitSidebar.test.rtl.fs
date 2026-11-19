@@ -728,3 +728,27 @@ Vitest.test (
             )
     }
 )
+
+let private renderWithRemoteWebUrl (webUrl: string) =
+    RTL.render (
+        GitSidebar.Main(
+            status = status,
+            changedFiles = [||],
+            branchOptions = [||],
+            callbacks = callbacks,
+            downloadLargeFiles = true,
+            lfsAutoTrackThresholdMb = 1,
+            diffIndexingLimitMb = 1024,
+            remoteRepositoryWebUrl = webUrl
+        )
+    )
+    |> ignore
+
+Vitest.test (
+    "the branch line names the namespace and repository of the web address",
+    fun () ->
+        renderWithRemoteWebUrl "https://git.example.org/group/subgroup/my-arc"
+
+        Vitest.expect((RTL.screen.getByTestId "GitSidebarBranchLocation").textContent).toBe
+            "group/subgroup/my-arc · main"
+)

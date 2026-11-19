@@ -1163,6 +1163,15 @@ let api (event: IpcMainInvokeEvent) : IVersionControlApi = {
                 false
                 (withService _.Maintenance "storage maintenance" (fun service context -> service.Deduplicate context))
                 id
+    canDeduplicateStorage =
+        fun request ->
+            withSession
+                "canDeduplicateStorage"
+                event
+                request.OperationId
+                false
+                (withService _.Maintenance "storage maintenance" (fun service context -> service.CanDeduplicate context))
+                id
     getRepositoryWebUrl =
         fun request ->
             withSession

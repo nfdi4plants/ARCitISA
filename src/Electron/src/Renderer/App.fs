@@ -237,7 +237,7 @@ let private LeftActionButtons (leftSidebarTarget: LeftSidebarPage) setLeftSideba
 
             Layout.LayoutBtn(
                 iconClassName = "swt:fluent--branch-fork-24-regular",
-                tooltip = "Git",
+                tooltip = "Version Control",
                 isActive = (leftSidebarTarget = LeftSidebarPage.Git),
                 onClick = fun () -> toggleTarget LeftSidebarPage.Git
             )

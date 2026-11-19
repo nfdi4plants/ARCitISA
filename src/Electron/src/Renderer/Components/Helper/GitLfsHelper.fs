@@ -8,15 +8,12 @@ open Fable.Core
 open Swate.Components.Shared
 open Swate.Electron.Shared.VersionControlTypes
 
-let private operationId () =
-    Renderer.VersionControlApiClient.newOperationId ()
-
 let private toUnitResult = Renderer.Context.GitWorkflow.toUnitResult
 
 let runToggleLfsMark (relativePath: string) (markAsLfs: bool) : JS.Promise<Result<unit, string>> = promise {
     let! result =
-        Renderer.VersionControlApiClient.setPathStoragePolicy {
-            OperationId = operationId ()
+        Api.ipcVersionControlApi.setPathStoragePolicy {
+            OperationId = System.Guid.NewGuid().ToString()
             Path = PathHelpers.normalizeSeparators relativePath
             UseLargeObjectStorage = markAsLfs
         }
@@ -29,7 +26,7 @@ let runToggleLfsMark (relativePath: string) (markAsLfs: bool) : JS.Promise<Resul
 /// state, and the file explorer may still show the old state then.
 let runFreeLocalLfsCopy (operationId: string) (relativePath: string) : JS.Promise<Result<unit, string>> = promise {
     let! result =
-        Renderer.VersionControlApiClient.dematerializeObjects {
+        Api.ipcVersionControlApi.dematerializeObjects {
             OperationId = operationId
             Paths = [| PathHelpers.normalizeSeparators relativePath |]
             AlwaysRefreshTree = true
@@ -40,7 +37,7 @@ let runFreeLocalLfsCopy (operationId: string) (relativePath: string) : JS.Promis
 
 let runDownloadLfsFile (operationId: string) (relativePath: string) : JS.Promise<Result<unit, string>> = promise {
     let! result =
-        Renderer.VersionControlApiClient.materializeObjects {
+        Api.ipcVersionControlApi.materializeObjects {
             OperationId = operationId
             Paths = [| PathHelpers.normalizeSeparators relativePath |]
             AlwaysRefreshTree = true
@@ -65,7 +62,7 @@ type BatchFailure = {
 /// A batch result is a success only when every path succeeded. A partial result that names failed paths stays an
 /// Error because those paths would otherwise go unreported. A partial result without paths is the host reporting a
 /// successful call on a freshly opened session, which GitWorkflow.toUnitResult also treats as a success.
-let toBatchResult (result: Result<OperationResultDto<unit>, string>) : Result<unit, BatchFailure> =
+let toBatchResult (result: Result<OperationResultDto<unit>, exn>) : Result<unit, BatchFailure> =
     let describe (failure: OperationFailureDto) =
         Error {
             Message = Renderer.Context.GitWorkflow.failureMessage failure
@@ -74,9 +71,9 @@ let toBatchResult (result: Result<OperationResultDto<unit>, string>) : Result<un
         }
 
     match result with
-    | Error message ->
+    | Error error ->
         Error {
-            Message = message
+            Message = error.Message
             AffectedPaths = [||]
             Details = [||]
         }
@@ -225,7 +222,7 @@ let folderFailureText
 /// Downloads all given files with one call. Paths that are already on disk count as done.
 let runDownloadLfsFiles (operationId: string) (relativePaths: string[]) : JS.Promise<Result<unit, BatchFailure>> = promise {
     let! result =
-        Renderer.VersionControlApiClient.materializeObjects {
+        Api.ipcVersionControlApi.materializeObjects {
             OperationId = operationId
             Paths = relativePaths |> Array.map PathHelpers.normalizeSeparators
             AlwaysRefreshTree = false
@@ -237,7 +234,7 @@ let runDownloadLfsFiles (operationId: string) (relativePaths: string[]) : JS.Pro
 /// Frees the local copies of all given files with one call.
 let runFreeLocalLfsCopies (operationId: string) (relativePaths: string[]) : JS.Promise<Result<unit, BatchFailure>> = promise {
     let! result =
-        Renderer.VersionControlApiClient.dematerializeObjects {
+        Api.ipcVersionControlApi.dematerializeObjects {
             OperationId = operationId
             Paths = relativePaths |> Array.map PathHelpers.normalizeSeparators
             AlwaysRefreshTree = false
