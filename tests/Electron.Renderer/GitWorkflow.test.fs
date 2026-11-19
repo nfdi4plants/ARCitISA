@@ -122,7 +122,7 @@ let private makeFailure category code message recovery paths : OperationFailureD
 let private failed category code message : OperationResultDto<'T> =
     OperationResultDto.Failed(makeFailure category code message None [||])
 
-let private staleTokenReply<'T> message : JS.Promise<Result<OperationResultDto<'T>, string>> = promise {
+let private staleTokenReply<'T> message : JS.Promise<Result<OperationResultDto<'T>, exn>> = promise {
     return Ok(failed Concurrency VersionControlCodes.PreconditionFailed message)
 }
 
@@ -324,7 +324,7 @@ let private buildSingleConflictDocument currentLines incomingLines =
     ]
     |> String.concat "\n"
 
-let private unexpectedPromise<'T> name : JS.Promise<Result<'T, string>> = promise { return failwith name }
+let private unexpectedPromise<'T, 'E> name : JS.Promise<Result<'T, 'E>> = promise { return failwith name }
 let private unexpectedGitLab<'T> name : JS.Promise<Result<'T, CreateProjectError>> = promise { return failwith name }
 
 let private conflictPage path =
@@ -375,6 +375,7 @@ let private defaultDependencies: GitDependencies = {
     materializeObjects = fun _ -> unexpectedPromise "materializeObjects"
     pruneStorage = fun _ -> unexpectedPromise "pruneStorage"
     deduplicateStorage = fun _ -> unexpectedPromise "deduplicateStorage"
+    canDeduplicateStorage = fun _ -> promise { return Error(exn "The storage check is not stubbed.") }
     clearStaleLock = fun _ -> unexpectedPromise "clearStaleLock"
     textDiff = {
         openTextDiff = fun _ -> unexpectedPromise "openTextDiff"
@@ -1473,7 +1474,7 @@ Vitest.describe (
 
                 let deps = {
                     defaultDependencies with
-                        getSessionInfo = fun _ -> promise { return Error "silent refresh failed" }
+                        getSessionInfo = fun _ -> promise { return Error(exn "silent refresh failed") }
                         reportError = reportedErrors.Add
                 }
 
@@ -1725,7 +1726,7 @@ Vitest.describe (
                         getStatus = fun _ -> promise { return Ok(succeeded cleanStatus) }
                         listRefs = fun _ -> promise { return Ok(succeeded [| localBranch "main" true true |]) }
                         getStoragePolicySettings = fun _ -> promise { return Ok(succeeded (lfsSettings 2 false)) }
-                        getRepositoryWebUrl = fun _ -> promise { return Error "origin lookup failed" }
+                        getRepositoryWebUrl = fun _ -> promise { return Error(exn "origin lookup failed") }
                 }
 
                 let state = {
@@ -2171,6 +2172,89 @@ Vitest.describe (
 
                 Vitest.expect(afterSecondRefresh).toEqual ([||])
                 Vitest.expect(reads.Count).toBe 1
+            }
+        )
+
+        Vitest.test (
+            "The first refresh of an ARC asks once whether storage deduplication can work",
+            fun () -> promise {
+                let checks = ResizeArray<string>()
+
+                let deps = {
+                    withRefresh cleanStatus defaultDependencies with
+                        canDeduplicateStorage =
+                            fun _ ->
+                                checks.Add "check"
+                                promise { return Ok(succeeded false) }
+                }
+
+                let! bound, bindMessages = step deps GitState.Empty (ArcPathChanged(Some "C:/arc"))
+                let! refreshing, refreshMessages = step deps bound bindMessages[0]
+                let! refreshed, loadMessages = step deps refreshing refreshMessages[0]
+
+                Vitest.expect(loadMessages).toEqual ([| StorageDeduplicationChecked(bound.ArcSessionId, false) |])
+                Vitest.expect(refreshed.CanDeduplicateStorage).toEqual None
+
+                let! checkedState, _ = step deps refreshed loadMessages[0]
+
+                Vitest.expect(checkedState.CanDeduplicateStorage).toEqual (Some false)
+                Vitest.expect(checks.Count).toBe 1
+
+                let! refreshingAgain, againMessages = step deps checkedState RefreshRequested
+                let! _, afterSecondRefresh = step deps refreshingAgain againMessages[0]
+
+                Vitest.expect(afterSecondRefresh).toEqual ([||])
+                Vitest.expect(checks.Count).toBe 1
+            }
+        )
+
+        Vitest.test (
+            "A session without storage maintenance does not ask whether deduplication can work",
+            fun () -> promise {
+                let checks = ResizeArray<string>()
+
+                let sessionWithoutMaintenance = {
+                    sessionInfo with
+                        Services = {
+                            sessionInfo.Services with
+                                Maintenance = false
+                        }
+                }
+
+                let deps = {
+                    withRefresh cleanStatus defaultDependencies with
+                        getSessionInfo = fun _ -> promise { return Ok(succeeded sessionWithoutMaintenance) }
+                        canDeduplicateStorage =
+                            fun _ ->
+                                checks.Add "check"
+                                promise { return Ok(succeeded false) }
+                }
+
+                let! bound, bindMessages = step deps GitState.Empty (ArcPathChanged(Some "C:/arc"))
+                let! refreshing, refreshMessages = step deps bound bindMessages[0]
+                let! refreshed, loadMessages = step deps refreshing refreshMessages[0]
+
+                Vitest.expect(loadMessages).toEqual ([||])
+                Vitest.expect(checks.Count).toBe 0
+                Vitest.expect(refreshed.CanDeduplicateStorage).toEqual None
+            }
+        )
+
+        Vitest.test (
+            "A storage deduplication answer of an earlier ARC session is ignored",
+            fun () -> promise {
+                let nextArc, _ =
+                    update defaultDependencies ignore (ArcPathChanged(Some "C:/arc-b")) runningState
+
+                let afterAnswer, _ =
+                    update
+                        defaultDependencies
+                        ignore
+                        (StorageDeduplicationChecked(runningState.ArcSessionId, false))
+                        nextArc
+
+                Vitest.expect(nextArc.ArcSessionId).not.toBe runningState.ArcSessionId
+                Vitest.expect(afterAnswer.CanDeduplicateStorage).toEqual None
             }
         )
 
@@ -6411,7 +6495,7 @@ Vitest.describe (
                         |]
                 }
 
-                let runCase (confirmationStatus: Result<OperationResultDto<WorkspaceStatusDto>, string>) = promise {
+                let runCase (confirmationStatus: Result<OperationResultDto<WorkspaceStatusDto>, exn>) = promise {
                     let mutable getStatusCalls = 0
                     let postCommitStatus = statusForBranch "post-commit"
 
@@ -6466,7 +6550,7 @@ Vitest.describe (
 
                 Vitest.expect(refreshedState.Status.CurrentBranch).toEqual (Some "refreshed")
 
-                let! failedRefreshState = runCase (Error "confirmation refresh failed")
+                let! failedRefreshState = runCase (Error(exn "confirmation refresh failed"))
 
                 Vitest.expect(failedRefreshState.Status.CurrentBranch).toEqual (Some "post-commit")
                 Vitest.expect(failedRefreshState.PendingConfirmation.IsSome).toBe (true)
@@ -6733,7 +6817,7 @@ Vitest.describe (
                 let deps = {
                     (withRefresh cleanStatus defaultDependencies) with
                         createRevision = fun _ -> promise { return Ok(succeeded "revision-1") }
-                        synchronize = fun _ -> promise { return Error "Network unavailable during synchronize." }
+                        synchronize = fun _ -> promise { return Error(exn "Network unavailable during synchronize.") }
                 }
 
                 let state = {
@@ -9866,7 +9950,7 @@ Vitest.describe (
                                     failwith "Materialization ran before conflict finalization."
 
                                 materializedPaths.AddRange request.Paths
-                                promise { return Error "The local cache is unavailable." }
+                                promise { return Error(exn "The local cache is unavailable.") }
                 }
 
                 let state = {
@@ -10246,7 +10330,7 @@ Vitest.describe (
                         materializeObjects =
                             fun request ->
                                 materializedPaths.AddRange request.Paths
-                                promise { return Error "The local cache is unavailable." }
+                                promise { return Error(exn "The local cache is unavailable.") }
                 }
 
                 let state = {

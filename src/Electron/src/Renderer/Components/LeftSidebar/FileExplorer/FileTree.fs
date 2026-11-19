@@ -122,7 +122,7 @@ type FileTree =
                 activity
                 entry
                 (fun path ->
-                    let operationId = Renderer.VersionControlApiClient.newOperationId ()
+                    let operationId = System.Guid.NewGuid().ToString()
 
                     let runningAction: Renderer.Context.LfsActivityContext.LfsRunningAction = {
                         OperationId = operationId
@@ -190,7 +190,7 @@ type FileTree =
                                 action.Activity
                                 targets
                                 (fun () ->
-                                    let operationId = Renderer.VersionControlApiClient.newOperationId ()
+                                    let operationId = System.Guid.NewGuid().ToString()
 
                                     let runningAction: Renderer.Context.LfsActivityContext.LfsRunningAction = {
                                         OperationId = operationId

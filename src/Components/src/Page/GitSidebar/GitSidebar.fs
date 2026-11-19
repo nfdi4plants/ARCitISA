@@ -96,6 +96,14 @@ module private GitSidebarInternal =
         | index when index > 0 -> path.Substring(index + 1), Some(path.Substring(0, index))
         | _ -> path, None
 
+    /// The namespace and repository part of a repository web URL, "group/arc" for "https://host/group/arc".
+    let repositoryPathOfWebUrl (webUrl: string) : string option =
+        match Uri.TryCreate(webUrl, UriKind.Absolute) with
+        | true, uri ->
+            let path = Uri.UnescapeDataString(uri.AbsolutePath).Trim('/')
+            if String.IsNullOrWhiteSpace path then None else Some path
+        | _ -> None
+
     let commitCountLabel (count: int) =
         if count = 1 then "1 commit" else $"{count} commits"
 
@@ -341,8 +349,8 @@ type private BranchHeaderProps = {
     HasRemote: bool
     HasConflicts: bool
     IsBusy: bool
-    CanOpenRemoteRepository: bool
-    OnOpenRemoteRepository: unit -> unit
+    RemoteRepositoryWebUrl: string option
+    OnOpenRemoteRepository: string -> unit
     OnRefresh: unit -> unit
 }
 
@@ -380,6 +388,8 @@ type private AdvancedActionsProps = {
     DiffIndexingLimit: DiffIndexingLimitSectionProps
     SubmitPruneLfsCache: unit -> unit
     SubmitDedupLfsStorage: unit -> unit
+    /// Disables the dedup button and replaces its command tooltip with this reason.
+    LfsDedupUnavailableReason: string option
 }
 
 type private CommitSectionProps = {
@@ -1052,32 +1062,41 @@ type GitSidebar =
         let isActive = defaultArg isActive false
         let titleText = defaultArg tooltipText label
 
-        Html.button [
-            if testId.IsSome then
-                prop.testId testId.Value
-
-            prop.className [
-                "swt:btn swt:btn-sm swt:w-full swt:min-w-0 swt:justify-start swt:gap-2 swt:overflow-hidden swt:px-2 swt:normal-case"
-                "swt:@max-2xs/gitSidebar:gap-1 swt:@max-3xs/gitSidebar:justify-center swt:@max-3xs/gitSidebar:gap-0 swt:@max-3xs/gitSidebar:px-0"
-                if isActive then
-                    "swt:btn-primary"
-                else
-                    "swt:bg-base-100 swt:border-base-300"
-            ]
-            prop.disabled isBusy
-            prop.ariaLabel label
+        // A disabled daisyUI button has pointer-events: none, so a wrapper repeats the title
+        // for the hover. The title on the button stays for screen readers.
+        Html.div [
+            prop.className "swt:min-w-0"
             prop.title titleText
-            prop.onClick (fun _ -> onClick ())
             prop.children [
-                Html.span [
-                    prop.className [ "swt:iconify"; iconClassName; "swt:size-4 swt:shrink-0" ]
-                ]
-                Html.span [
+                Html.button [
                     if testId.IsSome then
-                        prop.testId (testId.Value + "Label")
+                        prop.testId testId.Value
 
-                    prop.className "swt:min-w-0 swt:flex-1 swt:truncate swt:text-left swt:@max-3xs/gitSidebar:sr-only"
-                    prop.text label
+                    prop.className [
+                        "swt:btn swt:btn-sm swt:w-full swt:min-w-0 swt:justify-start swt:gap-2 swt:overflow-hidden swt:px-2 swt:normal-case"
+                        "swt:@max-2xs/gitSidebar:gap-1 swt:@max-3xs/gitSidebar:justify-center swt:@max-3xs/gitSidebar:gap-0 swt:@max-3xs/gitSidebar:px-0"
+                        if isActive then
+                            "swt:btn-primary"
+                        else
+                            "swt:bg-base-100 swt:border-base-300"
+                    ]
+                    prop.disabled isBusy
+                    prop.ariaLabel label
+                    prop.title titleText
+                    prop.onClick (fun _ -> onClick ())
+                    prop.children [
+                        Html.span [
+                            prop.className [ "swt:iconify"; iconClassName; "swt:size-4 swt:shrink-0" ]
+                        ]
+                        Html.span [
+                            if testId.IsSome then
+                                prop.testId (testId.Value + "Label")
+
+                            prop.className
+                                "swt:min-w-0 swt:flex-1 swt:truncate swt:text-left swt:@max-3xs/gitSidebar:sr-only"
+                            prop.text label
+                        ]
+                    ]
                 ]
             ]
         ]
@@ -1101,18 +1120,27 @@ type GitSidebar =
                                     Html.span [
                                         prop.testId "GitSidebarTitle"
                                         prop.className "swt:truncate swt:text-sm swt:font-semibold"
-                                        prop.title "Source Control"
-                                        prop.text "Source Control"
+                                        prop.title "Version Control"
+                                        prop.text "Version Control"
                                     ]
                                     let branchName =
                                         match props.Status.CurrentBranch with
                                         | Some branch -> branch
                                         | None -> "Detached HEAD"
 
+                                    let branchLocation =
+                                        match
+                                            props.RemoteRepositoryWebUrl
+                                            |> Option.bind GitSidebarInternal.repositoryPathOfWebUrl
+                                        with
+                                        | Some repositoryPath -> $"{repositoryPath} · {branchName}"
+                                        | None -> branchName
+
                                     Html.span [
+                                        prop.testId "GitSidebarBranchLocation"
                                         prop.className "swt:truncate swt:text-xs swt:text-base-content/60"
-                                        prop.title branchName
-                                        prop.text branchName
+                                        prop.title branchLocation
+                                        prop.text branchLocation
                                     ]
                                 ]
                             ]
@@ -1124,10 +1152,17 @@ type GitSidebar =
                             Html.button [
                                 prop.testId "GitSidebarOpenRemoteRepositoryButton"
                                 prop.className "swt:btn swt:btn-ghost swt:btn-square swt:btn-sm swt:shrink-0"
-                                prop.disabled (props.IsBusy || not props.CanOpenRemoteRepository)
-                                prop.title "Open ARC in DataHUB"
                                 prop.ariaLabel "Open ARC in DataHUB"
-                                prop.onClick (fun _ -> props.OnOpenRemoteRepository())
+
+                                match props.RemoteRepositoryWebUrl with
+                                | Some webUrl ->
+                                    prop.disabled props.IsBusy
+                                    prop.title $"Open ARC in DataHUB: {webUrl}"
+                                    prop.onClick (fun _ -> props.OnOpenRemoteRepository webUrl)
+                                | None ->
+                                    prop.disabled true
+                                    prop.title "Open ARC in DataHUB"
+
                                 prop.children [
                                     Html.span [
                                         prop.className "swt:iconify swt:fluent--open-24-regular swt:size-4"
@@ -1426,7 +1461,7 @@ type GitSidebar =
                         props.SubmitUpdateFromOnline,
                         testId = "GitSidebarPullButton",
                         tooltipText =
-                            "Download Changes:\n- git fetch origin\n- git merge-tree (conflict preflight)\n- git merge origin/<branch>\n- git lfs fetch origin <branch> and git lfs checkout (when Download Large Files is on)"
+                            "Download Changes:\n- git fetch origin (when the branch tracks an online branch)\n- git merge-tree (conflict preflight, when both copies have new changes)\n- git merge origin/<branch> (when the online copy is ahead)\n- git lfs fetch origin <branch> and git lfs checkout (when Download Large Files is on)"
                     )
                     GitSidebar.ActionButton(
                         "Upload Changes",
@@ -1435,7 +1470,7 @@ type GitSidebar =
                         props.SubmitPush,
                         testId = "GitSidebarPushButton",
                         tooltipText =
-                            "Upload Changes:\n- git fetch origin\n- git merge-tree (conflict preflight)\n- git merge origin/<branch> (when the online copy is ahead)\n- git lfs fetch origin <branch> and git lfs checkout (after a merge, when Download Large Files is on)\n- git lfs push --object-id origin --stdin (when there are new large files)\n- git push origin"
+                            "Upload Changes:\n- git remote add origin <address> and git fetch origin (first upload of an ARC without an online copy)\n- git fetch origin (when the branch tracks an online branch)\n- git fetch origin and git config branch.<branch>.remote and branch.<branch>.merge (when the branch has no upstream and the online branch of the same name has changes this copy lacks, then the upload stops)\n- git merge-tree (conflict preflight, when both copies have new changes)\n- git merge origin/<branch> (when the online copy is ahead)\n- git lfs fetch origin <branch> and git lfs checkout (after a merge, when Download Large Files is on)\n- git ls-remote and git push --dry-run (check the online copy and new large files)\n- git lfs push --object-id origin --stdin (when there are new large files)\n- git push origin <branch> (with --set-upstream on the first upload)"
                     )
                 ]
             ]
@@ -1493,28 +1528,31 @@ type GitSidebar =
                             prop.className "swt:grid swt:grid-cols-2 swt:gap-2 swt:@max-xs:gap-1"
                             prop.children [
                                 GitSidebar.ActionButton(
-                                    "Check for Changes",
+                                    "Fetch Changes",
                                     "swt:fluent--arrow-sync-24-regular",
                                     props.IsBusy || not props.RemoteActionsEnabled,
                                     props.SubmitFetch,
                                     testId = "GitSidebarFetchButton",
-                                    tooltipText = "Check for Changes:\n- git fetch origin"
+                                    tooltipText =
+                                        "Fetch Changes:\n- git fetch origin (when the branch tracks an online branch)"
                                 )
                                 GitSidebar.ActionButton(
-                                    "Create Work Copy",
+                                    "Create Branch",
                                     "swt:fluent--branch-fork-24-regular",
                                     props.IsBusy,
                                     props.OpenCreateBranchModal,
                                     testId = "GitSidebarCreateBranchButton",
-                                    tooltipText = "Create Work Copy:\n- git checkout -b <name>"
+                                    tooltipText =
+                                        "Create Branch:\n- git checkout -b <name> <start point>\n- git branch --set-upstream-to=origin/<name> (when origin/<name> is known)\n- git branch --unset-upstream (when the start point was an online branch and origin/<name> is not known)"
                                 )
                                 GitSidebar.ActionButton(
-                                    "Switch To Work Copy",
+                                    "Switch To Branch",
                                     "swt:fluent--arrow-swap-24-regular",
                                     props.IsBusy || not props.CanSwitchBranch,
                                     props.OpenSwitchBranchModal,
                                     testId = "GitSidebarSwitchBranchButton",
-                                    tooltipText = "Switch To Work Copy:\n- git checkout <branch>"
+                                    tooltipText =
+                                        "Switch To Branch:\n- git checkout <branch>\n- git checkout -b <branch> --track origin/<branch> (for an online branch without a local copy)"
                                 )
                                 GitSidebar.ActionButton(
                                     "Clean LFS Cache",
@@ -1526,12 +1564,14 @@ type GitSidebar =
                                         "Clean LFS Cache:\n- git lfs prune --verify-remote --no-verify-unreachable --when-unverified=halt"
                                 )
                                 GitSidebar.ActionButton(
-                                    "Reduce LFS Storage",
+                                    "Deduplicate Large Files",
                                     "swt:fluent--folder-sync-24-regular",
-                                    props.IsBusy,
+                                    props.IsBusy || props.LfsDedupUnavailableReason.IsSome,
                                     props.SubmitDedupLfsStorage,
                                     testId = "GitSidebarLfsDedupButton",
-                                    tooltipText = "Reduce LFS Storage:\n- git lfs dedup"
+                                    tooltipText =
+                                        (props.LfsDedupUnavailableReason
+                                         |> Option.defaultValue "Deduplicate Large Files:\n- git lfs dedup")
                                 )
                             ]
                         ]
@@ -2009,7 +2049,8 @@ type GitSidebar =
                                     ]
                                     Html.select [
                                         prop.testId "GitSidebarStartPointSelect"
-                                        prop.className "swt:select swt:select-bordered swt:w-full"
+                                        prop.className
+                                            "swt:select swt:select-bordered swt:w-full swt:[&_option::checkmark]:hidden"
                                         prop.value (props.SelectedStartPoint |> Option.defaultValue "")
                                         prop.onChange (fun nextValue ->
                                             if String.IsNullOrWhiteSpace nextValue then
@@ -2066,7 +2107,8 @@ type GitSidebar =
                                     ]
                                     Html.select [
                                         prop.testId "GitSidebarSwitchBranchSelect"
-                                        prop.className "swt:select swt:select-bordered swt:w-full"
+                                        prop.className
+                                            "swt:select swt:select-bordered swt:w-full swt:[&_option::checkmark]:hidden"
                                         prop.value (props.SelectedSwitchBranch |> Option.defaultValue "")
                                         prop.onChange (fun (nextValue: string) ->
                                             if String.IsNullOrWhiteSpace nextValue then
@@ -2326,9 +2368,9 @@ type GitSidebar =
             ?remoteActionsEnabled: bool,
             ?remoteActionsWarning: string,
             ?hasRemote: bool,
-            ?canOpenRemoteRepository: bool,
+            ?remoteRepositoryWebUrl: string,
             ?canCancelOperation: bool,
-            ?onOpenRemoteRepository: unit -> unit,
+            ?onOpenRemoteRepository: string -> unit,
             ?onSubmitPublishRename: GitSidebarPublishSubmit -> unit,
             ?onCancelPublishRename: unit -> unit,
             ?uploadRightAway: bool,
@@ -2337,7 +2379,8 @@ type GitSidebar =
             ?busyHeadlineOverride: string,
             ?operationSteps: GitSidebarStep[],
             ?operationLog: GitSidebarLog,
-            ?lastLog: GitSidebarLastLog
+            ?lastLog: GitSidebarLastLog,
+            ?lfsDedupUnavailableReason: string
         ) =
 
         let runStatus = defaultArg runStatus GitSidebarRunStatus.Idle
@@ -2348,9 +2391,8 @@ type GitSidebar =
         let remoteActionsEnabled = defaultArg remoteActionsEnabled true
         let remoteActionsWarning = remoteActionsWarning
         let hasRemote = defaultArg hasRemote true
-        let canOpenRemoteRepository = defaultArg canOpenRemoteRepository false
         let canCancelOperation = defaultArg canCancelOperation false
-        let onOpenRemoteRepository = defaultArg onOpenRemoteRepository (fun () -> ())
+        let onOpenRemoteRepository = defaultArg onOpenRemoteRepository ignore
         let onSubmitPublishRename = defaultArg onSubmitPublishRename (fun _ -> ())
         let onCancelPublishRename = defaultArg onCancelPublishRename (fun () -> ())
         let _selectedFileForCompatibility = selectedFile
@@ -2754,7 +2796,7 @@ type GitSidebar =
             HasRemote = hasRemote
             HasConflicts = hasConflicts
             IsBusy = isBusy
-            CanOpenRemoteRepository = canOpenRemoteRepository
+            RemoteRepositoryWebUrl = remoteRepositoryWebUrl
             OnOpenRemoteRepository = onOpenRemoteRepository
             OnRefresh =
                 fun () ->
@@ -2822,6 +2864,7 @@ type GitSidebar =
                         CanSwitchBranch = canSwitchBranch
                         SubmitPruneLfsCache = submitPruneLfsCache
                         SubmitDedupLfsStorage = submitDedupLfsStorage
+                        LfsDedupUnavailableReason = lfsDedupUnavailableReason
                         LfsSettings = {
                             IsBusy = isBusy
                             LfsThresholdInput = lfsThresholdInput

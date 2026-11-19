@@ -85,7 +85,7 @@ let DataHubBrowserTarget () =
                 let cloneRequest =
                     DataHubBrowserHelper.toCloneRequest
                         gitStateCtx.state
-                        (Renderer.VersionControlApiClient.newOperationId ())
+                        (Guid.NewGuid().ToString())
                         projectInfo
                         targetPath
 

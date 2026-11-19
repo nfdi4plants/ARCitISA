@@ -5,6 +5,14 @@ open Feliz
 open Renderer.Components.Helper.ArcVaultHelper
 open Swate.Components.Primitive.ErrorModal.Context
 
+/// The version control provider answers once per opened ARC whether deduplication can work. On a no, the sidebar disables the button and its tooltip says why.
+let private lfsDedupUnavailableReason (canDeduplicate: bool option) =
+    match canDeduplicate with
+    | Some false ->
+        Some
+            "Not available for this ARC: deduplication needs copy-on-write file copies, which the file system of the ARC's folder does not support."
+    | _ -> None
+
 /// Remote transfer operations run cancellable git processes, so the cancel button is offered for all of them.
 let private isCancellableBusyOperation (busyOperation: Renderer.Context.GitWorkflow.GitBusyOperation) =
     match busyOperation with
@@ -166,7 +174,7 @@ let Main () =
     | None ->
         Renderer.Components.LeftSidebar.Git.GitSidebarEmptyState.Main(
             title = "Open an ARC to use Git features",
-            description = "Source control becomes available after you open or download an ARC.",
+            description = "Version control becomes available after you open or download an ARC.",
             iconClassName = "swt:fluent--folder-open-24-regular",
             primaryAction = {
                 Label = "Open ARC"
@@ -215,6 +223,7 @@ let Main () =
             operationSteps = gitStateCtx.state.CurrentSteps,
             ?operationLog = operationLog,
             ?lastLog = lastLog,
+            ?lfsDedupUnavailableReason = lfsDedupUnavailableReason gitStateCtx.state.CanDeduplicateStorage,
             ?busyHeadlineOverride =
                 waitingHeadline
                     gitStateCtx.state.BusyOperation
@@ -268,14 +277,9 @@ let Main () =
             onUploadRightAwayChange = gitStateCtx.uploadRightAwayChanged,
             remoteActionsEnabled = remoteActionsEnabled,
             canCancelOperation = canCancelOperation,
-            canOpenRemoteRepository = gitStateCtx.state.OriginRemoteRepositoryWebUrl.IsSome,
+            ?remoteRepositoryWebUrl = gitStateCtx.state.OriginRemoteRepositoryWebUrl,
             onSubmitPublishRename = gitStateCtx.submitPublishRename,
             onCancelPublishRename = gitStateCtx.cancelPublishRename,
-            onOpenRemoteRepository =
-                (fun () ->
-                    match gitStateCtx.state.OriginRemoteRepositoryWebUrl with
-                    | Some repositoryWebUrl -> window.``open`` (repositoryWebUrl, "_blank") |> ignore
-                    | None -> ()
-                ),
+            onOpenRemoteRepository = (fun repositoryWebUrl -> window.``open`` (repositoryWebUrl, "_blank") |> ignore),
             ?remoteActionsWarning = remoteActionsWarning
         )
