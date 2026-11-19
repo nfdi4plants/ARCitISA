@@ -92,6 +92,17 @@ Vitest.test (
 )
 
 Vitest.test (
+    "a click on Image applies the edit of insertImage",
+    fun () ->
+        let state = stateOf "hello" 0 5
+        let surface = FakeSurface(state)
+        RTL.render (MarkdownToolbar.MarkdownToolbar(surface, noHistory)) |> ignore
+        RTL.fireEvent.click (button "Image")
+        Vitest.expect(surface.Applied.Count).toBe 1
+        Vitest.expect(surface.Applied.[0]).toEqual (okEdit (MarkdownEdits.insertImage state))
+)
+
+Vitest.test (
     "choosing Heading 2 applies setHeading 2",
     fun () ->
         let state = stateOf "hello" 0 5
@@ -204,6 +215,7 @@ Vitest.test (
 
         Vitest.expect((button "Strikethrough").getAttribute "title").toBe "Strikethrough (Ctrl+Shift+X)"
         Vitest.expect((button "Quote").getAttribute "title").toBe "Quote (Ctrl+Shift+.)"
+        Vitest.expect((button "Image").getAttribute "title").toBe "Image (Ctrl+Shift+P)"
 
         Vitest.expect((button "Ontology reference").getAttribute "title").toBe "Ontology reference (Ctrl+Shift+O)"
 )

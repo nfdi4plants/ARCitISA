@@ -290,7 +290,7 @@ let toggleBulletList (state: TextEditState) : Result<TextEdit, string> = toggleL
 let toggleTaskList (state: TextEditState) : Result<TextEdit, string> = toggleList Task state
 let toggleNumberedList (state: TextEditState) : Result<TextEdit, string> = toggleList Numbered state
 
-// Code block, link, table
+// Code block, link, image, table
 
 /// Lengths of the maximal backtick runs in the text.
 let private backtickRuns (s: string) : int list =
@@ -361,6 +361,21 @@ let insertLink (state: TextEditState) : Result<TextEdit, string> =
             {|
                 changes = [| change lo lo "[text](url)" |]
                 selection = selectionOf (lo + 1) (lo + 5)
+            |}
+    )
+
+let insertImage (state: TextEditState) : Result<TextEdit, string> =
+    oneLineBounds state
+    |> Result.map (fun (lo, hi) ->
+        if lo < hi then
+            {|
+                changes = [| change lo lo "!["; change hi hi "](url)" |]
+                selection = selectionOf (hi + 4) (hi + 7)
+            |}
+        else
+            {|
+                changes = [| change lo lo "![alt text](url)" |]
+                selection = selectionOf (lo + 2) (lo + 10)
             |}
     )
 

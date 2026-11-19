@@ -48,6 +48,9 @@ let codeBlock =
 let link =
     command "link" "Link" "swt:fluent--link-24-regular" (Some "Mod-k") insertLink
 
+let image =
+    command "image" "Image" "swt:fluent--image-24-regular" (Some "Mod-Shift-p") insertImage
+
 let quote =
     command "quote" "Quote" "swt:fluent--text-quote-24-regular" (Some "Mod-Shift-.") toggleQuote
 
@@ -81,7 +84,7 @@ let headings: MarkdownCommand[] = [| heading1; heading2; heading3 |]
 /// The button groups of the toolbar. The toolbar draws the heading menu before the first group.
 let groups: MarkdownCommand[][] = [|
     [| bold; italic; strikethrough |]
-    [| inlineCode; codeBlock; link; quote |]
+    [| inlineCode; codeBlock; link; image; quote |]
     [| bulletList; numberedList; taskList |]
     [| table |]
 |]

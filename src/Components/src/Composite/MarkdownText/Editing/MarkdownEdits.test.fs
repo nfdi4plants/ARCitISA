@@ -215,6 +215,35 @@ Vitest.describe (
 )
 
 Vitest.describe (
+    "insertImage",
+    fun () ->
+        Vitest.test (
+            "uses the selection as alt text and selects the url",
+            fun () -> Vitest.expect(runInline insertImage "a word b" 2 6).toEqual ("a ![word](url) b", 10, 13)
+        )
+
+        Vitest.test (
+            "treats a backward selection like a forward one",
+            fun () -> Vitest.expect(runInline insertImage "a word b" 6 2).toEqual ("a ![word](url) b", 10, 13)
+        )
+
+        Vitest.test (
+            "handles a selection that ends at the end of the text",
+            fun () -> Vitest.expect(runInline insertImage "word" 0 4).toEqual ("![word](url)", 8, 11)
+        )
+
+        Vitest.test (
+            "selects the alt text when nothing is selected",
+            fun () -> Vitest.expect(runInline insertImage "ab" 1 1).toEqual ("a![alt text](url)b", 3, 11)
+        )
+
+        Vitest.test (
+            "refuses a selection over several lines",
+            fun () -> Vitest.expect(errorOf insertImage "a\nb" 0 3).toBe "Select text on one line."
+        )
+)
+
+Vitest.describe (
     "insertTable",
     fun () ->
         let table = "| Column 1 | Column 2 |\n| --- | --- |\n|  |  |"
