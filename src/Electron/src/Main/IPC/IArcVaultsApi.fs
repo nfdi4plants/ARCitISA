@@ -24,6 +24,8 @@ open Main.IPC.Delete
 open Main.IPC.Rename
 open Swate.Electron.Shared.DTOs.ProvenanceGroupingDto
 open Main.IPC.FileSystemIO
+open Main.Helper
+open Main.Helper.ArcPathContainment
 open Main.VersionControl
 open VersionControlService.Abstractions
 
@@ -1280,20 +1282,20 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
                                     let! info =
                                         match info with
                                         | Some textInfo when textInfo.readOnly.IsNone -> promise {
-                                            match! TextFileSave.checkTargetAsync vault.path.Value path with
-                                            | Ok TextFileSave.SymbolicLink ->
+                                            match! ArcPathContainment.checkTargetAsync vault.path.Value path with
+                                            | Ok ArcPathContainment.SymbolicLink ->
                                                 return
                                                     Some {|
                                                         textInfo with
                                                             readOnly = Some TextReadOnlyReason.SymbolicLink
                                                     |}
-                                            | Ok TextFileSave.OutsideArc ->
+                                            | Ok ArcPathContainment.OutsideArc ->
                                                 return
                                                     Some {|
                                                         textInfo with
                                                             readOnly = Some TextReadOnlyReason.OutsideArc
                                                     |}
-                                            | Ok(TextFileSave.RegularFile(stats, _)) when
+                                            | Ok(ArcPathContainment.RegularFile(stats, _)) when
                                                 TextFileSave.isWriteProtected stats
                                                 ->
                                                 return

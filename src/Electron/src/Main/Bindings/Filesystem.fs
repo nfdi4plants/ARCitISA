@@ -170,6 +170,10 @@ type ReadResult =
     abstract member bytesRead: int
     abstract member buffer: byte[]
 
+/// A Node.js readable stream. The binding only needs to destroy it and hand it to Readable.toWeb.
+type NodeReadStream =
+    abstract member destroy: unit -> unit
+
 type FileHandle =
     abstract member close: unit -> JS.Promise<unit>
     abstract member read: buffer: byte[] * offset: int * length: int * position: int -> JS.Promise<ReadResult>
@@ -178,6 +182,16 @@ type FileHandle =
     abstract member stat: unit -> JS.Promise<Stats>
     abstract member chmod: int -> JS.Promise<unit>
     abstract member sync: unit -> JS.Promise<unit>
+
+    /// Streams the bytes from start to end (both inclusive). With autoClose the handle closes when the stream ends.
+    abstract member createReadStream:
+        options:
+            {|
+                start: float
+                ``end``: float
+                autoClose: bool
+            |} ->
+            NodeReadStream
 
 [<Import("open", "fs/promises")>]
 let openAsync (path: string) (flags: string) : JS.Promise<FileHandle> = jsNative
@@ -206,3 +220,12 @@ let tryDecodeFatal (buffer: byte[]) (offset: int) (length: int) (label: string) 
 
 [<Emit("new TextDecoder($3, { ignoreBOM: true }).decode($0.subarray($1, $1 + $2))")>]
 let decodeLenient (buffer: byte[]) (offset: int) (length: int) (label: string) : string = jsNative
+
+type private ReadableClass =
+    abstract member toWeb: NodeReadStream -> obj
+
+[<Import("Readable", "node:stream")>]
+let private readableClass: ReadableClass = jsNative
+
+/// Converts a Node.js readable stream into a web ReadableStream, the body type of a fetch Response.
+let readableToWeb (stream: NodeReadStream) : obj = readableClass.toWeb stream

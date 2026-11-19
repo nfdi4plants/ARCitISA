@@ -42,6 +42,7 @@
     <Compile Include="IpcArchitectureReview.test.fs" />
     <Compile Include="ArcFileSystemHelper.test.fs" />
     <Compile Include="FilesystemBindings.test.fs" />
+    <Compile Include="MarkdownResolverService.test.fs" />
     <Compile Include="TextDocumentIO.test.fs" />
     <Compile Include="TextDocumentHelper.test.fs" />
     <Compile Include="TextDocumentSchemas.test.fs" />

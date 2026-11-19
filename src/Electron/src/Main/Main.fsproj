@@ -18,6 +18,7 @@
     <Compile Include="Bindings\PromiseRace.fs" />
     <Compile Include="Helper\Assets.fs" />
     <Compile Include="Helper\WindowSend.fs" />
+    <Compile Include="Helper\ArcPathContainment.fs" />
     <Compile Include="Notes\NoteConstants.fs" />
     <Compile Include="Notes\NoteScaffolding.fs" />
     <Compile Include="Notes\NoteSearchReader.fs" />
@@ -25,6 +26,9 @@
     <Compile Include="Services\Settings\AppVersion.fs" />
     <Compile Include="Services\Settings\UiSettings.fs" />
     <Compile Include="Services\Settings\RecentArcStore.fs" />
+    <Compile Include="Services\MarkdownResolverService\AssetPolicy.fs" />
+    <Compile Include="Services\MarkdownResolverService\MarkdownResolverService.fs" />
+    <Compile Include="Services\MarkdownResolverService\AssetProtocol.fs" />
     <Compile Include="ArcMerge\Types.fs" />
     <Compile Include="ArcMerge\ArcEntityRefHelper.fs" />
     <Compile Include="ARCtrlExtensions\WorkflowPayloads.fs" />
@@ -80,6 +84,7 @@
     <Compile Include="IPC\IGitLabApi.fs" />
     <Compile Include="IPC\TextFileSave.fs" />
     <Compile Include="IPC\IArcVaultsApi.fs" />
+    <Compile Include="IPC\IMarkdownResolverApi.fs" />
     <Compile Include="IPC\IAuthApi.fs" />
     <Compile Include="IPC\ITemplateApi.fs" />
     <Compile Include="IPC\IValidationPackageApi.fs" />

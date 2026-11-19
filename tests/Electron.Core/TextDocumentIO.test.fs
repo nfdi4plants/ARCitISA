@@ -450,8 +450,8 @@ Vitest.describe (
 
                         expectError "Only regular files can be saved." result
 
-                        match! Main.IPC.TextFileSave.checkTargetAsync dir (join [| dir; "link.txt" |]) with
-                        | Ok Main.IPC.TextFileSave.SymbolicLink -> ()
+                        match! Main.Helper.ArcPathContainment.checkTargetAsync dir (join [| dir; "link.txt" |]) with
+                        | Ok Main.Helper.ArcPathContainment.SymbolicLink -> ()
                         | _ -> failwith "Expected SymbolicLink"
                     })
         )
@@ -468,8 +468,10 @@ Vitest.describe (
 
                         expectError "The file is outside the open ARC." result
 
-                        match! Main.IPC.TextFileSave.checkTargetAsync dir (join [| dir; "linked"; "a.txt" |]) with
-                        | Ok Main.IPC.TextFileSave.OutsideArc -> ()
+                        match!
+                            Main.Helper.ArcPathContainment.checkTargetAsync dir (join [| dir; "linked"; "a.txt" |])
+                        with
+                        | Ok Main.Helper.ArcPathContainment.OutsideArc -> ()
                         | _ -> failwith "Expected OutsideArc"
                     })
                 )
@@ -483,12 +485,12 @@ Vitest.describe (
                     do! writeBytesAsync path (utf8 "old")
                     do! TestHelpers.chmodAsync (path, 0o444)
                     let! result = saveTextFileAsync dir (saveRequest "a.txt" "x" TextFileEncoding.Utf8 None true)
-                    let! state = Main.IPC.TextFileSave.checkTargetAsync dir path
+                    let! state = Main.Helper.ArcPathContainment.checkTargetAsync dir path
                     do! TestHelpers.chmodAsync (path, 0o644)
                     expectError "This file is write-protected." result
 
                     match state with
-                    | Ok(Main.IPC.TextFileSave.RegularFile(stats, _)) ->
+                    | Ok(Main.Helper.ArcPathContainment.RegularFile(stats, _)) ->
                         Vitest.expect(Main.IPC.TextFileSave.isWriteProtected stats).toBe true
                     | _ -> failwith "Expected RegularFile"
                 })

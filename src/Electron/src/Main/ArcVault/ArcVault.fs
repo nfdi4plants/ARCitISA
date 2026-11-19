@@ -215,6 +215,7 @@ module ArcVaultExtensions =
             let hadUnsavedArcChanges = this.hasUnsavedArcChanges
 
             this.isInitializingArc <- false
+            this.MarkdownResolver.Renew()
             this.path <- None
             this.KnownDisk <- None
             this.LastSyncFailed <- false
@@ -328,6 +329,7 @@ module ArcVaultExtensions =
 
                 swatelogfn this.window.id "path: %s" normalizedPath
                 this.isInitializingArc <- true
+                this.MarkdownResolver.Renew()
                 this.path <- Some normalizedPath
 
                 try
@@ -347,6 +349,7 @@ module ArcVaultExtensions =
                 try
                     this.isInitializingArc <- true
                     let arc = ARC(identifier)
+                    this.MarkdownResolver.Renew()
                     this.path <- Some normalizedPath
                     this.SetArc(arc)
                     this.RefreshHasUnsavedArcChangesFlag()

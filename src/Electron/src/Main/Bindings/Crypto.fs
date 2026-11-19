@@ -35,3 +35,12 @@ let hashFileAsync (path: string) : JS.Promise<string> =
         stream.onError reject
         stream.onEnd (fun () -> resolve (hash.digest "hex"))
     )
+
+type private RandomBuffer =
+    abstract member toString: string -> string
+
+[<Import("randomBytes", "crypto")>]
+let private randomBytes (byteCount: int) : RandomBuffer = jsNative
+
+/// Lowercase hex of cryptographically random bytes. The result has twice as many characters as byteCount.
+let randomHex (byteCount: int) : string = (randomBytes byteCount).toString "hex"

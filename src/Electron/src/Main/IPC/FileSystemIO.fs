@@ -8,42 +8,11 @@ open Swate.Electron.Shared.FileIOTypes
 open Swate.Electron.Shared.RenamePathRules
 open Main.Bindings.Filesystem
 open Main.Bindings.Path
+open Main.Helper.ArcPathContainment
 
 
 let private fsPromisesDynamic: obj = importAll "fs/promises"
 let private pathDynamic: obj = importAll "path"
-
-[<RequireQualifiedAccess>]
-module ArcPathValidation =
-
-    let normalizePathForComparison (pathValue: string) =
-        PathHelpers.normalizePathForFsComparison pathValue
-
-    let containsTraversalSegments (pathValue: string) =
-        PathHelpers.containsPathTraversalSegments pathValue
-
-    let isSafeRelativePathCandidate (pathValue: string) =
-        let normalizedPath = PathHelpers.normalizePath pathValue
-
-        not (String.IsNullOrWhiteSpace normalizedPath)
-        && normalizedPath <> "."
-        && not (pathDynamic?isAbsolute (normalizedPath) |> unbox<bool>)
-        && not (containsTraversalSegments normalizedPath)
-
-    let isWithinRootPath (rootPath: string) (candidatePath: string) =
-        let normalizedRootPath =
-            pathDynamic?resolve (rootPath) |> unbox<string> |> normalizePathForComparison
-
-        let normalizedCandidatePath =
-            pathDynamic?resolve (candidatePath)
-            |> unbox<string>
-            |> normalizePathForComparison
-
-        normalizedCandidatePath = normalizedRootPath
-        || normalizedCandidatePath.StartsWith(normalizedRootPath + "/")
-
-let resolveAbsolutePath (pathValue: string) =
-    pathDynamic?resolve (pathValue) |> unbox<string>
 
 let tryResolveRealPathAsync (absolutePath: string) : JS.Promise<string> = promise {
     try
@@ -51,45 +20,6 @@ let tryResolveRealPathAsync (absolutePath: string) : JS.Promise<string> = promis
     with _ ->
         return absolutePath
 }
-
-let tryGetArcRelativePath (arcPath: string) (requestedAbsolutePath: string) =
-    let arcRoot = resolveAbsolutePath arcPath
-    let absolutePath = resolveAbsolutePath requestedAbsolutePath
-
-    let relativePath =
-        pathDynamic?relative (arcRoot, absolutePath)
-        |> unbox<string>
-        |> PathHelpers.normalizePath
-
-    if String.IsNullOrWhiteSpace relativePath || relativePath = "." then
-        Ok ""
-    elif not (ArcPathValidation.isSafeRelativePathCandidate relativePath) then
-        Error(exn $"Path '{requestedAbsolutePath}' is outside the active ARC root.")
-    elif not (ArcPathValidation.isWithinRootPath arcRoot absolutePath) then
-        Error(exn $"Path '{requestedAbsolutePath}' is outside the active ARC root.")
-    else
-        Ok relativePath
-
-/// Resolves a relative path against the ARC root and rejects absolute or traversal-based escapes.
-let tryResolveArcRelativePath (arcPath: string) (requestedRelativePath: string) =
-    let relativePath = PathHelpers.normalizePath requestedRelativePath
-
-    if String.IsNullOrWhiteSpace relativePath then
-        Error(exn "RelativePath must not be empty.")
-    elif not (ArcPathValidation.isSafeRelativePathCandidate relativePath) then
-        if pathDynamic?isAbsolute (relativePath) |> unbox<bool> then
-            Error(exn "RelativePath must not be absolute.")
-        else
-            Error(exn "RelativePath must not contain path traversal segments.")
-    else
-        let arcRoot = resolveAbsolutePath arcPath
-        let absolutePath = pathDynamic?resolve (arcRoot, relativePath) |> unbox<string>
-
-        if ArcPathValidation.isWithinRootPath arcRoot absolutePath then
-            Ok absolutePath
-        else
-            Error(exn "RelativePath resolves outside the ARC root.")
-
 
 let pathExistsAsync (absolutePath: string) : JS.Promise<bool> = promise {
     let! fileExists = ARCtrl.FileSystemHelper.fileExistsAsync absolutePath

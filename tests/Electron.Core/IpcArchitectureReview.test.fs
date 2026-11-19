@@ -11,6 +11,7 @@ open Main.ArcVaultSync
 open Main.ArcVaultTypes
 open Main.FileImportAuthorization
 open Main.IPC.FileSystemIO
+open Main.Helper.ArcPathContainment
 open Main.IPC.Rename
 open Main.ARCtrlExtensions
 open Swate.Components.Shared

@@ -12,6 +12,7 @@ open Main.Bindings
 open Main.Bindings.Filesystem
 open Main.Bindings.Path
 open Main.IPC.FileSystemIO
+open Main.Helper.ArcPathContainment
 
 let private isWin32 = Node.processPlatform () = "win32"
 
@@ -61,25 +62,6 @@ type private PublishResult =
 type private Baseline =
     | NewFile
     | ExistingFile of hash: string
-
-/// What the path of a save or an open resolves to. The folder strings are the real paths of the parent folder.
-type TargetState =
-    | Missing of realParent: string
-    | RegularFile of Stats * realParent: string
-    | SymbolicLink
-    | OutsideArc
-    | NotRegularFile
-    | ParentMissing
-
-let private tryLstatAsync (path: string) : JS.Promise<Stats option> = promise {
-    try
-        let! stats = lstatAsync path
-        return Some stats
-    with error ->
-        match tryGetNodeErrorCode error with
-        | Some "ENOENT" -> return None
-        | _ -> return raise error
-}
 
 /// Hashes the file with a stream and compares size and mtime before and after. The flag is false when they differ.
 let private readStableAsync (path: string) : JS.Promise<string * Stats * bool> = promise {
@@ -148,52 +130,6 @@ let private removeTempAsync (tempPath: string) : JS.Promise<unit> = promise {
         do! rmAsync tempPath (RmOptions(force = true))
     with _ ->
         ()
-}
-
-/// The path with forward slashes and without a trailing one. Windows paths compare case-insensitively.
-let private normalizeForContainment (path: string) =
-    let normalized = path.Replace('\\', '/').TrimEnd('/')
-
-    if isWin32 then
-        normalized.ToLowerInvariant()
-    else
-        normalized
-
-let private isSameOrInside (root: string) (candidate: string) =
-    let root = normalizeForContainment root
-    let candidate = normalizeForContainment candidate
-    candidate = root || candidate.StartsWith(root + "/")
-
-let private tryRealpathAsync (path: string) : JS.Promise<string option> = promise {
-    try
-        let! resolved = realpathAsync path
-        return Some resolved
-    with error ->
-        match tryGetNodeErrorCode error with
-        | Some "ENOENT" -> return None
-        | _ -> return raise error
-}
-
-/// Resolves the real folder of the target and checks that it lies inside the real ARC root. The open and the
-/// save use it, so both agree on what is writable.
-let checkTargetAsync (arcRoot: string) (absoluteTarget: string) : JS.Promise<Result<TargetState, exn>> = promise {
-    try
-        let! realRoot = realpathAsync arcRoot
-        let! realParent = tryRealpathAsync (dirname absoluteTarget)
-
-        match realParent with
-        | None -> return Ok ParentMissing
-        | Some realParent when not (isSameOrInside realRoot realParent) -> return Ok OutsideArc
-        | Some realParent ->
-            let! stats = tryLstatAsync (join [| realParent; basename absoluteTarget |])
-
-            match stats with
-            | None -> return Ok(Missing realParent)
-            | Some stats when stats.isSymbolicLink () -> return Ok SymbolicLink
-            | Some stats when not (stats.isFile ()) -> return Ok NotRegularFile
-            | Some stats -> return Ok(RegularFile(stats, realParent))
-    with error ->
-        return Error error
 }
 
 /// True for an existing file without the owner write bit. Node maps the Windows read-only attribute to it.

@@ -11,6 +11,7 @@ open Swate.Components.Shared.ProvenanceGraph.Types
 open Swate.Electron.Shared.DTOs.NoteSearchDto
 open Swate.Electron.Shared.DTOs.ProvenanceGroupingDto
 open Swate.Electron.Shared.DTOs.ArcNodesDto
+open Swate.Electron.Shared.DTOs.MarkdownResolverDto
 open AuthTypes
 open FileIOTypes
 open VersionControlTypes
@@ -236,6 +237,16 @@ type IArcVaultsApi = {
     resolveCloseRequest: SaveBeforeQuitDecision -> JS.Promise<Result<unit, exn>>
     /// The renderer reports whether its text editor has unsaved edits, so closing the window asks first.
     setHasUnsavedTextChanges: bool -> JS.Promise<Result<unit, exn>>
+}
+
+/// Renderer -> Main: images and link targets of Markdown documents in the open ARC.
+type IMarkdownResolverApi = {
+    /// arc-asset://w<windowId>-<nonce>/ for the calling window. Fails when no ARC is open.
+    getAssetBaseUrl: unit -> JS.Promise<Result<string, exn>>
+    /// Why the image at an ARC-relative path is not served, or None when it is.
+    describeAsset: string -> JS.Promise<Result<AssetRefusal option, exn>>
+    /// One result per ARC-relative path, in order. At most 500 paths per call.
+    checkPaths: string[] -> JS.Promise<Result<PathCheck[], exn>>
 }
 
 /// Two Way Bridge: Renderer <-> Main

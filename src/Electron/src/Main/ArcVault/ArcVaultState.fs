@@ -16,6 +16,7 @@ open Main.ArcMerge
 open Main.ArcVaultHelper
 open Main.ArcDiskState
 open Main.FileImportCoordinator
+open Main.Services.MarkdownResolverService
 open Swate.Components.Shared
 open Swate.Electron.Shared.IPCTypes
 open Swate.Electron.Shared.IPCTypes.IPCTypesHelper
@@ -147,6 +148,9 @@ type ArcVault(window: BrowserWindow) =
         )
 
     member val window: BrowserWindow = window with get
+
+    /// One per window. Serves images and checks link targets for Markdown.
+    member val MarkdownResolver = MarkdownResolverService(window.id, (fun () -> arcPath)) with get
 
     member this.path
         with get () = arcPath

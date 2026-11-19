@@ -15,6 +15,7 @@
     <Compile Include="FileSystemHelper.test.fs" />
     <Compile Include="FileTreeFileTargetWorkflow.test.fs" />
     <Compile Include="FileTreeClick.test.fs" />
+    <Compile Include="MarkdownLinkContext.test.fs" />
     <Compile Include="FileTreeMaterialization.test.fs" />
     <Compile Include="FileTreePerformance.test.fs" />
     <Compile Include="FileTreeContextMenu.test.fs" />

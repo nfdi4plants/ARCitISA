@@ -7,6 +7,8 @@ open Swate.Components.Composite.TextEditor.Types
 open Swate.Components.Composite.MarkdownText
 open Swate.Components.Composite.MarkdownText.Editing
 open Swate.Components.Composite.MarkdownText.Editing.Types
+open Swate.Components.Composite.MarkdownText.Links
+open Renderer.Components.Helper
 open Swate.Electron.Shared
 open Swate.Electron.Shared.FileIOTypes
 open Renderer.Types
@@ -53,18 +55,13 @@ module private TextDocumentTargetHelpers =
     /// Markdown goes through the sanitizer of the Markdown preview. HTML runs in a sandboxed frame: scripts work,
     /// but without allow-same-origin the page gets an opaque origin and cannot reach the app. SVG is an image, so
     /// its scripts never run.
-    let renderedView (rendering: Rendering) (text: string) : ReactElement =
+    let renderedView (linkContext: IMarkdownLinkContext option) (rendering: Rendering) (text: string) : ReactElement =
         match rendering with
         | RenderedMarkdown ->
             Html.div [
                 prop.className "wmde-markdown-var swt:flex-1 swt:min-h-0 swt:overflow-auto"
                 prop.children [
-                    Swate.Components.Composite.MarkdownText.JsBindings.ReactMDEditor.MarkdownPreview(
-                        text,
-                        className = "swt:p-4",
-                        components = Swate.Components.Composite.MarkdownText.Preview.components,
-                        rehypePlugins = Swate.Components.Composite.MarkdownText.Preview.rehypePlugins
-                    )
+                    MarkdownView.MarkdownView(text, className = "swt:p-4", ?linkContext = linkContext)
                 ]
             ]
         | RenderedHtml ->
@@ -122,6 +119,11 @@ let TextDocumentTarget (data: TextDocumentPageData) =
     let saving, setSaving = React.useState false
     let error, setError = React.useState (None: string option)
     let notice, setNotice = React.useState (None: DiskNotice option)
+    let linkError, setLinkError = React.useState (None: string option)
+    let baseFolder = LinkResolution.baseFolderOf data.Path
+
+    let linkContext =
+        MarkdownLinkContext.useMarkdownLinkContext baseFolder (fun message -> setLinkError (Some message))
 
     // Markdown opens for writing, HTML and SVG open as they look. The editor mounts on first use and then stays
     // mounted while the rendered side shows, so cursor and undo history survive the switch.
@@ -148,6 +150,17 @@ let TextDocumentTarget (data: TextDocumentPageData) =
 
     let surface =
         React.useMemo ((fun () -> MarkdownSurface.ofTextEditor handleRef), [||])
+
+    let linkLint =
+        React.useMemo (
+            (fun () ->
+                if isMarkdown then
+                    Some(LinkDiagnostics.lint baseFolder MarkdownLinkContext.checkTargets)
+                else
+                    None
+            ),
+            [| box baseFolder; box isMarkdown |]
+        )
 
     let markdownMessage, setMarkdownMessage = React.useState (None: string option)
     let ontologyReferenceOpen, setOntologyReferenceOpen = React.useState false
@@ -304,10 +317,15 @@ let TextDocumentTarget (data: TextDocumentPageData) =
         React.useMemo (
             (fun () ->
                 match rendering with
-                | Some current when showRendered -> renderedView current renderedText
+                | Some current when showRendered -> renderedView linkContext current renderedText
                 | _ -> Html.none
             ),
-            [| box showRendered; box renderedText; box data.FileType |]
+            [|
+                box showRendered
+                box renderedText
+                box data.FileType
+                box linkContext
+            |]
         )
 
     let status, statusClass =
@@ -319,12 +337,14 @@ let TextDocumentTarget (data: TextDocumentPageData) =
         | _ -> "Saved", "swt:opacity-70"
 
     let showEditor () =
+        setLinkError None
         setEditorMounted true
         setShowRendered false
         focusEditorRef.current <- true
 
     // The rendered side shows the text in the editor, saved or not.
     let showRenderedView () =
+        setLinkError None
         setMarkdownMessage None
 
         setRenderedText (
@@ -465,6 +485,22 @@ let TextDocumentTarget (data: TextDocumentPageData) =
                     ]
                 ]
             | None -> Html.none
+            match linkError with
+            | Some message ->
+                Html.div [
+                    prop.role "alert"
+                    prop.className "swt:alert swt:alert-warning swt:rounded-none swt:flex swt:flex-wrap swt:gap-2"
+                    prop.children [
+                        Html.span [ prop.text message ]
+                        Html.button [
+                            prop.type'.button
+                            prop.className "swt:btn swt:btn-sm"
+                            prop.text "Dismiss"
+                            prop.onClick (fun _ -> setLinkError None)
+                        ]
+                    ]
+                ]
+            | None -> Html.none
             if editorMounted then
                 Html.div [
                     prop.className [
@@ -480,6 +516,7 @@ let TextDocumentTarget (data: TextDocumentPageData) =
                             fileName = data.Path,
                             readOnly = isReadOnly,
                             ?schemaValidator = TextDocumentSchemas.tryFindValidator data.Path,
+                            ?extraLint = linkLint,
                             onSave = onSave,
                             onDirtyChange = onDirtyChange,
                             ?keyBindings = (if isMarkdown then Some markdownKeyBindings else None),
