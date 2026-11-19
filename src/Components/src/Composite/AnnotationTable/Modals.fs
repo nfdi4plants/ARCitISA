@@ -1584,16 +1584,7 @@ type UpdateColumnModal =
                     let regex = Regex(regex)
 
                     cellValues
-                    |> Array.mapi (fun i c ->
-                        let m = regex.Match(c)
-
-                        match m.Success with
-                        | true ->
-                            // regex.Replace(c, replacement)
-                            let replaced = c.Replace(m.Value, replacement)
-                            replaced
-                        | false -> c
-                    )
+                    |> Array.map (fun c -> regex.Replace(c, replacement))
                     |> setPreview
                 with _ ->
                     ()

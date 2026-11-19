@@ -257,3 +257,54 @@ Vitest.test (
         for newIndex, oldIndex in [ 0, 2; 1, 0; 2, 1 ] do
             Vitest.expect(updated.Value.GetColumn(newIndex)).toEqual (table.GetColumn(oldIndex))
 )
+
+for pattern, replacement, expected in
+    [
+        "^kos1", "M_kos1", [| "M_kos1/kos1"; "M_kos1/kos1_1"; "M_kos1/kos1_2" |]
+        "kos1$", "kos1_M", [| "kos1/kos1_M"; "kos1_2/kos1_M"; "other" |]
+        "kos[12]", "sample", [| "sample/sample_1"; "sample/sample_2"; "other" |]
+        "^", "M_", [| "M_kos1/kos1"; "M_kos1/kos1_1"; "M_kos1/kos1_2" |]
+        "$", "_M", [| "kos1/kos1_M"; "kos1/kos1_1_M"; "kos1/kos1_2_M" |]
+    ] do
+    Vitest.test (
+        $"Update Rows respects regex {pattern} in preview and submission",
+        fun () ->
+            let values =
+                if pattern = "kos1$" then
+                    [| "kos1/kos1"; "kos1_2/kos1"; "other" |]
+                elif pattern = "kos[12]" then
+                    [| "kos1/kos2_1"; "kos2/kos1_2"; "other" |]
+                else
+                    [| "kos1/kos1"; "kos1/kos1_1"; "kos1/kos1_2" |]
+
+            let table = ArcTable.init "Samples"
+            let header = CompositeHeader.Output IOType.Sample
+            let cells = values |> Array.map CompositeCell.FreeText |> ResizeArray
+            table.AddColumn(header, cells)
+            let original = table.Copy().GetColumn(0)
+            let mutable updated: CompositeColumn option = None
+            let mutable closed = false
+
+            RTL.render (
+                UpdateColumnModal.UpdateColumnModal(
+                    0, table, (fun column -> updated <- Some column), (fun () -> closed <- true)
+                )
+            ) |> ignore
+
+            let inputs = RTL.screen.getAllByRole "textbox"
+            RTL.fireEvent.change (inputs.[0], {| target = {| value = pattern |} |})
+            RTL.fireEvent.change (inputs.[1], {| target = {| value = replacement |} |})
+
+            let rows = RTL.screen.getAllByRole "row"
+            for i in 0 .. expected.Length - 1 do
+                Vitest.expect(rows.[i + 1].textContent).toBe ($"{i}{values.[i]}{expected.[i]}")
+
+            Vitest.expect(updated).toEqual None
+            Vitest.expect(table.GetColumn(0)).toEqual original
+            click "Submit"
+            Vitest.expect(updated.Value).toEqual (
+                CompositeColumn.create(header, expected |> Array.map CompositeCell.FreeText |> ResizeArray)
+            )
+            Vitest.expect(table.GetColumn(0)).toEqual original
+            Vitest.expect(closed).toBe true
+    )
