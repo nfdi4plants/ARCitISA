@@ -287,24 +287,31 @@ for pattern, replacement, expected in
 
             RTL.render (
                 UpdateColumnModal.UpdateColumnModal(
-                    0, table, (fun column -> updated <- Some column), (fun () -> closed <- true)
+                    0,
+                    table,
+                    (fun column -> updated <- Some column),
+                    (fun () -> closed <- true)
                 )
-            ) |> ignore
+            )
+            |> ignore
 
             let inputs = RTL.screen.getAllByRole "textbox"
             RTL.fireEvent.change (inputs.[0], {| target = {| value = pattern |} |})
             RTL.fireEvent.change (inputs.[1], {| target = {| value = replacement |} |})
 
             let rows = RTL.screen.getAllByRole "row"
+
             for i in 0 .. expected.Length - 1 do
                 Vitest.expect(rows.[i + 1].textContent).toBe ($"{i}{values.[i]}{expected.[i]}")
 
             Vitest.expect(updated).toEqual None
             Vitest.expect(table.GetColumn(0)).toEqual original
             click "Submit"
-            Vitest.expect(updated.Value).toEqual (
-                CompositeColumn.create(header, expected |> Array.map CompositeCell.FreeText |> ResizeArray)
-            )
+
+            Vitest
+                .expect(updated.Value)
+                .toEqual (CompositeColumn.create (header, expected |> Array.map CompositeCell.FreeText |> ResizeArray))
+
             Vitest.expect(table.GetColumn(0)).toEqual original
             Vitest.expect(closed).toBe true
     )
