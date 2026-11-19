@@ -362,7 +362,7 @@ let setActiveAccount (localSwateAccountId: string) : AuthStateDto =
 
 /// The outcome of deleting a token on its DataHUB. A token the DataHUB no longer accepts can't be used
 /// anywhere, so it counts as deleted.
-let tokenDeletionOutcome (result: Result<unit, AuthFailure>) : TokenDeletionOutcome =
+let private tokenDeletionOutcome (result: Result<unit, AuthFailure>) : TokenDeletionOutcome =
     match result with
     | Ok()
     | Error { Kind = AuthFailureKind.Unauthorized } -> TokenDeletionOutcome.Deleted
@@ -387,6 +387,15 @@ let removeAccount (localSwateAccountId: string) : (string * string) option =
 let deleteToken (dataHub: string) (token: string) : JS.Promise<TokenDeletionOutcome> =
     GitLabApi.revokeCurrentPersonalAccessToken dataHub token
     |> Promise.map tokenDeletionOutcome
+
+/// Stores the new state of an account after a network call made with `usedToken`. An account that was removed
+/// or got another token while the call ran keeps that change.
+let private storeIfTokenUnchanged (localSwateAccountId: string) (usedToken: string) (nextState: AccountState) =
+    match accounts |> Map.tryFind localSwateAccountId with
+    | Some current when current.Token = usedToken ->
+        accounts <- accounts |> Map.add localSwateAccountId nextState
+        persistAccountState localSwateAccountId nextState
+    | _ -> ()
 
 /// Rotate PAT for a specific account and replace the stored token.
 let rotatePersonalAccessToken (localSwateAccountId: string) : JS.Promise<Result<AuthStateDto, AuthFailure>> = promise {
@@ -429,8 +438,7 @@ let rotatePersonalAccessToken (localSwateAccountId: string) : JS.Promise<Result<
                         Token = rotatedToken.token
                 }
 
-                accounts <- accounts |> Map.add localSwateAccountId updatedAccountState
-                persistAccountState localSwateAccountId updatedAccountState
+                storeIfTokenUnchanged localSwateAccountId accountState.Token updatedAccountState
                 invalidateRevalidationWindow ()
 
                 return Ok(getState ())
@@ -467,7 +475,6 @@ let revalidate () : JS.Promise<AuthResult * bool> = promise {
         else
             lastRevalidationStartedAtUtc <- Some now
 
-            let mutable nextAccounts = accounts
             let mutable firstFailure: AuthFailure option = None
 
             for localSwateAccountId, accountState in accounts |> Map.toArray do
@@ -506,8 +513,7 @@ let revalidate () : JS.Promise<AuthResult * bool> = promise {
                                 }
                         }
 
-                        nextAccounts <- nextAccounts |> Map.add localSwateAccountId updatedAccountState
-                        persistAccountState localSwateAccountId updatedAccountState
+                        storeIfTokenUnchanged localSwateAccountId accountState.Token updatedAccountState
 
                     | Error failure ->
                         if firstFailure.IsNone then
@@ -522,8 +528,7 @@ let revalidate () : JS.Promise<AuthResult * bool> = promise {
                                 }
                         }
 
-                        nextAccounts <- nextAccounts |> Map.add localSwateAccountId updatedAccountState
-                        persistAccountState localSwateAccountId updatedAccountState
+                        storeIfTokenUnchanged localSwateAccountId accountState.Token updatedAccountState
 
                 | Error failure ->
                     if firstFailure.IsNone then
@@ -540,10 +545,8 @@ let revalidate () : JS.Promise<AuthResult * bool> = promise {
                             }
                     }
 
-                    nextAccounts <- nextAccounts |> Map.add localSwateAccountId updatedAccountState
-                    persistAccountState localSwateAccountId updatedAccountState
+                    storeIfTokenUnchanged localSwateAccountId accountState.Token updatedAccountState
 
-            accounts <- nextAccounts
             reconcileActiveAccountInvariant ()
 
             let authStateDto = getState ()
