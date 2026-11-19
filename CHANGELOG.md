@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 3.3.0 - 2026-11-19
+
 ### ✨ Added
 
 - The JSON import opens a dialog that lists the tables of the file with their columns and values. You choose which tables and columns to import, and whether each table becomes a new table or is appended to the table open in the editor. (by @Etschbeijer)
