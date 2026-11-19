@@ -106,6 +106,11 @@ module private CodeMirrorEditorHelpers =
                 )
             )
 
+    let completionsExtension (completions: TextCompletionSource option) : Extension =
+        match completions with
+        | Some source -> TextCompletion.extension source
+        | None -> noExtension
+
     /// The props of one render, as the editor reads them after that render.
     type EditorProps = {
         ReadOnly: bool
@@ -114,6 +119,7 @@ module private CodeMirrorEditorHelpers =
         ProseRules: ProseRules option
         Lint: (string -> JS.Promise<LintDiagnostic[]>) option
         KeyBindings: TextEditorKeyBinding[] option
+        Completions: TextCompletionSource option
         AriaLabel: string
         OnSave: (TextEditorSnapshot -> JS.Promise<bool>) option
         OnDirtyChange: (bool -> unit) option
@@ -132,6 +138,7 @@ module private CodeMirrorEditorHelpers =
         let proseSlot = CompartmentApi.Create()
         let lintSlot = CompartmentApi.Create()
         let keyBindingsSlot = CompartmentApi.Create()
+        let completionsSlot = CompartmentApi.Create()
         let ariaLabelSlot = CompartmentApi.Create()
 
         let mutable view: EditorView option = None
@@ -289,6 +296,7 @@ module private CodeMirrorEditorHelpers =
                         proseSlot.``of`` (proseExtension props.Prose props.ProseRules)
                         lintSlot.``of`` (lintExtension props.Lint)
                         keyBindingsSlot.``of`` (keyBindingsExtension props.KeyBindings)
+                        completionsSlot.``of`` (completionsExtension props.Completions)
                     |]
             |}
 
@@ -376,6 +384,9 @@ module private CodeMirrorEditorHelpers =
                 if not (obj.ReferenceEquals(props.KeyBindings, applied.KeyBindings)) then
                     reconfigure v keyBindingsSlot (keyBindingsExtension props.KeyBindings)
 
+                if not (obj.ReferenceEquals(props.Completions, applied.Completions)) then
+                    reconfigure v completionsSlot (completionsExtension props.Completions)
+
                 if props.AriaLabel <> applied.AriaLabel then
                     reconfigure v ariaLabelSlot (ariaLabelExtension props.AriaLabel)
 
@@ -398,6 +409,8 @@ type CodeMirrorEditor =
     /// a new instance lints again.
     /// keyBindings take precedence over the default keys. Pass the same array instance across renders,
     /// a new instance reconfigures the keys.
+    /// completions adds a completion source next to those of the language. Pass the same function instance across
+    /// renders, a new instance reconfigures the completions.
     /// onHistoryChange reports when undo or redo becomes possible or impossible, also when a new document starts
     /// the history over.
     [<ReactComponent>]
@@ -410,6 +423,7 @@ type CodeMirrorEditor =
             ?prose: bool,
             ?lint: string -> JS.Promise<LintDiagnostic[]>,
             ?keyBindings: TextEditorKeyBinding[],
+            ?completions: TextCompletionSource,
             ?onSave: TextEditorSnapshot -> JS.Promise<bool>,
             ?onDirtyChange: bool -> unit,
             ?onChange: unit -> unit,
@@ -425,6 +439,7 @@ type CodeMirrorEditor =
             ProseRules = proseOf registry language
             Lint = lint
             KeyBindings = keyBindings
+            Completions = completions
             AriaLabel = defaultArg ariaLabel "Text editor"
             OnSave = onSave
             OnDirtyChange = onDirtyChange
@@ -501,6 +516,7 @@ type CodeMirrorEditor =
                 box props.ProseRules
                 box lint
                 box keyBindings
+                box completions
                 box props.AriaLabel
             |]
         )

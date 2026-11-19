@@ -47,4 +47,15 @@ let api (event: IpcMainInvokeEvent) : IMarkdownResolverApi = {
             with error ->
                 return Error error
         }
+    listFolder =
+        fun request -> promise {
+            try
+                let windowId = IPCHelper.windowIdFromIpcEvent event
+
+                match ARC_VAULTS.TryGetVault windowId with
+                | None -> return Error(noVaultError windowId)
+                | Some vault -> return! vault.MarkdownResolver.ListFolder(request.folder, request.namePrefix)
+            with error ->
+                return Error error
+        }
 }

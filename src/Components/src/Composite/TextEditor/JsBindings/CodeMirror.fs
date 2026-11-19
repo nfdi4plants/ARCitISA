@@ -54,6 +54,8 @@ type EditorState =
     abstract selection: EditorSelection
     /// True when the readOnly facet is set.
     abstract readOnly: bool
+    /// The values of one language data field at a position, such as the completion sources under "autocomplete".
+    abstract languageDataAt<'T> : name: string * pos: int -> 'T[]
 
 [<AllowNullLiteral>]
 type Compartment =
@@ -69,6 +71,9 @@ type EditorStateConfig = {| doc: string; extensions: Extension |}
 type EditorStateStatic =
     abstract create: config: EditorStateConfig -> EditorState
     abstract readOnly: Facet<bool>
+    /// Language data for every position, whatever the language there. CodeMirror calls the function with the state,
+    /// the position and the side, and reads the fields of the objects it returns.
+    abstract languageData: Facet<EditorState -> obj[]>
 
 /// A transaction annotation, made by an AnnotationType.
 type Annotation = interface end

@@ -83,6 +83,28 @@ let checkTargets (paths: string[]) : JS.Promise<LinkTargetState[]> = promise {
     | Error e -> return! Promise.reject e
 }
 
+/// The folder contents a listing gives the path completion. A missing folder or one outside the ARC has nothing to
+/// offer, and the link warnings already mark such a target.
+let folderContentsOf (listing: FolderListing) : FolderContents option =
+    match listing with
+    | FolderListing.Listed(entries, truncated) ->
+        Some {|
+            entries = entries
+            truncated = truncated
+        |}
+    | FolderListing.NotAFolder
+    | FolderListing.OutsideArc -> None
+
+/// Lists one ARC folder for the path completion of the editor. A failed call rejects, so the editor shows no
+/// completions and logs the reason.
+let listFolder (request: ListFolderRequest) : JS.Promise<FolderContents option> = promise {
+    let! result = Api.ipcMarkdownResolverApi.listFolder request
+
+    match result with
+    | Ok listing -> return folderContentsOf listing
+    | Error e -> return! Promise.reject e
+}
+
 /// The link context of the open ARC for a Markdown document in baseFolder. It is None while no ARC is open.
 [<Hook>]
 let useMarkdownLinkContext (baseFolder: string) (onLinkError: string -> unit) : IMarkdownLinkContext option =

@@ -351,3 +351,29 @@ Vitest.describe (
             }
         )
 )
+
+Vitest.describe (
+    "MarkdownLinkContext.folderContentsOf",
+    fun () ->
+        Vitest.test (
+            "hands a listing to the path completion as it is",
+            fun () ->
+                let entries: FolderEntryDto[] = [|
+                    {| name = "docs"; isDirectory = true |}
+                    {| name = "a.md"; isDirectory = false |}
+                |]
+
+                match folderContentsOf (FolderListing.Listed(entries, true)) with
+                | Some contents ->
+                    Vitest.expect(contents.entries).toEqual entries
+                    Vitest.expect(contents.truncated).toBe true
+                | None -> failwith "Expected folder contents"
+        )
+
+        Vitest.test (
+            "offers nothing for a file, a missing folder or a path outside the ARC",
+            fun () ->
+                Vitest.expect(folderContentsOf FolderListing.NotAFolder |> Option.isNone).toBe true
+                Vitest.expect(folderContentsOf FolderListing.OutsideArc |> Option.isNone).toBe true
+        )
+)

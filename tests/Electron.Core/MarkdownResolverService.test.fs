@@ -504,3 +504,133 @@ Vitest.describe (
                 })
         )
 )
+
+let private makeFolder (path: string) : JS.Promise<unit> =
+    mkdirRecursiveAsync path {| recursive = true |} |> Promise.map ignore
+
+/// The names and kinds of a listing and whether it was cut.
+let private entriesOf (listing: Result<FolderListing, exn>) =
+    match listing with
+    | Ok(FolderListing.Listed(entries, truncated)) ->
+        entries |> Array.map (fun entry -> entry.name, entry.isDirectory), truncated
+    | Ok other -> failwith $"Expected a listing, got {other}"
+    | Error error -> failwith error.Message
+
+let private outcomeOf (listing: Result<FolderListing, exn>) =
+    match listing with
+    | Ok(FolderListing.Listed _) -> "listed"
+    | Ok FolderListing.NotAFolder -> "not a folder"
+    | Ok FolderListing.OutsideArc -> "outside"
+    | Error error -> $"error: {error.Message}"
+
+Vitest.describe (
+    "MarkdownResolverService.ListFolder",
+    fun () ->
+        Vitest.test (
+            "lists the files and folders whose names start with the prefix, folders first, ignoring case",
+            fun () ->
+                withDirectory (fun dir -> promise {
+                    do! makeFolder (join [| dir; "docs" |])
+                    do! makeFolder (join [| dir; "Data" |])
+                    do! makeFolder (join [| dir; ".arc" |])
+                    do! writeBytesAsync (join [| dir; "b.md" |]) (utf8 "x")
+                    do! writeBytesAsync (join [| dir; "A.png" |]) pngBytes
+
+                    let! all = (serviceFor dir).ListFolder("", "")
+                    let! startingWithD = (serviceFor dir).ListFolder("/", "D")
+
+                    Vitest
+                        .expect(entriesOf all)
+                        .toEqual (
+                            ([|
+                                (".arc", true)
+                                ("Data", true)
+                                ("docs", true)
+                                ("A.png", false)
+                                ("b.md", false)
+                             |],
+                             false)
+                        )
+
+                    Vitest.expect(entriesOf startingWithD).toEqual (([| ("Data", true); ("docs", true) |], false))
+                })
+        )
+
+        Vitest.test (
+            "leaves out Git metadata, lock files, save temporaries and links",
+            fun () ->
+                withDirectory (fun outside ->
+                    withDirectory (fun dir -> promise {
+                        do! makeFolder (join [| dir; ".git" |])
+                        do! writeBytesAsync (join [| dir; "a.md" |]) (utf8 "x")
+                        do! writeBytesAsync (join [| dir; "~$Book.xlsx" |]) (utf8 "x")
+
+                        do!
+                            writeBytesAsync
+                                (join [|
+                                    dir
+                                    ".swate-save-0123456789abcdef0123456789abcdef.tmp"
+                                |])
+                                (utf8 "x")
+
+                        do! writeBytesAsync (join [| outside; "o.png" |]) pngBytes
+                        do! TestHelpers.createFolderLinkAsync outside (join [| dir; "linked" |])
+
+                        let! listing = (serviceFor dir).ListFolder("", "")
+                        Vitest.expect(entriesOf listing).toEqual (([| ("a.md", false) |], false))
+                    })
+                )
+        )
+
+        Vitest.test (
+            "lists a subfolder and tells a file, a missing folder and a path outside the ARC apart",
+            fun () ->
+                withDirectory (fun outside ->
+                    withDirectory (fun dir -> promise {
+                        do! makeFolder (join [| dir; "docs" |])
+                        do! writeBytesAsync (join [| dir; "docs"; "guide.md" |]) (utf8 "x")
+                        do! writeBytesAsync (join [| outside; "o.png" |]) pngBytes
+                        do! TestHelpers.createFolderLinkAsync outside (join [| dir; "linked" |])
+                        let service = serviceFor dir
+
+                        let! inDocs = service.ListFolder("docs", "")
+                        let! onFile = service.ListFolder("docs/guide.md", "")
+                        let! missing = service.ListFolder("gone", "")
+                        let! above = service.ListFolder("../x", "")
+                        let! throughLink = service.ListFolder("linked", "")
+
+                        Vitest.expect(entriesOf inDocs).toEqual (([| ("guide.md", false) |], false))
+                        Vitest.expect(outcomeOf onFile).toBe "not a folder"
+                        Vitest.expect(outcomeOf missing).toBe "not a folder"
+                        Vitest.expect(outcomeOf above).toBe "outside"
+                        Vitest.expect(outcomeOf throughLink).toBe "outside"
+                    })
+                )
+        )
+
+        Vitest.test (
+            "cuts the listing at the limit and says so",
+            fun () ->
+                withDirectory (fun dir -> promise {
+                    let! _ =
+                        [| "a.md"; "b.md"; "c.md" |]
+                        |> Array.map (fun name -> writeBytesAsync (join [| dir; name |]) (utf8 "x"))
+                        |> Promise.all
+
+                    let service = MarkdownResolverService(7, (fun () -> Some dir), 64.0, 2)
+                    let! cut = service.ListFolder("", "")
+                    let! fits = service.ListFolder("", "b")
+
+                    Vitest.expect(entriesOf cut).toEqual (([| ("a.md", false); ("b.md", false) |], true))
+                    Vitest.expect(entriesOf fits).toEqual (([| ("b.md", false) |], false))
+                })
+        )
+
+        Vitest.test (
+            "refuses a closed ARC",
+            fun () -> promise {
+                let! closed = MarkdownResolverService(7, (fun () -> None)).ListFolder("", "")
+                Vitest.expect(outcomeOf closed).toBe "error: No ARC is open."
+            }
+        )
+)

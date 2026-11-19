@@ -1,30 +1,18 @@
 module Main.Services.MarkdownResolverService.AssetPolicy
 
+open Swate.Components.Composite.MarkdownText.Links
 open Swate.Electron.Shared.DTOs.MarkdownResolverDto
 
 let defaultMaxImageBytes = 50.0 * 1024.0 * 1024.0
 
 /// The content type of an image extension, or the extension (lowercased with its dot, "" when missing) of a type
-/// that is not served.
+/// that is not served. The types are those the path completion offers for images.
 let contentTypeOf (arcPath: string) : Result<string, string> =
-    let fileName = arcPath.Substring(arcPath.LastIndexOf '/' + 1)
-    let dot = fileName.LastIndexOf '.'
+    let extension = ImageTypes.extensionOf arcPath
 
-    let extension =
-        if dot < 0 then
-            ""
-        else
-            fileName.Substring(dot).ToLowerInvariant()
-
-    match extension with
-    | ".png" -> Ok "image/png"
-    | ".jpg"
-    | ".jpeg" -> Ok "image/jpeg"
-    | ".gif" -> Ok "image/gif"
-    | ".svg" -> Ok "image/svg+xml"
-    | ".webp" -> Ok "image/webp"
-    | ".bmp" -> Ok "image/bmp"
-    | _ -> Error extension
+    match ImageTypes.contentTypeOf extension with
+    | Some contentType -> Ok contentType
+    | None -> Error extension
 
 /// A Git LFS pointer file is a few lines of text. A file with at least this many bytes is never a pointer.
 let lfsPointerProbeBytes = 1024

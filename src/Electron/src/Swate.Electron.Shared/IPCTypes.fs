@@ -247,6 +247,9 @@ type IMarkdownResolverApi = {
     describeAsset: string -> JS.Promise<Result<AssetRefusal option, exn>>
     /// One result per ARC-relative path, in order. At most LinkDiagnostics.maxCheckedPaths paths per call.
     checkPaths: string[] -> JS.Promise<Result<PathCheck[], exn>>
+    /// One level of an ARC folder for the path completion of the editor. Git metadata, lock files and symbolic links
+    /// are left out.
+    listFolder: ListFolderRequestDto -> JS.Promise<Result<FolderListing, exn>>
 }
 
 /// Two Way Bridge: Renderer <-> Main

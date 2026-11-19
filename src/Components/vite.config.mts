@@ -33,6 +33,7 @@ export default defineConfig({
             "elkjs/lib/elk.bundled.js",
             // The TextEditor, and the languages its stories load on demand through @codemirror/language-data.
             "codemirror",
+            "@codemirror/autocomplete",
             "@codemirror/commands",
             "@codemirror/language",
             "@codemirror/language-data",

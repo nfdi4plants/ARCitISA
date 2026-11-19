@@ -9,6 +9,8 @@ open Swate.Components.Composite.TermSearch.Types
 open Swate.Components.Composite.MarkdownText
 open Swate.Components.Composite.MarkdownText.Editing
 open Swate.Components.Composite.MarkdownText.Editing.Types
+open Swate.Components.Composite.MarkdownText.Links
+open Swate.Components.Composite.MarkdownText.Links.Types
 
 module private MarkdownToolbarSampleHelpers =
 
@@ -16,6 +18,39 @@ module private MarkdownToolbarSampleHelpers =
     let readOnlyKeyBindings = MarkdownCommands.keyBindingsWith ignore ignore
 
     let noHistory: TextEditorHistory = {| canUndo = false; canRedo = false |}
+
+    let private sampleFolders: Map<string, FolderEntry[]> =
+        let folder (name: string) : FolderEntry = {| name = name; isDirectory = true |}
+        let file (name: string) : FolderEntry = {| name = name; isDirectory = false |}
+
+        Map [
+            "",
+            [|
+                folder ".arc"
+                folder "docs"
+                folder "images"
+                file "README.md"
+            |]
+            ".arc", [| file "validation_packages.yml" |]
+            "docs", [| folder "sub"; file "guide.md"; file "other.md" |]
+            "docs/sub", [| file "deep.md" |]
+            "images", [| file "logo.png"; file "photo one.jpg"; file "scan.tif" |]
+        ]
+
+    /// Lists a folder of a small stubbed ARC like the app does: the names that start with the prefix, ignoring case.
+    let listSampleFolder (request: ListFolderRequest) : JS.Promise<FolderContents option> = promise {
+        let prefix = request.namePrefix.ToLowerInvariant()
+
+        return
+            sampleFolders
+            |> Map.tryFind request.folder
+            |> Option.map (fun entries -> {|
+                entries =
+                    entries
+                    |> Array.filter (fun entry -> entry.name.ToLowerInvariant().StartsWith prefix)
+                truncated = false
+            |})
+    }
 
 open MarkdownToolbarSampleHelpers
 
@@ -161,5 +196,24 @@ type internal MarkdownToolbarSample =
                         )
                     ]
                 ]
+            ]
+        ]
+
+    /// Path completion in docs/notes.md of a small stubbed ARC. A link or image target that starts with "/", "./" or
+    /// "../" lists the folder it names, and a chosen folder lists its own entries next.
+    [<ReactComponent>]
+    static member WithPathCompletion() =
+        let completions =
+            React.useMemo ((fun () -> PathCompletion.source "docs" listSampleFolder), [||])
+
+        Html.div [
+            prop.className "swt:h-64 swt:p-4"
+            prop.children [
+                TextEditor.TextEditor(
+                    "inmemory://samples/docs/notes.md",
+                    "Links: ",
+                    fileName = "notes.md",
+                    completions = completions
+                )
             ]
         ]

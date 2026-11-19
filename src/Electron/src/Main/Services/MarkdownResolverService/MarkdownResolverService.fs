@@ -35,10 +35,13 @@ module internal ResponseFactory =
 
         create body status headers
 
-/// One per window. Serves the images of the open ARC to Markdown documents and checks their link targets.
-type MarkdownResolverService(windowId: int, getArcRoot: unit -> string option, ?maxImageBytes: float) =
+/// One per window. Serves the images of the open ARC to Markdown documents, checks their link targets and lists
+/// folders for the path completion of the editor. maxListedEntries caps one folder listing, 500 by default.
+type MarkdownResolverService
+    (windowId: int, getArcRoot: unit -> string option, ?maxImageBytes: float, ?maxListedEntries: int) =
 
     let maxBytes = defaultArg maxImageBytes AssetPolicy.defaultMaxImageBytes
+    let maxListed = defaultArg maxListedEntries 500
     let mutable nonce = Crypto.randomHex 16
 
     // The same limit the link lint sends at most. It is a literal there, so Fable inlines it and Main does not
@@ -257,6 +260,82 @@ type MarkdownResolverService(windowId: int, getArcRoot: unit -> string option, ?
 
                 let! results = arcPaths |> Array.map checkOne |> Promise.all
                 return Ok results
+            with error ->
+                return Error error
+    }
+
+    /// The regular files and folders in one ARC folder whose names start with namePrefix, ignoring case, folders
+    /// first, at most maxListedEntries of them. Git metadata, lock files and the temporary files of a text save are
+    /// left out, and so are symbolic links, which the preview does not follow either.
+    member _.ListFolder(folder: string, namePrefix: string) : JS.Promise<Result<FolderListing, exn>> = promise {
+        match getArcRoot () with
+        | None -> return Error(exn "No ARC is open.")
+        | Some root ->
+            try
+                let normalized = (PathHelpers.normalizePath folder).Trim('/')
+
+                let resolved =
+                    if normalized = "" then
+                        Ok root
+                    else
+                        ArcPathContainment.tryResolveArcRelativePath root normalized
+
+                match resolved with
+                | Error _ -> return Ok FolderListing.OutsideArc
+                | Ok absolutePath ->
+                    let! realRoot = realpathAsync root
+
+                    let! realFolder = promise {
+                        try
+                            let! realPath = realpathAsync absolutePath
+                            return Some realPath
+                        with error ->
+                            match tryGetNodeErrorCode error with
+                            | Some "ENOENT"
+                            | Some "ENOTDIR" -> return None
+                            | _ -> return raise error
+                    }
+
+                    match realFolder with
+                    | None -> return Ok FolderListing.NotAFolder
+                    | Some realPath when not (ArcPathContainment.isSameOrInside realRoot realPath) ->
+                        return Ok FolderListing.OutsideArc
+                    | Some realPath ->
+                        let! stats = statAsync realPath
+
+                        if not (stats.isDirectory ()) then
+                            return Ok FolderListing.NotAFolder
+                        else
+                            let! entries = readdirWithTypesAsync realPath (ReaddirOptions(withFileTypes = true))
+                            let prefix = namePrefix.ToLowerInvariant()
+
+                            let pathOf (name: string) =
+                                if normalized = "" then name else normalized + "/" + name
+
+                            let matching =
+                                entries
+                                |> Array.filter (fun entry ->
+                                    // A symbolic link is neither, because the entry describes the link itself.
+                                    let isDirectory = entry.isDirectory ()
+
+                                    (isDirectory || entry.isFile ())
+                                    && entry.name.ToLowerInvariant().StartsWith prefix
+                                    && not (
+                                        FileIOHelper.isIgnoredInventoryEntry entry.name (pathOf entry.name) isDirectory
+                                    )
+                                )
+                                |> Array.map (fun entry ->
+                                    let listed: FolderEntryDto = {|
+                                        name = entry.name
+                                        isDirectory = entry.isDirectory ()
+                                    |}
+
+                                    listed
+                                )
+                                |> Array.sortBy (fun entry -> not entry.isDirectory, entry.name.ToLowerInvariant())
+
+                            return
+                                Ok(FolderListing.Listed(Array.truncate maxListed matching, matching.Length > maxListed))
             with error ->
                 return Error error
     }

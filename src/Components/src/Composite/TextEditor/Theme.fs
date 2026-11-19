@@ -86,6 +86,14 @@ let private editorTheme: Extension =
                 "backgroundColor", mix "--color-primary" 35
                 "color", "var(--color-base-content)"
             ]
+            // An entry with its own icon would otherwise also get CodeMirror's empty icon box in front of it.
+            $".cm-completionIcon-{TextCompletion.IconType}", style [ "display", "none" ]
+            $".{TextCompletion.IconClass}",
+            style [
+                "marginRight", "0.4em"
+                "verticalAlign", "-0.125em"
+                "opacity", "0.75"
+            ]
             ".cm-panels",
             style [
                 "backgroundColor", "var(--color-base-200)"

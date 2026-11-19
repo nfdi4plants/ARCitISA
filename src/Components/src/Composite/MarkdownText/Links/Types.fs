@@ -36,3 +36,36 @@ type LinkTargetState =
     | CaseDiffers of onDisk: string
     | OutsideArc
     | Unreadable of message: string
+
+/// A folder listing for the path completion: the ARC-relative folder ("" is the ARC root) and the start of the
+/// names to list, compared ignoring case.
+type ListFolderRequest = {| folder: string; namePrefix: string |}
+
+/// One regular file or folder of an ARC folder.
+type FolderEntry = {| name: string; isDirectory: bool |}
+
+/// The entries of a folder whose names start with the asked prefix. truncated is true when the host left out
+/// entries, because more of them match than it lists at once.
+type FolderContents = {|
+    entries: FolderEntry[]
+    truncated: bool
+|}
+
+/// What a path target at the cursor points to. An image target offers only folders and images.
+[<RequireQualifiedAccess>]
+type PathTargetKind =
+    | Link
+    | Image
+    /// The target of a link definition, which links and images both use.
+    | Any
+
+/// A path completion for the target at the cursor: the folder to list and the name typed so far.
+type PathCompletionRequest = {
+    Kind: PathTargetKind
+    /// ARC-relative, "" for the ARC root.
+    Folder: string
+    /// The name after the last "/" of the target, as written, with its percent escapes.
+    Typed: string
+    /// Typed, percent-decoded. The listed names start with it, ignoring case.
+    NamePrefix: string
+}

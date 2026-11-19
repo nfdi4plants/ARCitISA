@@ -19,7 +19,7 @@ Markdown in ARCitISA cannot link to other files of the ARC or show images stored
 
 - **Updating references.** Renaming or moving a file never rewrites URLs in Markdown. A reference that breaks shows up as a warning the next time the document is edited.
 - **Git LFS.** LFS files are never downloaded or resolved for the user. A pointer file shows a notice, with no download action.
-- **Writing help.** No path completion, no quick fixes, no image insertion.
+- **Writing help.** No quick fixes, no image insertion. Path completion was added later, in `MarkdownText/Links/PathCompletion.fs`, with one folder listing (`IMarkdownResolverApi.listFolder`) per typed folder level.
 - **Anchors in other files.** `other.md#section` opens `other.md` at the top.
 - **HTML preview.** Relative URLs stay blocked in its frame.
 - **Image page.** It keeps loading images as base64.

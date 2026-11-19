@@ -20,10 +20,16 @@ type SyntaxNode =
     abstract lastChild: SyntaxNode
     abstract nextSibling: SyntaxNode
     abstract prevSibling: SyntaxNode
+    /// Null at the top node. From a node of a nested language, such as HTML inside Markdown, it leads on into the
+    /// outer tree.
+    abstract parent: SyntaxNode
 
 [<AllowNullLiteral>]
 type Tree =
     abstract topNode: SyntaxNode
+    /// The innermost node at pos, including nodes of nested languages. side -1 prefers the node that ends at pos,
+    /// 1 the node that starts there.
+    abstract resolveInner: pos: int * side: int -> SyntaxNode
 
 type Parser =
     abstract parse: string -> Tree

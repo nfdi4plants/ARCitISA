@@ -4,6 +4,7 @@ import {
   Editor as EditorSample,
   ReadOnly as ReadOnlySample,
   WithOntologyReference as WithOntologyReferenceSample,
+  WithPathCompletion as WithPathCompletionSample,
 } from './MarkdownToolbar.sample.fs.js';
 
 const meta = {
@@ -137,5 +138,44 @@ export const ReadOnly: Story = {
     await userEvent.keyboard('{Control>}a{/Control}');
     await userEvent.keyboard('{Control>}b{/Control}');
     expect(content.textContent).toBe('format me');
+  },
+};
+
+/**
+ * A link or image target that starts with "/", "./" or "../" lists the folder it names, folders first. A chosen folder
+ * lists its own entries next, and an image target lists only folders and images.
+ */
+export const PathCompletion: Story = {
+  render: () => <WithPathCompletionSample />,
+  play: async ({ canvasElement }) => {
+    const content = await editorContent(canvasElement);
+    const optionLabels = () =>
+      Array.from(canvasElement.querySelectorAll('.cm-tooltip-autocomplete li .cm-completionLabel')).map(
+        (label) => label.textContent,
+      );
+    // Enter accepts an entry only once the list has stood still for a moment.
+    const settle = () => new Promise((resolve) => setTimeout(resolve, 150));
+
+    await userEvent.click(content);
+    await userEvent.keyboard('{Control>}{End}{/Control}');
+
+    // The editor closes the brackets itself, so the cursor stays inside the target.
+    await userEvent.keyboard('[[g](./');
+    await waitFor(() => expect(optionLabels()).toEqual(['sub/', 'guide.md', 'other.md']));
+    expect(canvasElement.querySelector('.cm-tooltip-autocomplete .cm-swtCompletionIcon')).not.toBeNull();
+
+    await userEvent.keyboard('su');
+    await waitFor(() => expect(optionLabels()).toEqual(['sub/']));
+    await settle();
+    await userEvent.keyboard('{Enter}');
+    await waitFor(() => expect(optionLabels()).toEqual(['deep.md']));
+    await settle();
+    await userEvent.keyboard('{Enter}');
+    await waitFor(() => expect(content.textContent).toContain('[g](./sub/deep.md'));
+
+    // A space in a name is encoded, and scan.tif is not an image the preview shows.
+    await userEvent.keyboard('{End} ![[i](../images/');
+    await waitFor(() => expect(optionLabels()).toEqual(['logo.png', 'photo%20one.jpg']));
+    await userEvent.keyboard('{Escape}');
   },
 };

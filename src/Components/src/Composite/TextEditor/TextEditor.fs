@@ -40,6 +40,8 @@ type TextEditor =
     /// schemaValidator they also get diagnostics from the JSON Schema. extraLint adds async diagnostics of the host
     /// for any language. Pass the same function instance across renders, a new instance lints again. keyBindings run edit commands
     /// ahead of the editor's default keys. A read-only editor runs no binding, so its keys go to the default keys.
+    /// completions adds the host's completions to those of the language. Pass the same function instance across
+    /// renders. A read-only editor shows no completions.
     /// onHistoryChange reports when undo or redo becomes possible or impossible, for example for toolbar buttons.
     [<ReactComponent(true)>]
     static member TextEditor
@@ -52,6 +54,7 @@ type TextEditor =
             ?schemaValidator: Validator.SchemaValidator,
             ?extraLint: string -> JS.Promise<LintDiagnostic[]>,
             ?keyBindings: TextEditorKeyBinding[],
+            ?completions: TextCompletionSource,
             ?onSave: TextEditorSnapshot -> JS.Promise<bool>,
             ?onDirtyChange: bool -> unit,
             ?onChange: unit -> unit,
@@ -100,6 +103,7 @@ type TextEditor =
             prose = (proseOf registry lang).IsSome,
             ?lint = lint,
             ?keyBindings = keyBindings,
+            ?completions = completions,
             ?onSave = onSave,
             ?onDirtyChange = onDirtyChange,
             ?onChange = onChange,

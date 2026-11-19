@@ -40,6 +40,42 @@ type TextEditorKeyBinding = {|
 /// Whether the editor's undo history holds a change to undo or to redo.
 type TextEditorHistory = {| canUndo: bool; canRedo: bool |}
 
+/// Where completions are asked for: the cursor as a document position, the text of its line before and after it,
+/// whether the user asked with a key (Ctrl-Space) instead of by typing, and the names of the syntax nodes at the
+/// cursor, innermost first.
+type TextCompletionContext = {|
+    position: int
+    lineBefore: string
+    lineAfter: string
+    explicit: bool
+    syntaxPath: string[]
+|}
+
+/// One entry of the completion list. label is shown, matched against the typed text and inserted. iconClass holds
+/// the CSS classes of the icon in front of it. With reopen the list opens again after the entry is inserted, for
+/// example to continue inside a folder. boost moves the entry up (positive) or down among entries that match the
+/// typed text equally well.
+type TextCompletionOption = {|
+    label: string
+    iconClass: string option
+    reopen: bool
+    boost: int
+|}
+
+/// Entries for the text between the document positions from and to, which the chosen entry replaces. While validFor
+/// accepts the text between from and to after an edit, the editor filters the same entries again and does not ask
+/// the source. With None it asks the source after every edit.
+type TextCompletionResult = {|
+    from: int
+    ``to``: int
+    options: TextCompletionOption[]
+    validFor: (string -> bool) option
+|}
+
+/// Answers a completion request, with None when there is nothing to complete at the cursor. A rejected promise
+/// shows no completions, and the editor logs the error.
+type TextCompletionSource = TextCompletionContext -> JS.Promise<TextCompletionResult option>
+
 /// Imperative access for the host page. All members are safe to call before the editor exists
 /// (they then do nothing, return false or "").
 type TextEditorHandle =

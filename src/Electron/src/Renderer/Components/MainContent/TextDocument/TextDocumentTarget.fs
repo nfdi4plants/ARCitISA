@@ -96,6 +96,18 @@ let TextDocumentTarget (data: TextDocumentPageData) =
             [| box baseFolder; box isMarkdown |]
         )
 
+    // Lists ARC folders while a link or image target that starts with "/", "./" or "../" is typed.
+    let pathCompletion =
+        React.useMemo (
+            (fun () ->
+                if isMarkdown then
+                    Some(PathCompletion.source baseFolder MarkdownLinkContext.listFolder)
+                else
+                    None
+            ),
+            [| box baseFolder; box isMarkdown |]
+        )
+
     let lineEndings =
         React.useMemo ((fun () -> lineEndingNotice state.SavedText), [| box state.SavedText |])
 
@@ -301,6 +313,7 @@ let TextDocumentTarget (data: TextDocumentPageData) =
                             onSave = document.OnSave,
                             onDirtyChange = document.OnDirtyChange,
                             ?keyBindings = (if isMarkdown then Some markdownKeyBindings else None),
+                            ?completions = pathCompletion,
                             onChange = (fun () -> setMarkdownMessage None),
                             onHistoryChange = setHistory,
                             handleRef = handleRef

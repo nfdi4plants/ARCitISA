@@ -38,6 +38,7 @@ let private fakeNode
         member _.lastChild = null
         member _.nextSibling = nextSibling
         member _.prevSibling = null
+        member _.parent = null
     }
 
 Vitest.describe (
