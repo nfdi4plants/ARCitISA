@@ -6,6 +6,7 @@ open Fable.Core.JsInterop
 open Feliz
 
 open Swate.Components.Composite.MarkdownText.JsBindings
+open Swate.Components.Composite.MarkdownText.Links
 open Swate.Components.Composite.TextEditor
 
 [<RequireQualifiedAccess>]
@@ -192,6 +193,227 @@ module Preview =
                 | _ -> prop.text code
             ]
 
-    let components = createObj [ "code" ==> CodeRenderer ]
+    /// The props react-markdown passes to the "a" and "img" renderers. The sanitizer has already dropped what is
+    /// unsafe, so every member can be missing.
+    [<AllowNullLiteral>]
+    type IElementProps =
+        abstract href: string option
+        abstract src: string option
+        abstract alt: string option
+        abstract title: string option
+        abstract className: string option
+        abstract id: string option
+        abstract width: obj
+        abstract height: obj
+        abstract tabIndex: obj
+        abstract ``aria-hidden``: obj
+        abstract children: obj
 
-    let rehypePlugins: obj[] = [| ReactMDEditor.rehypeSanitize |]
+    let private customIf (name: string) (value: obj) =
+        if isNullOrUndefined value then
+            []
+        else
+            [ prop.custom (name, value) ]
+
+    let private optionalProps (props: IElementProps) = [
+        match props.className with
+        | Some className -> prop.className className
+        | None -> ()
+        match props.id with
+        | Some id -> prop.id id
+        | None -> ()
+        match props.title with
+        | Some title -> prop.title title
+        | None -> ()
+        yield! customIf "aria-hidden" props.``aria-hidden``
+        yield! customIf "tabIndex" props.tabIndex
+    ]
+
+    /// A link that cannot be followed. The message is the tooltip.
+    let private deadLink (props: IElementProps) (message: string) =
+        Html.span [
+            match props.id with
+            | Some id -> prop.id id
+            | None -> ()
+            prop.className (
+                "swt:underline swt:decoration-dotted swt:cursor-help"
+                + (props.className |> Option.map (fun c -> " " + c) |> Option.defaultValue "")
+            )
+            prop.title message
+            yield! customIf "children" props.children
+        ]
+
+    let private resolveWith (context: IMarkdownLinkContext option) (raw: string) =
+        let baseFolder =
+            match context with
+            | Some c -> c.baseFolder
+            | None -> ""
+
+        LinkResolution.resolve baseFolder raw
+
+    [<ReactComponent>]
+    let private LinkRenderer (props: IElementProps) =
+        let context = LinkContext.useLinkCtx ()
+
+        match props.href with
+        | None ->
+            Html.a [
+                yield! optionalProps props
+                yield! customIf "children" props.children
+            ]
+        | Some raw ->
+            let anchor (extra: IReactProperty list) =
+                Html.a [
+                    prop.href raw
+                    yield! optionalProps props
+                    yield! extra
+                    yield! customIf "children" props.children
+                ]
+
+            match resolveWith context raw with
+            | LinkTarget.External url ->
+                anchor [
+                    prop.rel "noreferrer"
+                    match context with
+                    | Some c ->
+                        prop.onClick (fun e ->
+                            e.preventDefault ()
+                            c.openExternal url
+                        )
+                    | None -> ()
+                ]
+            | LinkTarget.Fragment id ->
+                anchor [
+                    prop.onClick (fun e ->
+                        e.preventDefault ()
+                        // The sanitizer prefixes every heading id.
+                        let target = Browser.Dom.document.getElementById ("user-content-" + id)
+
+                        if not (isNull target) then
+                            target.scrollIntoView ()
+                    )
+                ]
+            | LinkTarget.ArcPath(path, _) ->
+                match context with
+                | Some c ->
+                    anchor [
+                        prop.onClick (fun e ->
+                            e.preventDefault ()
+                            c.openArcPath path
+                        )
+                        prop.custom (
+                            "onAuxClick",
+                            fun (e: Browser.Types.MouseEvent) ->
+                                if e.button = 1.0 then
+                                    e.preventDefault ()
+                                    c.openArcPath path
+                        )
+                    ]
+                | None -> deadLink props "Links to files work only in a file of an open ARC."
+            | LinkTarget.OutsideArc _ -> deadLink props "This link points outside the ARC."
+            | LinkTarget.Unsupported(_, reason) -> deadLink props reason
+
+    let private imageNotice (alt: string option) (message: string) =
+        Html.span [
+            prop.role "img"
+            prop.custom ("aria-label", defaultArg alt "image")
+            prop.className
+                "swt:inline-flex swt:items-center swt:gap-1 swt:rounded-field swt:bg-base-200 swt:px-2 swt:py-1 swt:text-sm"
+            prop.children [
+                Html.span [
+                    prop.className "swt:iconify swt:fluent--image-off-24-regular"
+                ]
+                Html.span [ prop.text message ]
+            ]
+        ]
+
+    [<ReactComponent>]
+    let private ImageRenderer (props: IElementProps) =
+        let context = LinkContext.useLinkCtx ()
+        // The failure remembers its path, so a new path starts without one.
+        let failure, setFailure = React.useState (None: (string * string) option)
+
+        let image (src: string) (onError: (Browser.Types.Event -> unit) option) =
+            Html.img [
+                prop.src src
+                match props.alt with
+                | Some alt -> prop.alt alt
+                | None -> ()
+                match props.title with
+                | Some title -> prop.title title
+                | None -> ()
+                match props.className with
+                | Some className -> prop.className className
+                | None -> ()
+                yield! customIf "width" props.width
+                yield! customIf "height" props.height
+                prop.custom ("loading", "lazy")
+                prop.custom ("decoding", "async")
+                match onError with
+                | Some handler -> prop.onError (handler: Browser.Types.Event -> unit)
+                | None -> ()
+            ]
+
+        match props.src with
+        | None -> imageNotice props.alt "This image has no source that can be shown."
+        | Some raw ->
+            match resolveWith context raw with
+            | LinkTarget.External url -> image url None
+            | LinkTarget.ArcPath(path, _) ->
+                match context with
+                | None -> imageNotice props.alt "Images of the ARC are shown only for a file of an open ARC."
+                | Some c ->
+                    match failure with
+                    | Some(failedPath, message) when failedPath = path -> imageNotice props.alt message
+                    | _ ->
+                        match c.assetUrl path with
+                        | None -> imageNotice props.alt "Images of the ARC cannot be shown here."
+                        | Some url ->
+                            let fallback = $"The image could not be loaded: {path}"
+
+                            image
+                                url
+                                (Some(fun (_: Browser.Types.Event) ->
+                                    setFailure (Some(path, fallback))
+
+                                    promise {
+                                        try
+                                            let! described = c.describeAsset path
+
+                                            match described with
+                                            | Some message -> setFailure (Some(path, message))
+                                            | None -> ()
+                                        with _ ->
+                                            ()
+                                    }
+                                    |> Promise.start
+                                ))
+            | LinkTarget.OutsideArc _ -> imageNotice props.alt "This image lies outside the ARC."
+            | LinkTarget.Fragment _ -> imageNotice props.alt "This image has no path."
+            | LinkTarget.Unsupported(_, reason) -> imageNotice props.alt reason
+
+    let components =
+        createObj [
+            "code" ==> CodeRenderer
+            "a" ==> LinkRenderer
+            "img" ==> ImageRenderer
+        ]
+
+    /// The default schema keeps picture and source, whose srcset is not checked for its protocol. Dropping both
+    /// leaves the img inside, which the image renderer then resolves.
+    let private sanitizeSchema =
+        let schema =
+            JS.Constructors.Object.assign (createEmpty<ISanitizeSchema>, ReactMDEditor.defaultSchema)
+            |> unbox<ISanitizeSchema>
+
+        schema.tagNames <-
+            ReactMDEditor.defaultSchema.tagNames
+            |> Array.filter (fun name -> name <> "picture" && name <> "source")
+
+        schema
+
+    /// Raw HTML runs before the sanitizer, so the sanitizer sees the final tree.
+    let rehypePlugins: obj[] = [|
+        ReactMDEditor.rehypeRaw
+        box [| ReactMDEditor.rehypeSanitize; box sanitizeSchema |]
+    |]

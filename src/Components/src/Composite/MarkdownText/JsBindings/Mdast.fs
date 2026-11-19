@@ -20,6 +20,8 @@ type MdastNode =
     abstract member position: Position option
     abstract member identifier: string option
     abstract member url: string option
+    /// The raw text of "html" nodes.
+    abstract member value: string option
 
 [<Import("fromMarkdown", "mdast-util-from-markdown")>]
 let private fromMarkdown

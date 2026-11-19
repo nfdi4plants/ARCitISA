@@ -8,7 +8,7 @@ open Swate.Components.Composite.TextEditor.Types
 open Swate.Components.Composite.TextEditor.LanguageDetection
 open Swate.Components.Composite.TextEditor.SchemaValidation
 
-module private TextEditorHelpers =
+module internal TextEditorHelpers =
 
     let registry = ofDescriptions languages
 
@@ -20,12 +20,28 @@ module private TextEditorHelpers =
         let i = text.IndexOf '\n'
         (if i < 0 then text else text.Substring(0, i)).TrimEnd('\r')
 
+    /// Joins the sync lint of the language and the async lint of the host. The diagnostics of the sync lint come first.
+    let combineLint
+        (sync: (string -> LintDiagnostic[]) option)
+        (extra: (string -> JS.Promise<LintDiagnostic[]>) option)
+        : (string -> JS.Promise<LintDiagnostic[]>) option =
+        match sync, extra with
+        | None, None -> None
+        | Some sync, None -> Some(fun text -> promise { return sync text })
+        | None, Some extra -> Some extra
+        | Some sync, Some extra ->
+            Some(fun text -> promise {
+                let! found = extra text
+                return Array.append (sync text) found
+            })
+
 [<Erase; Mangle(false)>]
 type TextEditor =
 
     /// A CodeMirror 6 editor that finds the language of the document from its file name and first
     /// line, unless a language is given. JSON and YAML get syntax diagnostics. With a
-    /// schemaValidator they also get diagnostics from the JSON Schema. keyBindings run edit commands
+    /// schemaValidator they also get diagnostics from the JSON Schema. extraLint adds async diagnostics of the host
+    /// for any language. Pass the same function instance across renders, a new instance lints again. keyBindings run edit commands
     /// ahead of the editor's default keys. A read-only editor runs no binding, so its keys go to the default keys.
     [<ReactComponent(true)>]
     static member TextEditor
@@ -36,6 +52,7 @@ type TextEditor =
             ?language: string,
             ?readOnly: bool,
             ?schemaValidator: Validator.SchemaValidator,
+            ?extraLint: string -> JS.Promise<LintDiagnostic[]>,
             ?keyBindings: TextEditorKeyBinding[],
             ?onSave: TextEditorSnapshot -> JS.Promise<bool>,
             ?onDirtyChange: bool -> unit,
@@ -66,9 +83,14 @@ type TextEditor =
                     if initialValue.Length > TextEditorHelpers.maxLintLength then
                         None
                     else
-                        Lint.forLanguage lang schemaValidator
+                        TextEditorHelpers.combineLint (Lint.forLanguage lang schemaValidator) extraLint
                 ),
-                [| box documentUri; box lang; box schemaValidator |]
+                [|
+                    box documentUri
+                    box lang
+                    box schemaValidator
+                    box extraLint
+                |]
             )
 
         CodeMirrorEditor.CodeMirrorEditor(

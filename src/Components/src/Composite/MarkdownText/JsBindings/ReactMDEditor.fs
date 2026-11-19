@@ -34,6 +34,11 @@ type TextAreaCommandOrchestrator(textArea: HTMLTextAreaElement) =
     member _.textArea: HTMLTextAreaElement = jsNative
     member _.executeCommand(command: ICommand) : unit = jsNative
 
+/// The part of the rehype-sanitize schema that the preview changes. The schema has more fields, which stay as they are.
+[<AllowNullLiteral>]
+type ISanitizeSchema =
+    abstract member tagNames: string[] with get, set
+
 [<Erase>]
 type ReactMDEditor =
 
@@ -52,6 +57,12 @@ type ReactMDEditor =
 
     [<ImportDefault("rehype-sanitize")>]
     static member rehypeSanitize: obj = jsNative
+
+    [<Import("defaultSchema", "rehype-sanitize")>]
+    static member defaultSchema: ISanitizeSchema = jsNative
+
+    [<ImportDefault("rehype-raw")>]
+    static member rehypeRaw: obj = jsNative
 
     [<ReactComponent("default", "@uiw/react-markdown-preview/nohighlight")>]
     static member MarkdownPreview

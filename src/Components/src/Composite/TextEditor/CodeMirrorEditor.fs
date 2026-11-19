@@ -103,7 +103,8 @@ type CodeMirrorEditor =
     /// A CodeMirror 6 editor on one document. A new documentUri starts a new document from
     /// initialValue. Other changes of initialValue are ignored. language is an id from
     /// LanguageDetection. The editor loads that language on demand.
-    /// lint runs 300 ms after the last change. Pass the same function instance across renders,
+    /// lint runs 300 ms after the last change and may take longer. Its result reaches onDiagnostics only while the
+    /// document it read is still the current one. Pass the same function instance across renders,
     /// a new instance lints again.
     /// keyBindings take precedence over the default keys. Pass the same array instance across renders,
     /// a new instance reconfigures the keys.
@@ -115,7 +116,7 @@ type CodeMirrorEditor =
             language: string,
             ?readOnly: bool,
             ?prose: bool,
-            ?lint: string -> LintDiagnostic[],
+            ?lint: string -> JS.Promise<LintDiagnostic[]>,
             ?keyBindings: TextEditorKeyBinding[],
             ?onSave: TextEditorSnapshot -> JS.Promise<bool>,
             ?onDirtyChange: bool -> unit,
@@ -174,7 +175,7 @@ type CodeMirrorEditor =
         let report (diagnostics: TextEditorDiagnostic[]) =
             onDiagnosticsRef.current |> Option.iter (fun f -> f diagnostics)
 
-        let lintExtension (lint: (string -> LintDiagnostic[]) option) =
+        let lintExtension (lint: (string -> JS.Promise<LintDiagnostic[]>) option) =
             match lint with
             | None -> noExtension
             | Some lint ->
@@ -184,23 +185,25 @@ type CodeMirrorEditor =
                             let doc = view.state.doc
                             // Lint offsets must match document positions, which count a line break as one
                             // character, so lint reads doc.toString(), which joins lines with "\n".
-                            let found = lint (doc.toString ())
+                            let! found = lint (doc.toString ())
 
-                            found
-                            |> Array.map (fun d ->
-                                let line = doc.lineAt d.from
+                            // A newer change makes the result stale, and the editor then lints again.
+                            if obj.ReferenceEquals(view.state.doc, doc) then
+                                found
+                                |> Array.map (fun d ->
+                                    let line = doc.lineAt d.from
 
-                                {|
-                                    from = d.from
-                                    ``to`` = d.``to``
-                                    line = line.number
-                                    column = d.from - line.from + 1
-                                    severity = d.severity
-                                    message = d.message
-                                    source = d.source
-                                |}
-                            )
-                            |> report
+                                    {|
+                                        from = d.from
+                                        ``to`` = d.``to``
+                                        line = line.number
+                                        column = d.from - line.from + 1
+                                        severity = d.severity
+                                        message = d.message
+                                        source = d.source
+                                    |}
+                                )
+                                |> report
 
                             return found
                         }),
