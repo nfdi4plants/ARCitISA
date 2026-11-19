@@ -87,23 +87,18 @@ let evaluateTokenStatus
 
 /// Normalize and validate a GitLab base URL. HTTPS only.
 let private normalizeBaseUrl (baseUrl: string) : Result<string, AuthFailure> =
-    let trimmed = baseUrl.Trim().TrimEnd('/')
-
-    if String.IsNullOrWhiteSpace trimmed then
+    match Swate.Components.Composite.Authentication.Helper.GitLabUrls.tryNormalize baseUrl with
+    | Some normalized -> Ok normalized
+    | None when String.IsNullOrWhiteSpace(baseUrl.Trim().TrimEnd('/')) ->
         Error {
             Kind = AuthFailureKind.EndpointInvalid
             Message = "DataHUB URL is empty."
         }
-    else
-        let mutable uri = Unchecked.defaultof<Uri>
-
-        if Uri.TryCreate(trimmed, UriKind.Absolute, &uri) && uri.Scheme = "https" then
-            Ok trimmed
-        else
-            Error {
-                Kind = AuthFailureKind.EndpointInvalid
-                Message = "DataHUB URL must be a valid HTTPS URL."
-            }
+    | None ->
+        Error {
+            Kind = AuthFailureKind.EndpointInvalid
+            Message = "DataHUB URL must be a valid HTTPS URL."
+        }
 
 
 // ── Mutable in-memory state (multi-account) ──────────────────────────

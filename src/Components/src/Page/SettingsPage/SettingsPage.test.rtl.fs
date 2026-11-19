@@ -179,3 +179,127 @@ Vitest.describe (
                 Vitest.expect(present "SettingsGitExecutable").toBe true
         )
 )
+
+let private renderCustomDataHubs (urls: string[]) (onChange: string[] -> unit) =
+    RTL.render (page (SettingsPage.SettingsPage(customDataHubs = { Urls = urls; OnChange = onChange })))
+    |> ignore
+
+let private typeAddress (text: string) =
+    RTL.fireEvent.change (RTL.screen.getByTestId "SettingsCustomDataHubInput", {| target = {| value = text |} |})
+
+let private recordChanges () =
+    let changes = ResizeArray<string[]>()
+    changes, (fun (urls: string[]) -> changes.Add urls)
+
+Vitest.describe (
+    "SettingsPage custom DataHUB addresses",
+    fun () ->
+        Vitest.test (
+            "lists the saved addresses",
+            fun () ->
+                renderCustomDataHubs
+                    [|
+                        "https://gitlab.example.org"
+                        "https://other.example.org"
+                    |]
+                    ignore
+
+                let shown =
+                    RTL.screen.getAllByTestId "SettingsCustomDataHub"
+                    |> Seq.map _.textContent
+                    |> Array.ofSeq
+
+                Vitest.expect(shown).toEqual [|
+                    "https://gitlab.example.org"
+                    "https://other.example.org"
+                |]
+        )
+
+        Vitest.test (
+            "adds a new address in normalized form and clears the input",
+            fun () ->
+                let changes, onChange = recordChanges ()
+                renderCustomDataHubs [| "https://gitlab.example.org" |] onChange
+
+                typeAddress "https://new.example.org/"
+                RTL.fireEvent.click (button "SettingsCustomDataHubAdd")
+
+                Vitest.expect(Array.ofSeq changes).toEqual [|
+                    [|
+                        "https://gitlab.example.org"
+                        "https://new.example.org"
+                    |]
+                |]
+
+                Vitest.expect((RTL.screen.getByTestId "SettingsCustomDataHubInput" :?> HTMLInputElement).value).toBe ""
+        )
+
+        Vitest.test (
+            "adds the address on Enter",
+            fun () ->
+                let changes, onChange = recordChanges ()
+                renderCustomDataHubs [||] onChange
+
+                typeAddress "https://new.example.org"
+
+                RTL.fireEvent.custom (
+                    "keyDown",
+                    RTL.screen.getByTestId "SettingsCustomDataHubInput",
+                    {| key = "Enter" |}
+                )
+
+                Vitest.expect(Array.ofSeq changes).toEqual [| [| "https://new.example.org" |] |]
+        )
+
+        Vitest.test (
+            "keeps Add disabled for an address the sign-in already offers or that is no HTTPS address",
+            fun () ->
+                let changes, onChange = recordChanges ()
+                renderCustomDataHubs [| "https://gitlab.example.org" |] onChange
+
+                for address in
+                    [
+                        ""
+                        "https://git.nfdi4plants.org"
+                        "https://gitlab.example.org/"
+                        "http://new.example.org"
+                    ] do
+                    typeAddress address
+                    RTL.fireEvent.click (button "SettingsCustomDataHubAdd")
+                    Vitest.expect((button "SettingsCustomDataHubAdd").disabled).toBe true
+
+                Vitest.expect(changes.Count).toBe 0
+        )
+
+        Vitest.test (
+            "marks only an address that is no HTTPS address as invalid",
+            fun () ->
+                renderCustomDataHubs [||] ignore
+
+                let input () =
+                    RTL.screen.getByTestId "SettingsCustomDataHubInput"
+
+                typeAddress "http://new.example.org"
+                Vitest.expect(input().getAttribute "aria-invalid").toBe "true"
+
+                typeAddress "https://git.nfdi4plants.org"
+                Vitest.expect(input().getAttribute "aria-invalid").toBe "false"
+        )
+
+        Vitest.test (
+            "removes an address",
+            fun () ->
+                let changes, onChange = recordChanges ()
+
+                renderCustomDataHubs
+                    [|
+                        "https://gitlab.example.org"
+                        "https://other.example.org"
+                    |]
+                    onChange
+
+                RTL.fireEvent.click (button "SettingsCustomDataHubRemove-https://gitlab.example.org")
+
+                Vitest.expect(Array.ofSeq changes).toEqual [| [| "https://other.example.org" |] |]
+        )
+)

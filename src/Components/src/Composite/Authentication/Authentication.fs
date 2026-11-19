@@ -42,12 +42,6 @@ type Authentication =
 
         let customDataHub, setCustomDataHub = React.useState "https://"
 
-        let mkCustomDataHubInfoFromUrl (url: string) : DataHubInformation = {
-            Name = url
-            Url = url
-            Description = None
-        }
-
         Html.label [
             prop.className "swt:label swt:gap-2"
             prop.children [
@@ -57,7 +51,7 @@ type Authentication =
                     prop.name radioid
                     prop.className "swt:radio swt:radio-sm"
                     prop.isChecked (activeDataHub.Url = customDataHub)
-                    prop.onChange (fun (_: bool) -> setDataHub (mkCustomDataHubInfoFromUrl customDataHub))
+                    prop.onChange (fun (_: bool) -> setDataHub (DataHubInformation.FromUrl customDataHub))
                 ]
                 Html.input [
                     prop.testId "CustomDataHubInput"
@@ -66,7 +60,7 @@ type Authentication =
                     prop.placeholder "https://"
                     prop.onChange (fun value ->
                         setCustomDataHub value
-                        setDataHub (mkCustomDataHubInfoFromUrl value)
+                        setDataHub (DataHubInformation.FromUrl value)
                     )
                 ]
             ]
@@ -91,7 +85,9 @@ type Authentication =
         ]
 
     [<ReactComponent>]
-    static member private DataHubSelect(dataHub: DataHubInformation, setDataHub: DataHubInformation -> unit) =
+    static member private DataHubSelect
+        (dataHub: DataHubInformation, dataHubs: DataHubCollection, setDataHub: DataHubInformation -> unit)
+        =
 
         let radioid = React.useId ()
 
@@ -140,11 +136,11 @@ type Authentication =
                                         Authentication.DataHubRadioItem(
                                             dataHub,
                                             radioid,
-                                            Helper.Default_DataHub_Collection.Default,
+                                            dataHubs.Default,
                                             setDataHub,
                                             radioClassName = "swt:radio swt:radio-sm swt:radio-primary"
                                         )
-                                        for dataHubI in Helper.Default_DataHub_Collection.Supported do
+                                        for dataHubI in dataHubs.Supported do
                                             Authentication.DataHubRadioItem(dataHub, radioid, dataHubI, setDataHub)
                                         Authentication.CustomDataHubRadioItem(dataHub, radioid, setDataHub)
                                     ]
@@ -158,10 +154,14 @@ type Authentication =
 
     [<ReactComponent>]
     static member private NotAuthenticatedView
-        (onSignIn: SignInInformation -> unit, setError: exn option -> unit, ?initialDataHubUrl)
-        =
+        (
+            onSignIn: SignInInformation -> unit,
+            setError: exn option -> unit,
+            dataHubs: DataHubCollection,
+            ?initialDataHubUrl
+        ) =
 
-        let initialDataHubUrl = defaultArg initialDataHubUrl Helper.Default_DataHub
+        let initialDataHubUrl = defaultArg initialDataHubUrl dataHubs.Default
         let dataHubUrl, setDataHubUrl = React.useState initialDataHubUrl
         let pat, setPat = React.useState ""
 
@@ -198,7 +198,7 @@ type Authentication =
                         ]
                     ]
                 ]
-                Authentication.DataHubSelect(dataHubUrl, setDataHubUrl)
+                Authentication.DataHubSelect(dataHubUrl, dataHubs, setDataHubUrl)
                 Html.a [
                     prop.testId "GeneratePatLink"
                     prop.className "swt:btn swt:btn-soft swt:btn-info swt:px-1"
@@ -268,7 +268,8 @@ type Authentication =
             ?dropdownClassName: string,
             ?onRotateToken: string -> unit,
             ?onSwitchAccount: string -> unit,
-            ?onRemoveAccount: string -> unit
+            ?onRemoveAccount: string -> unit,
+            ?customDataHubUrls: string[]
         ) =
 
         let isOpen, setIsOpen = React.useState false
@@ -279,6 +280,12 @@ type Authentication =
             React.useState (None: DataHubInformation option)
 
         let activeUser = accounts.ActiveUser()
+
+        let dataHubs =
+            React.useMemo (
+                (fun () -> Helper.Default_DataHub_Collection.WithCustomUrls(defaultArg customDataHubUrls [||])),
+                [| box customDataHubUrls |]
+            )
 
         let onSignIn =
             fun signInInfo ->
@@ -331,6 +338,7 @@ type Authentication =
                                     Authentication.NotAuthenticatedView(
                                         onSignIn,
                                         setError,
+                                        dataHubs,
                                         ?initialDataHubUrl = initialDataHubUrl
                                     )
                                 ]
@@ -350,7 +358,7 @@ type Authentication =
                                     Authentication.AddAnotherAccountBtn(fun () -> setShowAddAccount true)
                                 ]
                             ]
-                    | None -> Authentication.NotAuthenticatedView(onSignIn, setError)
+                    | None -> Authentication.NotAuthenticatedView(onSignIn, setError, dataHubs)
                 ),
                 [|
                     box activeUser
@@ -358,6 +366,7 @@ type Authentication =
                     box showAddAccount
                     box accounts
                     box initialDataHubUrl
+                    box dataHubs
                 |]
             )
 
@@ -461,8 +470,11 @@ type Authentication =
     }
 
     [<ReactComponent(true)>]
-    static member Entry(?user) =
+    static member Entry(?user, ?customDataHubUrls: string[]) =
         let accounts, setAccounts = React.useState (defaultArg user AuthStateDto.Empty)
+
+        let customDataHubUrls, setCustomDataHubUrls =
+            React.useState (defaultArg customDataHubUrls [||])
 
         let isLoading, setIsLoading = React.useState false
 
@@ -478,6 +490,9 @@ type Authentication =
                         Authentication.ExmpUserInformation with
                             TargetDataHub = signInInfo.GitLabBaseUrl
                     }
+
+                    Helper.Default_DataHub_Collection.TryAddCustomUrl(signInInfo.GitLabBaseUrl, customDataHubUrls)
+                    |> Option.iter setCustomDataHubUrls
 
                     setAccounts {
                         ActiveAccount =
@@ -617,7 +632,8 @@ type Authentication =
                     isLoading = isLoading,
                     onSwitchAccount = onSwitchAccount,
                     onRemoveAccount = onRemoveAccount,
-                    onRotateToken = onRotateToken
+                    onRotateToken = onRotateToken,
+                    customDataHubUrls = customDataHubUrls
                 )
             ]
         ]

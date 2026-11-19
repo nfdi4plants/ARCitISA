@@ -144,6 +144,60 @@ export const SwitchToCustomDataHubFlow: Story = {
   },
 };
 
+export const SavedCustomDataHubFlow: Story = {
+  name: 'Sign in to a saved custom DataHub',
+  args: { customDataHubUrls: ['https://gitlab.example.org'] },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    await openUserMenu(canvas);
+
+    const optionsToggle = await canvas.findByTestId('DataHubOptionsToggle');
+    await userEvent.click(optionsToggle);
+
+    const savedRadio = await canvas.findByTestId('DataHubRadio-gitlab.example.org');
+    await userEvent.click(savedRadio);
+    expect(savedRadio).toBeChecked();
+
+    const tokenInput = await canvas.findByTestId('PersonalAccessTokenInput');
+    await userEvent.type(tokenInput, 'fake-test-token');
+    const signInButton = await canvas.findByTestId('SignInButton');
+    await userEvent.click(signInButton);
+
+    await expectSignedIn(canvas);
+  },
+};
+
+export const RememberCustomDataHubFlow: Story = {
+  name: 'Remember a custom DataHub after sign in',
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    await openUserMenu(canvas);
+
+    const optionsToggle = await canvas.findByTestId('DataHubOptionsToggle');
+    await userEvent.click(optionsToggle);
+    expect(canvas.queryByTestId('DataHubRadio-gitlab.example.org')).not.toBeInTheDocument();
+
+    const customInput = await canvas.findByTestId('CustomDataHubInput');
+    fireEvent.input(customInput, { target: { value: 'https://gitlab.example.org/' } });
+
+    const tokenInput = await canvas.findByTestId('PersonalAccessTokenInput');
+    await userEvent.type(tokenInput, 'fake-test-token');
+    const signInButton = await canvas.findByTestId('SignInButton');
+    await userEvent.click(signInButton);
+
+    await expectSignedIn(canvas);
+
+    await openUserMenu(canvas);
+    const addAnotherButton = await canvas.findByTestId('AddAnotherAccountButton');
+    await userEvent.click(addAnotherButton);
+
+    await userEvent.click(await canvas.findByTestId('DataHubOptionsToggle'));
+    expect(await canvas.findByTestId('DataHubRadio-gitlab.example.org')).toBeInTheDocument();
+  },
+};
+
 export const AddAnotherAccountFlow: Story = {
   name: 'Add another account flow',
   play: async ({ canvasElement }) => {

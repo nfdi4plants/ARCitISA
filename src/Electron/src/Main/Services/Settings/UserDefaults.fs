@@ -7,6 +7,7 @@ open System
 open Fable.Core
 open Thoth.Json.Core
 open Main.VersionControl.VersionControlSettings
+open Swate.Components.Composite.Authentication.Helper
 open Swate.Electron.Shared.IPCTypes
 
 [<Literal>]
@@ -25,6 +26,7 @@ let builtIn: UserDefaultValuesDto = {
     UploadRightAway = true
     AutoCreateNotesFolder = true
     GitExecutablePath = None
+    CustomDataHubUrls = [||]
 }
 
 let toVersionControlSettings (values: UserDefaultValuesDto) : VersionControlSettings = {
@@ -42,6 +44,7 @@ type UserDefaultOverrides = {
     AutoCreateNotesFolder: bool option
     /// The built-in value is None, so a Some here is the override itself.
     GitExecutablePath: string option
+    CustomDataHubUrls: string[] option
 }
 
 let private noOverrides: UserDefaultOverrides = {
@@ -51,6 +54,7 @@ let private noOverrides: UserDefaultOverrides = {
     UploadRightAway = None
     AutoCreateNotesFolder = None
     GitExecutablePath = None
+    CustomDataHubUrls = None
 }
 
 let private thresholdInRange (value: int) =
@@ -108,6 +112,12 @@ let private storedDecoder: Decoder<StoredDefaults> =
                         get.Optional.Field "gitExecutablePath" (tolerant Decode.string)
                         |> Option.bind id
                         |> Option.filter (String.IsNullOrWhiteSpace >> not)
+                    // Entries that are no HTTPS address are dropped, the others kept once in normalized form.
+                    CustomDataHubUrls =
+                        get.Optional.Field "customDataHubUrls" (tolerant (Decode.array (tolerant Decode.string)))
+                        |> Option.bind id
+                        |> Option.map (Array.choose (Option.bind GitLabUrls.tryNormalize) >> Array.distinct)
+                        |> Option.filter (Array.isEmpty >> not)
                 }
             )
     )
@@ -132,6 +142,7 @@ let private serialize (overrides: UserDefaultOverrides) : string =
             uploadRightAway = overrides.UploadRightAway
             autoCreateNotesFolder = overrides.AutoCreateNotesFolder
             gitExecutablePath = overrides.GitExecutablePath
+            customDataHubUrls = overrides.CustomDataHubUrls
         |},
         space = 2
     )
@@ -147,6 +158,7 @@ let private effectiveOf (overrides: UserDefaultOverrides) : UserDefaultValuesDto
         overrides.AutoCreateNotesFolder
         |> Option.defaultValue builtIn.AutoCreateNotesFolder
     GitExecutablePath = overrides.GitExecutablePath |> Option.orElse builtIn.GitExecutablePath
+    CustomDataHubUrls = overrides.CustomDataHubUrls |> Option.defaultValue builtIn.CustomDataHubUrls
 }
 
 /// A value equal to the built-in one is no override.
@@ -162,6 +174,8 @@ let private overridesOf (values: UserDefaultValuesDto) : UserDefaultOverrides =
         AutoCreateNotesFolder = differing values.AutoCreateNotesFolder builtIn.AutoCreateNotesFolder
         // The built-in path is None, so any chosen path is an override.
         GitExecutablePath = values.GitExecutablePath
+        // The built-in list is empty, so any address is an override.
+        CustomDataHubUrls = Some values.CustomDataHubUrls |> Option.filter (Array.isEmpty >> not)
     }
 
 type IUserDefaultsStore =

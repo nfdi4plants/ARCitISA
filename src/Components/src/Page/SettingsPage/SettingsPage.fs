@@ -7,6 +7,7 @@ open Fable.Core.JsInterop
 open Swate.Components
 open Swate.Components.Page.GitSidebarTypes
 open Swate.Components.Primitive.LayoutComponents
+open Swate.Components.Composite.Authentication.Helper
 open Swate.Components.Composite.ThemeSelector
 open Swate.Components.Composite.ThemeSelector.Context
 open Swate.Components.Composite.TermSearch
@@ -238,7 +239,7 @@ type SettingsPage =
             gitDefaults: SettingsGitDefaults,
             builtIn: SettingsGitDefaults,
             onSave: SettingsGitDefaults -> unit,
-            ?gitExecutable: ReactElement
+            immediateRows: ReactElement list
         ) =
         let lfsInput, setLfsInput =
             React.useState (string gitDefaults.LfsAutoTrackThresholdMb)
@@ -307,8 +308,7 @@ type SettingsPage =
                 LayoutComponents.BoxedField(
                     "Git defaults",
                     content = [
-                        if gitExecutable.IsSome then
-                            gitExecutable.Value
+                        yield! immediateRows
 
                         SettingsPage.GitDefaultRow(
                             lfsId,
@@ -559,6 +559,105 @@ type SettingsPage =
         )
 
     [<ReactComponent>]
+    static member private CustomDataHubItem(url: string, onRemove: unit -> unit) =
+        Html.li [
+            prop.className "swt:flex swt:items-center swt:gap-2"
+            prop.children [
+                Html.span [
+                    prop.testId "SettingsCustomDataHub"
+                    prop.className "swt:min-w-0 swt:break-all swt:text-sm"
+                    prop.text url
+                ]
+                Html.button [
+                    prop.testId $"SettingsCustomDataHubRemove-{url}"
+                    prop.type'.button
+                    prop.className "swt:btn swt:btn-ghost swt:btn-sm swt:btn-square"
+                    prop.title $"Remove {url}"
+                    prop.ariaLabel $"Remove {url}"
+                    prop.onClick (fun _ -> onRemove ())
+                    prop.children [
+                        Html.span [
+                            prop.className "swt:iconify swt:fluent--delete-24-regular swt:size-4"
+                        ]
+                    ]
+                ]
+            ]
+        ]
+
+    [<ReactComponent>]
+    static member private CustomDataHubs(urls: string[], onChange: string[] -> unit) =
+        let draft, setDraft = React.useState ""
+        let nextUrls = Default_DataHub_Collection.TryAddCustomUrl(draft, urls)
+
+        let isInvalid =
+            not (String.IsNullOrWhiteSpace draft) && (GitLabUrls.tryNormalize draft).IsNone
+
+        let add () =
+            nextUrls
+            |> Option.iter (fun next ->
+                onChange next
+                setDraft ""
+            )
+
+        SettingsPage.SettingColumnElement(
+            "Custom DataHUB addresses",
+            Html.div [
+                prop.testId "SettingsCustomDataHubs"
+                prop.className "swt:flex swt:flex-col swt:gap-2"
+                prop.children [
+                    if urls.Length > 0 then
+                        Html.ul [
+                            prop.className "swt:flex swt:flex-col swt:gap-1"
+                            prop.children (
+                                urls
+                                |> Array.map (fun url ->
+                                    SettingsPage.CustomDataHubItem(
+                                        url,
+                                        fun () -> onChange (urls |> Array.filter ((<>) url))
+                                    )
+                                )
+                            )
+                        ]
+                    Html.div [
+                        prop.className "swt:join"
+                        prop.children [
+                            Html.input [
+                                prop.testId "SettingsCustomDataHubInput"
+                                prop.className [
+                                    "swt:join-item swt:input"
+                                    if isInvalid then
+                                        "swt:input-error"
+                                ]
+                                prop.type'.url
+                                prop.placeholder "https://"
+                                prop.custom ("aria-invalid", isInvalid)
+                                prop.value draft
+                                prop.onChange (fun (value: string) -> setDraft value)
+                                prop.onKeyDown (fun e ->
+                                    if e.key = "Enter" then
+                                        add ()
+                                )
+                            ]
+                            Html.button [
+                                prop.testId "SettingsCustomDataHubAdd"
+                                prop.type'.button
+                                prop.className "swt:join-item swt:btn"
+                                prop.disabled nextUrls.IsNone
+                                prop.text "Add"
+                                prop.onClick (fun _ -> add ())
+                            ]
+                        ]
+                    ]
+                ]
+            ],
+            description =
+                Html.p [
+                    prop.className "swt:mt-1 swt:text-sm swt:text-base-content/70"
+                    prop.text "Shown in the sign-in. New addresses are added when you sign in."
+                ]
+        )
+
+    [<ReactComponent>]
     static member private General
         (
             ?onAutoCreateNotesFolderEnabled: unit -> unit,
@@ -620,16 +719,22 @@ type SettingsPage =
             ?gitDefaults: GitDefaultsSection,
             ?autoCreateNotesFolder: bool,
             ?onAutoCreateNotesFolderChange: bool -> unit,
-            ?gitExecutable: GitExecutableField
+            ?gitExecutable: GitExecutableField,
+            ?customDataHubs: CustomDataHubsField
         ) =
         let onAutoCreateNotesFolderEnabled =
             defaultArg onAutoCreateNotesFolderEnabled ignore
 
-        let gitExecutable =
-            gitExecutable
-            |> Option.map (fun field ->
+        // The rows that apply right away lead the Git defaults, above the values that wait for Save.
+        let immediateRows = [
+            match gitExecutable with
+            | Some field ->
                 SettingsPage.GitExecutable(field.Setting, field.OnChoose, field.OnUseAutomatic, field.OnCheckAgain)
-            )
+            | None -> ()
+            match customDataHubs with
+            | Some field -> SettingsPage.CustomDataHubs(field.Urls, field.OnChange)
+            | None -> ()
+        ]
 
         LayoutComponents.Section [
             SettingsPage.General(
@@ -640,17 +745,12 @@ type SettingsPage =
                 ?onAutoCreateNotesFolderChange = onAutoCreateNotesFolderChange
             )
 
-            // The Git executable leads the Git defaults. A host without Git defaults still shows it in the same box.
-            match gitDefaults, gitExecutable with
+            // A host without Git defaults still shows the rows that apply right away in the same box.
+            match gitDefaults, immediateRows with
             | Some gitDefaults, _ ->
-                SettingsPage.GitDefaults(
-                    gitDefaults.Current,
-                    gitDefaults.BuiltIn,
-                    gitDefaults.OnSave,
-                    ?gitExecutable = gitExecutable
-                )
-            | None, Some gitExecutable -> LayoutComponents.BoxedField("Git defaults", content = [ gitExecutable ])
-            | None, None -> Html.none
+                SettingsPage.GitDefaults(gitDefaults.Current, gitDefaults.BuiltIn, gitDefaults.OnSave, immediateRows)
+            | None, [] -> Html.none
+            | None, rows -> LayoutComponents.BoxedField("Git defaults", content = rows)
 
             SettingsPage.SearchConfig()
 

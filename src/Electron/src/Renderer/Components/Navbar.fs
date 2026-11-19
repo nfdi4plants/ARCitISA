@@ -106,6 +106,23 @@ module private Authentication =
         let authStateCtx = Renderer.Context.AuthStateContext.useAuthStateCtx ()
         let errorModalCtx = useErrorModalCtx ()
 
+        let customDataHubUrls =
+            Renderer.MainSyncedState.useMainSyncedState {
+                initial = [||]
+                load =
+                    fun () -> promise {
+                        let! defaults = Api.ipcUserDefaultsApi.getUserDefaults ()
+                        return defaults.Effective.CustomDataHubUrls
+                    }
+                subscribe =
+                    fun update ->
+                        Renderer.IpcReceiver.subscribeProxyReceiver<IUserDefaultsRendererApi> {
+                            userDefaultsChanged = fun defaults -> update defaults.Effective.CustomDataHubUrls
+                        }
+                onError = fun ex -> console.warn ("Could not load the custom DataHUB addresses.", ex.Message)
+                dependencies = [||]
+            }
+
         let onSignIn (signInInfo: SignInInformation) =
             promise {
                 setIsLoading true
@@ -177,7 +194,8 @@ module private Authentication =
             dropdownClassName = "swt:dropdown-bottom swt:dropdown-end swt:h-8",
             onRotateToken = onRotateToken,
             onSwitchAccount = onSwitchAccount,
-            onRemoveAccount = onRemoveAccount
+            onRemoveAccount = onRemoveAccount,
+            customDataHubUrls = customDataHubUrls.state
         )
 
 /// What the save button of the navbar shows.

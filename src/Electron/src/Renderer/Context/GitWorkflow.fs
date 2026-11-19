@@ -28,6 +28,7 @@ let builtInUserDefaults: UserDefaultValuesDto = {
     UploadRightAway = true
     AutoCreateNotesFolder = true
     GitExecutablePath = None
+    CustomDataHubUrls = [||]
 }
 
 [<RequireQualifiedAccess>]

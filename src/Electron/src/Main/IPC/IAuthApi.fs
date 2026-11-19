@@ -24,6 +24,7 @@ let api: IAuthApi = {
 
                 if result.Success then
                     broadcastAccountsUpdate ()
+                    UserDefaultsApi.rememberDataHub UserDefaults.production request.GitLabBaseUrl
 
                 return Ok result
             with _ ->

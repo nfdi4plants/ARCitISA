@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### ✨ Added
+
+- The sign-in remembers custom DataHUB addresses you signed in to and offers them next to the built-in ones. You can add or remove them in the Git defaults of the settings. (by @caroott)
+
 ## 3.3.0 - 2026-11-19
 
 ### ✨ Added

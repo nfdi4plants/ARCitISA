@@ -340,3 +340,109 @@ Vitest.describe (
                 Vitest.expect(updated.UploadRightAway).toBe false
         )
 )
+
+Vitest.describe (
+    "User defaults custom DataHUB addresses",
+    fun () ->
+        Vitest.test (
+            "saved addresses are read back by a new store and an empty list removes them again",
+            fun () ->
+                let file = memoryFile None
+                let store = storeOver file
+
+                let saved = {
+                    UserDefaults.builtIn with
+                        CustomDataHubUrls = [|
+                            "https://gitlab.example.org"
+                            "https://other.example.org"
+                        |]
+                }
+
+                Vitest.expect(expectUpdated store saved).toEqual saved
+                Vitest.expect(storeOver file |> fun reopened -> reopened.Effective()).toEqual saved
+                Vitest.expect(storedKeys file).toEqual [| "customDataHubUrls"; "schemaVersion" |]
+
+                expectUpdated store UserDefaults.builtIn |> ignore
+                Vitest.expect(storedKeys file).toEqual [| "schemaVersion" |]
+                Vitest.expect(store.Effective().CustomDataHubUrls).toEqual [||]
+        )
+
+        Vitest.test (
+            "an edited file keeps each valid address once in normalized form and spares the other values",
+            fun () ->
+                let file =
+                    memoryFile (
+                        Some
+                            """{ "schemaVersion": 1, "customDataHubUrls": ["https://gitlab.example.org/", 5, "http://plain.example.org", "https://gitlab.example.org", " ", "https://other.example.org"], "diffIndexingLimitMb": 2048 }"""
+                    )
+
+                Vitest.expect(storeOver file |> fun store -> store.Effective()).toEqual {
+                    UserDefaults.builtIn with
+                        DiffIndexingLimitMb = 2048
+                        CustomDataHubUrls = [|
+                            "https://gitlab.example.org"
+                            "https://other.example.org"
+                        |]
+                }
+        )
+
+        Vitest.test (
+            "a stored value that is no list counts as absent",
+            fun () ->
+                for stored in [ "5"; "\"https://gitlab.example.org\""; "null"; "{}" ] do
+                    let file =
+                        memoryFile (
+                            Some
+                                $"""{{ "schemaVersion": 1, "customDataHubUrls": {stored}, "uploadRightAway": false }}"""
+                        )
+
+                    Vitest.expect(storeOver file |> fun store -> store.Effective()).toEqual {
+                        UserDefaults.builtIn with
+                            UploadRightAway = false
+                    }
+        )
+)
+
+Vitest.describe (
+    "Remembering the DataHUB of a sign-in",
+    fun () ->
+        Vitest.test (
+            "a new address is saved in normalized form next to the other values",
+            fun () ->
+                let file =
+                    memoryFile (
+                        Some
+                            """{ "schemaVersion": 1, "customDataHubUrls": ["https://gitlab.example.org"], "diffIndexingLimitMb": 2048 }"""
+                    )
+
+                let store = storeOver file
+                Main.IPC.UserDefaultsApi.rememberDataHub store "HTTPS://New.Example.org/"
+
+                Vitest.expect(store.Effective()).toEqual {
+                    UserDefaults.builtIn with
+                        DiffIndexingLimitMb = 2048
+                        CustomDataHubUrls = [|
+                            "https://gitlab.example.org"
+                            "https://new.example.org"
+                        |]
+                }
+        )
+
+        Vitest.test (
+            "a built-in or already saved address writes nothing",
+            fun () ->
+                let file =
+                    memoryFile (Some """{ "schemaVersion": 1, "customDataHubUrls": ["https://gitlab.example.org"] }""")
+
+                let store = storeOver file
+
+                for url in
+                    [
+                        "https://git.nfdi4plants.org/"
+                        "https://GitLab.example.org:443"
+                    ] do
+                    Main.IPC.UserDefaultsApi.rememberDataHub store url
+
+                Vitest.expect(file.Writes.Value).toBe 0
+        )
+)

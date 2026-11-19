@@ -21,6 +21,12 @@ type GitExecutableField = {
     OnCheckAgain: unit -> unit
 }
 
+/// The custom DataHUB addresses the login offers next to the built-in ones. A change applies right away.
+type CustomDataHubsField = {
+    Urls: string[]
+    OnChange: string[] -> unit
+}
+
 /// The Git defaults section: the saved values, the built-in values that Reset goes back to, and what Save does.
 type GitDefaultsSection = {
     Current: SettingsGitDefaults
