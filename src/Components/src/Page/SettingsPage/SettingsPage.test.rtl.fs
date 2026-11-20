@@ -46,7 +46,8 @@ let private renderWith
                          OnChoose = onChoose
                          OnUseAutomatic = onUseAutomatic
                          OnCheckAgain = onCheckAgain
-                     }))
+                     })),
+                category = SettingsCategory.Git
             )
         )
     )
@@ -181,7 +182,14 @@ Vitest.describe (
 )
 
 let private renderDataHubs (urls: string[]) (onChange: string[] -> unit) =
-    RTL.render (page (SettingsPage.SettingsPage(dataHubs = { Urls = urls; OnChange = onChange })))
+    RTL.render (
+        page (
+            SettingsPage.SettingsPage(
+                dataHubs = { Urls = urls; OnChange = onChange },
+                category = SettingsCategory.DataHub
+            )
+        )
+    )
     |> ignore
 
 let private typeAddress (text: string) =
@@ -333,13 +341,18 @@ let private renderCategories (category: SettingsCategory option) =
 
     scrolledTo
 
-let private navigationIds () =
-    RTL.screen.getAllByTestId (System.Text.RegularExpressions.Regex "^SettingsNavigation-")
+/// The links of the categories, without the links of their settings.
+let private categoryLinks () =
+    RTL.screen.getAllByTestId (System.Text.RegularExpressions.Regex "^SettingsNavigation-settings-[A-Za-z]+$")
     |> Seq.map (fun element -> element.getAttribute "data-testid")
     |> Array.ofSeq
 
+/// Whether the category lists its settings in the navigation.
+let private isExpanded (sectionId: string) =
+    (RTL.screen.getByTestId $"SettingsNavigation-{sectionId}").parentElement.hasAttribute "open"
+
 let private isMarked (sectionId: string) =
-    (RTL.screen.getByTestId $"SettingsNavigation-{sectionId}").getAttribute "aria-current" = "location"
+    (RTL.screen.getByTestId $"SettingsNavigation-{sectionId}").getAttribute "aria-current" = "page"
 
 Vitest.describe (
     "SettingsPage categories",
@@ -351,35 +364,76 @@ Vitest.describe (
             fun () ->
                 renderDataHubs [||] ignore
 
-                Vitest.expect(navigationIds ()).toEqual [|
+                Vitest.expect(categoryLinks ()).toEqual [|
                     "SettingsNavigation-settings-general"
-                    "SettingsNavigation-settings-datahub"
-                    "SettingsNavigation-settings-term-search"
+                    "SettingsNavigation-settings-dataHub"
+                    "SettingsNavigation-settings-termSearch"
                 |]
-
-                Vitest.expect(present "settings-git").toBe false
-                Vitest.expect(present "settings-large-files").toBe false
         )
 
         Vitest.test (
-            "a link scrolls to its category and marks it",
+            "lists the settings of each category under it",
             fun () ->
-                let scrolledTo = renderCategories None
+                renderCategories None |> ignore
+
+                Vitest.expect(present "SettingsNavigation-settings-largeFiles-0").toBe true
+                Vitest.expect(present "SettingsNavigation-settings-largeFiles-1").toBe true
+                Vitest.expect(present "SettingsNavigation-settings-largeFiles-2").toBe false
+        )
+
+        Vitest.test (
+            "shows one category at a time and a link opens its page",
+            fun () ->
+                renderCategories None |> ignore
+                Vitest.expect(present "settings-general").toBe true
+                Vitest.expect(present "settings-largeFiles").toBe false
                 Vitest.expect(isMarked "settings-general").toBe true
 
-                RTL.fireEvent.click (button "SettingsNavigation-settings-large-files")
+                RTL.fireEvent.click (RTL.screen.getByTestId "SettingsNavigation-settings-largeFiles")
 
-                Vitest.expect(Array.ofSeq scrolledTo).toEqual [| "settings-large-files" |]
-                Vitest.expect(isMarked "settings-large-files").toBe true
+                Vitest.expect(present "settings-largeFiles").toBe true
+                Vitest.expect(present "settings-general").toBe false
+                Vitest.expect(isMarked "settings-largeFiles").toBe true
                 Vitest.expect(isMarked "settings-general").toBe false
+        )
+
+        Vitest.test (
+            "a setting of another expanded category opens its page and scrolls to the setting",
+            fun () ->
+                let scrolledTo = renderCategories None
+                RTL.fireEvent.click (RTL.screen.getByTestId "SettingsNavigation-settings-largeFiles")
+                RTL.fireEvent.click (RTL.screen.getByTestId "SettingsNavigation-settings-general")
+                Vitest.expect(isExpanded "settings-largeFiles").toBe true
+                scrolledTo.Clear()
+
+                RTL.fireEvent.click (button "SettingsNavigation-settings-largeFiles-1")
+
+                Vitest.expect(present "settings-largeFiles").toBe true
+                Vitest.expect(Array.ofSeq scrolledTo).toEqual [| "settings-largeFiles-1" |]
+        )
+
+        Vitest.test (
+            "the shown category collapses and expands again and stays shown",
+            fun () ->
+                renderCategories None |> ignore
+                Vitest.expect(isExpanded "settings-general").toBe true
+                Vitest.expect(isExpanded "settings-git").toBe false
+
+                RTL.fireEvent.click (RTL.screen.getByTestId "SettingsNavigation-settings-general")
+                Vitest.expect(isExpanded "settings-general").toBe false
+                Vitest.expect(present "settings-general").toBe true
+
+                RTL.fireEvent.click (RTL.screen.getByTestId "SettingsNavigation-settings-general")
+                Vitest.expect(isExpanded "settings-general").toBe true
         )
 
         Vitest.test (
             "opens at the category it is given",
             fun () ->
-                let scrolledTo = renderCategories (Some SettingsCategory.Git)
+                renderCategories (Some SettingsCategory.Git) |> ignore
 
-                Vitest.expect(Array.ofSeq scrolledTo).toEqual [| "settings-git" |]
+                Vitest.expect(present "settings-git").toBe true
+                Vitest.expect(present "settings-general").toBe false
                 Vitest.expect(isMarked "settings-git").toBe true
         )
 )

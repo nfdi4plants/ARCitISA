@@ -68,6 +68,9 @@ const gitExecutableArgs = (setting: GitExecutableSetting) => ({
   } as any,
 });
 
+// The Git executable is on the Git page.
+const onGitPage = (setting: GitExecutableSetting) => ({ ...gitExecutableArgs(setting), category: 'git' }) as any;
+
 const gitDefaultsArgs = () => ({
   gitDefaults: {
     Current: currentGitDefaults,
@@ -89,8 +92,13 @@ export const Default: Story = {
 
     await expect(canvas.getByTestId('SettingsAutoCreateNotesFolder')).toBeInTheDocument();
     await expect(canvas.queryByTestId('settings-git')).toBeNull();
-    await expect(canvas.queryByTestId('settings-large-files')).toBeNull();
+    await expect(canvas.queryByTestId('settings-largeFiles')).toBeNull();
   },
+};
+
+const openCategory = async (canvas: ReturnType<typeof within>, sectionId: string) => {
+  await userEvent.click(canvas.getByTestId(`SettingsNavigation-${sectionId}`));
+  await canvas.findByTestId(sectionId);
 };
 
 export const GitDefaults: PropsStory = {
@@ -99,22 +107,26 @@ export const GitDefaults: PropsStory = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
 
-    await expect(within(canvas.getByTestId('settings-large-files')).getByTestId(lfsId)).toHaveValue(10);
-    await expect(within(canvas.getByTestId('settings-large-files')).getByTestId(downloadId)).not.toBeChecked();
-    await expect(within(canvas.getByTestId('settings-git')).getByTestId(diffId)).toHaveValue(1024);
-    await expect(within(canvas.getByTestId('settings-git')).getByTestId(uploadId)).toBeChecked();
-
-    // Only the field that differs from the built-in value is marked.
-    await expect(canvas.getByTestId(`${downloadId}Changed`)).toBeInTheDocument();
-    await expect(canvas.getByTestId(`${downloadId}Reset`)).toBeInTheDocument();
-    for (const id of [lfsId, diffId, uploadId]) {
+    await openCategory(canvas, 'settings-git');
+    await expect(canvas.getByTestId(diffId)).toHaveValue(1024);
+    await expect(canvas.getByTestId(uploadId)).toBeChecked();
+    // An unchanged number has nothing to update.
+    await expect(canvas.getByTestId(`${diffId}Update`)).toBeDisabled();
+    for (const id of [diffId, uploadId]) {
       await expect(canvas.queryByTestId(`${id}Changed`)).toBeNull();
       await expect(canvas.queryByTestId(`${id}Reset`)).toBeNull();
     }
 
-    // An unchanged number has nothing to update.
+    await openCategory(canvas, 'settings-largeFiles');
+    await expect(canvas.getByTestId(lfsId)).toHaveValue(10);
+    await expect(canvas.getByTestId(downloadId)).not.toBeChecked();
     await expect(canvas.getByTestId(`${lfsId}Update`)).toBeDisabled();
-    await expect(canvas.getByTestId(`${diffId}Update`)).toBeDisabled();
+
+    // Only the field that differs from the built-in value is marked.
+    await expect(canvas.getByTestId(`${downloadId}Changed`)).toBeInTheDocument();
+    await expect(canvas.getByTestId(`${downloadId}Reset`)).toBeInTheDocument();
+    await expect(canvas.queryByTestId(`${lfsId}Changed`)).toBeNull();
+    await expect(canvas.queryByTestId(`${lfsId}Reset`)).toBeNull();
   },
 };
 
@@ -125,10 +137,12 @@ export const GitDefaultsSwitchesApplyRightAway: PropsStory = {
     const canvas = within(canvasElement);
     const onChange = args.gitDefaults.OnChange;
 
+    await openCategory(canvas, 'settings-git');
     await userEvent.click(canvas.getByTestId(uploadId));
     await expect(onChange).toHaveBeenLastCalledWith({ ...currentGitDefaults, UploadRightAway: false });
 
     // Reset applies the built-in value right away as well.
+    await openCategory(canvas, 'settings-largeFiles');
     await userEvent.click(canvas.getByTestId(`${downloadId}Reset`));
     await expect(onChange).toHaveBeenLastCalledWith({ ...currentGitDefaults, DownloadLargeFiles: true });
     await expect(onChange).toHaveBeenCalledTimes(2);
@@ -142,11 +156,13 @@ export const GitDefaultsNumbersApplyWithUpdate: PropsStory = {
     const canvas = within(canvasElement);
     const onChange = args.gitDefaults.OnChange;
 
+    await openCategory(canvas, 'settings-largeFiles');
     await replaceNumber(canvas.getByTestId(lfsId), '25');
     await expect(onChange).not.toHaveBeenCalled();
     await userEvent.click(canvas.getByTestId(`${lfsId}Update`));
     await expect(onChange).toHaveBeenLastCalledWith({ ...currentGitDefaults, LfsAutoTrackThresholdMb: 25 });
 
+    await openCategory(canvas, 'settings-git');
     await replaceNumber(canvas.getByTestId(diffId), '2048');
     await userEvent.click(canvas.getByTestId(`${diffId}Update`));
     await expect(onChange).toHaveBeenLastCalledWith({ ...currentGitDefaults, DiffIndexingLimitMb: 2048 });
@@ -159,9 +175,9 @@ export const GitDefaultsOutOfRange: PropsStory = {
   args: gitDefaultsArgs(),
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    const lfs = canvas.getByTestId(lfsId);
-    const diff = canvas.getByTestId(diffId);
 
+    await openCategory(canvas, 'settings-largeFiles');
+    const lfs = canvas.getByTestId(lfsId);
     await expect(canvas.queryByTestId(`${lfsId}Range`)).toBeNull();
 
     for (const value of ['101', '0', '1.5', '']) {
@@ -174,6 +190,9 @@ export const GitDefaultsOutOfRange: PropsStory = {
     await expect(canvas.getByTestId(`${lfsId}Update`)).toBeEnabled();
     await expect(canvas.queryByTestId(`${lfsId}Range`)).toBeNull();
 
+    await openCategory(canvas, 'settings-git');
+    const diff = canvas.getByTestId(diffId);
+
     for (const value of ['1048577', '0', '']) {
       await replaceNumber(diff, value);
       await expect(canvas.getByTestId(`${diffId}Update`)).toBeDisabled();
@@ -185,7 +204,7 @@ export const GitDefaultsOutOfRange: PropsStory = {
   },
 };
 
-// The navigation shows only where the page is wide enough. Vitest's browser starts narrow.
+// The navigation sits beside the page where it is wide enough and above it otherwise.
 const withViewport = async (canvasElement: HTMLElement, width: number, height: number, body: () => Promise<void>) => {
   let restoreViewport = async () => {};
   if ('__vitest_browser__' in globalThis) {
@@ -209,103 +228,65 @@ const allCategoriesArgs = () => ({
   dataHubs: { Urls: ['https://gitlab.example.org'], OnChange: fn() } as any,
 });
 
-const navigationLink = (canvas: ReturnType<typeof within>, sectionId: string) =>
-  canvas.getByTestId(`SettingsNavigation-${sectionId}`);
-
 const expectMarked = async (canvas: ReturnType<typeof within>, sectionId: string) =>
-  waitFor(() => expect(navigationLink(canvas, sectionId)).toHaveAttribute('aria-current', 'location'));
+  waitFor(() => expect(canvas.getByTestId(`SettingsNavigation-${sectionId}`)).toHaveAttribute('aria-current', 'page'));
 
-const scrollTop = (canvasElement: HTMLElement) => canvasElement.ownerDocument.scrollingElement!.scrollTop;
+const navigationPlay = (width: number): NonNullable<PropsStory['play']> => async ({ canvasElement }) =>
+  withViewport(canvasElement, width, 700, async () => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByTestId('SettingsNavigation')).toBeVisible();
+    await expect(canvas.getByTestId('settings-general')).toBeVisible();
+    await expectMarked(canvas, 'settings-general');
 
-export const NavigationJumpsToCategory: PropsStory = {
+    await openCategory(canvas, 'settings-largeFiles');
+    await expect(canvas.queryByTestId('settings-general')).toBeNull();
+    await expectMarked(canvas, 'settings-largeFiles');
+
+    // Opening Git expands it, and it stays expanded on another page, so its settings lead back to it.
+    await openCategory(canvas, 'settings-git');
+    await openCategory(canvas, 'settings-largeFiles');
+    const gitSetting = canvas.getByTestId('SettingsNavigation-settings-git-0');
+    await expect(gitSetting).toBeVisible();
+    await userEvent.click(gitSetting);
+    await expect(await canvas.findByTestId('settings-git')).toBeVisible();
+    await expect(canvas.queryByTestId('settings-largeFiles')).toBeNull();
+    await expectMarked(canvas, 'settings-git');
+
+    // The shown category collapses and expands again without leaving its page.
+    await userEvent.click(canvas.getByTestId('SettingsNavigation-settings-git'));
+    await expect(gitSetting).not.toBeVisible();
+    await expect(canvas.getByTestId('settings-git')).toBeVisible();
+    await userEvent.click(canvas.getByTestId('SettingsNavigation-settings-git'));
+    await expect(gitSetting).toBeVisible();
+  });
+
+export const NavigationBesidePage: PropsStory = {
   render: renderWithProps,
   args: allCategoriesArgs(),
-  play: async ({ canvasElement }) =>
-    withViewport(canvasElement, 1280, 600, async () => {
-      const canvas = within(canvasElement);
-      await expect(canvas.getByTestId('SettingsNavigation')).toBeVisible();
-      await expectMarked(canvas, 'settings-general');
-
-      await userEvent.click(navigationLink(canvas, 'settings-large-files'));
-
-      await expectMarked(canvas, 'settings-large-files');
-      await waitFor(() => expect(scrollTop(canvasElement)).toBeGreaterThan(0));
-    }),
+  play: navigationPlay(1280),
 };
 
-export const NavigationMarksCategoryInView: PropsStory = {
+export const NavigationAbovePageWhenNarrow: PropsStory = {
   render: renderWithProps,
   args: allCategoriesArgs(),
-  play: async ({ canvasElement }) =>
-    withViewport(canvasElement, 1280, 600, async () => {
-      const canvas = within(canvasElement);
-      await expectMarked(canvas, 'settings-general');
-
-      // Scrolling without the navigation moves the mark along.
-      canvas.getByTestId('settings-git').scrollIntoView({ block: 'start' });
-      await expectMarked(canvas, 'settings-git');
-
-      // At the end of the page the last box can't reach the top, so the last category takes the mark.
-      const scroller = canvasElement.ownerDocument.scrollingElement!;
-      scroller.scrollTop = scroller.scrollHeight;
-      await expectMarked(canvas, 'settings-term-search');
-
-      scroller.scrollTop = 0;
-      await expectMarked(canvas, 'settings-general');
-    }),
-};
-
-export const NavigationMarksLastCategoryWhenScaled: PropsStory = {
-  render: renderWithProps,
-  args: allCategoriesArgs(),
-  play: async ({ canvasElement }) =>
-    withViewport(canvasElement, 1280, 600, async () => {
-      const canvas = within(canvasElement);
-      const doc = canvasElement.ownerDocument;
-      const scroller = doc.scrollingElement!;
-
-      // UI scaling gives fractional pixel sizes, which can leave the end of the page just below the view.
-      for (const zoom of ['1.1', '1.25', '1.33']) {
-        doc.documentElement.style.setProperty('zoom', zoom);
-        try {
-          scroller.scrollTop = 0;
-          await expectMarked(canvas, 'settings-general');
-          scroller.scrollTop = scroller.scrollHeight;
-          await expectMarked(canvas, 'settings-term-search');
-        } finally {
-          doc.documentElement.style.removeProperty('zoom');
-        }
-      }
-    }),
+  play: navigationPlay(600),
 };
 
 export const OpensAtCategory: PropsStory = {
   render: renderWithProps,
   args: { ...allCategoriesArgs(), category: 'largeFiles' } as any,
-  play: async ({ canvasElement }) =>
-    withViewport(canvasElement, 1280, 600, async () => {
-      const canvas = within(canvasElement);
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
 
-      await expectMarked(canvas, 'settings-large-files');
-      await expect(scrollTop(canvasElement)).toBeGreaterThan(0);
-    }),
-};
-
-export const NavigationHiddenWhenNarrow: PropsStory = {
-  render: renderWithProps,
-  args: allCategoriesArgs(),
-  play: async ({ canvasElement }) =>
-    withViewport(canvasElement, 600, 800, async () => {
-      const canvas = within(canvasElement);
-
-      await expect(canvas.getByTestId('SettingsNavigation')).not.toBeVisible();
-      await expect(canvas.getByTestId('settings-large-files')).toBeVisible();
-    }),
+    await expect(await canvas.findByTestId('settings-largeFiles')).toBeVisible();
+    await expect(canvas.queryByTestId('settings-general')).toBeNull();
+    await expectMarked(canvas, 'settings-largeFiles');
+  },
 };
 
 export const GitExecutableAutomatic: PropsStory = {
   render: renderWithProps,
-  args: gitExecutableArgs({
+  args: onGitPage({
     PathInUse: '/usr/bin/git',
     GitVersion: '2.47.1',
     GitLfsVersion: '3.6.1',
@@ -333,7 +314,7 @@ export const GitExecutableAutomatic: PropsStory = {
 
 export const GitExecutableChosenPath: PropsStory = {
   render: renderWithProps,
-  args: gitExecutableArgs({
+  args: onGitPage({
     ChosenPath: '/opt/tools/git/bin/git',
     PathInUse: '/opt/tools/git/bin/git',
     GitVersion: '2.45.0',
@@ -353,7 +334,7 @@ export const GitExecutableChosenPath: PropsStory = {
 
 export const GitExecutableProblem: PropsStory = {
   render: renderWithProps,
-  args: gitExecutableArgs({
+  args: onGitPage({
     ChosenPath: '/opt/tools/git/bin/git',
     Problem: 'The program could not be started.',
     IsChecking: false,
@@ -373,7 +354,7 @@ export const GitExecutableProblem: PropsStory = {
 
 export const GitExecutableChecking: PropsStory = {
   render: renderWithProps,
-  args: gitExecutableArgs({
+  args: onGitPage({
     ChosenPath: '/opt/tools/git/bin/git',
     PathInUse: '/opt/tools/git/bin/git',
     IsChecking: true,

@@ -12,24 +12,20 @@ type SettingsCategory =
     | LargeFiles
     | TermSearch
 
-module SettingsCategory =
+/// One setting: its title, what it does and its control.
+type SettingField = {
+    Title: string
+    Description: Feliz.ReactElement
+    Children: Feliz.ReactElement
+}
 
-    let title (category: SettingsCategory) =
-        match category with
-        | SettingsCategory.General -> "General"
-        | SettingsCategory.DataHub -> "DataHUB"
-        | SettingsCategory.Git -> "Git"
-        | SettingsCategory.LargeFiles -> "Large files"
-        | SettingsCategory.TermSearch -> "Term search"
-
-    /// The id of the category's section on the page.
-    let sectionId (category: SettingsCategory) =
-        match category with
-        | SettingsCategory.General -> "settings-general"
-        | SettingsCategory.DataHub -> "settings-datahub"
-        | SettingsCategory.Git -> "settings-git"
-        | SettingsCategory.LargeFiles -> "settings-large-files"
-        | SettingsCategory.TermSearch -> "settings-term-search"
+/// A category with its settings. Each category is one page of the settings.
+type CategorySettings = {
+    /// What other parts of the app open the page with.
+    Category: SettingsCategory
+    Title: string
+    Fields: SettingField[]
+}
 
 /// What the host knows about the Git executable. ChosenPath is None while the automatic lookup is active.
 type GitExecutableSetting = {

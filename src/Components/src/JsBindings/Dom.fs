@@ -26,21 +26,6 @@ module Dom =
         member _.observe(target: Element) : unit = jsNative
         member _.disconnect() : unit = jsNative
 
-    [<AllowNullLiteral>]
-    type IntersectionObserverEntry =
-        abstract target: Element
-        abstract isIntersecting: bool
-
-    /// rootMargin grows or shrinks the viewport that counts as visible, in CSS margin syntax.
-    [<Global>]
-    type IntersectionObserver(callback: IntersectionObserverEntry[] -> unit, options: {| rootMargin: string |}) =
-        /// False where the browser has no IntersectionObserver, as in jsdom.
-        [<Emit("typeof IntersectionObserver !== 'undefined'")>]
-        static member isAvailable: bool = jsNative
-
-        member _.observe(target: Element) : unit = jsNative
-        member _.disconnect() : unit = jsNative
-
     /// Scrolls the scrolling ancestors so the top of the element is at the top of their view.
     [<Emit("$0.scrollIntoView({ block: 'start', behavior: $1 ? 'smooth' : 'auto' })")>]
     let scrollIntoView (element: Element) (smooth: bool) : unit = jsNative
