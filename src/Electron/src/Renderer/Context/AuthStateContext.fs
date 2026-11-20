@@ -25,7 +25,7 @@ let useAuthStateCtx () = React.useContext AuthStateCtx
 
 open Helper
 
-/// This component stores the current account information. If you want to log out, switch account, login, etc.
+/// This component stores the current account information. If you want to switch account, login, etc.
 /// - you simply can use the IAuthApi via IPC. Any changes will be broadcasted to all open windows via: `authAccountsUpdate`
 [<ReactComponent>]
 let Provider (children: ReactElement) =

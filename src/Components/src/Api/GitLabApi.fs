@@ -649,6 +649,27 @@ module private Internals =
                 return Error(GitLabError.NetworkError networkError)
     }
 
+    /// A DELETE that answers without a body, such as 204 No Content.
+    let sendDeleteNoContent (url: string) (pat: string) : JS.Promise<Result<unit, GitLabError>> = promise {
+        if String.IsNullOrWhiteSpace pat then
+            return Error(GitLabError.InvalidRequest "Personal Access Token is required.")
+        else
+            let requestOptions = [
+                RequestProperties.Method HttpMethod.DELETE
+                requestHeaders [ HttpRequestHeaders.Custom("PRIVATE-TOKEN", pat) ]
+            ]
+
+            try
+                let! response = fetchUnsafe url requestOptions
+
+                if not response.Ok then
+                    return Error(mapHttpError response.Status)
+                else
+                    return Ok()
+            with networkError ->
+                return Error(GitLabError.NetworkError networkError)
+    }
+
     /// Lists every group of the current user (all pages), including the project_creation_level REST field.
     let listMemberGroups (baseUrl: string) (pat: string) : JS.Promise<Result<GitLabGroupResponse array, GitLabError>> =
         let rec loadPage (page: int) (collected: GitLabGroupResponse array list) = promise {
@@ -918,6 +939,12 @@ type GitLabApi =
             let! response = Internals.sendPostNoBody<GitLabRotatedPersonalAccessTokenResponse> url pat
             return response |> Result.map Internals.toRotatedPersonalAccessTokenDto
         }
+
+    /// DELETE /api/v4/personal_access_tokens/self. Any token may delete itself.
+    static member RevokeCurrentPersonalAccessToken
+        (baseUrl: string, pat: string)
+        : JS.Promise<Result<unit, GitLabError>> =
+        Internals.sendDeleteNoContent $"{baseUrl.TrimEnd('/')}/api/v4/personal_access_tokens/self" pat
 
     /// POST /api/v4/projects
     static member CreateProject

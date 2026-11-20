@@ -87,23 +87,18 @@ let evaluateTokenStatus
 
 /// Normalize and validate a GitLab base URL. HTTPS only.
 let private normalizeBaseUrl (baseUrl: string) : Result<string, AuthFailure> =
-    let trimmed = baseUrl.Trim().TrimEnd('/')
-
-    if String.IsNullOrWhiteSpace trimmed then
+    match Swate.Components.Composite.Authentication.Helper.GitLabUrls.tryNormalize baseUrl with
+    | Some normalized -> Ok normalized
+    | None when String.IsNullOrWhiteSpace(baseUrl.Trim().TrimEnd('/')) ->
         Error {
             Kind = AuthFailureKind.EndpointInvalid
             Message = "DataHUB URL is empty."
         }
-    else
-        let mutable uri = Unchecked.defaultof<Uri>
-
-        if Uri.TryCreate(trimmed, UriKind.Absolute, &uri) && uri.Scheme = "https" then
-            Ok trimmed
-        else
-            Error {
-                Kind = AuthFailureKind.EndpointInvalid
-                Message = "DataHUB URL must be a valid HTTPS URL."
-            }
+    | None ->
+        Error {
+            Kind = AuthFailureKind.EndpointInvalid
+            Message = "DataHUB URL must be a valid HTTPS URL."
+        }
 
 
 // ── Mutable in-memory state (multi-account) ──────────────────────────
@@ -354,16 +349,6 @@ let signIn (request: AuthSignInRequest) : JS.Promise<AuthResult> = promise {
                         return toAuthResult (Ok authStateDto)
 }
 
-/// Sign out: remove active account from memory and disk, pick next or clear.
-let signOut () : unit =
-    match activeLocalSwateAccountId with
-    | Some id ->
-        SecureAuthStore.remove id
-        accounts <- accounts |> Map.remove id
-        reconcileActiveAccountInvariant ()
-        invalidateRevalidationWindow ()
-    | None -> ()
-
 /// Set a different account as active.
 let setActiveAccount (localSwateAccountId: string) : AuthStateDto =
     match accounts |> Map.tryFind localSwateAccountId with
@@ -375,13 +360,67 @@ let setActiveAccount (localSwateAccountId: string) : AuthStateDto =
 
     getState ()
 
-/// Remove a specific account (by local key). If it was active, switch to next or clear.
-let removeAccount (localSwateAccountId: string) : unit =
-    SecureAuthStore.remove localSwateAccountId
-    accounts <- accounts |> Map.remove localSwateAccountId
+/// The outcome of deleting a token on its DataHUB. A token the DataHUB no longer accepts can't be used
+/// anywhere, so it counts as deleted.
+let private tokenDeletionOutcome (result: Result<unit, AuthFailure>) : TokenDeletionOutcome =
+    match result with
+    | Ok()
+    | Error { Kind = AuthFailureKind.Unauthorized } -> TokenDeletionOutcome.Deleted
+    | Error failure -> TokenDeletionOutcome.Failed failure.Message
+
+/// Remove accounts (by local key). If the active one is among them, switch to the next or clear. Returns the
+/// user and the token of each removed account, so the tokens can still be deleted on their DataHUBs.
+let removeAccounts (localSwateAccountIds: string seq) : (AuthUserDto * string) list =
+    let removed =
+        localSwateAccountIds
+        |> Seq.choose (fun localSwateAccountId -> accounts |> Map.tryFind localSwateAccountId)
+        |> List.ofSeq
+
+    for accountState in removed do
+        let localSwateAccountId = accountState.Summary.User.LocalSwateAccountId
+        SecureAuthStore.remove localSwateAccountId
+        accounts <- accounts |> Map.remove localSwateAccountId
 
     reconcileActiveAccountInvariant ()
     invalidateRevalidationWindow ()
+
+    removed
+    |> List.map (fun accountState -> accountState.Summary.User, accountState.Token)
+
+/// Delete the tokens of removed accounts on their DataHUBs, each with a single try. The reason of a failure
+/// names every account whose token was not deleted, one per line.
+let deleteTokens (removed: (AuthUserDto * string) list) : JS.Promise<TokenDeletionOutcome> = promise {
+    let! outcomes =
+        removed
+        |> List.map (fun (user, token) ->
+            GitLabApi.revokeCurrentPersonalAccessToken user.TargetDataHub token
+            |> Promise.map (fun result -> user, tokenDeletionOutcome result)
+        )
+        |> Promise.all
+
+    let failures =
+        outcomes
+        |> Array.choose (fun (user, outcome) ->
+            match outcome with
+            | TokenDeletionOutcome.Failed reason -> Some $"{user.Name} on {user.TargetDataHub}: {reason}"
+            | _ -> None
+        )
+
+    return
+        if Array.isEmpty failures then
+            TokenDeletionOutcome.Deleted
+        else
+            TokenDeletionOutcome.Failed(String.concat "\n" failures)
+}
+
+/// Stores the new state of an account after a network call made with `usedToken`. An account that was removed
+/// or got another token while the call ran keeps that change.
+let private storeIfTokenUnchanged (localSwateAccountId: string) (usedToken: string) (nextState: AccountState) =
+    match accounts |> Map.tryFind localSwateAccountId with
+    | Some current when current.Token = usedToken ->
+        accounts <- accounts |> Map.add localSwateAccountId nextState
+        persistAccountState localSwateAccountId nextState
+    | _ -> ()
 
 /// Rotate PAT for a specific account and replace the stored token.
 let rotatePersonalAccessToken (localSwateAccountId: string) : JS.Promise<Result<AuthStateDto, AuthFailure>> = promise {
@@ -424,8 +463,7 @@ let rotatePersonalAccessToken (localSwateAccountId: string) : JS.Promise<Result<
                         Token = rotatedToken.token
                 }
 
-                accounts <- accounts |> Map.add localSwateAccountId updatedAccountState
-                persistAccountState localSwateAccountId updatedAccountState
+                storeIfTokenUnchanged localSwateAccountId accountState.Token updatedAccountState
                 invalidateRevalidationWindow ()
 
                 return Ok(getState ())
@@ -462,7 +500,6 @@ let revalidate () : JS.Promise<AuthResult * bool> = promise {
         else
             lastRevalidationStartedAtUtc <- Some now
 
-            let mutable nextAccounts = accounts
             let mutable firstFailure: AuthFailure option = None
 
             for localSwateAccountId, accountState in accounts |> Map.toArray do
@@ -501,8 +538,7 @@ let revalidate () : JS.Promise<AuthResult * bool> = promise {
                                 }
                         }
 
-                        nextAccounts <- nextAccounts |> Map.add localSwateAccountId updatedAccountState
-                        persistAccountState localSwateAccountId updatedAccountState
+                        storeIfTokenUnchanged localSwateAccountId accountState.Token updatedAccountState
 
                     | Error failure ->
                         if firstFailure.IsNone then
@@ -517,8 +553,7 @@ let revalidate () : JS.Promise<AuthResult * bool> = promise {
                                 }
                         }
 
-                        nextAccounts <- nextAccounts |> Map.add localSwateAccountId updatedAccountState
-                        persistAccountState localSwateAccountId updatedAccountState
+                        storeIfTokenUnchanged localSwateAccountId accountState.Token updatedAccountState
 
                 | Error failure ->
                     if firstFailure.IsNone then
@@ -535,10 +570,8 @@ let revalidate () : JS.Promise<AuthResult * bool> = promise {
                             }
                     }
 
-                    nextAccounts <- nextAccounts |> Map.add localSwateAccountId updatedAccountState
-                    persistAccountState localSwateAccountId updatedAccountState
+                    storeIfTokenUnchanged localSwateAccountId accountState.Token updatedAccountState
 
-            accounts <- nextAccounts
             reconcileActiveAccountInvariant ()
 
             let authStateDto = getState ()
