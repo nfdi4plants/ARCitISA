@@ -263,6 +263,25 @@ export const CancelRemoveFlow: Story = {
   },
 };
 
+export const RemoveAllAndDeleteTokensFlow: Story = {
+  name: 'Remove all logins and delete their tokens',
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    await signInWithPat(canvas);
+    await expectSignedIn(canvas);
+
+    await openUserMenu(canvas);
+    await userEvent.click(await canvas.findByTestId('RemoveAllAccountsButton'));
+    await userEvent.click(await canvas.findByTestId('RemoveAccountDeleteToken'));
+
+    await waitFor(() => {
+      expect(canvas.getByTestId('SignedInInfo')).toHaveTextContent('Signed In: false');
+    });
+    await expectDeletedTokens(canvas, 3);
+  },
+};
+
 export const MultiAccountSwitchFlow: Story = {
   name: 'Multi account switch flow',
   play: async ({ canvasElement }) => {

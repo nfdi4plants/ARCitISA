@@ -258,7 +258,7 @@ type Authentication =
             ?dropdownClassName: string,
             ?onRotateToken: string -> unit,
             ?onSwitchAccount: string -> unit,
-            ?onRemoveAccount: RemoveAccountRequest -> unit,
+            ?onRemoveAccounts: RemoveAccountsRequest -> unit,
             ?customDataHubUrls: string[]
         ) =
 
@@ -342,7 +342,7 @@ type Authentication =
                                         onRegenerateToken = onRegenerateToken,
                                         ?onRotateToken = onRotateToken,
                                         ?onSwitchAccount = onSwitchAccount,
-                                        ?onRemoveAccount = onRemoveAccount
+                                        ?onRemoveAccounts = onRemoveAccounts
                                     )
                                     Authentication.AddAnotherAccountBtn(fun () -> setShowAddAccount true)
                                 ]
@@ -553,19 +553,20 @@ type Authentication =
 
             setAccounts next
 
-        let onRemoveAccount (request: RemoveAccountRequest) =
-            let localSwateAccountId = request.LocalSwateAccountId
+        let onRemoveAccounts (request: RemoveAccountsRequest) =
+            let isRemoved (localSwateAccountId: string) =
+                request.LocalSwateAccountIds |> Array.contains localSwateAccountId
 
-            if request.DeleteTokenOnDataHub then
-                setDeletedTokens (deletedTokens + 1)
+            if request.DeleteTokensOnDataHub then
+                setDeletedTokens (deletedTokens + request.LocalSwateAccountIds.Length)
 
             let filteredAccounts =
                 accounts.StoredAccounts
-                |> Array.filter (fun account -> account.User.LocalSwateAccountId <> localSwateAccountId)
+                |> Array.filter (fun account -> not (isRemoved account.User.LocalSwateAccountId))
 
             let nextActive =
                 match accounts.ActiveAccount with
-                | Some activeAccount when activeAccount.User.LocalSwateAccountId <> localSwateAccountId ->
+                | Some activeAccount when not (isRemoved activeAccount.User.LocalSwateAccountId) ->
                     filteredAccounts
                     |> Array.tryFind (fun account ->
                         account.User.LocalSwateAccountId = activeAccount.User.LocalSwateAccountId
@@ -628,7 +629,7 @@ type Authentication =
                     onSignIn,
                     isLoading = isLoading,
                     onSwitchAccount = onSwitchAccount,
-                    onRemoveAccount = onRemoveAccount,
+                    onRemoveAccounts = onRemoveAccounts,
                     onRotateToken = onRotateToken,
                     customDataHubUrls = customDataHubUrls
                 )

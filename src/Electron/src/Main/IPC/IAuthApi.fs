@@ -80,19 +80,19 @@ let api: IAuthApi = {
             with _ ->
                 return Error(exn "Failed to switch active account.")
         }
-    removeAccount =
-        fun (request: RemoveAccountRequest) -> promise {
+    removeAccounts =
+        fun (request: RemoveAccountsRequest) -> promise {
             try
-                // The account goes at once. Deleting the token waits for the DataHUB.
-                let removed = AuthService.removeAccount request.LocalSwateAccountId
+                // The accounts go at once. Deleting the tokens waits for the DataHUBs.
+                let removed = AuthService.removeAccounts request.LocalSwateAccountIds
                 broadcastAccountsUpdate ()
 
-                match removed with
-                | Some(dataHub, token) when request.DeleteTokenOnDataHub ->
-                    let! outcome = AuthService.deleteToken dataHub token
+                if request.DeleteTokensOnDataHub then
+                    let! outcome = AuthService.deleteTokens removed
                     return Ok outcome
-                | _ -> return Ok TokenDeletionOutcome.Kept
+                else
+                    return Ok TokenDeletionOutcome.Kept
             with _ ->
-                return Error(exn "Failed to remove account.")
+                return Error(exn "Failed to remove accounts.")
         }
 }

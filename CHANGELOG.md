@@ -22,7 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### 🔄 Changed
 
-- Removing an account or regenerating its token asks whether to delete the token on the DataHUB as well. The Logout button is gone, since removing the account does the same. (by @caroott)
+- Removing an account or regenerating its token asks whether to delete the token on the DataHUB as well. The Logout button is now "Remove all logins": it removes every account and asks once whether to delete their tokens too. (by @caroott)
 
 ## 3.3.0 - 2026-11-19
 

@@ -5,6 +5,12 @@ open Feliz
 
 open Types
 
+/// The removal waiting for an answer. Regenerate means a new token is generated for the account afterwards.
+[<RequireQualifiedAccess>]
+type internal PendingRemoval =
+    | Account of localSwateAccountId: string * regenerate: bool
+    | AllAccounts
+
 [<Erase; Mangle(false)>]
 type AccountManager =
 
@@ -163,31 +169,39 @@ type AccountManager =
             ]
         ]
 
-    /// Asks whether the token of a removed account is deleted on its DataHUB as well.
+    /// Asks whether the tokens of the accounts to remove are deleted on their DataHUBs as well. It takes the place
+    /// of what was clicked, so the question shows up where the user looks.
     [<ReactComponent>]
-    static member private RemovalPrompt(account: AccountSummary, onAnswer: bool -> unit, onCancel: unit -> unit) =
+    static member private RemovalPrompt
+        (removedAccounts: AccountSummary[], onAnswer: bool -> unit, onCancel: unit -> unit)
+        =
+        let question, tokens =
+            match removedAccounts with
+            | [| account |] ->
+                $"Do you want to delete the token of {account.User.Name} on {account.User.TargetDataHub} as well?",
+                "token"
+            | _ ->
+                $"Do you want to delete the tokens of all {removedAccounts.Length} accounts on their DataHUBs as well?",
+                "tokens"
+
         Html.div [
             prop.testId "RemoveAccountPrompt"
-            prop.className "swt:flex swt:flex-col swt:gap-2 swt:p-1.5"
+            prop.className "swt:flex swt:flex-col swt:gap-2 swt:p-1.5 swt:rounded swt:ring-1 swt:ring-error/40"
             prop.children [
-                Html.p [
-                    prop.className "swt:text-sm"
-                    prop.text
-                        $"Do you want to delete the token of {account.User.Name} on {account.User.TargetDataHub} as well?"
-                ]
+                Html.p [ prop.className "swt:text-sm"; prop.text question ]
                 Html.div [
                     prop.className "swt:flex swt:flex-wrap swt:gap-1"
                     prop.children [
                         Html.button [
                             prop.testId "RemoveAccountDeleteToken"
                             prop.className "swt:btn swt:btn-sm swt:btn-error"
-                            prop.text "Delete token"
+                            prop.text $"Delete {tokens}"
                             prop.onClick (fun _ -> onAnswer true)
                         ]
                         Html.button [
                             prop.testId "RemoveAccountKeepToken"
                             prop.className "swt:btn swt:btn-sm"
-                            prop.text "Keep token"
+                            prop.text $"Keep {tokens}"
                             prop.onClick (fun _ -> onAnswer false)
                         ]
                         Html.button [
@@ -208,29 +222,32 @@ type AccountManager =
             onRegenerateToken: AccountSummary -> unit,
             ?onRotateToken: string -> unit,
             ?onSwitchAccount: string -> unit,
-            ?onRemoveAccount: RemoveAccountRequest -> unit
+            ?onRemoveAccounts: RemoveAccountsRequest -> unit
         ) =
         let activeLocalSwateAccountId =
             accounts.ActiveAccount
             |> Option.map (fun account -> account.User.LocalSwateAccountId)
 
-        // The account waiting for the answer, and whether a new token is generated for it afterwards.
-        let pendingRemoval, setPendingRemoval =
-            React.useState (None: (AccountSummary * bool) option)
+        let pendingRemoval, setPendingRemoval = React.useState (None: PendingRemoval option)
 
         let askRemoval (account: AccountSummary) (regenerate: bool) =
-            setPendingRemoval (Some(account, regenerate))
+            setPendingRemoval (Some(PendingRemoval.Account(account.User.LocalSwateAccountId, regenerate)))
 
-        let remove (account: AccountSummary) (regenerate: bool) (deleteTokenOnDataHub: bool) =
+        let cancel () = setPendingRemoval None
+
+        let removeAccounts (removedAccounts: AccountSummary[]) (deleteTokensOnDataHub: bool) =
             setPendingRemoval None
 
-            onRemoveAccount
+            onRemoveAccounts
             |> Option.iter (fun removeFn ->
                 removeFn {
-                    LocalSwateAccountId = account.User.LocalSwateAccountId
-                    DeleteTokenOnDataHub = deleteTokenOnDataHub
+                    LocalSwateAccountIds = removedAccounts |> Array.map _.User.LocalSwateAccountId
+                    DeleteTokensOnDataHub = deleteTokensOnDataHub
                 }
             )
+
+        let removeAccount (account: AccountSummary) (regenerate: bool) (deleteTokenOnDataHub: bool) =
+            removeAccounts [| account |] deleteTokenOnDataHub
 
             if regenerate then
                 Browser.Dom.window.``open`` (
@@ -244,26 +261,44 @@ type AccountManager =
         Html.div [
             prop.className "swt:flex swt:flex-col swt:gap-1 swt:mt-1 swt:pt-1 swt:border-t swt:border-base-content/10"
             prop.children [
-                match pendingRemoval with
-                | Some(account, regenerate) ->
-                    AccountManager.RemovalPrompt(account, remove account regenerate, fun () -> setPendingRemoval None)
-                | None ->
-                    if accounts.StoredAccounts.Length > 1 then
-                        Html.div [
-                            prop.className "swt:text-xs swt:text-base-content/60 swt:px-1"
-                            prop.textf "Accounts (%d)" accounts.StoredAccounts.Length
-                        ]
+                if accounts.StoredAccounts.Length > 1 then
+                    Html.div [
+                        prop.className "swt:text-xs swt:text-base-content/60 swt:px-1"
+                        prop.textf "Accounts (%d)" accounts.StoredAccounts.Length
+                    ]
 
-                    for acct in accounts.StoredAccounts do
+                for acct in accounts.StoredAccounts do
+                    match pendingRemoval with
+                    | Some(PendingRemoval.Account(localSwateAccountId, regenerate)) when
+                        localSwateAccountId = acct.User.LocalSwateAccountId
+                        ->
+                        AccountManager.RemovalPrompt([| acct |], removeAccount acct regenerate, cancel)
+                    | _ ->
                         let isActive = activeLocalSwateAccountId = Some acct.User.LocalSwateAccountId
 
                         AccountManager.AccountRow(
                             acct,
                             isActive,
                             onRegenerateToken = onRegenerateToken,
-                            ?askRemoval = (onRemoveAccount |> Option.map (fun _ -> askRemoval)),
+                            ?askRemoval = (onRemoveAccounts |> Option.map (fun _ -> askRemoval)),
                             ?onRotateToken = onRotateToken,
                             ?onSwitch = onSwitchAccount
                         )
+
+                if onRemoveAccounts.IsSome then
+                    match pendingRemoval with
+                    | Some PendingRemoval.AllAccounts ->
+                        AccountManager.RemovalPrompt(
+                            accounts.StoredAccounts,
+                            removeAccounts accounts.StoredAccounts,
+                            cancel
+                        )
+                    | _ ->
+                        Html.button [
+                            prop.testId "RemoveAllAccountsButton"
+                            prop.className "swt:btn swt:btn-error swt:btn-outline swt:btn-sm swt:w-full swt:mt-1"
+                            prop.text "Remove all logins"
+                            prop.onClick (fun _ -> setPendingRemoval (Some PendingRemoval.AllAccounts))
+                        ]
             ]
         ]

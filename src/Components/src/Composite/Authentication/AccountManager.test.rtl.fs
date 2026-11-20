@@ -42,14 +42,14 @@ let private accounts: AuthStateDto = {
 
 /// Renders the account list and records every removal and regeneration.
 let private render () =
-    let removals = ResizeArray<RemoveAccountRequest>()
+    let removals = ResizeArray<RemoveAccountsRequest>()
     let regenerated = ResizeArray<string>()
 
     RTL.render (
         AccountManager.Main(
             accounts,
             onRegenerateToken = (fun account -> regenerated.Add account.User.LocalSwateAccountId),
-            onRemoveAccount = removals.Add
+            onRemoveAccounts = removals.Add
         )
     )
     |> ignore
@@ -77,14 +77,16 @@ Vitest.describe (
 
                     click "RemoveAccountButton-ok"
                     Vitest.expect(removals.Count).toBe 0
+                    // The question takes the place of the clicked account. The other accounts stay.
                     Vitest.expect(present "AccountRow-ok").toBe false
+                    Vitest.expect(present "AccountRow-broken").toBe true
 
                     click answer
 
                     Vitest.expect(Array.ofSeq removals).toEqual [|
                         {
-                            LocalSwateAccountId = "ok"
-                            DeleteTokenOnDataHub = deleteToken
+                            LocalSwateAccountIds = [| "ok" |]
+                            DeleteTokensOnDataHub = deleteToken
                         }
                     |]
 
@@ -113,8 +115,8 @@ Vitest.describe (
 
                 Vitest.expect(Array.ofSeq removals).toEqual [|
                     {
-                        LocalSwateAccountId = "broken"
-                        DeleteTokenOnDataHub = true
+                        LocalSwateAccountIds = [| "broken" |]
+                        DeleteTokensOnDataHub = true
                     }
                 |]
 
@@ -135,5 +137,43 @@ Vitest.describe (
                 Vitest.expect(openedUrls opened).toEqual [||]
                 restore opened
                 Vitest.expect(present "AccountRow-broken").toBe true
+        )
+
+        Vitest.test (
+            "removing all logins asks once for all accounts and passes the answer on",
+            fun () ->
+                for answer, deleteTokens in
+                    [
+                        "RemoveAccountDeleteToken", true
+                        "RemoveAccountKeepToken", false
+                    ] do
+                    let removals, _ = render ()
+
+                    click "RemoveAllAccountsButton"
+                    Vitest.expect(removals.Count).toBe 0
+
+                    click answer
+
+                    Vitest.expect(Array.ofSeq removals).toEqual [|
+                        {
+                            LocalSwateAccountIds = [| "ok"; "broken" |]
+                            DeleteTokensOnDataHub = deleteTokens
+                        }
+                    |]
+
+                    Vitest.expect(present "RemoveAccountPrompt").toBe false
+                    RTL.cleanup ()
+        )
+
+        Vitest.test (
+            "cancel on removing all logins removes nothing",
+            fun () ->
+                let removals, _ = render ()
+
+                click "RemoveAllAccountsButton"
+                click "RemoveAccountCancel"
+
+                Vitest.expect(removals.Count).toBe 0
+                Vitest.expect(present "RemoveAllAccountsButton").toBe true
         )
 )

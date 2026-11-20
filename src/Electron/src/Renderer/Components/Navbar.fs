@@ -160,14 +160,20 @@ module private Authentication =
             }
             |> Promise.start
 
-        let onRemoveAccount (request: RemoveAccountRequest) =
+        let onRemoveAccounts (request: RemoveAccountsRequest) =
             promise {
-                match! Api.ipcAuthApi.removeAccount request with
+                match! Api.ipcAuthApi.removeAccounts request with
                 | Ok(TokenDeletionOutcome.Failed reason) ->
-                    errorModalCtx.enqueue (ErrorModalRequest.create (reason, title = "Could not delete the token"))
+                    let title =
+                        if request.LocalSwateAccountIds.Length = 1 then
+                            "Could not delete the token"
+                        else
+                            "Could not delete all tokens"
+
+                    errorModalCtx.enqueue (ErrorModalRequest.create (reason, title = title))
                 | Ok _ -> ()
                 | Error ex ->
-                    errorModalCtx.enqueue (ErrorModalRequest.create (ex.Message, title = "Error removing account"))
+                    errorModalCtx.enqueue (ErrorModalRequest.create (ex.Message, title = "Error removing accounts"))
             }
             |> Promise.start
 
@@ -187,7 +193,7 @@ module private Authentication =
             dropdownClassName = "swt:dropdown-bottom swt:dropdown-end swt:h-8",
             onRotateToken = onRotateToken,
             onSwitchAccount = onSwitchAccount,
-            onRemoveAccount = onRemoveAccount,
+            onRemoveAccounts = onRemoveAccounts,
             customDataHubUrls = customDataHubUrls.state
         )
 

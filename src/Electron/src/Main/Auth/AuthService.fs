@@ -368,25 +368,50 @@ let private tokenDeletionOutcome (result: Result<unit, AuthFailure>) : TokenDele
     | Error { Kind = AuthFailureKind.Unauthorized } -> TokenDeletionOutcome.Deleted
     | Error failure -> TokenDeletionOutcome.Failed failure.Message
 
-/// Remove a specific account (by local key). If it was active, switch to next or clear. Returns the DataHUB
-/// and the token of the removed account, so the token can still be deleted there.
-let removeAccount (localSwateAccountId: string) : (string * string) option =
+/// Remove accounts (by local key). If the active one is among them, switch to the next or clear. Returns the
+/// user and the token of each removed account, so the tokens can still be deleted on their DataHUBs.
+let removeAccounts (localSwateAccountIds: string seq) : (AuthUserDto * string) list =
     let removed =
-        accounts
-        |> Map.tryFind localSwateAccountId
-        |> Option.map (fun accountState -> accountState.Summary.User.TargetDataHub, accountState.Token)
+        localSwateAccountIds
+        |> Seq.choose (fun localSwateAccountId -> accounts |> Map.tryFind localSwateAccountId)
+        |> List.ofSeq
 
-    SecureAuthStore.remove localSwateAccountId
-    accounts <- accounts |> Map.remove localSwateAccountId
+    for accountState in removed do
+        let localSwateAccountId = accountState.Summary.User.LocalSwateAccountId
+        SecureAuthStore.remove localSwateAccountId
+        accounts <- accounts |> Map.remove localSwateAccountId
 
     reconcileActiveAccountInvariant ()
     invalidateRevalidationWindow ()
-    removed
 
-/// Delete a token on its DataHUB.
-let deleteToken (dataHub: string) (token: string) : JS.Promise<TokenDeletionOutcome> =
-    GitLabApi.revokeCurrentPersonalAccessToken dataHub token
-    |> Promise.map tokenDeletionOutcome
+    removed
+    |> List.map (fun accountState -> accountState.Summary.User, accountState.Token)
+
+/// Delete the tokens of removed accounts on their DataHUBs, each with a single try. The reason of a failure
+/// names every account whose token was not deleted, one per line.
+let deleteTokens (removed: (AuthUserDto * string) list) : JS.Promise<TokenDeletionOutcome> = promise {
+    let! outcomes =
+        removed
+        |> List.map (fun (user, token) ->
+            GitLabApi.revokeCurrentPersonalAccessToken user.TargetDataHub token
+            |> Promise.map (fun result -> user, tokenDeletionOutcome result)
+        )
+        |> Promise.all
+
+    let failures =
+        outcomes
+        |> Array.choose (fun (user, outcome) ->
+            match outcome with
+            | TokenDeletionOutcome.Failed reason -> Some $"{user.Name} on {user.TargetDataHub}: {reason}"
+            | _ -> None
+        )
+
+    return
+        if Array.isEmpty failures then
+            TokenDeletionOutcome.Deleted
+        else
+            TokenDeletionOutcome.Failed(String.concat "\n" failures)
+}
 
 /// Stores the new state of an account after a network call made with `usedToken`. An account that was removed
 /// or got another token while the call ran keeps that change.

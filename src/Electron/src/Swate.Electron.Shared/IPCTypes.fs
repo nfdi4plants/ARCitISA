@@ -323,8 +323,8 @@ type IAuthApi = {
     listAccounts: unit -> Fable.Core.JS.Promise<Result<AccountSummary array, exn>>
     rotatePersonalAccessToken: string -> Fable.Core.JS.Promise<Result<AuthStateDto, exn>>
     setActiveAccount: string -> Fable.Core.JS.Promise<Result<AuthStateDto, exn>>
-    /// Removes the account in every case. The outcome says whether its token was deleted on the DataHUB.
-    removeAccount: RemoveAccountRequest -> Fable.Core.JS.Promise<Result<TokenDeletionOutcome, exn>>
+    /// Removes the accounts in every case. The outcome says whether their tokens were deleted on the DataHUBs.
+    removeAccounts: RemoveAccountsRequest -> Fable.Core.JS.Promise<Result<TokenDeletionOutcome, exn>>
 }
 
 /// One Way Bridge: Main -> Renderer
