@@ -190,8 +190,12 @@ type FilePickerWidget =
 
     [<ReactComponent>]
     static member private ActionButtons
-        (setPaths: (string[] -> string[]) -> unit, pickPaths, insertPaths: bool -> unit, tableCellSelected: bool)
-        =
+        (
+            setPaths: (string[] -> string[]) -> unit,
+            pickPaths: PathPickerKind -> unit,
+            insertPaths: bool -> unit,
+            tableCellSelected: bool
+        ) =
         let selectedPathsCtx = FilePickerWidgetContext.useSelectedPathsCtx ()
 
         let hasSelection = selectedPathsCtx.state |> List.isEmpty |> not
@@ -210,11 +214,22 @@ type FilePickerWidget =
         Html.div [
             prop.className "swt:flex swt:flex-wrap swt:gap-2 swt:w-full"
             prop.children [
-                Html.button [
-                    prop.className "swt:btn swt:btn-outline"
-                    prop.text "Pick more files"
-                    prop.title "Select more file paths and add them to the list"
-                    prop.onClick (fun _ -> pickPaths ())
+                Html.div [
+                    prop.className "swt:join"
+                    prop.children [
+                        Html.button [
+                            prop.className "swt:btn swt:btn-outline swt:join-item"
+                            prop.text "Pick more files"
+                            prop.title "Select more file paths and add them to the list"
+                            prop.onClick (fun _ -> pickPaths PathPickerKind.File)
+                        ]
+                        Html.button [
+                            prop.className "swt:btn swt:btn-outline swt:join-item"
+                            prop.text "Pick more folders"
+                            prop.title "Select more folder paths and add them to the list"
+                            prop.onClick (fun _ -> pickPaths PathPickerKind.Folder)
+                        ]
+                    ]
                 ]
                 FilePickerWidget.ActionButtonClear(hasSelection, clearAll, clearSelected)
                 FilePickerWidget.ActionButtonInsert(hasSelection, insertPaths, tableCellSelected)
@@ -222,14 +237,19 @@ type FilePickerWidget =
         ]
 
     [<ReactComponent>]
-    static member private PickFilePathsButtons(onPickPaths: unit -> unit) =
+    static member private PickPathsButtons(onPickPaths: PathPickerKind -> unit) =
         Html.div [
-            prop.className "swt:flex swt:flex-wrap swt:gap-2"
+            prop.className "swt:flex swt:w-full swt:gap-2"
             prop.children [
                 Html.button [
-                    prop.className "swt:btn swt:btn-sm swt:btn-primary swt:w-full"
+                    prop.className "swt:btn swt:btn-sm swt:btn-primary swt:flex-1"
                     prop.text "Pick Files"
-                    prop.onClick (fun _ -> onPickPaths ())
+                    prop.onClick (fun _ -> onPickPaths PathPickerKind.File)
+                ]
+                Html.button [
+                    prop.className "swt:btn swt:btn-sm swt:btn-primary swt:flex-1"
+                    prop.text "Pick Folders"
+                    prop.onClick (fun _ -> onPickPaths PathPickerKind.Folder)
                 ]
             ]
         ]
@@ -240,7 +260,7 @@ type FilePickerWidget =
             arcFile: ArcFiles,
             activeTableIndex: int option,
             setArcFile: ArcFiles -> unit,
-            onPickPaths: unit -> JS.Promise<string[]>
+            onPickPaths: PathPickerKind -> JS.Promise<string[]>
         ) =
 
         let paths, setPaths = React.useStateWithUpdater ([||]: string[])
@@ -254,12 +274,12 @@ type FilePickerWidget =
 
         let hasPaths = paths.Length > 0
 
-        let pickPaths () =
+        let pickPaths kind =
             promise {
                 setIsLoading true
 
                 try
-                    let! paths = onPickPaths ()
+                    let! paths = onPickPaths kind
                     FilePickerWidgetHelper.appendPickedPaths setPaths paths
                 finally
                     setIsLoading false
@@ -306,9 +326,9 @@ type FilePickerWidget =
                     Html.span [
                         prop.className "swt:text-sm swt:opacity-70 swt:p-4 swt:text-center"
                         prop.text
-                            "No file paths selected. Click the button below to pick files and insert their paths into your table."
+                            "No paths selected. Pick files or folders below and insert their paths into your table."
                     ]
 
-                    FilePickerWidget.PickFilePathsButtons(pickPaths)
+                    FilePickerWidget.PickPathsButtons(pickPaths)
             ]
         ]

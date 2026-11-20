@@ -8,6 +8,7 @@ open Vitest
 open Swate.Components.Composite.AnnotationTable
 open Swate.Components.Composite.AnnotationTable.Context
 open Swate.Components.Composite.DataMapTable
+open Swate.Components.Composite.Widgets.Types
 open Swate.Components.Shared
 
 [<Emit("$0.spyOn(HTMLElement.prototype, $1, 'get').mockReturnValue($2)")>]
@@ -47,7 +48,7 @@ let private checkDeselection arcFile activeTableIndex table clearSelection = pro
                         arcFile,
                         activeTableIndex,
                         (fun next -> updated <- Some next),
-                        fun () -> promise { return [| "file.csv" |] }
+                        fun _ -> promise { return [| "file.csv" |] }
                     )
                 ]
             ]
@@ -145,7 +146,7 @@ Vitest.test (
                 ArcFiles.Assay(ArcAssay.init "sortable-file-picker"),
                 None,
                 ignore,
-                fun () -> promise { return [| "beta.txt"; "alpha.txt"; "gamma.txt" |] }
+                fun _ -> promise { return [| "beta.txt"; "alpha.txt"; "gamma.txt" |] }
             )
         )
         |> ignore
@@ -174,6 +175,9 @@ Vitest.test (
         RTL.screen.getByRole ("button", ByRoleOptions(name = Text "Pick more files"))
         |> ignore
 
+        RTL.screen.getByRole ("button", ByRoleOptions(name = Text "Pick more folders"))
+        |> ignore
+
         RTL.screen.getByRole ("button", ByRoleOptions(name = Text "Insert file names"))
         |> ignore
     }
@@ -187,7 +191,7 @@ Vitest.test (
                 ArcFiles.Assay(ArcAssay.init "shift-select-file-picker"),
                 None,
                 ignore,
-                fun () -> promise { return [| "alpha.txt"; "beta.txt"; "gamma.txt" |] }
+                fun _ -> promise { return [| "alpha.txt"; "beta.txt"; "gamma.txt" |] }
             )
         )
         |> ignore
@@ -201,5 +205,38 @@ Vitest.test (
 
         Vitest.expect((RTL.screen.getByTestId "sortable-list-row-beta.txt").classList.contains "swt:bg-base-300").toBe
             true
+    }
+)
+
+Vitest.test (
+    "file picker requests files and folders separately and combines their paths",
+    fun () -> promise {
+        let requestedKinds = ResizeArray<PathPickerKind>()
+
+        RTL.render (
+            FilePickerWidget.Main(
+                ArcFiles.Assay(ArcAssay.init "file-and-folder-picker"),
+                None,
+                ignore,
+                fun kind -> promise {
+                    requestedKinds.Add kind
+
+                    return
+                        match kind with
+                        | PathPickerKind.File -> [| "data/file.csv" |]
+                        | PathPickerKind.Folder -> [| "data/images" |]
+                }
+            )
+        )
+        |> ignore
+
+        RTL.fireEvent.click (RTL.screen.getByRole ("button", ByRoleOptions(name = Text "Pick Folders")))
+        let! _ = RTL.screen.findByTestId "sortable-list-row-data/images"
+
+        RTL.fireEvent.click (RTL.screen.getByRole ("button", ByRoleOptions(name = Text "Pick more files")))
+        let! _ = RTL.screen.findByTestId "sortable-list-row-data/file.csv"
+
+        Vitest.expect(requestedKinds.ToArray()).toEqual [| PathPickerKind.Folder; PathPickerKind.File |]
+        RTL.screen.getByTestId "sortable-list-row-data/images" |> ignore
     }
 )

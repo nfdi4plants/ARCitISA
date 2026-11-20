@@ -169,7 +169,7 @@ let private renderEditor (startingActiveView: ActiveView) =
         Main.ArcFileEditor(
             createEditorArcFile (),
             ignore,
-            (fun () -> promise { return [||] }),
+            (fun _ -> promise { return [||] }),
             trailingNavbarElements =
                 (fun (props: ArcFileEditorHeaderProps) -> InsertionTarget(props.arcFile, props.activeView)),
             startingActiveView = startingActiveView

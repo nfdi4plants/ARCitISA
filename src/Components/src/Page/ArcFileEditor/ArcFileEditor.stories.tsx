@@ -71,6 +71,18 @@ export const NavbarWidgetToggle: Story = {
   },
 };
 
+export const FileAndFolderPicker: Story = {
+  parameters: { isolated: true },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    await userEvent.click(getWidgetButton(canvas, 'File Picker'));
+
+    expect(await canvas.findByRole('button', { name: 'Pick Files' })).toBeEnabled();
+    expect(canvas.getByRole('button', { name: 'Pick Folders' })).toBeEnabled();
+  },
+};
+
 export const NavbarSearch: Story = {
   parameters: { isolated: true },
   play: async ({ canvasElement }) => {

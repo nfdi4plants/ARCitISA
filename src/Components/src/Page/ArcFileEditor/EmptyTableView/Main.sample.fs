@@ -159,7 +159,7 @@ type internal Main =
                     Swate.Components.Page.ArcFileEditor.Main.ArcFileEditor(
                         arcFile,
                         setArcFile,
-                        (fun () -> promise { return [||] }),
+                        (fun _ -> promise { return [||] }),
                         startingActiveView = Swate.Components.Page.ArcFileEditor.Types.ActiveView.Table 0,
                         ?fetchArcNodes = fetchArcNodes
                     )

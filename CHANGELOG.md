@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### ✨ Added
 
+- The File Picker can now select multiple files or folders and insert their ARC-relative paths into a table or DataMap. Separate file and folder buttons provide consistent behavior across platforms. #1518 (by @Gitarackur)
 - The sign-in remembers DataHUB addresses you signed in to and offers them next to the official PLANTdataHUB. All DataHUBs other than the official one, including the preset ones, can be added or removed in the DataHUB settings, which the sign-in links to. (by @caroott)
 
 ### 🔄 Changed
