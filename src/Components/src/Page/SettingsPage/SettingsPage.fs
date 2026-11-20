@@ -540,7 +540,7 @@ type SettingsPage =
             prop.testId "SettingsNavigation"
             prop.ariaLabel "Settings categories"
             prop.className
-                "swt:shrink-0 swt:px-4 swt:pt-4 swt:@3xl/settings:sticky swt:@3xl/settings:top-0 swt:@3xl/settings:w-56 swt:@5xl/settings:w-64 swt:@3xl/settings:pb-4"
+                "swt:px-4 swt:pt-4 swt:@3xl/settings:sticky swt:@3xl/settings:top-0 swt:@3xl/settings:max-w-sm swt:@3xl/settings:pb-4"
             prop.children [
                 Html.ul [
                     prop.className
@@ -882,8 +882,11 @@ type SettingsPage =
             prop.ref rootRef
             prop.className "swt:@container/settings swt:w-full"
             prop.children [
+                // Beside the page, the navigation and an empty column of the same share frame the box, so it sits in
+                // the middle. The navigation's column keeps its minimum width, so on less room the right one shrinks.
                 Html.div [
-                    prop.className "swt:flex swt:flex-col swt:@3xl/settings:flex-row swt:@3xl/settings:items-start"
+                    prop.className
+                        "swt:flex swt:flex-col swt:@3xl/settings:grid swt:@3xl/settings:grid-cols-[minmax(14rem,1fr)_minmax(0,50rem)_minmax(0,1fr)] swt:@3xl/settings:items-start"
                     prop.children [
                         SettingsPage.Navigation(
                             categories,
@@ -894,7 +897,7 @@ type SettingsPage =
                             selectField
                         )
                         Html.div [
-                            prop.className "swt:min-w-0 swt:flex-1"
+                            prop.className "swt:min-w-0"
                             prop.children [
                                 LayoutComponents.Section [
                                     // A new page gets new fields, so no draft of one page shows on another.
