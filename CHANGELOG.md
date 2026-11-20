@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### ✨ Added
+
+- The File Picker can now select multiple files or folders and insert their ARC-relative paths into a table or DataMap. Separate file and folder buttons provide consistent behavior across platforms. #1518 (by @Gitarackur)
+
 ### 🐛 Fixed
 
 - Regular expressions in "Update Rows" now respect anchors such as `^` and `$` and replace only their actual matches. #943 (by @Gitarackur)
