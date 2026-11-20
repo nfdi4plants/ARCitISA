@@ -51,7 +51,7 @@ let private createArcFile () =
     ArcFiles.Assay assay
 
 let private view arcFile =
-    Main.ArcFileEditor(arcFile, ignore, (fun () -> promise { return [||] }), startingActiveView = ActiveView.Table 0)
+    Main.ArcFileEditor(arcFile, ignore, (fun _ -> promise { return [||] }), startingActiveView = ActiveView.Table 0)
 
 let private renderEditor () =
     mockGeometry Vitest.vi "offsetWidth" 800
@@ -258,7 +258,7 @@ Vitest.test (
             Main.ArcFileEditor(
                 createArcFile (),
                 ignore,
-                (fun () -> promise { return [||] }),
+                (fun _ -> promise { return [||] }),
                 trailingNavbarElements =
                     (fun (props: ArcFileEditorHeaderProps) -> InsertionTarget(props.arcFile, props.activeView)),
                 startingActiveView = ActiveView.Table 0

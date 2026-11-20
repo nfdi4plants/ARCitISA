@@ -443,7 +443,7 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
                 return Error e
         }
     pickArcPaths =
-        fun () -> promise {
+        fun kind -> promise {
             try
                 let windowId = windowIdFromIpcEvent event
 
@@ -453,8 +453,13 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
                     match vault.path with
                     | None -> return Error(arcNotOpenError ())
                     | Some arcPath ->
+                        let pickProperty =
+                            match kind with
+                            | FileSystemItemKind.File -> Enums.Dialog.ShowOpenDialog.Options.Properties.OpenFile
+                            | FileSystemItemKind.Folder -> Enums.Dialog.ShowOpenDialog.Options.Properties.OpenDirectory
+
                         let properties = [|
-                            Enums.Dialog.ShowOpenDialog.Options.Properties.OpenFile
+                            pickProperty
                             Enums.Dialog.ShowOpenDialog.Options.Properties.MultiSelections
                         |]
 

@@ -21,6 +21,11 @@ type TemplateWidgetServices = {
     loadTemplates: unit -> Async<Result<Template[], string>>
 }
 
+[<RequireQualifiedAccess>]
+type PathPickerKind =
+    | File
+    | Folder
+
 /// <summary>
 /// Is not only used to store position but also size.
 /// </summary>

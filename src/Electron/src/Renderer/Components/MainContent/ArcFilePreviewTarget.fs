@@ -13,6 +13,8 @@ open Swate.Components.Primitive.ErrorModal.Types
 open ARCtrl
 open ARCtrl.Json
 open Swate.Components.Page.ArcFileEditor.EmptyTableView.Types
+open Swate.Components.Composite.Widgets.Types
+open Swate.Electron.Shared.FileIOTypes
 open Swate.Electron.Shared.DTOs.ArcNodesDto
 
 [<ReactComponent>]
@@ -146,11 +148,16 @@ let ArcFilePreviewTarget (arcFile: ArcFiles, requestedView: ActiveView option, r
 
     let pickFilePaths =
         React.useCallback (
-            (fun () -> promise {
-                match! Api.ipcArcVaultApi.pickArcPaths () with
+            (fun kind -> promise {
+                let itemKind, itemLabel =
+                    match kind with
+                    | PathPickerKind.File -> FileSystemItemKind.File, "files"
+                    | PathPickerKind.Folder -> FileSystemItemKind.Folder, "folders"
+
+                match! Api.ipcArcVaultApi.pickArcPaths itemKind with
                 | Ok paths -> return paths
                 | Error exn ->
-                    errorModal.enqueue (ErrorModalRequest.create (exn.Message, title = "Could not pick files"))
+                    errorModal.enqueue (ErrorModalRequest.create (exn.Message, title = $"Could not pick {itemLabel}"))
 
                     return [||]
             }),

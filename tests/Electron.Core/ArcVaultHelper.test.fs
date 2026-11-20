@@ -5813,6 +5813,65 @@ Vitest.describe (
 let private importWindowId = ref 9000
 let private importTarget = "assays/AssayA/dataset"
 
+Vitest.describe (
+    "ARC path picker IPC",
+    fun () ->
+        Vitest.afterEach (fun () -> resetElectronMock ())
+
+        Vitest.test (
+            "picks files and folders separately and returns ARC-relative paths",
+            fun () ->
+                withTempArc
+                    ignore
+                    (fun arcPath -> promise {
+                        let windowId = 8999
+                        let window = (createTestWindow (testWindowOptions windowId)).Window
+                        let vault = ArcVault(window)
+                        let mutable pickedPaths = [||]
+                        let optionsByCall = ResizeArray<string[]>()
+
+                        vault.path <- Some arcPath
+                        ARC_VAULTS.Vaults.Add(windowId, vault)
+                        setBrowserWindowFromWebContents (fun _ -> window :> obj)
+
+                        setShowOpenDialog (fun _ options ->
+                            optionsByCall.Add(unbox<string[]> options?properties)
+                            createObj [ "canceled" ==> false; "filePaths" ==> pickedPaths ]
+                        )
+
+                        try
+                            let api = Main.IPC.ArcVaultsApi.api (ipcEventWithSenderId windowId)
+
+                            for kind, absolutePath, expectedPath, expectedProperty in
+                                [
+                                    FileSystemItemKind.File,
+                                    join [| arcPath; "data"; "file.csv" |],
+                                    "data/file.csv",
+                                    "openFile"
+                                    FileSystemItemKind.Folder,
+                                    join [| arcPath; "data"; "images" |],
+                                    "data/images",
+                                    "openDirectory"
+                                ] do
+                                pickedPaths <- [| absolutePath |]
+
+                                match! api.pickArcPaths kind with
+                                | Ok paths -> Vitest.expect(paths).toEqual [| expectedPath |]
+                                | Error error -> return failwithf "Expected picked paths, received %s." error.Message
+
+                                let properties = optionsByCall.[optionsByCall.Count - 1]
+                                Vitest.expect(properties).toContain expectedProperty
+                                Vitest.expect(properties).toContain "multiSelections"
+
+                            Vitest.expect(optionsByCall.Count).toBe 2
+                            ARC_VAULTS.Vaults.Remove(windowId) |> ignore
+                        with error ->
+                            ARC_VAULTS.Vaults.Remove(windowId) |> ignore
+                            return raise error
+                    })
+        )
+)
+
 /// Registers a loaded vault whose window records its messages, with the source folder Run1 next to the ARC.
 /// The optional extra file is written into Run1.
 let private withImportVault
