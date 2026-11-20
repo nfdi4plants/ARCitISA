@@ -6,7 +6,7 @@ open Swate.Components.Composite.Authentication.Helper
 let private supportedUrls (collection: DataHubCollection) =
     collection.Supported |> List.map _.Url |> Array.ofList
 
-let private builtInSupportedUrls = supportedUrls Default_DataHub_Collection
+let private defaults = DataHubCollection.FromUrls Default_DataHub_Urls
 
 Vitest.describe (
     "GitLabUrls.tryNormalize",
@@ -83,33 +83,39 @@ Vitest.describe (
         Vitest.test (
             "offers its DataHUBs whether or not the address ends with a slash",
             fun () ->
-                Vitest.expect(Default_DataHub_Collection.Offers "https://git.nfdi4plants.org").toBe true
-                Vitest.expect(Default_DataHub_Collection.Offers "https://datahub.rz.rptu.de/").toBe true
-                Vitest.expect(Default_DataHub_Collection.Offers "https://GIT.nfdi4plants.org").toBe true
-                Vitest.expect(Default_DataHub_Collection.Offers "https://gitlab.example.org").toBe false
+                Vitest.expect(defaults.Offers "https://git.nfdi4plants.org").toBe true
+                Vitest.expect(defaults.Offers "https://datahub.rz.rptu.de/").toBe true
+                Vitest.expect(defaults.Offers "https://GIT.nfdi4plants.org").toBe true
+                Vitest.expect(defaults.Offers "https://gitlab.example.org").toBe false
         )
 
         Vitest.test (
-            "appends custom addresses after the supported DataHUBs and leaves out those it already offers",
+            "lists the official DataHUB first and each address once after it",
             fun () ->
                 let collection =
-                    Default_DataHub_Collection.WithCustomUrls [
+                    DataHubCollection.FromUrls [
                         "https://gitlab.example.org"
-                        "https://datahub.rz.rptu.de"
+                        "https://git.nfdi4plants.org"
                         "https://gitlab.example.org/"
                         "https://other.example.org"
                     ]
 
-                Vitest.expect(collection.Default).toEqual Default_DataHub_Collection.Default
+                Vitest.expect(collection.Default).toEqual Default_DataHub
 
-                Vitest
-                    .expect(supportedUrls collection)
-                    .toEqual (
-                        Array.append builtInSupportedUrls [|
-                            "https://gitlab.example.org"
-                            "https://other.example.org"
-                        |]
-                    )
+                Vitest.expect(supportedUrls collection).toEqual [|
+                    "https://gitlab.example.org"
+                    "https://other.example.org"
+                |]
+        )
+
+        Vitest.test (
+            "offers only the official DataHUB once every other address is removed",
+            fun () ->
+                let collection = DataHubCollection.FromUrls []
+
+                Vitest.expect(supportedUrls collection).toEqual [||]
+                Vitest.expect(collection.Offers "https://git.nfdi4plants.org").toBe true
+                Vitest.expect(collection.Offers "https://datahub.rz.rptu.de").toBe false
         )
 
         Vitest.test (
@@ -117,10 +123,7 @@ Vitest.describe (
             fun () ->
                 Vitest
                     .expect(
-                        Default_DataHub_Collection.TryAddCustomUrl(
-                            " https://new.example.org/ ",
-                            [| "https://gitlab.example.org" |]
-                        )
+                        DataHubCollection.TryAddUrl(" https://new.example.org/ ", [| "https://gitlab.example.org" |])
                     )
                     .toEqual (
                         Some [|
@@ -131,7 +134,7 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "adds nothing for a built-in, an already saved or an invalid address",
+            "adds nothing for the official, an already saved or an invalid address",
             fun () ->
                 let saved = [| "https://gitlab.example.org" |]
 
@@ -142,6 +145,6 @@ Vitest.describe (
                         "http://new.example.org"
                         ""
                     ] do
-                    Vitest.expect(Default_DataHub_Collection.TryAddCustomUrl(url, saved)).toEqual None
+                    Vitest.expect(DataHubCollection.TryAddUrl(url, saved)).toEqual None
         )
 )

@@ -342,17 +342,17 @@ Vitest.describe (
 )
 
 Vitest.describe (
-    "User defaults custom DataHUB addresses",
+    "User defaults DataHUB addresses",
     fun () ->
         Vitest.test (
-            "saved addresses are read back by a new store and an empty list removes them again",
+            "starts with the other supported DataHUBs and stores a list only when it differs from them",
             fun () ->
                 let file = memoryFile None
                 let store = storeOver file
 
                 let saved = {
                     UserDefaults.builtIn with
-                        CustomDataHubUrls = [|
+                        DataHubUrls = [|
                             "https://gitlab.example.org"
                             "https://other.example.org"
                         |]
@@ -360,11 +360,37 @@ Vitest.describe (
 
                 Vitest.expect(expectUpdated store saved).toEqual saved
                 Vitest.expect(storeOver file |> fun reopened -> reopened.Effective()).toEqual saved
-                Vitest.expect(storedKeys file).toEqual [| "customDataHubUrls"; "schemaVersion" |]
+                Vitest.expect(storedKeys file).toEqual [| "dataHubUrls"; "schemaVersion" |]
 
-                expectUpdated store UserDefaults.builtIn |> ignore
+                // A new list with the same addresses, as a re-added DataHUB gives it, is no override either.
+                expectUpdated store {
+                    UserDefaults.builtIn with
+                        DataHubUrls = [|
+                            "https://gitlab.plantmicrobe.de"
+                            "https://datahub.rz.rptu.de"
+                        |]
+                }
+                |> ignore
+
                 Vitest.expect(storedKeys file).toEqual [| "schemaVersion" |]
-                Vitest.expect(store.Effective().CustomDataHubUrls).toEqual [||]
+
+                Vitest.expect(store.Effective().DataHubUrls).toEqual
+                    Swate.Components.Composite.Authentication.Helper.Default_DataHub_Urls
+        )
+
+        Vitest.test (
+            "a list emptied by the user stays empty",
+            fun () ->
+                let file = memoryFile None
+                let store = storeOver file
+
+                expectUpdated store {
+                    UserDefaults.builtIn with
+                        DataHubUrls = [||]
+                }
+                |> ignore
+
+                Vitest.expect(storeOver file |> fun reopened -> reopened.Effective().DataHubUrls).toEqual [||]
         )
 
         Vitest.test (
@@ -373,13 +399,13 @@ Vitest.describe (
                 let file =
                     memoryFile (
                         Some
-                            """{ "schemaVersion": 1, "customDataHubUrls": ["https://gitlab.example.org/", 5, "http://plain.example.org", "https://gitlab.example.org", " ", "https://other.example.org"], "diffIndexingLimitMb": 2048 }"""
+                            """{ "schemaVersion": 1, "dataHubUrls": ["https://gitlab.example.org/", 5, "http://plain.example.org", "https://gitlab.example.org", " ", "https://other.example.org"], "diffIndexingLimitMb": 2048 }"""
                     )
 
                 Vitest.expect(storeOver file |> fun store -> store.Effective()).toEqual {
                     UserDefaults.builtIn with
                         DiffIndexingLimitMb = 2048
-                        CustomDataHubUrls = [|
+                        DataHubUrls = [|
                             "https://gitlab.example.org"
                             "https://other.example.org"
                         |]
@@ -392,8 +418,7 @@ Vitest.describe (
                 for stored in [ "5"; "\"https://gitlab.example.org\""; "null"; "{}" ] do
                     let file =
                         memoryFile (
-                            Some
-                                $"""{{ "schemaVersion": 1, "customDataHubUrls": {stored}, "uploadRightAway": false }}"""
+                            Some $"""{{ "schemaVersion": 1, "dataHubUrls": {stored}, "uploadRightAway": false }}"""
                         )
 
                     Vitest.expect(storeOver file |> fun store -> store.Effective()).toEqual {
@@ -412,7 +437,7 @@ Vitest.describe (
                 let file =
                     memoryFile (
                         Some
-                            """{ "schemaVersion": 1, "customDataHubUrls": ["https://gitlab.example.org"], "diffIndexingLimitMb": 2048 }"""
+                            """{ "schemaVersion": 1, "dataHubUrls": ["https://gitlab.example.org"], "diffIndexingLimitMb": 2048 }"""
                     )
 
                 let store = storeOver file
@@ -421,7 +446,7 @@ Vitest.describe (
                 Vitest.expect(store.Effective()).toEqual {
                     UserDefaults.builtIn with
                         DiffIndexingLimitMb = 2048
-                        CustomDataHubUrls = [|
+                        DataHubUrls = [|
                             "https://gitlab.example.org"
                             "https://new.example.org"
                         |]
@@ -429,10 +454,10 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "a built-in or already saved address writes nothing",
+            "the official or an already offered address writes nothing",
             fun () ->
                 let file =
-                    memoryFile (Some """{ "schemaVersion": 1, "customDataHubUrls": ["https://gitlab.example.org"] }""")
+                    memoryFile (Some """{ "schemaVersion": 1, "dataHubUrls": ["https://gitlab.example.org"] }""")
 
                 let store = storeOver file
 
@@ -442,6 +467,28 @@ Vitest.describe (
                         "https://GitLab.example.org:443"
                     ] do
                     Main.IPC.UserDefaultsApi.rememberDataHub store url
+
+                Vitest.expect(file.Writes.Value).toBe 0
+        )
+
+        Vitest.test (
+            "signing in to a removed preset DataHUB adds it again",
+            fun () ->
+                let store =
+                    storeOver (memoryFile (Some """{ "schemaVersion": 1, "dataHubUrls": [] }"""))
+
+                Main.IPC.UserDefaultsApi.rememberDataHub store "https://datahub.rz.rptu.de/"
+
+                Vitest.expect(store.Effective().DataHubUrls).toEqual [| "https://datahub.rz.rptu.de" |]
+        )
+
+        Vitest.test (
+            "a supported DataHUB is offered from the start and writes nothing",
+            fun () ->
+                let file = memoryFile None
+                let store = storeOver file
+
+                Main.IPC.UserDefaultsApi.rememberDataHub store "https://datahub.rz.rptu.de/"
 
                 Vitest.expect(file.Writes.Value).toBe 0
         )

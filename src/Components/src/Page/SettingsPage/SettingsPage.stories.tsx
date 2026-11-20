@@ -206,7 +206,7 @@ const withViewport = async (canvasElement: HTMLElement, width: number, height: n
 const allCategoriesArgs = () => ({
   ...gitDefaultsArgs(),
   ...gitExecutableArgs({ PathInUse: '/usr/bin/git', GitVersion: '2.47.1', IsChecking: false }),
-  customDataHubs: { Urls: ['https://gitlab.example.org'], OnChange: fn() } as any,
+  dataHubs: { Urls: ['https://gitlab.example.org'], OnChange: fn() } as any,
 });
 
 const navigationLink = (canvas: ReturnType<typeof within>, sectionId: string) =>

@@ -50,8 +50,8 @@ type GitExecutableField = {
     OnCheckAgain: unit -> unit
 }
 
-/// The custom DataHUB addresses the login offers next to the built-in ones. A change applies right away.
-type CustomDataHubsField = {
+/// The DataHUB addresses the sign-in offers next to the official one. A change applies right away.
+type DataHubsField = {
     Urls: string[]
     OnChange: string[] -> unit
 }

@@ -18,7 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### ✨ Added
 
-- The sign-in remembers custom DataHUB addresses you signed in to and offers them next to the built-in ones. You can add or remove them in the DataHUB settings. (by @caroott)
+- The sign-in remembers DataHUB addresses you signed in to and offers them next to the official PLANTdataHUB. All DataHUBs other than the official one, including the preset ones, can be added or removed in the DataHUB settings, which the sign-in links to. (by @caroott)
 
 ### 🔄 Changed
 

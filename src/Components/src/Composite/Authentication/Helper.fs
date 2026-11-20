@@ -60,7 +60,7 @@ type DataHubInformation = {
         | Some description -> description
         | None -> this.Url
 
-    /// A DataHUB known only by its address. A valid address is named without its scheme, like the supported DataHUBs.
+    /// A DataHUB known only by its address. A valid address is named without its scheme.
     static member FromUrl(url: string) : DataHubInformation = {
         Name =
             GitLabUrls.tryNormalize url
@@ -70,6 +70,23 @@ type DataHubInformation = {
         Description = None
     }
 
+[<Literal>]
+let Default_DataHub_Url = "https://git.nfdi4plants.org/"
+
+let Default_DataHub = {
+    Name = "PLANTdataHUB (official)"
+    Url = Default_DataHub_Url
+    Description = Some "The official PLANTdataHUB instance, hosted by the nfdi4plants. Recommended for most users."
+}
+
+/// The DataHUBs the sign-in offers next to the official one until the user changes the list, as normalized
+/// addresses.
+let Default_DataHub_Urls = [|
+    "https://gitlab.plantmicrobe.de"
+    "https://datahub.rz.rptu.de"
+|]
+
+/// The official DataHUB and the others the sign-in offers.
 type DataHubCollection = {
     Default: DataHubInformation
     Supported: DataHubInformation list
@@ -83,9 +100,9 @@ type DataHubCollection = {
             |> List.exists (fun dataHub -> GitLabUrls.tryNormalize dataHub.Url = Some normalized)
         | None -> false
 
-    /// The collection with the custom addresses after the supported DataHUBs. An address it already offers is left out.
-    member this.WithCustomUrls(customUrls: string seq) =
-        customUrls
+    /// The official DataHUB with these addresses after it. An address offered already is left out.
+    static member FromUrls(urls: string seq) =
+        urls
         |> Seq.fold
             (fun (collection: DataHubCollection) url ->
                 if collection.Offers url then
@@ -96,40 +113,18 @@ type DataHubCollection = {
                             Supported = collection.Supported @ [ DataHubInformation.FromUrl url ]
                     }
             )
-            this
+            {
+                Default = Default_DataHub
+                Supported = []
+            }
 
-    /// The custom addresses with this one added in normalized form. None when it is no HTTPS address or the
-    /// collection with the custom addresses already offers it.
-    member this.TryAddCustomUrl(url: string, customUrls: string[]) : string[] option =
+    /// The addresses with this one added in normalized form. None when it is no HTTPS address or the official
+    /// DataHUB or the addresses offer it already.
+    static member TryAddUrl(url: string, urls: string[]) : string[] option =
         match GitLabUrls.tryNormalize url with
-        | Some normalized when not (this.WithCustomUrls(customUrls).Offers normalized) ->
-            Some(Array.append customUrls [| normalized |])
+        | Some normalized when not (DataHubCollection.FromUrls(urls).Offers normalized) ->
+            Some(Array.append urls [| normalized |])
         | _ -> None
-
-[<Literal>]
-let Default_DataHub_Url = "https://git.nfdi4plants.org/"
-
-let Default_DataHub = {
-    Name = "PLANTdataHUB (official)"
-    Url = Default_DataHub_Url
-    Description = Some "The official PLANTdataHUB instance, hosted by the nfdi4plants. Recommended for most users."
-}
-
-let Default_DataHub_Collection = {
-    Default = Default_DataHub
-    Supported = [
-        {
-            Name = "gitlab.plantmicrobe.de"
-            Url = "https://gitlab.plantmicrobe.de/"
-            Description = None
-        }
-        {
-            Name = "datahub.rz.rptu.de"
-            Url = "https://datahub.rz.rptu.de/"
-            Description = None
-        }
-    ]
-}
 
 
 module GitLabAPI =

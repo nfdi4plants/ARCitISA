@@ -455,17 +455,17 @@ type SettingsPage =
         )
 
     [<ReactComponent>]
-    static member private CustomDataHubItem(url: string, onRemove: unit -> unit) =
+    static member private DataHubItem(url: string, onRemove: unit -> unit) =
         Html.li [
             prop.className "swt:flex swt:items-center swt:gap-2"
             prop.children [
                 Html.span [
-                    prop.testId "SettingsCustomDataHub"
+                    prop.testId "SettingsDataHub"
                     prop.className "swt:min-w-0 swt:break-all swt:text-sm"
                     prop.text url
                 ]
                 Html.button [
-                    prop.testId $"SettingsCustomDataHubRemove-{url}"
+                    prop.testId $"SettingsDataHubRemove-{url}"
                     prop.type'.button
                     prop.className "swt:btn swt:btn-ghost swt:btn-sm swt:btn-square"
                     prop.title $"Remove {url}"
@@ -481,9 +481,9 @@ type SettingsPage =
         ]
 
     [<ReactComponent>]
-    static member private CustomDataHubs(urls: string[], onChange: string[] -> unit) =
+    static member private DataHubs(urls: string[], onChange: string[] -> unit) =
         let draft, setDraft = React.useState ""
-        let nextUrls = Default_DataHub_Collection.TryAddCustomUrl(draft, urls)
+        let nextUrls = DataHubCollection.TryAddUrl(draft, urls)
 
         let isInvalid =
             not (String.IsNullOrWhiteSpace draft) && (GitLabUrls.tryNormalize draft).IsNone
@@ -496,9 +496,9 @@ type SettingsPage =
             )
 
         SettingsPage.SettingColumnElement(
-            "Custom DataHUB addresses",
+            "DataHUB addresses",
             Html.div [
-                prop.testId "SettingsCustomDataHubs"
+                prop.testId "SettingsDataHubs"
                 prop.className "swt:flex swt:flex-col swt:gap-2"
                 prop.children [
                     if urls.Length > 0 then
@@ -507,10 +507,7 @@ type SettingsPage =
                             prop.children (
                                 urls
                                 |> Array.map (fun url ->
-                                    SettingsPage.CustomDataHubItem(
-                                        url,
-                                        fun () -> onChange (urls |> Array.filter ((<>) url))
-                                    )
+                                    SettingsPage.DataHubItem(url, fun () -> onChange (urls |> Array.filter ((<>) url)))
                                 )
                             )
                         ]
@@ -518,7 +515,7 @@ type SettingsPage =
                         prop.className "swt:join"
                         prop.children [
                             Html.input [
-                                prop.testId "SettingsCustomDataHubInput"
+                                prop.testId "SettingsDataHubInput"
                                 prop.className [
                                     "swt:join-item swt:input"
                                     if isInvalid then
@@ -535,7 +532,7 @@ type SettingsPage =
                                 )
                             ]
                             Html.button [
-                                prop.testId "SettingsCustomDataHubAdd"
+                                prop.testId "SettingsDataHubAdd"
                                 prop.type'.button
                                 prop.className "swt:join-item swt:btn"
                                 prop.disabled nextUrls.IsNone
@@ -549,7 +546,8 @@ type SettingsPage =
             description =
                 Html.p [
                     prop.className "swt:mt-1 swt:text-sm swt:text-base-content/70"
-                    prop.text "Shown in the sign-in. New addresses are added when you sign in."
+                    prop.text
+                        "The sign-in offers these under Other options, next to the official PLANTdataHUB. New addresses are added when you sign in."
                 ]
         )
 
@@ -616,7 +614,7 @@ type SettingsPage =
             ?autoCreateNotesFolder: bool,
             ?onAutoCreateNotesFolderChange: bool -> unit,
             ?gitExecutable: GitExecutableField,
-            ?customDataHubs: CustomDataHubsField,
+            ?dataHubs: DataHubsField,
             ?category: SettingsCategory
         ) =
         let onAutoCreateNotesFolderEnabled =
@@ -718,8 +716,8 @@ type SettingsPage =
         ]
 
         let dataHubRows = [
-            match customDataHubs with
-            | Some field -> SettingsPage.CustomDataHubs(field.Urls, field.OnChange)
+            match dataHubs with
+            | Some field -> SettingsPage.DataHubs(field.Urls, field.OnChange)
             | None -> ()
         ]
 

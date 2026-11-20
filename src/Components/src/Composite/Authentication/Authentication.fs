@@ -86,8 +86,12 @@ type Authentication =
 
     [<ReactComponent>]
     static member private DataHubSelect
-        (dataHub: DataHubInformation, dataHubs: DataHubCollection, setDataHub: DataHubInformation -> unit)
-        =
+        (
+            dataHub: DataHubInformation,
+            dataHubs: DataHubCollection,
+            setDataHub: DataHubInformation -> unit,
+            ?onManageDataHubs: unit -> unit
+        ) =
 
         let radioid = React.useId ()
 
@@ -95,8 +99,26 @@ type Authentication =
             prop.className "swt:fieldset"
             prop.children [
                 Html.legend [
-                    prop.className "swt:fieldset-legend"
-                    prop.text "Select DataHUB"
+                    prop.className "swt:fieldset-legend swt:flex swt:w-full swt:items-center swt:justify-between"
+                    prop.children [
+                        Html.span "Select DataHUB"
+                        match onManageDataHubs with
+                        | Some onManage ->
+                            Html.button [
+                                prop.testId "ManageDataHubsButton"
+                                prop.type'.button
+                                prop.className "swt:btn swt:btn-ghost swt:btn-xs swt:btn-square"
+                                prop.title "Manage DataHUBs in the settings"
+                                prop.ariaLabel "Manage DataHUBs in the settings"
+                                prop.onClick (fun _ -> onManage ())
+                                prop.children [
+                                    Html.span [
+                                        prop.className "swt:iconify swt:fluent--settings-24-regular swt:size-4"
+                                    ]
+                                ]
+                            ]
+                        | None -> ()
+                    ]
                 ]
                 Html.div [
                     prop.className
@@ -158,7 +180,8 @@ type Authentication =
             onSignIn: SignInInformation -> unit,
             setError: exn option -> unit,
             dataHubs: DataHubCollection,
-            ?initialDataHubUrl
+            ?initialDataHubUrl,
+            ?onManageDataHubs: unit -> unit
         ) =
 
         let initialDataHubUrl = defaultArg initialDataHubUrl dataHubs.Default
@@ -198,7 +221,7 @@ type Authentication =
                         ]
                     ]
                 ]
-                Authentication.DataHubSelect(dataHubUrl, dataHubs, setDataHubUrl)
+                Authentication.DataHubSelect(dataHubUrl, dataHubs, setDataHubUrl, ?onManageDataHubs = onManageDataHubs)
                 Html.a [
                     prop.testId "GeneratePatLink"
                     prop.className "swt:btn swt:btn-soft swt:btn-info swt:px-1"
@@ -259,7 +282,8 @@ type Authentication =
             ?onRotateToken: string -> unit,
             ?onSwitchAccount: string -> unit,
             ?onRemoveAccounts: RemoveAccountsRequest -> unit,
-            ?customDataHubUrls: string[]
+            ?dataHubUrls: string[],
+            ?onManageDataHubs: unit -> unit
         ) =
 
         let isOpen, setIsOpen = React.useState false
@@ -273,8 +297,8 @@ type Authentication =
 
         let dataHubs =
             React.useMemo (
-                (fun () -> Helper.Default_DataHub_Collection.WithCustomUrls(defaultArg customDataHubUrls [||])),
-                [| box customDataHubUrls |]
+                (fun () -> Helper.DataHubCollection.FromUrls(defaultArg dataHubUrls Helper.Default_DataHub_Urls)),
+                [| box dataHubUrls |]
             )
 
         let onSignIn =
@@ -284,6 +308,16 @@ type Authentication =
                 setInitialDataHubUrl None
                 setShowAddAccount false
                 onSignIn signInInfo
+
+        // The settings open in the main window, so the menu closes first.
+        let onManageDataHubs =
+            onManageDataHubs
+            |> Option.map (fun onManage ->
+                fun () ->
+                    setIsOpen false
+                    setShowAddAccount false
+                    onManage ()
+            )
 
         let ToggleContent =
             React.useMemo (
@@ -329,7 +363,8 @@ type Authentication =
                                         onSignIn,
                                         setError,
                                         dataHubs,
-                                        ?initialDataHubUrl = initialDataHubUrl
+                                        ?initialDataHubUrl = initialDataHubUrl,
+                                        ?onManageDataHubs = onManageDataHubs
                                     )
                                 ]
                             ]
@@ -347,7 +382,13 @@ type Authentication =
                                     Authentication.AddAnotherAccountBtn(fun () -> setShowAddAccount true)
                                 ]
                             ]
-                    | None -> Authentication.NotAuthenticatedView(onSignIn, setError, dataHubs)
+                    | None ->
+                        Authentication.NotAuthenticatedView(
+                            onSignIn,
+                            setError,
+                            dataHubs,
+                            ?onManageDataHubs = onManageDataHubs
+                        )
                 ),
                 [|
                     box activeUser
@@ -459,11 +500,11 @@ type Authentication =
     }
 
     [<ReactComponent(true)>]
-    static member Entry(?user, ?customDataHubUrls: string[]) =
+    static member Entry(?user, ?dataHubUrls: string[], ?onManageDataHubs: unit -> unit) =
         let accounts, setAccounts = React.useState (defaultArg user AuthStateDto.Empty)
 
-        let customDataHubUrls, setCustomDataHubUrls =
-            React.useState (defaultArg customDataHubUrls [||])
+        let dataHubUrls, setDataHubUrls =
+            React.useState (defaultArg dataHubUrls Helper.Default_DataHub_Urls)
 
         let isLoading, setIsLoading = React.useState false
 
@@ -480,8 +521,8 @@ type Authentication =
                             TargetDataHub = signInInfo.GitLabBaseUrl
                     }
 
-                    Helper.Default_DataHub_Collection.TryAddCustomUrl(signInInfo.GitLabBaseUrl, customDataHubUrls)
-                    |> Option.iter setCustomDataHubUrls
+                    Helper.DataHubCollection.TryAddUrl(signInInfo.GitLabBaseUrl, dataHubUrls)
+                    |> Option.iter setDataHubUrls
 
                     setAccounts {
                         ActiveAccount =
@@ -631,7 +672,8 @@ type Authentication =
                     onSwitchAccount = onSwitchAccount,
                     onRemoveAccounts = onRemoveAccounts,
                     onRotateToken = onRotateToken,
-                    customDataHubUrls = customDataHubUrls
+                    dataHubUrls = dataHubUrls,
+                    ?onManageDataHubs = onManageDataHubs
                 )
             ]
         ]

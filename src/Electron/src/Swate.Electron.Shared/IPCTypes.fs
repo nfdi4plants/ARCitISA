@@ -59,8 +59,8 @@ type UserDefaultValuesDto = {
     AutoCreateNotesFolder: bool
     /// Absolute path of the Git executable to use. None takes Git from PATH.
     GitExecutablePath: string option
-    /// DataHUB addresses the login offers next to the built-in ones, as normalized HTTPS URLs.
-    CustomDataHubUrls: string[]
+    /// The DataHUB addresses the sign-in offers next to the official one, as normalized HTTPS URLs.
+    DataHubUrls: string[]
 }
 
 /// The values new sessions start from, next to the values Swate ships with.

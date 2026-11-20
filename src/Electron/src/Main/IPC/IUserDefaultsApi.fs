@@ -41,17 +41,17 @@ let createApi (store: Main.UserDefaults.IUserDefaultsStore) : IUserDefaultsApi =
 
 let api: IUserDefaultsApi = createApi Main.UserDefaults.production
 
-/// Saves the address of a successful sign-in as a custom DataHUB, unless the login already offers it.
+/// Adds the address of a successful sign-in to the DataHUB addresses, unless the sign-in offers it already.
 let rememberDataHub (store: Main.UserDefaults.IUserDefaultsStore) (url: string) =
     let effective = store.Effective()
 
-    match Default_DataHub_Collection.TryAddCustomUrl(url, effective.CustomDataHubUrls) with
+    match DataHubCollection.TryAddUrl(url, effective.DataHubUrls) with
     | None -> ()
-    | Some customDataHubUrls ->
+    | Some dataHubUrls ->
         match
             update store {
                 effective with
-                    CustomDataHubUrls = customDataHubUrls
+                    DataHubUrls = dataHubUrls
             }
         with
         | Ok _ -> ()

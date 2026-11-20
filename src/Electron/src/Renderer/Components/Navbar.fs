@@ -105,21 +105,22 @@ module private Authentication =
         let isLoading, setIsLoading = React.useState false
         let authStateCtx = Renderer.Context.AuthStateContext.useAuthStateCtx ()
         let errorModalCtx = useErrorModalCtx ()
+        let pageStateCtx = Renderer.Context.PageStateContext.usePageStateCtx ()
 
-        let customDataHubUrls =
+        let dataHubUrls =
             Renderer.MainSyncedState.useMainSyncedState {
-                initial = [||]
+                initial = Swate.Components.Composite.Authentication.Helper.Default_DataHub_Urls
                 load =
                     fun () -> promise {
                         let! defaults = Api.ipcUserDefaultsApi.getUserDefaults ()
-                        return defaults.Effective.CustomDataHubUrls
+                        return defaults.Effective.DataHubUrls
                     }
                 subscribe =
                     fun update ->
                         Renderer.IpcReceiver.subscribeProxyReceiver<IUserDefaultsRendererApi> {
-                            userDefaultsChanged = fun defaults -> update defaults.Effective.CustomDataHubUrls
+                            userDefaultsChanged = fun defaults -> update defaults.Effective.DataHubUrls
                         }
-                onError = fun ex -> console.warn ("Could not load the custom DataHUB addresses.", ex.Message)
+                onError = fun ex -> console.warn ("Could not load the DataHUB addresses.", ex.Message)
                 dependencies = [||]
             }
 
@@ -194,7 +195,18 @@ module private Authentication =
             onRotateToken = onRotateToken,
             onSwitchAccount = onSwitchAccount,
             onRemoveAccounts = onRemoveAccounts,
-            customDataHubUrls = customDataHubUrls.state
+            dataHubUrls = dataHubUrls.state,
+            onManageDataHubs =
+                (fun () ->
+                    pageStateCtx.setState (
+                        Some(
+                            PageState.SettingsPage(
+                                Some Swate.Components.PageComponents.SettingsPage.Types.SettingsCategory.DataHub,
+                                System.Guid.NewGuid().ToString()
+                            )
+                        )
+                    )
+                )
         )
 
 /// What the save button of the navbar shows.

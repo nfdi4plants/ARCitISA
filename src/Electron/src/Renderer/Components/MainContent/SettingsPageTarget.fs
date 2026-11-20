@@ -131,10 +131,10 @@ let SettingsPage (category: SettingsCategory option) =
                 AutoCreateNotesFolder = isEnabled
         }
 
-    let submitCustomDataHubUrls (urls: string[]) =
+    let submitDataHubUrls (urls: string[]) =
         submitUserDefaults {
             effectiveDefaults with
-                CustomDataHubUrls = urls
+                DataHubUrls = urls
         }
 
     let dependencies = useVersionControlDependencyCtx ()
@@ -177,9 +177,9 @@ let SettingsPage (category: SettingsCategory option) =
                     OnUseAutomatic = (fun () -> submitGitExecutablePath None)
                     OnCheckAgain = dependencies.recheck
                 },
-                customDataHubs = {
-                    Urls = effectiveDefaults.CustomDataHubUrls
-                    OnChange = submitCustomDataHubUrls
+                dataHubs = {
+                    Urls = effectiveDefaults.DataHubUrls
+                    OnChange = submitDataHubUrls
                 },
                 ?category = category
             )

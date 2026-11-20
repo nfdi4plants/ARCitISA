@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { within, expect, userEvent, waitFor, fireEvent } from 'storybook/test';
+import { within, expect, userEvent, waitFor, fireEvent, fn } from 'storybook/test';
 import { Entry as AuthenticationEntry } from './Authentication.fs.js';
 
 const meta = {
@@ -142,9 +142,39 @@ export const SwitchToCustomDataHubFlow: Story = {
   },
 };
 
+export const ManageDataHubsFlow: Story = {
+  name: 'Open the DataHUB settings from the sign-in',
+  args: { onManageDataHubs: fn() },
+  play: async ({ canvasElement, args }) => {
+    const canvas = within(canvasElement);
+
+    await openUserMenu(canvas);
+    await userEvent.click(await canvas.findByTestId('ManageDataHubsButton'));
+
+    await expect(args.onManageDataHubs).toHaveBeenCalledTimes(1);
+    // The settings open in the main window, so the menu closes.
+    await waitFor(() => expect(canvas.queryByTestId('UserDropdownContent')).not.toBeInTheDocument());
+  },
+};
+
+export const RemovedDataHubsFlow: Story = {
+  name: 'Offer only the official DataHub once the others are removed',
+  args: { dataHubUrls: [] },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    await openUserMenu(canvas);
+    await userEvent.click(await canvas.findByTestId('DataHubOptionsToggle'));
+
+    expect(await canvas.findByTestId('DataHubRadio-PLANTdataHUB (official)')).toBeInTheDocument();
+    expect(canvas.queryByTestId('DataHubRadio-datahub.rz.rptu.de')).not.toBeInTheDocument();
+    expect(canvas.queryByTestId('DataHubRadio-gitlab.plantmicrobe.de')).not.toBeInTheDocument();
+  },
+};
+
 export const SavedCustomDataHubFlow: Story = {
   name: 'Sign in to a saved custom DataHub',
-  args: { customDataHubUrls: ['https://gitlab.example.org'] },
+  args: { dataHubUrls: ['https://gitlab.example.org'] },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
 
