@@ -1,9 +1,13 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { within, expect, waitFor } from 'storybook/test';
-import { WithContext as WithContextSample, WithoutContext as WithoutContextSample } from './Preview.sample.fs.js';
+import {
+  GitHubFlavored as GitHubFlavoredSample,
+  WithContext as WithContextSample,
+  WithoutContext as WithoutContextSample,
+} from './MarkdownTextViewer.sample.fs.js';
 
 const meta = {
-  title: 'Composite Components/MarkdownPreview',
+  title: 'Composite Components/MarkdownTextViewer',
   parameters: { layout: 'fullscreen' },
 } satisfies Meta;
 
@@ -36,5 +40,24 @@ export const WithoutContext: Story = {
       expect(canvas.getAllByText('Images of the ARC are shown only for a file of an open ARC.').length).toBeGreaterThan(0),
     );
     expect(canvas.getByRole('link', { name: 'external' })).toBeInTheDocument();
+  },
+};
+
+/** Alerts get a title and an icon, and the link of a heading shows while the pointer is over the heading. */
+export const GitHubFlavored: Story = {
+  render: () => <GitHubFlavoredSample />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    for (const title of ['Note', 'Tip', 'Important', 'Warning', 'Caution']) {
+      expect(canvas.getByText(title, { selector: 'p' })).toBeVisible();
+    }
+    expect(canvas.getByRole('table')).toBeVisible();
+    expect(canvas.getAllByRole('checkbox')).toHaveLength(2);
+
+    // The link is hidden until the pointer is over the heading, which a synthetic hover does not trigger.
+    const heading = canvas.getByRole('heading', { name: 'Lists and tables' });
+    const headingLink = heading.querySelector('a')!;
+    expect(headingLink.getAttribute('href')).toBe(`#${heading.id}`);
+    expect(getComputedStyle(headingLink).opacity).toBe('0');
   },
 };

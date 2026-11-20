@@ -190,6 +190,10 @@ let EditorViewApi: EditorViewStatic = jsNative
 [<Import("keymap", "@codemirror/view")>]
 let keymap: Facet<KeyBinding[]> = jsNative
 
+/// Shows the text in an empty editor. Screen readers read it as the aria-placeholder of the content.
+[<Import("placeholder", "@codemirror/view")>]
+let placeholder (content: string) : Extension = jsNative
+
 /// Line numbers, history, folding, bracket matching, search, autocompletion and their key bindings.
 [<Import("basicSetup", "codemirror")>]
 let basicSetup: Extension = jsNative

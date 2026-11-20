@@ -11,7 +11,7 @@ This plan covers a formatting toolbar for Markdown files in the text editor page
 - The links resolve for every ontology the search can return, not only OBO ontologies.
 - The Markdown edits stay independent of CodeMirror, so the note editor and the description fields of metadata forms can reuse them later.
 
-Out of scope for now: moving `TextInputWithMarkdown` (notes) onto the new layer, images (the existing `AddImage` plugin covers that), and multiple cursors (the commands act on the main selection).
+Out of scope for now: moving `TextInputWithMarkdown` (notes) onto the new layer (since done, see milestone 6), images (since covered by the toolbar's image button), and multiple cursors (the commands act on the main selection).
 
 ## What exists today
 
@@ -169,7 +169,7 @@ The same choice applies to `TermSearch/Types.fs` (`href` from `TermAccessionOnto
 3. `MarkdownToolbar` with story and RTL tests; integration in `TextDocumentTarget` for Markdown files.
 4. Reference insertion (`insertOntologyReference`, URL selection, TIB lookup by CURIE) with unit tests.
 5. `OntologyReferenceDialog` with RTL tests, wired into the toolbar.
-6. Later: `TextInputWithMarkdown` (notes, metadata descriptions) moves to the new layer with a textarea surface, and the old prompt plugin goes away.
+6. Done on 2026-11-20: `TextInputWithMarkdown` (notes, metadata descriptions), since renamed to `MarkdownTextEditor`, runs on `TextEditor` and `MarkdownToolbar` instead of a textarea surface. The old prompt plugins and `@uiw/react-md-editor` are gone.
 
 ## Decisions
 

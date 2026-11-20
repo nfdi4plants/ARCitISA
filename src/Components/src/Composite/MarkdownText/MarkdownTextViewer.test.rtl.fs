@@ -1,4 +1,4 @@
-module internal Swate.Components.Composite.MarkdownText.PreviewTests
+module internal Swate.Components.Composite.MarkdownText.MarkdownTextViewerTests
 
 open Fable.Core
 open Browser.Types
@@ -31,7 +31,10 @@ let private restoreScrollIntoView () : unit = jsNative
 
 let private render (context: FakeContext option) (source: string) =
     RTL.render (
-        MarkdownView.MarkdownView(source, ?linkContext = (context |> Option.map (fun c -> c :> IMarkdownLinkContext)))
+        MarkdownTextViewer.MarkdownTextViewer(
+            source,
+            ?linkContext = (context |> Option.map (fun c -> c :> IMarkdownLinkContext))
+        )
     )
 
 let private first (container: HTMLElement) (selector: string) =
@@ -46,7 +49,7 @@ Vitest.afterEach (fun () ->
 )
 
 Vitest.describe (
-    "MarkdownView with a link context",
+    "MarkdownTextViewer with a link context",
     fun () ->
         Vitest.test (
             "a click on an ARC link opens the path relative to the base folder",
@@ -129,10 +132,49 @@ Vitest.describe (
                 RTL.fireEvent.click (link "go")
                 Vitest.expect(calls).toEqual (ResizeArray [ "user-content-setup" ])
         )
+
+        Vitest.test (
+            "the link icon of a heading scrolls to the heading",
+            fun () ->
+                let calls = spyOnScrollIntoView ()
+                let rendered = render (Some(FakeContext())) "## My Heading"
+                RTL.fireEvent.click (first rendered.container "h2 a")
+                Vitest.expect(calls).toEqual (ResizeArray [ "user-content-my-heading" ])
+        )
+
+        Vitest.test (
+            "a footnote reference renders and scrolls to its note",
+            fun () ->
+                let calls = spyOnScrollIntoView ()
+                render (Some(FakeContext())) "Text[^1].\n\n[^1]: The note." |> ignore
+                RTL.fireEvent.click (link "1")
+                Vitest.expect(RTL.screen.getByText ("The note.", ByTextOptions(exact = false))).toBeTruthy ()
+                Vitest.expect(calls).toEqual (ResizeArray [ "user-content-user-content-fn-1" ])
+        )
 )
 
 Vitest.describe (
-    "MarkdownView raw HTML",
+    "MarkdownTextViewer GitHub alerts",
+    fun () ->
+        Vitest.test (
+            "an alert shows its kind as the title instead of the marker",
+            fun () ->
+                render None "> [!WARNING]\n> Mind the gap." |> ignore
+                Vitest.expect(RTL.screen.getByText "Warning").toBeTruthy ()
+                Vitest.expect(RTL.screen.getByText "Mind the gap.").toBeTruthy ()
+                Vitest.expect((RTL.screen.queryByText ("[!WARNING]", ByTextOptions(exact = false))).IsNone).toBe true
+        )
+
+        Vitest.test (
+            "a quote without a marker stays a quote",
+            fun () ->
+                let rendered = render None "> Just a quote."
+                Vitest.expect((first rendered.container "blockquote").textContent.Trim()).toBe "Just a quote."
+        )
+)
+
+Vitest.describe (
+    "MarkdownTextViewer raw HTML",
     fun () ->
         Vitest.test (
             "drops event handler attributes",
@@ -179,7 +221,7 @@ Vitest.describe (
 )
 
 Vitest.describe (
-    "MarkdownView without a link context",
+    "MarkdownTextViewer without a link context",
     fun () ->
         Vitest.test (
             "an ARC link is no link and names the reason",

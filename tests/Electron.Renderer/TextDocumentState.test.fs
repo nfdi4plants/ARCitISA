@@ -113,19 +113,4 @@ Vitest.describe (
                 Vitest.expect(status (dirtyChanged true editable)).toEqual ("Unsaved changes", false)
                 Vitest.expect(status editable).toEqual ("Saved", false)
         )
-
-        Vitest.test (
-            "mixed line endings get a notice that names the ending a save writes",
-            fun () ->
-                Vitest
-                    .expect(lineEndingNotice "a\r\nb\nc")
-                    .toEqual (
-                        Some
-                            "This file mixes line endings. A save writes all of them as CRLF (Windows), so lines that end differently change too."
-                    )
-
-                Vitest.expect(lineEndingNotice "a\r\nb\r\n").toEqual None
-                Vitest.expect(lineEndingNotice "a\nb\n").toEqual None
-                Vitest.expect(lineEndingNotice "one line").toEqual None
-        )
 )

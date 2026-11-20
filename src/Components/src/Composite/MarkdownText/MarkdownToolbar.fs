@@ -23,7 +23,7 @@ type MarkdownToolbar =
     /// MarkdownCommands.keyBindingsWith show in the toolbar too. In the same way the toolbar keeps the open state of
     /// the ontology reference dialog unless setOntologyReferenceOpen is given. Then the host owns it
     /// (isOntologyReferenceOpen and setOntologyReferenceOpen), so MarkdownCommands.ontologyReferenceKey opens it.
-    /// onClose adds the toolbar's Close file button.
+    /// trailing goes to the end of the bar, before the Close file button that onClose adds.
     [<ReactComponent>]
     static member MarkdownToolbar
         (
@@ -39,6 +39,7 @@ type MarkdownToolbar =
             ?lookupIri: string -> JS.Promise<string option>,
             ?termSearchQueries: ResizeArray<string * SearchCall>,
             ?disableDefaultSearch: bool,
+            ?trailing: ReactElement,
             ?onClose: unit -> unit
         ) =
         let disabled = defaultArg disabled false
@@ -155,6 +156,7 @@ type MarkdownToolbar =
         EditorToolbar.EditorToolbar(
             ariaLabel = "Markdown formatting",
             ?className = className,
+            ?trailing = trailing,
             ?onClose = onClose,
             children =
                 React.Fragment [

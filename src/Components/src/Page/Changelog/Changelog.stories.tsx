@@ -88,8 +88,8 @@ export const SectionNavigation: Story = {
     const canvas = within(canvasElement);
     const nav = within(await canvas.findByRole('navigation', { name: 'Release note sections' }));
     await expect(nav.getByRole('button', { name: 'Added 25' })).toBeVisible();
-    const fixed = canvas.getByRole('heading', { name: 'Fixed', exact: true });
-    let scrollPane = fixed.closest('.wmde-markdown')!;
+    await expect(canvas.getByRole('heading', { name: 'Fixed', exact: true })).toBeVisible();
+    const scrollPane = canvas.getByRole('region', { name: 'Release notes' });
     await expect(scrollPane.scrollTop).toBe(0);
     await userEvent.click(nav.getByRole('button', { name: 'Fixed 1' }));
     await waitFor(() => expect(scrollPane.scrollTop).toBeGreaterThan(0));

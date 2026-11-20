@@ -16,9 +16,9 @@ type RenderedText =
         match rendering with
         | TextRendering.Markdown ->
             Html.div [
-                prop.className "wmde-markdown-var swt:flex-1 swt:min-h-0 swt:overflow-auto"
+                prop.className "swt:flex-1 swt:min-h-0 swt:overflow-auto"
                 prop.children [
-                    MarkdownView.MarkdownView(text, className = "swt:p-4", ?linkContext = linkContext)
+                    MarkdownTextViewer.MarkdownTextViewer(text, className = "swt:p-4", ?linkContext = linkContext)
                 ]
             ]
         | TextRendering.Html ->

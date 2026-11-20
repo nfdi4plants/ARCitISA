@@ -1,4 +1,4 @@
-namespace Swate.Components.Composite.MarkdownPreviewSample
+namespace Swate.Components.Composite.MarkdownTextViewerSample
 
 open Fable.Core
 open Feliz
@@ -6,7 +6,7 @@ open Feliz
 open Swate.Components.Composite.MarkdownText
 open Swate.Components.Composite.MarkdownText.Links.Types
 
-module private MarkdownPreviewSampleHelpers =
+module private MarkdownTextViewerSampleHelpers =
 
     let okImage =
         "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='32'%3E%3Crect width='48' height='32' fill='%2300a19b'/%3E%3C/svg%3E"
@@ -56,10 +56,61 @@ Links: [a file](./other.md), [the ARC root file](/README.md), [outside](../../x.
 
 Text under the heading."""
 
-open MarkdownPreviewSampleHelpers
+    let gitHubDocument =
+        """# GitHub Flavored Markdown
+
+Point at a heading to see its link.
+
+> [!NOTE]
+> Useful information that users should know, even when skimming content.
+
+> [!TIP]
+> Helpful advice for doing things better or more easily.
+
+> [!IMPORTANT]
+> Key information users need to know to achieve their goal.
+
+> [!WARNING]
+> Urgent info that needs immediate user attention to avoid problems.
+
+> [!CAUTION]
+> Advises about risks or negative outcomes of certain actions.
+
+> A plain quote stays a quote.
+
+## Lists and tables
+
+- [x] Prepare the samples
+- [ ] Measure them
+- ~~Ask twice~~
+
+| Sample | Volume | Unit |
+|--------|-------:|------|
+| A1     |     20 | µl   |
+| A2     |     25 | µl   |
+
+## Code
+
+Inline `code`, an autolink www.example.org and a footnote[^1].
+
+```python
+def dilute(volume: float) -> float:
+    return volume * 0.5
+```
+
+<details>
+<summary>Raw HTML</summary>
+
+Shown without scripts.
+
+</details>
+
+[^1]: The footnote text."""
+
+open MarkdownTextViewerSampleHelpers
 
 [<Erase; Mangle(false)>]
-type internal MarkdownPreviewSample =
+type internal MarkdownTextViewerSample =
 
     /// A preview inside a file of an ARC. Images load or explain why they do not, and links go to the host.
     [<ReactComponent>]
@@ -67,7 +118,7 @@ type internal MarkdownPreviewSample =
         Html.div [
             prop.className "swt:p-4"
             prop.children [
-                MarkdownView.MarkdownView(document, linkContext = context)
+                MarkdownTextViewer.MarkdownTextViewer(document, linkContext = context)
             ]
         ]
 
@@ -76,5 +127,13 @@ type internal MarkdownPreviewSample =
     static member WithoutContext() =
         Html.div [
             prop.className "swt:p-4"
-            prop.children [ MarkdownView.MarkdownView(document) ]
+            prop.children [ MarkdownTextViewer.MarkdownTextViewer(document) ]
+        ]
+
+    /// Alerts, task lists, tables, footnotes, code and the links on the headings.
+    [<ReactComponent>]
+    static member GitHubFlavored() =
+        Html.div [
+            prop.className "swt:p-4"
+            prop.children [ MarkdownTextViewer.MarkdownTextViewer(gitHubDocument) ]
         ]

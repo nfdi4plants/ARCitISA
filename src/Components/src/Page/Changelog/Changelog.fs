@@ -3,7 +3,7 @@ namespace Swate.Components.Page.Changelog
 open Fable.Core
 open Feliz
 open Swate.Components.Api.GitHubReleases
-open Swate.Components.Composite.MarkdownText.JsBindings
+open Swate.Components.Composite.MarkdownText
 
 module private ChangelogTypes =
 
@@ -202,20 +202,13 @@ type Changelog =
                         "swt:flex swt:flex-col swt:grow swt:min-w-0 swt:min-h-0 swt:w-fit swt:gap-2 swt:overflow-hidden"
                     prop.children [
                         // scrollable markdown content
-                        ReactMDEditor.MarkdownPreview(
-                            markdown,
-                            components = Swate.Components.Composite.MarkdownText.Preview.components,
-                            rehypePlugins = [| ReactMDEditor.rehypeSanitize |],
-                            style = {|
-                                padding = 16
-                                borderRadius = 8
-                                flex = 1
-                                flexGrow = 1
-                                overflow = "auto"
-                            |},
-                            wrapperElement = {| ref = contentRef |},
-                            className = "swt:prose"
-                        )
+                        Html.div [
+                            prop.ref contentRef
+                            prop.role "region"
+                            prop.ariaLabel "Release notes"
+                            prop.className "swt:flex-1 swt:min-h-0 swt:overflow-auto swt:p-4 swt:rounded-box"
+                            prop.children [ MarkdownTextViewer.MarkdownTextViewer(markdown) ]
+                        ]
                         // pagination controls
                         pagination
                     ]

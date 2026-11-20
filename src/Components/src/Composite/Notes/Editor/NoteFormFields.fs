@@ -180,7 +180,7 @@ type NoteFormFields =
             Html.div [
                 prop.testId "notes-main-text-field"
                 prop.children [
-                    TextInputWithMarkdown.TextInputWithMarkdown(
+                    MarkdownTextEditor.MarkdownTextEditor(
                         draft.MainText,
                         (fun value -> setDraft { draft with MainText = value }),
                         height = 360,

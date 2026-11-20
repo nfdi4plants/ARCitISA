@@ -42,6 +42,11 @@ module private CodeMirrorEditorHelpers =
     let ariaLabelExtension (label: string) =
         EditorViewApi.contentAttributes.``of`` (createObj [ "aria-label" ==> label ])
 
+    let placeholderExtension (text: string option) =
+        match text with
+        | Some text when text <> "" -> placeholder text
+        | _ -> noExtension
+
     let languageDescription (id: string) =
         languages |> Array.tryFind (fun d -> languageId d = id)
 
@@ -121,6 +126,7 @@ module private CodeMirrorEditorHelpers =
         KeyBindings: TextEditorKeyBinding[] option
         Completions: TextCompletionSource option
         AriaLabel: string
+        Placeholder: string option
         OnSave: (TextEditorSnapshot -> JS.Promise<bool>) option
         OnDirtyChange: (bool -> unit) option
         OnChange: (unit -> unit) option
@@ -140,6 +146,7 @@ module private CodeMirrorEditorHelpers =
         let keyBindingsSlot = CompartmentApi.Create()
         let completionsSlot = CompartmentApi.Create()
         let ariaLabelSlot = CompartmentApi.Create()
+        let placeholderSlot = CompartmentApi.Create()
 
         let mutable view: EditorView option = None
         let mutable savedDoc: Text option = None
@@ -284,6 +291,7 @@ module private CodeMirrorEditorHelpers =
                         keymap.``of`` [| unbox<KeyBinding> indentWithTab |]
                         daisyTheme
                         ariaLabelSlot.``of`` (ariaLabelExtension props.AriaLabel)
+                        placeholderSlot.``of`` (placeholderExtension props.Placeholder)
                         EditorViewApi.updateListener.``of`` (fun update ->
                             if update.docChanged then
                                 evaluateDirty ()
@@ -390,6 +398,9 @@ module private CodeMirrorEditorHelpers =
                 if props.AriaLabel <> applied.AriaLabel then
                     reconfigure v ariaLabelSlot (ariaLabelExtension props.AriaLabel)
 
+                if props.Placeholder <> applied.Placeholder then
+                    reconfigure v placeholderSlot (placeholderExtension props.Placeholder)
+
                 applied <- props
             | None -> ()
 
@@ -412,7 +423,7 @@ type CodeMirrorEditor =
     /// completions adds a completion source next to those of the language. Pass the same function instance across
     /// renders, a new instance reconfigures the completions.
     /// onHistoryChange reports when undo or redo becomes possible or impossible, also when a new document starts
-    /// the history over.
+    /// the history over. placeholder shows while the document is empty.
     [<ReactComponent>]
     static member CodeMirrorEditor
         (
@@ -431,7 +442,8 @@ type CodeMirrorEditor =
             ?onDiagnostics: TextEditorDiagnostic[] -> unit,
             ?handleRef: IRefValue<TextEditorHandle option>,
             ?className: string,
-            ?ariaLabel: string
+            ?ariaLabel: string,
+            ?placeholder: string
         ) =
         let props: EditorProps = {
             ReadOnly = defaultArg readOnly false
@@ -441,6 +453,7 @@ type CodeMirrorEditor =
             KeyBindings = keyBindings
             Completions = completions
             AriaLabel = defaultArg ariaLabel "Text editor"
+            Placeholder = placeholder
             OnSave = onSave
             OnDirtyChange = onDirtyChange
             OnChange = onChange
@@ -518,6 +531,7 @@ type CodeMirrorEditor =
                 box keyBindings
                 box completions
                 box props.AriaLabel
+                box props.Placeholder
             |]
         )
 

@@ -5,6 +5,7 @@ module Renderer.Components.MainContent.TextDocument.TextDocumentSync
 open Fable.Core
 open Feliz
 open Swate.Components.Composite.TextEditor.Types
+open Swate.Components.Page.FileViewer.Types
 open Swate.Electron.Shared
 open Swate.Electron.Shared.FileIOTypes
 open Renderer.Types
@@ -24,13 +25,12 @@ type TextDocumentSync = {
     ReloadFromDisk: unit -> unit
 }
 
-/// handleRef is the editor of the page. onReplaced hears the text the editor shows after a reload, a discard or an
-/// adopted change on disk.
+/// handleRef is the TextDocument page. Its replaceText puts the text of a reload, a discard or an adopted change on
+/// disk into the editor and the rendered side.
 [<Hook>]
 let useTextDocumentSync
     (data: TextDocumentPageData)
-    (handleRef: IRefValue<TextEditorHandle option>)
-    (onReplaced: string -> unit)
+    (handleRef: IRefValue<TextDocumentHandle option>)
     : TextDocumentSync =
     let leaveGuard = useLeaveGuardCtx ()
 
@@ -40,16 +40,13 @@ let useTextDocumentSync
     let state, setState = React.useState (fun () -> init data.Content data.Info)
     // The save callback and the leave guard run outside renders, so they read the state through this one ref.
     let stateRef = React.useRef state
-    let onReplacedRef = React.useRef onReplaced
-    onReplacedRef.current <- onReplaced
 
     let update (change: TextDocumentState -> TextDocumentState) =
         stateRef.current <- change stateRef.current
         setState stateRef.current
 
-    let replaceEditorText (text: string) =
-        handleRef.current |> Option.iter (fun handle -> handle.replaceContent text)
-        onReplacedRef.current text
+    let replaceText (text: string) =
+        handleRef.current |> Option.iter (fun page -> page.replaceText text)
 
     let onSave (snapshot: TextEditorSnapshot) : JS.Promise<bool> = promise {
         let request = saveRequest data.Path snapshot.text stateRef.current
@@ -93,7 +90,7 @@ let useTextDocumentSync
                 match opened.text with
                 | Some info ->
                     update (adoptDiskVersion opened.content.content (Some info))
-                    replaceEditorText opened.content.content
+                    replaceText opened.content.content
                 | None ->
                     update (fun s -> {
                         s with
@@ -118,7 +115,7 @@ let useTextDocumentSync
                     update (fun _ -> next)
 
                 if adopted then
-                    replaceEditorText data.Content
+                    replaceText data.Content
             | None -> ()
         ),
         [| box data.Content; box data.Info |]
@@ -136,7 +133,7 @@ let useTextDocumentSync
                             | Some h -> h.save ()
                             | None -> Promise.lift false
                     isSaving = fun () -> stateRef.current.SavesRunning > 0
-                    discard = fun () -> replaceEditorText stateRef.current.SavedText
+                    discard = fun () -> replaceText stateRef.current.SavedText
                     onRemovedFromDisk = fun () -> update removedFromDisk
                 }
 

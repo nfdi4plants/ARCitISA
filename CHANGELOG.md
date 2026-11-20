@@ -32,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The Markdown editor completes paths while you type a link, image, link definition or the `src` and `href` of raw HTML. A path that starts with `/` lists the ARC root, `./` the folder of the Markdown file and `../` the folder above. Choosing a folder lists its contents next. Images list only folders and image files, and names that start with `.` show only once you type the `.`. (by @Freymaurer)
 - The Markdown preview shows raw HTML, such as `<img width="80">` or `<details>`, without scripts and event handlers. Code blocks in the preview are syntax highlighted. (by @Freymaurer)
 - "New File" and "New Folder" accept a path such as `docs/guide.md` and create the folders that lead to it. (by @Freymaurer)
+- GitHub alerts such as `> [!NOTE]` or `> [!WARNING]` show in the Markdown preview with a colored border, an icon and a title. Headings in the preview show a link to themselves while you point at them. (by @Freymaurer)
 
 ### 🔄 Changed
 
@@ -39,10 +40,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - When the text editor has unsaved changes, opening another file, closing the file, renaming or deleting the file or one of its folders, and closing or reloading the window ask first. You can save, discard or cancel. (by @Freymaurer)
 - The ISA file editor uses the same toolbar as the text editor, with a "Close file" button at its end. (by @Freymaurer)
 - Dialogs put the focus on their first field or button when they open, instead of on the close button. (by @Freymaurer)
+- The Markdown field of the swate-components library, also used by the `Notes` editor, uses the same editor and toolbar as Markdown files in the text editor, with keyboard shortcuts, Undo and Redo and "Ontology reference". Its export is renamed from `MarkdownTextInput` to `MarkdownTextEditor`. The "Add Step" and "Add Image" buttons and the `plugins` and `filePickerAdapter` options are removed. The toolbar's list and image buttons replace them. (by @Freymaurer)
+- The Markdown preview uses the typography and colors of the app's theme instead of a copy of GitHub's stylesheet. (by @Freymaurer)
 
 ### 🐛 Fixed
 
 - Mermaid diagrams in the Markdown preview no longer make the page jump while they render. (by @Freymaurer)
+- A footnote no longer breaks the Markdown preview, and a click on a footnote reference scrolls to its note. (by @Freymaurer)
 - After "Save and Close" failed, closing the window works again. Before, the next close was ignored. (by @Freymaurer)
 
 ### 🔒 Security

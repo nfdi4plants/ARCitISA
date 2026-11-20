@@ -45,7 +45,7 @@ export { default as FilePickerWidget } from './dist/Composite/Widgets/FilePicker
 export { default as JsonExport } from './dist/Composite/Widgets/JsonExport/JsonExport.fs';
 export { default as JsonImport } from './dist/Composite/Widgets/JsonImport/JsonImport.fs';
 export { default as Layout } from './dist/Composite/Layout/Layout.fs';
-export { default as MarkdownTextInput } from './dist/Composite/MarkdownText/TextInputWithMarkdown.fs';
+export { default as MarkdownTextEditor } from './dist/Composite/MarkdownText/MarkdownTextEditor.fs';
 export { default as Notes } from './dist/Composite/Notes/Editor/Notes.fs';
 export { default as SortableList } from './dist/Composite/SortableList/SortableList.fs';
 export { DragHandle, MoveUpButton, MoveDownButton, RemoveButton, DefaultRow } from './dist/Composite/SortableList/RowComponents.fs';

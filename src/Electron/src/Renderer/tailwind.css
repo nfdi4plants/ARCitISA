@@ -5,7 +5,6 @@
 @import "tailwindcss/theme.css" layer(swt-theme) prefix(swt);
 @import "tailwindcss/preflight.css" layer(swt-base) prefix(swt);
 @import "tailwindcss/utilities.css" layer(swt-utilities) prefix(swt);
-@import "../../../Components/src/markdown-theme.css";
 
 @source "../fable_output/**/*.fs.jsx";
 @plugin "@tailwindcss/typography";

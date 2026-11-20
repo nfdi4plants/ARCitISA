@@ -43,6 +43,7 @@ type TextEditor =
     /// completions adds the host's completions to those of the language. Pass the same function instance across
     /// renders. A read-only editor shows no completions.
     /// onHistoryChange reports when undo or redo becomes possible or impossible, for example for toolbar buttons.
+    /// placeholder shows while the document is empty.
     [<ReactComponent(true)>]
     static member TextEditor
         (
@@ -61,7 +62,8 @@ type TextEditor =
             ?onHistoryChange: TextEditorHistory -> unit,
             ?onDiagnostics: TextEditorDiagnostic[] -> unit,
             ?handleRef: IRefValue<TextEditorHandle option>,
-            ?className: string
+            ?className: string,
+            ?placeholder: string
         ) =
         let name =
             match fileName with
@@ -111,5 +113,6 @@ type TextEditor =
             ?onDiagnostics = onDiagnostics,
             ?handleRef = handleRef,
             ?className = className,
-            ariaLabel = $"Text editor for {name}"
+            ariaLabel = $"Text editor for {name}",
+            ?placeholder = placeholder
         )

@@ -1,6 +1,5 @@
 import { Preview } from "@storybook/react-vite";
 import { withThemeByDataAttribute } from '@storybook/addon-themes';
-import '@uiw/react-markdown-preview/markdown.css';
 import '../tailwind.css'
 
 const preview: Preview = {
