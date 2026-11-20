@@ -303,3 +303,87 @@ Vitest.describe (
                 Vitest.expect(Array.ofSeq changes).toEqual [| [| "https://other.example.org" |] |]
         )
 )
+
+/// jsdom has no scrollIntoView. The stub records the id of every element scrolled to.
+[<Fable.Core.Emit("window.HTMLElement.prototype.scrollIntoView = function () { $0(this.id) }")>]
+let private stubScrollIntoView (record: string -> unit) : unit = Fable.Core.Util.jsNative
+
+[<Fable.Core.Emit("delete window.HTMLElement.prototype.scrollIntoView")>]
+let private removeScrollIntoView () : unit = Fable.Core.Util.jsNative
+
+let private gitDefaults: GitDefaultsSection = {
+    Current = {
+        LfsAutoTrackThresholdMb = 10
+        DownloadLargeFiles = true
+        DiffIndexingLimitMb = 1024
+        UploadRightAway = true
+    }
+    BuiltIn = {
+        LfsAutoTrackThresholdMb = 10
+        DownloadLargeFiles = true
+        DiffIndexingLimitMb = 1024
+        UploadRightAway = true
+    }
+    OnChange = ignore
+}
+
+/// Renders the page with Git defaults and records where it scrolls to.
+let private renderCategories (category: SettingsCategory option) =
+    let scrolledTo = ResizeArray<string>()
+    stubScrollIntoView scrolledTo.Add
+
+    RTL.render (page (SettingsPage.SettingsPage(gitDefaults = gitDefaults, ?category = category)))
+    |> ignore
+
+    scrolledTo
+
+let private navigationIds () =
+    RTL.screen.getAllByTestId (System.Text.RegularExpressions.Regex "^SettingsNavigation-")
+    |> Seq.map (fun element -> element.getAttribute "data-testid")
+    |> Array.ofSeq
+
+let private isMarked (sectionId: string) =
+    (RTL.screen.getByTestId $"SettingsNavigation-{sectionId}").getAttribute "aria-current" = "location"
+
+Vitest.describe (
+    "SettingsPage categories",
+    fun () ->
+        Vitest.afterEach removeScrollIntoView
+
+        Vitest.test (
+            "links only the categories that have settings, in page order",
+            fun () ->
+                renderCustomDataHubs [||] ignore
+
+                Vitest.expect(navigationIds ()).toEqual [|
+                    "SettingsNavigation-settings-general"
+                    "SettingsNavigation-settings-datahub"
+                    "SettingsNavigation-settings-term-search"
+                |]
+
+                Vitest.expect(present "settings-git").toBe false
+                Vitest.expect(present "settings-large-files").toBe false
+        )
+
+        Vitest.test (
+            "a link scrolls to its category and marks it",
+            fun () ->
+                let scrolledTo = renderCategories None
+                Vitest.expect(isMarked "settings-general").toBe true
+
+                RTL.fireEvent.click (button "SettingsNavigation-settings-large-files")
+
+                Vitest.expect(Array.ofSeq scrolledTo).toEqual [| "settings-large-files" |]
+                Vitest.expect(isMarked "settings-large-files").toBe true
+                Vitest.expect(isMarked "settings-general").toBe false
+        )
+
+        Vitest.test (
+            "opens at the category it is given",
+            fun () ->
+                let scrolledTo = renderCategories (Some SettingsCategory.Git)
+
+                Vitest.expect(Array.ofSeq scrolledTo).toEqual [| "settings-git" |]
+                Vitest.expect(isMarked "settings-git").toBe true
+        )
+)

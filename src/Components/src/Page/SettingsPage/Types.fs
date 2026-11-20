@@ -1,6 +1,35 @@
 module Swate.Components.PageComponents.SettingsPage.Types
 
+open Fable.Core
 open Swate.Components.Page.GitSidebarTypes
+
+/// The categories of the settings page. Other parts of the app open the page at one of them.
+[<StringEnum; RequireQualifiedAccess>]
+type SettingsCategory =
+    | General
+    | DataHub
+    | Git
+    | LargeFiles
+    | TermSearch
+
+module SettingsCategory =
+
+    let title (category: SettingsCategory) =
+        match category with
+        | SettingsCategory.General -> "General"
+        | SettingsCategory.DataHub -> "DataHUB"
+        | SettingsCategory.Git -> "Git"
+        | SettingsCategory.LargeFiles -> "Large files"
+        | SettingsCategory.TermSearch -> "Term search"
+
+    /// The id of the category's section on the page.
+    let sectionId (category: SettingsCategory) =
+        match category with
+        | SettingsCategory.General -> "settings-general"
+        | SettingsCategory.DataHub -> "settings-datahub"
+        | SettingsCategory.Git -> "settings-git"
+        | SettingsCategory.LargeFiles -> "settings-large-files"
+        | SettingsCategory.TermSearch -> "settings-term-search"
 
 /// What the host knows about the Git executable. ChosenPath is None while the automatic lookup is active.
 type GitExecutableSetting = {
@@ -27,9 +56,10 @@ type CustomDataHubsField = {
     OnChange: string[] -> unit
 }
 
-/// The Git defaults section: the saved values, the built-in values that Reset goes back to, and what Save does.
+/// The Git defaults: the saved values, the built-in values that Reset goes back to, and what a change does.
+/// A change applies right away.
 type GitDefaultsSection = {
     Current: SettingsGitDefaults
     BuiltIn: SettingsGitDefaults
-    OnSave: SettingsGitDefaults -> unit
+    OnChange: SettingsGitDefaults -> unit
 }

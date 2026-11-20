@@ -43,8 +43,9 @@ let toGitExecutableSetting
         IsChecking = state |> Option.exists _.IsChecking
     }
 
+/// The settings page. With a category it opens at that category.
 [<ReactComponent(true)>]
-let SettingsPage () =
+let SettingsPage (category: SettingsCategory option) =
     let errorModal = useErrorModalCtx ()
     let appStateCtx = Renderer.Context.AppStateContext.useAppStateCtx ()
 
@@ -166,7 +167,7 @@ let SettingsPage () =
                 gitDefaults = {
                     Current = toGitDefaults effectiveDefaults
                     BuiltIn = toGitDefaults userDefaults.state.BuiltIn
-                    OnSave = submitGitDefaults
+                    OnChange = submitGitDefaults
                 },
                 autoCreateNotesFolder = effectiveDefaults.AutoCreateNotesFolder,
                 onAutoCreateNotesFolderChange = submitAutoCreateNotesFolder,
@@ -179,7 +180,8 @@ let SettingsPage () =
                 customDataHubs = {
                     Urls = effectiveDefaults.CustomDataHubUrls
                     OnChange = submitCustomDataHubUrls
-                }
+                },
+                ?category = category
             )
         ]
     ]

@@ -7,6 +7,7 @@ open Fable.Core.JsInterop
 open Swate.Components
 open Swate.Components.Page.GitSidebarTypes
 open Swate.Components.Primitive.LayoutComponents
+open Swate.Components.JsBindings
 open Swate.Components.Composite.Authentication.Helper
 open Swate.Components.Composite.ThemeSelector
 open Swate.Components.Composite.ThemeSelector.Context
@@ -28,14 +29,6 @@ module private SettingsPageHelper =
             Some value
         else
             None
-
-    /// Compares field by field. Callers from JavaScript pass plain objects, and record equality
-    /// does not match those against record instances.
-    let sameGitDefaults (a: SettingsGitDefaults) (b: SettingsGitDefaults) =
-        a.LfsAutoTrackThresholdMb = b.LfsAutoTrackThresholdMb
-        && a.DownloadLargeFiles = b.DownloadLargeFiles
-        && a.DiffIndexingLimitMb = b.DiffIndexingLimitMb
-        && a.UploadRightAway = b.UploadRightAway
 
 [<Erase; Mangle(false)>]
 type SettingsPage =
@@ -206,7 +199,7 @@ type SettingsPage =
         Html.input [
             prop.testId rowId
             prop.className [
-                "swt:input swt:w-32"
+                "swt:join-item swt:input swt:w-32"
                 if not isValid then
                     "swt:input-error"
             ]
@@ -233,162 +226,65 @@ type SettingsPage =
             prop.onChange onChange
         ]
 
+    /// A switch that applies right away.
     [<ReactComponent>]
-    static member private GitDefaults
-        (
-            gitDefaults: SettingsGitDefaults,
-            builtIn: SettingsGitDefaults,
-            onSave: SettingsGitDefaults -> unit,
-            immediateRows: ReactElement list
-        ) =
-        let lfsInput, setLfsInput =
-            React.useState (string gitDefaults.LfsAutoTrackThresholdMb)
-
-        let downloadLargeFiles, setDownloadLargeFiles =
-            React.useState gitDefaults.DownloadLargeFiles
-
-        let diffInput, setDiffInput =
-            React.useState (string gitDefaults.DiffIndexingLimitMb)
-
-        let uploadRightAway, setUploadRightAway = React.useState gitDefaults.UploadRightAway
-
-        React.useEffect (
-            (fun () ->
-                setLfsInput (string gitDefaults.LfsAutoTrackThresholdMb)
-                setDownloadLargeFiles gitDefaults.DownloadLargeFiles
-                setDiffInput (string gitDefaults.DiffIndexingLimitMb)
-                setUploadRightAway gitDefaults.UploadRightAway
-            ),
-            [|
-                box gitDefaults.LfsAutoTrackThresholdMb
-                box gitDefaults.DownloadLargeFiles
-                box gitDefaults.DiffIndexingLimitMb
-                box gitDefaults.UploadRightAway
-            |]
+    static member private GitDefaultToggleSetting
+        (rowId: string, title: string, description: string, value: bool, builtIn: bool, onApply: bool -> unit)
+        =
+        SettingsPage.GitDefaultRow(
+            rowId,
+            title,
+            description,
+            SettingsPage.GitDefaultToggle(rowId, value, onApply),
+            value <> builtIn,
+            (fun () -> onApply builtIn)
         )
 
-        let lfsValue =
-            SettingsPageHelper.tryParseInRange
-                GitSettingRanges.MinLfsAutoTrackThresholdMb
-                GitSettingRanges.MaxLfsAutoTrackThresholdMb
-                lfsInput
+    /// A number that applies with Update, like the UI scaling. Reset applies the built-in value right away.
+    [<ReactComponent>]
+    static member private GitDefaultNumberSetting
+        (
+            rowId: string,
+            title: string,
+            description: string,
+            value: int,
+            builtIn: int,
+            minValue: int,
+            maxValue: int,
+            onApply: int -> unit
+        ) =
+        let draft, setDraft = React.useState (string value)
 
-        let diffValue =
-            SettingsPageHelper.tryParseInRange
-                GitSettingRanges.MinDiffIndexingLimitMb
-                GitSettingRanges.MaxDiffIndexingLimitMb
-                diffInput
+        React.useEffect ((fun () -> setDraft (string value)), [| box value |])
 
-        let draft =
-            match lfsValue, diffValue with
-            | Some lfs, Some diff ->
-                Some {
-                    LfsAutoTrackThresholdMb = lfs
-                    DownloadLargeFiles = downloadLargeFiles
-                    DiffIndexingLimitMb = diff
-                    UploadRightAway = uploadRightAway
-                }
-            | _ -> None
+        let parsed = SettingsPageHelper.tryParseInRange minValue maxValue draft
 
-        let canSave =
-            match draft with
-            | Some draft -> not (SettingsPageHelper.sameGitDefaults draft gitDefaults)
-            | None -> false
-
-        let lfsId = "SettingsGitDefaultLfsThreshold"
-        let downloadId = "SettingsGitDefaultDownloadLargeFiles"
-        let diffId = "SettingsGitDefaultDiffIndexingLimit"
-        let uploadId = "SettingsGitDefaultUploadRightAway"
-        let appliesFromNow = "This is the default for ARCs opened from now on."
-
-        Html.div [
-            prop.testId "SettingsGitDefaultsSection"
-            prop.className "swt:contents"
-            prop.children [
-                LayoutComponents.BoxedField(
-                    "Git defaults",
-                    content = [
-                        yield! immediateRows
-
-                        SettingsPage.GitDefaultRow(
-                            lfsId,
-                            "Large file threshold (MB)",
-                            $"Files larger than this are tracked with Git LFS. {appliesFromNow}",
-                            SettingsPage.GitDefaultNumberInput(
-                                lfsId,
-                                lfsInput,
-                                setLfsInput,
-                                GitSettingRanges.MinLfsAutoTrackThresholdMb,
-                                GitSettingRanges.MaxLfsAutoTrackThresholdMb,
-                                lfsValue.IsSome
-                            ),
-                            lfsValue <> Some builtIn.LfsAutoTrackThresholdMb,
-                            (fun () -> setLfsInput (string builtIn.LfsAutoTrackThresholdMb)),
-                            ?rangeHint =
-                                (if lfsValue.IsNone then
-                                     Some
-                                         $"Enter a whole number from {GitSettingRanges.MinLfsAutoTrackThresholdMb} to {GitSettingRanges.MaxLfsAutoTrackThresholdMb}."
-                                 else
-                                     None)
-                        )
-
-                        SettingsPage.GitDefaultRow(
-                            downloadId,
-                            "Download large files",
-                            $"Downloads the content of large files when you clone an ARC or download changes. {appliesFromNow}",
-                            SettingsPage.GitDefaultToggle(downloadId, downloadLargeFiles, setDownloadLargeFiles),
-                            downloadLargeFiles <> builtIn.DownloadLargeFiles,
-                            (fun () -> setDownloadLargeFiles builtIn.DownloadLargeFiles)
-                        )
-
-                        SettingsPage.GitDefaultRow(
-                            diffId,
-                            "Diff indexing limit (MB)",
-                            $"Limits how much of a file the diff reads in the background. {appliesFromNow}",
-                            SettingsPage.GitDefaultNumberInput(
-                                diffId,
-                                diffInput,
-                                setDiffInput,
-                                GitSettingRanges.MinDiffIndexingLimitMb,
-                                GitSettingRanges.MaxDiffIndexingLimitMb,
-                                diffValue.IsSome
-                            ),
-                            diffValue <> Some builtIn.DiffIndexingLimitMb,
-                            (fun () -> setDiffInput (string builtIn.DiffIndexingLimitMb)),
-                            ?rangeHint =
-                                (if diffValue.IsNone then
-                                     Some
-                                         $"Enter a whole number from {GitSettingRanges.MinDiffIndexingLimitMb} to {GitSettingRanges.MaxDiffIndexingLimitMb}."
-                                 else
-                                     None)
-                        )
-
-                        SettingsPage.GitDefaultRow(
-                            uploadId,
-                            "Upload right away",
-                            $"Uploads saved changes to the online repository right away. {appliesFromNow}",
-                            SettingsPage.GitDefaultToggle(uploadId, uploadRightAway, setUploadRightAway),
-                            uploadRightAway <> builtIn.UploadRightAway,
-                            (fun () -> setUploadRightAway builtIn.UploadRightAway)
-                        )
-
-                        Html.div [
-                            prop.className "swt:flex swt:justify-end"
-                            prop.children [
-                                Html.button [
-                                    prop.testId "SettingsGitDefaultsSave"
-                                    prop.type'.button
-                                    prop.className "swt:btn swt:btn-primary"
-                                    prop.disabled (not canSave)
-                                    prop.text "Save"
-                                    prop.onClick (fun _ -> draft |> Option.iter onSave)
-                                ]
-                            ]
-                        ]
+        SettingsPage.GitDefaultRow(
+            rowId,
+            title,
+            description,
+            Html.div [
+                prop.className "swt:join"
+                prop.children [
+                    SettingsPage.GitDefaultNumberInput(rowId, draft, setDraft, minValue, maxValue, parsed.IsSome)
+                    Html.button [
+                        prop.testId (rowId + "Update")
+                        prop.type'.button
+                        prop.className "swt:join-item swt:btn"
+                        prop.disabled (parsed.IsNone || parsed = Some value)
+                        prop.text "Update"
+                        prop.onClick (fun _ -> parsed |> Option.iter onApply)
                     ]
-                )
-            ]
-        ]
+                ]
+            ],
+            value <> builtIn,
+            (fun () -> onApply builtIn),
+            ?rangeHint =
+                (if parsed.IsNone then
+                     Some $"Enter a whole number from {minValue} to {maxValue}."
+                 else
+                     None)
+        )
 
     [<ReactComponent>]
     static member private UIScalingSetting(uiScaling: int, onUIScaling: int -> unit) =
@@ -554,7 +450,7 @@ type SettingsPage =
                 Html.p [
                     prop.className "swt:mt-1 swt:text-sm swt:text-base-content/70"
                     prop.text
-                        "The Git program the application runs. Leave it on automatic to use the Git found on your PATH, or choose the executable yourself. Git LFS runs through this Git, so the Git LFS version shown belongs to it. A change here applies right away and needs no Save."
+                        "The Git program the application runs. Leave it on automatic to use the Git found on your PATH, or choose the executable yourself. Git LFS runs through this Git, so the Git LFS version shown belongs to it."
                 ]
         )
 
@@ -658,58 +554,58 @@ type SettingsPage =
         )
 
     [<ReactComponent>]
-    static member private General
-        (
-            ?onAutoCreateNotesFolderEnabled: unit -> unit,
-            ?uiScaling: int,
-            ?onUIScaling: int -> unit,
-            ?autoCreateNotesFolder: bool,
-            ?onAutoCreateNotesFolderChange: bool -> unit
-        ) =
-        let onAutoCreateNotesFolderEnabled =
-            defaultArg onAutoCreateNotesFolderEnabled ignore
-
-        LayoutComponents.BoxedField(
-            "General",
-            content = [
-                SettingsPage.SettingColumnElement(
-                    "Theme",
-                    ThemeSelector.ThemeSelector(),
-                    description =
-                        Html.p [
-                            prop.className "swt:mt-1 swt:text-sm swt:text-base-content/70"
-                            prop.text
-                                "Select the theme for the application. The 'Auto' option will use the system's theme settings."
-                        ]
-                )
-
-                SettingsPage.AutoCreateNotesFolderSetting(
-                    ?autoCreateNotesFolder = autoCreateNotesFolder,
-                    ?onChange = onAutoCreateNotesFolderChange,
-                    onEnabled = onAutoCreateNotesFolderEnabled
-                )
-
-                match uiScaling, onUIScaling with
-                | Some uiScaling, Some onUIScaling -> SettingsPage.UIScalingSetting(uiScaling, onUIScaling)
-                | _, _ -> Html.none
-            ]
-        )
-
-    [<ReactComponent>]
     static member private SearchConfig() =
-        LayoutComponents.BoxedField(
-            "Term Search Configuration",
-            content = [
-                TermSearchConfigSetter.TermSearchConfigSetter(fun props ->
-                    SettingsPage.SettingColumnElement(
-                        props.title,
-                        props.settingElement,
-                        description = props.description
-                    )
-                )
-            ]
+        TermSearchConfigSetter.TermSearchConfigSetter(fun props ->
+            SettingsPage.SettingColumnElement(props.title, props.settingElement, description = props.description)
         )
 
+    /// One category: a box with the category's title. Its id is the target of the navigation.
+    [<ReactComponent>]
+    static member private CategorySection(category: SettingsCategory, content: ReactElement list) =
+        let sectionId = SettingsCategory.sectionId category
+
+        Html.div [
+            prop.id sectionId
+            prop.testId sectionId
+            prop.className "swt:flex swt:w-full swt:justify-center swt:scroll-mt-4"
+            prop.children [
+                LayoutComponents.BoxedField(SettingsCategory.title category, content = content)
+            ]
+        ]
+
+    /// Links to the categories. It narrows with the page and is left out where the page is too narrow.
+    [<ReactComponent>]
+    static member private Navigation
+        (categories: SettingsCategory list, active: SettingsCategory, onSelect: SettingsCategory -> unit)
+        =
+        Html.nav [
+            prop.testId "SettingsNavigation"
+            prop.ariaLabel "Settings categories"
+            prop.className
+                "swt:hidden swt:@3xl/settings:block swt:sticky swt:top-0 swt:shrink-0 swt:py-4 swt:pl-4 swt:w-40 swt:@5xl/settings:w-56"
+            prop.children [
+                Html.ul [
+                    prop.className
+                        "swt:menu swt:menu-sm swt:@5xl/settings:menu-md swt:w-full swt:bg-base-200 swt:rounded-box swt:[--menu-active-bg:color-mix(in_oklab,var(--color-primary)_10%,transparent)] swt:[--menu-active-fg:var(--color-primary)]"
+                    prop.children [
+                        for category in categories do
+                            Html.li [
+                                Html.button [
+                                    prop.testId $"SettingsNavigation-{SettingsCategory.sectionId category}"
+                                    prop.type'.button
+                                    if category = active then
+                                        prop.className "swt:font-semibold swt:shadow-none"
+                                        prop.custom ("aria-current", "location")
+                                    prop.text (SettingsCategory.title category)
+                                    prop.onClick (fun _ -> onSelect category)
+                                ]
+                            ]
+                    ]
+                ]
+            ]
+        ]
+
+    /// The settings in categories, with a navigation at the side. With a category the page opens at it.
     [<ReactComponent>]
     static member SettingsPage
         (
@@ -720,40 +616,246 @@ type SettingsPage =
             ?autoCreateNotesFolder: bool,
             ?onAutoCreateNotesFolderChange: bool -> unit,
             ?gitExecutable: GitExecutableField,
-            ?customDataHubs: CustomDataHubsField
+            ?customDataHubs: CustomDataHubsField,
+            ?category: SettingsCategory
         ) =
         let onAutoCreateNotesFolderEnabled =
             defaultArg onAutoCreateNotesFolderEnabled ignore
 
-        // The rows that apply right away lead the Git defaults, above the values that wait for Save.
-        let immediateRows = [
+        let appliesFromNow = "This is the default for ARCs opened from now on."
+
+        let applyGitDefault (update: SettingsGitDefaults -> SettingsGitDefaults) =
+            gitDefaults
+            |> Option.iter (fun gitDefaults -> gitDefaults.OnChange(update gitDefaults.Current))
+
+        let generalRows = [
+            SettingsPage.SettingColumnElement(
+                "Theme",
+                ThemeSelector.ThemeSelector(),
+                description =
+                    Html.p [
+                        prop.className "swt:mt-1 swt:text-sm swt:text-base-content/70"
+                        prop.text
+                            "Select the theme for the application. The 'Auto' option will use the system's theme settings."
+                    ]
+            )
+
+            SettingsPage.AutoCreateNotesFolderSetting(
+                ?autoCreateNotesFolder = autoCreateNotesFolder,
+                ?onChange = onAutoCreateNotesFolderChange,
+                onEnabled = onAutoCreateNotesFolderEnabled
+            )
+
+            match uiScaling, onUIScaling with
+            | Some uiScaling, Some onUIScaling -> SettingsPage.UIScalingSetting(uiScaling, onUIScaling)
+            | _ -> ()
+        ]
+
+        let gitRows = [
             match gitExecutable with
             | Some field ->
                 SettingsPage.GitExecutable(field.Setting, field.OnChoose, field.OnUseAutomatic, field.OnCheckAgain)
             | None -> ()
+            match gitDefaults with
+            | Some gitDefaults ->
+                SettingsPage.GitDefaultToggleSetting(
+                    "SettingsGitDefaultUploadRightAway",
+                    "Upload right away",
+                    $"Uploads saved changes to the online repository right away. {appliesFromNow}",
+                    gitDefaults.Current.UploadRightAway,
+                    gitDefaults.BuiltIn.UploadRightAway,
+                    fun value -> applyGitDefault (fun current -> { current with UploadRightAway = value })
+                )
+
+                SettingsPage.GitDefaultNumberSetting(
+                    "SettingsGitDefaultDiffIndexingLimit",
+                    "Diff indexing limit (MB)",
+                    $"Limits how much of a file the diff reads in the background. {appliesFromNow}",
+                    gitDefaults.Current.DiffIndexingLimitMb,
+                    gitDefaults.BuiltIn.DiffIndexingLimitMb,
+                    GitSettingRanges.MinDiffIndexingLimitMb,
+                    GitSettingRanges.MaxDiffIndexingLimitMb,
+                    fun value ->
+                        applyGitDefault (fun current -> {
+                            current with
+                                DiffIndexingLimitMb = value
+                        })
+                )
+            | None -> ()
+        ]
+
+        let largeFileRows = [
+            match gitDefaults with
+            | Some gitDefaults ->
+                SettingsPage.GitDefaultNumberSetting(
+                    "SettingsGitDefaultLfsThreshold",
+                    "Large file threshold (MB)",
+                    $"Files larger than this are tracked with Git LFS. {appliesFromNow}",
+                    gitDefaults.Current.LfsAutoTrackThresholdMb,
+                    gitDefaults.BuiltIn.LfsAutoTrackThresholdMb,
+                    GitSettingRanges.MinLfsAutoTrackThresholdMb,
+                    GitSettingRanges.MaxLfsAutoTrackThresholdMb,
+                    fun value ->
+                        applyGitDefault (fun current -> {
+                            current with
+                                LfsAutoTrackThresholdMb = value
+                        })
+                )
+
+                SettingsPage.GitDefaultToggleSetting(
+                    "SettingsGitDefaultDownloadLargeFiles",
+                    "Download large files",
+                    $"Downloads the content of large files when you clone an ARC or download changes. {appliesFromNow}",
+                    gitDefaults.Current.DownloadLargeFiles,
+                    gitDefaults.BuiltIn.DownloadLargeFiles,
+                    fun value ->
+                        applyGitDefault (fun current -> {
+                            current with
+                                DownloadLargeFiles = value
+                        })
+                )
+            | None -> ()
+        ]
+
+        let dataHubRows = [
             match customDataHubs with
             | Some field -> SettingsPage.CustomDataHubs(field.Urls, field.OnChange)
             | None -> ()
         ]
 
-        LayoutComponents.Section [
-            SettingsPage.General(
-                onAutoCreateNotesFolderEnabled = onAutoCreateNotesFolderEnabled,
-                ?uiScaling = uiScaling,
-                ?onUIScaling = onUIScaling,
-                ?autoCreateNotesFolder = autoCreateNotesFolder,
-                ?onAutoCreateNotesFolderChange = onAutoCreateNotesFolderChange
-            )
+        // A category without rows is left out, together with its link.
+        let sections =
+            [
+                SettingsCategory.General, generalRows
+                SettingsCategory.DataHub, dataHubRows
+                SettingsCategory.Git, gitRows
+                SettingsCategory.LargeFiles, largeFileRows
+                SettingsCategory.TermSearch, [ SettingsPage.SearchConfig() ]
+            ]
+            |> List.filter (snd >> List.isEmpty >> not)
 
-            // A host without Git defaults still shows the rows that apply right away in the same box.
-            match gitDefaults, immediateRows with
-            | Some gitDefaults, _ ->
-                SettingsPage.GitDefaults(gitDefaults.Current, gitDefaults.BuiltIn, gitDefaults.OnSave, immediateRows)
-            | None, [] -> Html.none
-            | None, rows -> LayoutComponents.BoxedField("Git defaults", content = rows)
+        let categories = sections |> List.map fst
 
-            SettingsPage.SearchConfig()
+        let categoryKey =
+            categories |> List.map SettingsCategory.sectionId |> String.concat " "
 
+        let rootRef = React.useElementRef ()
+
+        let active, setActive =
+            React.useState (defaultArg category SettingsCategory.General)
+
+        // A category chosen in the navigation or by the host stays marked while the page scrolls to it, even if
+        // the page ends before its box reaches the top. The user's own scrolling gives the mark back to the
+        // observer.
+        let pinned = React.useRef false
+
+        let sectionOf (root: Browser.Types.HTMLElement) (category: SettingsCategory) =
+            root.querySelector ("#" + SettingsCategory.sectionId category) |> Option.ofObj
+
+        let jumpTo (smooth: bool) (category: SettingsCategory) =
+            pinned.current <- true
+            setActive category
+
+            rootRef.current
+            |> Option.bind (fun root -> sectionOf root category)
+            |> Option.iter (fun section -> Dom.scrollIntoView section smooth)
+
+        React.useEffect ((fun () -> category |> Option.iter (jumpTo false)), [| box category |])
+
+        let pageEndRef = React.useElementRef ()
+
+        // Marks the topmost category with a part in the upper third of the view. At the end of the page the last
+        // boxes can't reach the top, so there the last category takes the mark.
+        React.useEffect (
+            (fun () ->
+                match rootRef.current, pageEndRef.current with
+                | Some root, Some pageEnd when Dom.IntersectionObserver.isAvailable ->
+                    let inUpperThird = System.Collections.Generic.HashSet<string>()
+                    let atPageEnd = ref false
+
+                    let mark () =
+                        if not pinned.current then
+                            let inView =
+                                categories
+                                |> List.filter (fun category ->
+                                    inUpperThird.Contains(SettingsCategory.sectionId category)
+                                )
+
+                            (if atPageEnd.Value && not (List.contains (List.head categories) inView) then
+                                 List.tryLast categories
+                             else
+                                 List.tryHead inView)
+                            |> Option.iter setActive
+
+                    let sectionObserver =
+                        Dom.IntersectionObserver(
+                            (fun entries ->
+                                for entry in entries do
+                                    if entry.isIntersecting then
+                                        inUpperThird.Add entry.target.id |> ignore
+                                    else
+                                        inUpperThird.Remove entry.target.id |> ignore
+
+                                mark ()
+                            ),
+                            {| rootMargin = "0px 0px -67% 0px" |}
+                        )
+
+                    let pageEndObserver =
+                        Dom.IntersectionObserver(
+                            (fun entries ->
+                                for entry in entries do
+                                    atPageEnd.Value <- entry.isIntersecting
+
+                                mark ()
+                            ),
+                            {| rootMargin = "0px" |}
+                        )
+
+                    for category in categories do
+                        sectionOf root category |> Option.iter sectionObserver.observe
+
+                    pageEndObserver.observe pageEnd
+
+                    let unpin (_: Browser.Types.Event) = pinned.current <- false
+                    let userScrollEvents = [ "wheel"; "touchstart"; "keydown"; "pointerdown" ]
+
+                    for eventName in userScrollEvents do
+                        Browser.Dom.document.addEventListener (eventName, unpin)
+
+                    (fun () ->
+                        sectionObserver.disconnect ()
+                        pageEndObserver.disconnect ()
+
+                        for eventName in userScrollEvents do
+                            Browser.Dom.document.removeEventListener (eventName, unpin)
+                    )
+                | _ -> ignore
+            ),
+            [| box categoryKey |]
+        )
+
+        Html.div [
+            prop.ref rootRef
+            prop.className "swt:@container/settings swt:w-full"
+            prop.children [
+                Html.div [
+                    prop.className "swt:flex swt:items-start"
+                    prop.children [
+                        SettingsPage.Navigation(categories, active, jumpTo true)
+                        Html.div [
+                            prop.className "swt:min-w-0 swt:flex-1"
+                            prop.children [
+                                LayoutComponents.Section [
+                                    for category, content in sections do
+                                        SettingsPage.CategorySection(category, content)
+                                ]
+                                Html.div [ prop.ref pageEndRef ]
+                            ]
+                        ]
+                    ]
+                ]
+            ]
         ]
 
     [<ReactComponent(true)>]

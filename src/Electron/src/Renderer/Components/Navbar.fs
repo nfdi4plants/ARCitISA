@@ -315,14 +315,14 @@ type Navbar =
 
         let isActive =
             match pageStateCtx.state with
-            | Some PageState.SettingsPage -> true
+            | Some(PageState.SettingsPage _) -> true
             | _ -> false
 
         let onToggleSettings _ =
             if isActive then
                 pageStateCtx.setState None
             else
-                pageStateCtx.setState (Some PageState.SettingsPage)
+                pageStateCtx.setState (Some(PageState.SettingsPage(None, System.Guid.NewGuid().ToString())))
 
         Html.button [
             prop.type'.button
