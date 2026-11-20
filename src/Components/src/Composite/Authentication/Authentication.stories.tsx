@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { within, expect, userEvent, waitFor, fireEvent } from 'storybook/test';
+import { within, expect, userEvent, waitFor, fireEvent, fn } from 'storybook/test';
 import { Entry as AuthenticationEntry } from './Authentication.fs.js';
 
 const meta = {
@@ -38,18 +38,16 @@ const expectSignedIn = async (canvas: ReturnType<typeof within>) => {
   }, { timeout: 4000 });
 };
 
-const expectLoggedOut = async (canvas: ReturnType<typeof within>) => {
+const expectDeletedTokens = async (canvas: ReturnType<typeof within>, count: number) => {
   await waitFor(async () => {
-    const signedInInfo = await canvas.findByTestId('SignedInInfo');
-    expect(signedInInfo).toHaveTextContent('Signed In: false');
-  }, { timeout: 4000 });
+    expect(await canvas.findByTestId('DeletedTokensInfo')).toHaveTextContent(`Deleted tokens: ${count}`);
+  });
 };
 
 const expectAuthenticatedActions = async (canvas: ReturnType<typeof within>) => {
   await openUserMenu(canvas);
 
-  const logoutButton = await canvas.findByTestId('LogoutButton');
-  expect(logoutButton).toBeInTheDocument();
+  expect(await canvas.findByTestId('RemoveAccountButton-acc-1')).toBeInTheDocument();
 
   const addAnotherButton = await canvas.findByTestId('AddAnotherAccountButton');
   expect(addAnotherButton).toBeInTheDocument();
@@ -144,6 +142,90 @@ export const SwitchToCustomDataHubFlow: Story = {
   },
 };
 
+export const ManageDataHubsFlow: Story = {
+  name: 'Open the DataHUB settings from the sign-in',
+  args: { onManageDataHubs: fn() },
+  play: async ({ canvasElement, args }) => {
+    const canvas = within(canvasElement);
+
+    await openUserMenu(canvas);
+    await userEvent.click(await canvas.findByTestId('ManageDataHubsButton'));
+
+    await expect(args.onManageDataHubs).toHaveBeenCalledTimes(1);
+    // The settings open in the main window, so the menu closes.
+    await waitFor(() => expect(canvas.queryByTestId('UserDropdownContent')).not.toBeInTheDocument());
+  },
+};
+
+export const RemovedDataHubsFlow: Story = {
+  name: 'Offer only the official DataHub once the others are removed',
+  args: { dataHubUrls: [] },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    await openUserMenu(canvas);
+    await userEvent.click(await canvas.findByTestId('DataHubOptionsToggle'));
+
+    expect(await canvas.findByTestId('DataHubRadio-PLANTdataHUB (official)')).toBeInTheDocument();
+    expect(canvas.queryByTestId('DataHubRadio-datahub.rz.rptu.de')).not.toBeInTheDocument();
+    expect(canvas.queryByTestId('DataHubRadio-gitlab.plantmicrobe.de')).not.toBeInTheDocument();
+  },
+};
+
+export const SavedCustomDataHubFlow: Story = {
+  name: 'Sign in to a saved custom DataHub',
+  args: { dataHubUrls: ['https://gitlab.example.org'] },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    await openUserMenu(canvas);
+
+    const optionsToggle = await canvas.findByTestId('DataHubOptionsToggle');
+    await userEvent.click(optionsToggle);
+
+    const savedRadio = await canvas.findByTestId('DataHubRadio-gitlab.example.org');
+    await userEvent.click(savedRadio);
+    expect(savedRadio).toBeChecked();
+
+    const tokenInput = await canvas.findByTestId('PersonalAccessTokenInput');
+    await userEvent.type(tokenInput, 'fake-test-token');
+    const signInButton = await canvas.findByTestId('SignInButton');
+    await userEvent.click(signInButton);
+
+    await expectSignedIn(canvas);
+  },
+};
+
+export const RememberCustomDataHubFlow: Story = {
+  name: 'Remember a custom DataHub after sign in',
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    await openUserMenu(canvas);
+
+    const optionsToggle = await canvas.findByTestId('DataHubOptionsToggle');
+    await userEvent.click(optionsToggle);
+    expect(canvas.queryByTestId('DataHubRadio-gitlab.example.org')).not.toBeInTheDocument();
+
+    const customInput = await canvas.findByTestId('CustomDataHubInput');
+    fireEvent.input(customInput, { target: { value: 'https://gitlab.example.org/' } });
+
+    const tokenInput = await canvas.findByTestId('PersonalAccessTokenInput');
+    await userEvent.type(tokenInput, 'fake-test-token');
+    const signInButton = await canvas.findByTestId('SignInButton');
+    await userEvent.click(signInButton);
+
+    await expectSignedIn(canvas);
+
+    await openUserMenu(canvas);
+    const addAnotherButton = await canvas.findByTestId('AddAnotherAccountButton');
+    await userEvent.click(addAnotherButton);
+
+    await userEvent.click(await canvas.findByTestId('DataHubOptionsToggle'));
+    expect(await canvas.findByTestId('DataHubRadio-gitlab.example.org')).toBeInTheDocument();
+  },
+};
+
 export const AddAnotherAccountFlow: Story = {
   name: 'Add another account flow',
   play: async ({ canvasElement }) => {
@@ -164,27 +246,69 @@ export const AddAnotherAccountFlow: Story = {
 
     await userEvent.click(backButton);
 
-    const logoutButton = await canvas.findByTestId('LogoutButton');
-    expect(logoutButton).toBeInTheDocument();
+    expect(await canvas.findByTestId('AccountRow-acc-1')).toBeInTheDocument();
   },
 };
 
-export const LogoutFlow: Story = {
-  name: 'Logout flow',
+export const RemoveAndDeleteTokenFlow: Story = {
+  name: 'Remove an account and delete its token',
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
 
     await signInWithPat(canvas);
-
     await expectSignedIn(canvas);
 
     await openUserMenu(canvas);
-    const logoutButton = await canvas.findByTestId('LogoutButton');
-    expect(logoutButton).toBeInTheDocument();
+    await userEvent.click(await canvas.findByTestId('RemoveAccountButton-acc-2'));
 
-    await userEvent.click(logoutButton);
+    expect(await canvas.findByTestId('RemoveAccountPrompt')).toBeInTheDocument();
+    expect(canvas.queryByTestId('AccountRow-acc-2')).not.toBeInTheDocument();
 
-    await expectLoggedOut(canvas);
+    await userEvent.click(await canvas.findByTestId('RemoveAccountDeleteToken'));
+
+    await waitFor(() => {
+      expect(canvas.queryByTestId('RemoveAccountPrompt')).not.toBeInTheDocument();
+      expect(canvas.queryByTestId('AccountRow-acc-2')).not.toBeInTheDocument();
+      expect(canvas.getByTestId('AccountRow-acc-1')).toBeInTheDocument();
+    });
+    await expectDeletedTokens(canvas, 1);
+  },
+};
+
+export const CancelRemoveFlow: Story = {
+  name: 'Cancel removing an account',
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    await signInWithPat(canvas);
+    await expectSignedIn(canvas);
+
+    await openUserMenu(canvas);
+    await userEvent.click(await canvas.findByTestId('RemoveAccountButton-acc-2'));
+    await userEvent.click(await canvas.findByTestId('RemoveAccountCancel'));
+
+    expect(await canvas.findByTestId('AccountRow-acc-2')).toBeInTheDocument();
+    expect(canvas.queryByTestId('RemoveAccountPrompt')).not.toBeInTheDocument();
+    await expectDeletedTokens(canvas, 0);
+  },
+};
+
+export const RemoveAllAndDeleteTokensFlow: Story = {
+  name: 'Remove all logins and delete their tokens',
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    await signInWithPat(canvas);
+    await expectSignedIn(canvas);
+
+    await openUserMenu(canvas);
+    await userEvent.click(await canvas.findByTestId('RemoveAllAccountsButton'));
+    await userEvent.click(await canvas.findByTestId('RemoveAccountDeleteToken'));
+
+    await waitFor(() => {
+      expect(canvas.getByTestId('SignedInInfo')).toHaveTextContent('Signed In: false');
+    });
+    await expectDeletedTokens(canvas, 3);
   },
 };
 
@@ -220,10 +344,12 @@ export const MultiAccountRemoveFlow: Story = {
 
     const removeSecondAccountButton = await canvas.findByTestId('RemoveAccountButton-acc-2');
     await userEvent.click(removeSecondAccountButton);
+    await userEvent.click(await canvas.findByTestId('RemoveAccountKeepToken'));
 
     await waitFor(() => {
       expect(canvas.queryByTestId('AccountRow-acc-2')).not.toBeInTheDocument();
       expect(canvas.getByTestId('AccountRow-acc-1')).toBeInTheDocument();
     });
+    await expectDeletedTokens(canvas, 0);
   },
 };

@@ -85,6 +85,12 @@ let getCurrentPersonalAccessToken
             | Error error -> Error(mapGitLabError error)
     }
 
+/// Delete the PAT itself via GitLab /api/v4/personal_access_tokens/self.
+let revokeCurrentPersonalAccessToken (baseUrl: string) (pat: string) : JS.Promise<Result<unit, GitLabAuthFailure>> = promise {
+    let! response = ComponentsGitLabApi.GitLabApi.RevokeCurrentPersonalAccessToken(baseUrl, pat)
+    return response |> Result.mapError mapGitLabError
+}
+
 /// Rotate PAT via GitLab /api/v4/personal_access_tokens/self/rotate.
 let rotateCurrentPersonalAccessToken
     (baseUrl: string)

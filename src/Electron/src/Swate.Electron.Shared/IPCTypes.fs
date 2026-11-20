@@ -59,6 +59,8 @@ type UserDefaultValuesDto = {
     AutoCreateNotesFolder: bool
     /// Absolute path of the Git executable to use. None takes Git from PATH.
     GitExecutablePath: string option
+    /// The DataHUB addresses the sign-in offers next to the official one, as normalized HTTPS URLs.
+    DataHubUrls: string[]
 }
 
 /// The values new sessions start from, next to the values Swate ships with.
@@ -317,12 +319,12 @@ type IGitLabApi = {
 type IAuthApi = {
     signIn: AuthSignInRequest -> Fable.Core.JS.Promise<Result<AuthResult, exn>>
     getAuthState: unit -> Fable.Core.JS.Promise<Result<AuthStateDto, exn>>
-    signOut: unit -> Fable.Core.JS.Promise<Result<unit, exn>>
     revalidate: unit -> Fable.Core.JS.Promise<Result<AuthResult, exn>>
     listAccounts: unit -> Fable.Core.JS.Promise<Result<AccountSummary array, exn>>
     rotatePersonalAccessToken: string -> Fable.Core.JS.Promise<Result<AuthStateDto, exn>>
     setActiveAccount: string -> Fable.Core.JS.Promise<Result<AuthStateDto, exn>>
-    removeAccount: string -> Fable.Core.JS.Promise<Result<unit, exn>>
+    /// Removes the accounts in every case. The outcome says whether their tokens were deleted on the DataHUBs.
+    removeAccounts: RemoveAccountsRequest -> Fable.Core.JS.Promise<Result<TokenDeletionOutcome, exn>>
 }
 
 /// One Way Bridge: Main -> Renderer

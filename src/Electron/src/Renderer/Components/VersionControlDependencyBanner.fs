@@ -39,7 +39,16 @@ let useBannerEntry () : BannerEntry option =
             actions = [|
                 BannerAction.create (
                     "Open settings",
-                    (fun () -> pageStateCtx.setState (Some Renderer.Types.PageState.SettingsPage)),
+                    (fun () ->
+                        pageStateCtx.setState (
+                            Some(
+                                Renderer.Types.PageState.SettingsPage(
+                                    Some Swate.Components.PageComponents.SettingsPage.Types.SettingsCategory.Git,
+                                    System.Guid.NewGuid().ToString()
+                                )
+                            )
+                        )
+                    ),
                     icon = "swt:fluent--settings-24-regular"
                 )
                 BannerAction.create (
