@@ -1256,11 +1256,14 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
                                     let! content = Main.Bindings.Filesystem.readFileBase64Async path
 
                                     return
-                                        Ok {|
-                                            content = FileContentDTO.create fileType content relativePath
-                                            revision = revision
-                                            text = None
-                                        |}
+                                        Ok(
+                                            {|
+                                                content = FileContentDTO.create fileType content relativePath
+                                                revision = revision
+                                                text = None
+                                            |}
+                                            : OpenFileResult
+                                        )
                                 }
 
                                 // HTML and SVG are text the editor can change. Beyond the text read limit they
@@ -1295,24 +1298,33 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
                                             match! ArcPathContainment.checkTargetAsync vault.path.Value path with
                                             | Ok ArcPathContainment.SymbolicLink ->
                                                 return
-                                                    Some {|
-                                                        textInfo with
-                                                            readOnly = Some TextReadOnlyReason.SymbolicLink
-                                                    |}
+                                                    Some(
+                                                        {|
+                                                            textInfo with
+                                                                readOnly = Some TextReadOnlyReason.SymbolicLink
+                                                        |}
+                                                        : TextDocumentInfo
+                                                    )
                                             | Ok ArcPathContainment.OutsideArc ->
                                                 return
-                                                    Some {|
-                                                        textInfo with
-                                                            readOnly = Some TextReadOnlyReason.OutsideArc
-                                                    |}
+                                                    Some(
+                                                        {|
+                                                            textInfo with
+                                                                readOnly = Some TextReadOnlyReason.OutsideArc
+                                                        |}
+                                                        : TextDocumentInfo
+                                                    )
                                             | Ok(ArcPathContainment.RegularFile(stats, _)) when
                                                 TextFileSave.isWriteProtected stats
                                                 ->
                                                 return
-                                                    Some {|
-                                                        textInfo with
-                                                            readOnly = Some TextReadOnlyReason.WriteProtected
-                                                    |}
+                                                    Some(
+                                                        {|
+                                                            textInfo with
+                                                                readOnly = Some TextReadOnlyReason.WriteProtected
+                                                        |}
+                                                        : TextDocumentInfo
+                                                    )
                                             | _ -> return info
                                           }
                                         | _ -> promise { return info }

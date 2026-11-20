@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 3.4.0-nightly.01 - 2026-11-20
+
 ### ✨ Added
 
 - Text files of the ARC, such as Markdown, JSON, YAML, CWL and plain text files, open in a text editor with syntax highlighting, Undo and Redo, and Save (Ctrl+S). Before, only Markdown files could be edited, and other text files were shown read-only. Markdown and plain text wrap their lines and get the spellcheck, except on code and link addresses. (by @Freymaurer)

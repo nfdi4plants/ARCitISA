@@ -190,7 +190,7 @@ let main args =
             latestVersion
             (fun _ -> {
                 GitHub.UpdateReleaseRequest.Empty with
-                    draft = Some true
+                    draft = Some false
                     prerelease = Some isPrerelease
                     make_latest = Some "false"
             })
