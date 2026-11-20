@@ -25,6 +25,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removing an account or regenerating its token asks whether to delete the token on the DataHUB as well. The Logout button is now "Remove all logins": it removes every account and asks once whether to delete their tokens too. (by @caroott)
 - The settings are split into the pages General, DataHUB, Git, Large files and Term search. A navigation beside the settings, or above them in a narrow window, opens each page and lists its settings. Git switches apply right away and the MB limits apply with their Update button, so the Git defaults no longer need Save. (by @caroott)
 
+### 🐛 Fixed
+
+- Regular expressions in "Update Rows" now respect anchors such as `^` and `$` and replace only their actual matches. #943 (by @Gitarackur)
+
 ## 3.3.0 - 2026-11-19
 
 ### ✨ Added
