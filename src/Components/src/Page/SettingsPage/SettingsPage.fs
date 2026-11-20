@@ -848,7 +848,9 @@ type SettingsPage =
                                     for category, content in sections do
                                         SettingsPage.CategorySection(category, content)
                                 ]
-                                Html.div [ prop.ref pageEndRef ]
+                                // It covers the bottom padding of the section, so it is in view when the page is
+                                // scrolled to the end, even where zoom puts the end a fraction of a pixel below.
+                                Html.div [ prop.ref pageEndRef; prop.className "swt:-mt-4 swt:h-4" ]
                             ]
                         ]
                     ]

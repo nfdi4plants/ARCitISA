@@ -255,6 +255,30 @@ export const NavigationMarksCategoryInView: PropsStory = {
     }),
 };
 
+export const NavigationMarksLastCategoryWhenScaled: PropsStory = {
+  render: renderWithProps,
+  args: allCategoriesArgs(),
+  play: async ({ canvasElement }) =>
+    withViewport(canvasElement, 1280, 600, async () => {
+      const canvas = within(canvasElement);
+      const doc = canvasElement.ownerDocument;
+      const scroller = doc.scrollingElement!;
+
+      // UI scaling gives fractional pixel sizes, which can leave the end of the page just below the view.
+      for (const zoom of ['1.1', '1.25', '1.33']) {
+        doc.documentElement.style.setProperty('zoom', zoom);
+        try {
+          scroller.scrollTop = 0;
+          await expectMarked(canvas, 'settings-general');
+          scroller.scrollTop = scroller.scrollHeight;
+          await expectMarked(canvas, 'settings-term-search');
+        } finally {
+          doc.documentElement.style.removeProperty('zoom');
+        }
+      }
+    }),
+};
+
 export const OpensAtCategory: PropsStory = {
   render: renderWithProps,
   args: { ...allCategoriesArgs(), category: 'largeFiles' } as any,
