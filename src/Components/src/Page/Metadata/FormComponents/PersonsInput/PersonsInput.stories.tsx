@@ -2,15 +2,15 @@ import React, { useState } from 'react';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, userEvent, waitFor, within } from 'storybook/test';
 import { PersonsInput } from './PersonsInput.fs.ts';
-import { Person } from '../../../../fable_modules/ARCtrl.Core.3.0.0-beta.12/Person.fs.ts';
-import { OntologyAnnotation } from '../../../../fable_modules/ARCtrl.Core.3.0.0-beta.12/OntologyAnnotation.fs.ts';
-import { Comment$ as Comment } from '../../../../fable_modules/ARCtrl.Core.3.0.0-beta.12/Comment.fs.ts';
+import { emptyPerson, importedPersons, importedPersonDetails } from './PersonsInput.sample.fs.js';
+
+type Person = ReturnType<typeof emptyPerson>;
 
 const orcid = '0000-0002-1825-0097';
 const fullName = 'Jane Smith';
 
 function PersonEditor({ onImportPersons }: { onImportPersons?: () => Promise<Person[]> }) {
-  const [persons, setPersons] = useState(() => [new Person()]);
+  const [persons, setPersons] = useState(() => [emptyPerson()]);
   return (
     <div className="swt:max-w-3xl swt:mx-auto swt:p-4">
       <PersonsInput persons={persons} setter={(next: Person[]) => setPersons([...next])} label="Persons" onImportPersons={onImportPersons} />
@@ -93,16 +93,7 @@ async function confirmPerson(canvasElement: HTMLElement, mode: 'ORCID' | 'Name',
 
 export const ManualEntry: Story = {};
 
-const loadPersons = async () => {
-  const ada = new Person();
-  ada.FirstName = 'Ada';
-  ada.LastName = 'Lovelace';
-  ada.Affiliation = 'Research Institute';
-  const grace = new Person();
-  grace.FirstName = 'Grace';
-  grace.LastName = 'Hopper';
-  return [ada, grace];
-};
+const loadPersons = async () => importedPersons();
 
 export const ImportPersons: Story = {
   args: { onImportPersons: loadPersons },
@@ -131,18 +122,7 @@ export const EmptyImport: Story = {
 
 export const ImportPersonDetails: Story = {
   args: {
-    onImportPersons: async () => {
-      const [ada] = await loadPersons();
-      ada.MidInitials = 'A';
-      ada.ORCID = orcid;
-      ada.EMail = 'ada@example.org';
-      ada.Phone = '+44 123';
-      ada.Fax = '+44 456';
-      ada.Address = '12 Example Street\nLondon';
-      ada.Roles = [new OntologyAnnotation('Investigator', 'CREDIT', 'CREDIT:0000001', [new Comment('Role note', 'Primary role')])];
-      ada.Comments = [new Comment('Contribution', 'Study design')];
-      return [ada];
-    },
+    onImportPersons: async () => importedPersonDetails(),
   },
   play: async ({ canvasElement }) => {
     await userEvent.click(within(canvasElement).getByRole('button', { name: 'Import Persons' }));

@@ -59,7 +59,7 @@ Vitest.test (
         let! templateRow = RTL.screen.findByText "Sugar extraction"
         RTL.fireEvent.click templateRow
         RTL.fireEvent.click (RTL.screen.getByRole ("button", ByRoleOptions(name = Text "Import")))
-        RTL.fireEvent.click (RTL.screen.getByLabelText "Import (new table)")
+        RTL.fireEvent.click (RTL.screen.getByLabelText "Create new table")
         RTL.fireEvent.click (dialogImportButton ())
 
         Vitest.expect(savedFiles.Count).toBe 1

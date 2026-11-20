@@ -28,7 +28,7 @@ module ClipboardBindings =
     let parseHtml (_htmlText: string) : Browser.Types.Document = jsNative
 
     [<Emit("new Blob([$0], { type: $1 })")>]
-    let createBlob (_value: string) (_mimeType: string) : obj = jsNative
+    let createBlob (_value: string) (_mimeType: string) : Browser.Types.Blob = jsNative
 
     [<Emit("new ClipboardItem($0)")>]
     let private createItem (_values: obj) : ClipboardItem = jsNative
@@ -47,3 +47,14 @@ module ClipboardBindings =
             "text/html" ==> createBlob htmlText "text/html"
         ]
         |> createItem
+
+    /// A clipboard item with one entry whose blob is still being created. The clipboard waits for the promise,
+    /// so a click handler can call write before the content exists and keep its user activation.
+    [<Emit("new ClipboardItem({ [$0]: $1 })")>]
+    let createItemWithPendingBlob (_mimeType: string) (_blob: JS.Promise<Browser.Types.Blob>) : ClipboardItem = jsNative
+
+    [<Emit("typeof ClipboardItem !== 'undefined'")>]
+    let isItemAvailable () : bool = jsNative
+
+    [<Emit("typeof navigator.clipboard?.write === 'function'")>]
+    let isWriteAvailable () : bool = jsNative

@@ -10,7 +10,7 @@ let private loadViewResult (previewPath: string) : JS.Promise<Result<Renderer.Ty
 
     return
         result
-        |> Result.map Renderer.Types.PageState.fromFileContentDTO
+        |> Result.map (fun opened -> Renderer.Types.PageState.fromFileContentDTO (opened.content, opened.revision))
         |> Result.mapError _.Message
 }
 

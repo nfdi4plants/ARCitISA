@@ -304,18 +304,18 @@ module internal Normalize =
     let normalizeUnit unit = unit |> termOptionFromOntology
 
     let provenanceValue
-        (value: Value option)
+        (value: ScalarValue option)
         (unit: OntologyAnnotation option)
         : (ProvenanceValue * ProvenanceTerm option) option =
         let normalizedUnit = normalizeUnit unit
 
         match value with
-        | Some(Value.Name text) ->
+        | Some(ScalarValue.Name text) ->
             trimToOption text
             |> Option.map (fun text -> ProvenanceValue.Text text, normalizedUnit)
-        | Some(Value.Int value) -> Some(ProvenanceValue.Integer value, normalizedUnit)
-        | Some(Value.Float value) -> Some(ProvenanceValue.Float value, normalizedUnit)
-        | Some(Value.Ontology term) ->
+        | Some(ScalarValue.Int value) -> Some(ProvenanceValue.Integer value, normalizedUnit)
+        | Some(ScalarValue.Float value) -> Some(ProvenanceValue.Float value, normalizedUnit)
+        | Some(ScalarValue.Ontology term) ->
             let normalized = termFromOntology term
 
             if termIsEmpty normalized then

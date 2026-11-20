@@ -1,8 +1,7 @@
 /// Provider-neutral version control IPC. Every handler resolves the vault of the calling
 /// window, opens (or reuses) its library session, registers the operation for
 /// cancellation, forwards progress to the window and maps the structured result.
-/// Mutations run under the vault's busy flag so the file watcher does not merge
-/// Swate's own writes, and they refresh the file tree afterwards.
+/// Mutations run as external operations, so what they change loads through a sync, and they refresh the file tree afterwards.
 module Main.IPC.IVersionControlApi
 
 open Fable.Core
@@ -16,12 +15,83 @@ open Swate.Electron.Shared.IPCTypes.MainToRendererIpc
 open Swate.Electron.Shared.VersionControlTypes
 open VersionControlService.Abstractions
 
+/// Output is None for a call without a window. Its operations ask the library for no output.
 type private RendererBridge = {
     Progress: VersionControlProgressDto -> unit
     Started: OperationRequestDto -> unit
+    Output: (VersionControlOutputDto -> unit) option
 }
 
-let private silentBridge: RendererBridge = { Progress = ignore; Started = ignore }
+let private silentBridge: RendererBridge = {
+    Progress = ignore
+    Started = ignore
+    Output = None
+}
+
+/// Coalesces the progress of one operation. The library can report many events per second,
+/// and the renderer only needs the latest state of a phase. An event goes out at once when its
+/// phase differs from the last forwarded one or when `windowMilliseconds` have passed since
+/// the last forward. A pending event of the previous phase goes out first, because it is the
+/// final state of that phase. Any other event waits as the pending one (the latest wins) and
+/// goes out when the window ends. `Flush` sends the pending event, so the last state of the
+/// operation reaches the renderer before the result does.
+type ProgressThrottle
+    (
+        forward: VersionControlProgressDto -> unit,
+        now: unit -> float,
+        schedule: int -> (unit -> unit) -> (unit -> unit),
+        windowMilliseconds: int
+    ) =
+    let mutable lastPhase: string option = None
+    let mutable lastForwardedAt = 0.0
+    let mutable pending: VersionControlProgressDto option = None
+    let mutable cancelTimer: (unit -> unit) option = None
+
+    let send (progress: VersionControlProgressDto) =
+        pending <- None
+        cancelTimer |> Option.iter (fun cancel -> cancel ())
+        cancelTimer <- None
+        lastPhase <- Some progress.PhaseCode
+        lastForwardedAt <- now ()
+        forward progress
+
+    member _.Report(progress: VersionControlProgressDto) =
+        let elapsed = now () - lastForwardedAt
+
+        if lastPhase <> Some progress.PhaseCode then
+            pending |> Option.iter send
+            send progress
+        elif elapsed >= float windowMilliseconds then
+            send progress
+        else
+            pending <- Some progress
+
+            if cancelTimer.IsNone then
+                let remaining = windowMilliseconds - int elapsed
+
+                cancelTimer <-
+                    Some(
+                        schedule
+                            remaining
+                            (fun () ->
+                                cancelTimer <- None
+                                pending |> Option.iter send
+                            )
+                    )
+
+    member _.Flush() = pending |> Option.iter send
+
+/// The throttle of a running operation, on the real clock and timers.
+let private newProgressThrottle (forward: VersionControlProgressDto -> unit) =
+    ProgressThrottle(
+        forward,
+        (fun () -> JS.Constructors.Date.now ()),
+        (fun milliseconds callback ->
+            let timer = JS.setTimeout callback milliseconds
+            fun () -> JS.clearTimeout timer
+        ),
+        100
+    )
 
 // Tests replace this delay to avoid waiting ten seconds.
 let mutable waitForStaleLock: int -> Async<unit> = Async.Sleep
@@ -51,6 +121,7 @@ let private bridgeForWindow (window: BrowserWindow) : RendererBridge =
     {
         Progress = fun progress -> send (fun api -> api.versionControlProgress progress)
         Started = fun key -> send (fun api -> api.versionControlOperationStarted key)
+        Output = Some(fun output -> send (fun api -> api.versionControlOutput output))
     }
 
 let private tryBridgeFromEvent (event: IpcMainInvokeEvent) =
@@ -103,13 +174,23 @@ let private runTracked
     (operation: OperationContext -> Async<OperationResult<'T>>)
     : JS.Promise<OperationResult<'T>> =
     promise {
+        let throttle = newProgressThrottle bridge.Progress
+
+        // Output is not throttled here, because the library batches it. The bridge sends
+        // without an async hop, so the batches the library flushes before the operation
+        // completes reach the window before the result does.
+        let reportOutput =
+            bridge.Output
+            |> Option.map (fun send -> fun entries -> send (Mappings.output operationId entries))
+
         match
             host.TryBeginOperation(
                 operationId,
                 workspaceRoot,
                 windowId,
                 mutating,
-                fun progress -> bridge.Progress(Mappings.progress operationId progress)
+                (fun progress -> throttle.Report(Mappings.progress operationId progress)),
+                reportOutput
             )
         with
         | Error failure ->
@@ -130,6 +211,8 @@ let private runTracked
                     with error ->
                         return Failed(unexpectedFailure error)
                 finally
+                    // The last pending event goes out before the result does.
+                    throttle.Flush()
                     tracked.Complete()
             }
 
@@ -206,14 +289,11 @@ let resultChangedState (result: Result<OperationResultDto<'U>, exn>) =
     | Ok(OperationResultDto.Failed failure) -> failure.StateChanged
     | Error _ -> false
 
-let private shouldRefreshObjectTree (request: ObjectPathRequestDto) (result: Result<OperationResultDto<unit>, exn>) =
-    match request.RefreshTree with
-    | Some true -> true
-    | Some false ->
-        match result with
-        | Ok(OperationResultDto.Succeeded _) -> false
-        | _ -> true
-    | None -> resultChangedState result
+let private shouldRefreshObjectTree (request: ObjectPathsRequestDto) (result: Result<OperationResultDto<unit>, exn>) =
+    if request.AlwaysRefreshTree then
+        true
+    else
+        resultChangedState result
 
 /// Same as withSession, with the vault marked busy for the duration and the file tree
 /// refreshed afterwards when the result predicate allows it.
@@ -228,19 +308,21 @@ let private withMutatingSessionUsingRefreshPredicate
     promise {
         match tryGetVaultAndArcPath event with
         | Error error -> return Error error
-        | Ok(vault, arcPath) ->
+        | Ok(vault, _) ->
             return!
-                withBusyWritingScope
-                    vault
-                    (fun () -> promise {
-                        let! result = withSession operationName event operationId true operation mapValue
+                vault.WithExternalOperationScope(
+                    announce = true,
+                    operation =
+                        fun () -> promise {
+                            let! result = withSession operationName event operationId true operation mapValue
 
-                        if shouldRefresh result then
-                            let! fileTree = getFileTreeFromOpenSession arcPath
-                            vault.SetFileTree fileTree
+                            if shouldRefresh result then
+                                do! vault.EnqueueFileTreeRevalidateLoaded()
+                                vault.InvalidateLargeObjectIndex()
 
-                        return result
-                    })
+                            return result
+                        }
+                )
     }
 
 /// Same as withSession, with the vault marked busy for the duration and the file tree
@@ -524,11 +606,11 @@ let api (event: IpcMainInvokeEvent) : IVersionControlApi = {
         fun request -> promise {
             match tryGetVaultAndArcPath event with
             | Error error -> return Error error
-            | Ok(vault, arcPath) ->
+            | Ok(vault, _) ->
                 let host = WorkspaceSessionHost.get ()
                 let bridge = tryBridgeFromEvent event
 
-                let restoreSavedSettings savedSettings context = async {
+                let restoreSavedSettings arcPath savedSettings context = async {
                     try
                         let! restored = host.SetSettings(arcPath, savedSettings, context)
 
@@ -545,7 +627,7 @@ let api (event: IpcMainInvokeEvent) : IVersionControlApi = {
                         )
                 }
 
-                let reopenWithSavedSettings context = async {
+                let reopenWithSavedSettings arcPath context = async {
                     // Read the values right before the close, so a change acknowledged
                     // while the bind ran is the one restored afterwards.
                     let savedSettings = host.GetSettings arcPath
@@ -567,72 +649,80 @@ let api (event: IpcMainInvokeEvent) : IVersionControlApi = {
 
                         // Only settings that differ from what the fresh session started with need restoring.
                         if savedSettings <> outcome.Value.Settings then
-                            do! restoreSavedSettings savedSettings context
+                            do! restoreSavedSettings arcPath savedSettings context
                     | _ -> ()
 
                     return reopened
                 }
 
                 return!
-                    withBusyWritingScope
-                        vault
-                        (fun () -> promise {
-                            let! bound =
-                                runTracked
-                                    host
-                                    bridge
-                                    "bindWorkspace"
-                                    request.OperationId
-                                    (Some arcPath)
-                                    (windowFromIpcEvent event |> Option.map _.id)
-                                    true
-                                    (fun context -> async {
-                                        match locationFor host request.ProviderLocation request.DisplayName with
-                                        | Error failure -> return Failed failure
-                                        | Ok(location, factory) ->
-                                            let! bindResult =
-                                                factory.Bind
-                                                    {
-                                                        WorkspaceRoot = arcPath
-                                                        Location = location
-                                                    }
-                                                    context
+                    vault.WithExternalOperationScope(
+                        announce = true,
+                        operation =
+                            fun () -> promise {
+                                // The path is read inside the scope, because a root rename can move the folder while this call waits.
+                                match tryGetVaultAndArcPath event with
+                                | Error error -> return Error error
+                                | Ok(_, arcPath) ->
+                                    let! bound =
+                                        runTracked
+                                            host
+                                            bridge
+                                            "bindWorkspace"
+                                            request.OperationId
+                                            (Some arcPath)
+                                            (windowFromIpcEvent event |> Option.map _.id)
+                                            true
+                                            (fun context -> async {
+                                                match
+                                                    locationFor host request.ProviderLocation request.DisplayName
+                                                with
+                                                | Error failure -> return Failed failure
+                                                | Ok(location, factory) ->
+                                                    let! bindResult =
+                                                        factory.Bind
+                                                            {
+                                                                WorkspaceRoot = arcPath
+                                                                Location = location
+                                                            }
+                                                            context
 
-                                            match persistProvisionedBinding host bindResult with
-                                            | Succeeded _ ->
-                                                // The open session keeps the location it was opened with.
-                                                return! reopenWithSavedSettings context
-                                            | PartiallySucceeded(_, failure) when
-                                                failure.Code = VersionControlCodes.BindingNotPersisted
-                                                ->
-                                                return Failed failure
-                                            | PartiallySucceeded(_, failure) ->
-                                                // The binding is persisted, so the session is reopened and
-                                                // the provider's partial failure rides along.
-                                                let! reopened = reopenWithSavedSettings context
+                                                    match persistProvisionedBinding host bindResult with
+                                                    | Succeeded _ ->
+                                                        // The open session keeps the location it was opened with.
+                                                        return! reopenWithSavedSettings arcPath context
+                                                    | PartiallySucceeded(_, failure) when
+                                                        failure.Code = VersionControlCodes.BindingNotPersisted
+                                                        ->
+                                                        return Failed failure
+                                                    | PartiallySucceeded(_, failure) ->
+                                                        // The binding is persisted, so the session is reopened and
+                                                        // the provider's partial failure rides along.
+                                                        let! reopened = reopenWithSavedSettings arcPath context
 
-                                                return
-                                                    match reopened with
-                                                    | Succeeded outcome -> PartiallySucceeded(outcome, failure)
-                                                    | other -> other
-                                            | Failed failure -> return Failed failure
-                                    })
+                                                        return
+                                                            match reopened with
+                                                            | Succeeded outcome -> PartiallySucceeded(outcome, failure)
+                                                            | other -> other
+                                                    | Failed failure -> return Failed failure
+                                            })
 
-                            let result =
-                                Ok(
-                                    Mappings.result
-                                        (fun (hosted: WorkspaceSessionHost.HostedSession) ->
-                                            Mappings.sessionInfo hosted.SessionId hosted.Session
+                                    let result =
+                                        Ok(
+                                            Mappings.result
+                                                (fun (hosted: WorkspaceSessionHost.HostedSession) ->
+                                                    Mappings.sessionInfo hosted.SessionId hosted.Session
+                                                )
+                                                bound
                                         )
-                                        bound
-                                )
 
-                            if resultChangedState result then
-                                let! fileTree = getFileTreeFromOpenSession arcPath
-                                vault.SetFileTree fileTree
+                                    if resultChangedState result then
+                                        do! vault.EnqueueFileTreeRevalidateLoaded()
+                                        vault.InvalidateLargeObjectIndex()
 
-                            return result
-                        })
+                                    return result
+                            }
+                    )
         }
     cancelOperation =
         fun key -> promise {
@@ -650,8 +740,8 @@ let api (event: IpcMainInvokeEvent) : IVersionControlApi = {
             logOperationFinished operationName key.OperationId (OperationResult.succeeded canceled) durationMilliseconds
             return Ok canceled
         }
-    // Every registered provider reports its components. A provider whose check fails
-    // does not hide the others: its failure rides along as the partial failure.
+    // The install flow checks the dependencies in the operation of its window. The shared check asks
+    // every registered provider and keeps a failing provider from hiding the others.
     checkDependencies =
         fun request -> promise {
             let host = WorkspaceSessionHost.get ()
@@ -666,47 +756,12 @@ let api (event: IpcMainInvokeEvent) : IVersionControlApi = {
                     None
                     (windowFromIpcEvent event |> Option.map _.id)
                     false
-                    (fun context -> async {
-                        let factories = ProviderResolver.factories host.Runtime.Catalog
-                        let mutable statuses: DependencyStatus[] = [||]
-                        let mutable failure: OperationFailure option = None
-
-                        for factory in factories do
-                            if not (context.Cancellation.IsCancellationRequested()) then
-                                let! reported = factory.CheckDependencies context
-
-                                match reported with
-                                | Succeeded outcome
-                                | PartiallySucceeded(outcome, _) -> statuses <- Array.append statuses outcome.Value
-                                | Failed error when error.Category = Canceled -> failure <- Some error
-                                | Failed error ->
-                                    if failure.IsNone then
-                                        failure <- Some error
-
-                        return
-                            match failure with
-                            | Some error when error.Category = Canceled -> Failed error
-                            | _ when context.Cancellation.IsCancellationRequested() ->
-                                OperationResult.canceled "The dependency check was canceled."
-                            | Some error ->
-                                PartiallySucceeded(
-                                    OperationOutcome.performed statuses,
-                                    {
-                                        error with
-                                            StateChanged = false
-                                            RecoveryAction =
-                                                Some {
-                                                    Code = VersionControlCodes.Recovery.CheckDependencies
-                                                    Instructions =
-                                                        Some "One provider could not report its dependencies."
-                                                }
-                                    }
-                                )
-                            | None -> OperationResult.succeeded statuses
-                    })
+                    (DependencyState.checkDependencies host.Runtime.Catalog)
 
             return Ok(Mappings.result (Array.map Mappings.dependencyStatus) result)
         }
+    getDependencyState = fun () -> promise { return DependencyState.getState () }
+    recheckDependencies = fun () -> promise { return DependencyState.recheck () }
     // The first provider that does not answer Unsupported owns the component, whether
     // its installation succeeded or failed.
     installDependency =
@@ -739,6 +794,12 @@ let api (event: IpcMainInvokeEvent) : IVersionControlApi = {
                             outcome
                             |> Option.defaultValue (serviceUnavailable $"installation of '{request.Component}'")
                     })
+
+            // The banner shows the shared check, so a fix made here needs a new check to clear it.
+            match result with
+            | Failed _ -> ()
+            | Succeeded _
+            | PartiallySucceeded _ -> DependencyState.trigger ()
 
             return Ok(Mappings.result Mappings.dependencyStatus result)
         }
@@ -973,29 +1034,29 @@ let api (event: IpcMainInvokeEvent) : IVersionControlApi = {
                     "large object materialization"
                     (fun service context -> service.ListObjects context))
                 (Array.map Mappings.objectState)
-    materializeObject =
+    materializeObjects =
         fun request ->
             withMutatingSessionUsingRefreshPredicate
-                "materializeObject"
+                "materializeObjects"
                 event
                 request.OperationId
                 (shouldRefreshObjectTree request)
                 (withService
                     _.ObjectMaterialization
                     "large object materialization"
-                    (fun service context -> withPath request.Path (fun path -> service.Materialize path context)))
+                    (fun service context -> withPaths request.Paths (fun paths -> service.Materialize paths context)))
                 id
-    dematerializeObject =
+    dematerializeObjects =
         fun request ->
             withMutatingSessionUsingRefreshPredicate
-                "dematerializeObject"
+                "dematerializeObjects"
                 event
                 request.OperationId
                 (shouldRefreshObjectTree request)
                 (withService
                     _.ObjectMaterialization
                     "large object materialization"
-                    (fun service context -> withPath request.Path (fun path -> service.Dematerialize path context)))
+                    (fun service context -> withPaths request.Paths (fun paths -> service.Dematerialize paths context)))
                 id
     getStoragePolicySettings =
         fun request ->
@@ -1101,6 +1162,15 @@ let api (event: IpcMainInvokeEvent) : IVersionControlApi = {
                 request.OperationId
                 false
                 (withService _.Maintenance "storage maintenance" (fun service context -> service.Deduplicate context))
+                id
+    canDeduplicateStorage =
+        fun request ->
+            withSession
+                "canDeduplicateStorage"
+                event
+                request.OperationId
+                false
+                (withService _.Maintenance "storage maintenance" (fun service context -> service.CanDeduplicate context))
                 id
     getRepositoryWebUrl =
         fun request ->

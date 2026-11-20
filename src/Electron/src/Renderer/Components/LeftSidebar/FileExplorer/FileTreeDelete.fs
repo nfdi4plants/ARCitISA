@@ -16,7 +16,7 @@ module FileTreeDeleteWorkflow =
         enqueueError: ErrorModalRequest -> unit
         /// Returns the paths of the running Download and Free actions when the user confirms.
         /// A function keeps the check current, because an action can start while the modal is open.
-        getLfsActivePaths: unit -> string list
+        getLfsActivePaths: unit -> Renderer.Context.LfsActivityContext.LfsActivePathIndex
         deletePath: string -> JS.Promise<Result<unit, exn>>
     }
 

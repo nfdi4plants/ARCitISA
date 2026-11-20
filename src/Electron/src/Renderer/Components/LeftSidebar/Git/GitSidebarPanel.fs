@@ -4,50 +4,14 @@ open Browser.Dom
 open Feliz
 open Renderer.Components.Helper.ArcVaultHelper
 open Swate.Components.Primitive.ErrorModal.Context
-open Swate.Components.Primitive.ErrorModal.Types
-open Swate.Electron.Shared.VersionControlTypes
 
-let mutable private dependencyCheckStarted = false
-
-/// The message shown when a version control dependency is missing or too old. The
-/// library decides what is required (Git 2.42, Git LFS 3.7 and the LFS filter
-/// configuration) and says how to fix it. Its remediation text starts with the cause when a
-/// version check failed.
-let dependencyProblemMessage (statuses: DependencyStatusDto[]) : string option =
-    // The library reports the filter configuration as installed when the filter is set up, whatever
-    // the state of git-lfs itself. A problem of the configuration is only worth a line of its own
-    // while git-lfs works. Otherwise the line of git-lfs says what to do first.
-    let gitLfsWorks =
-        statuses
-        |> Array.tryFind (fun status -> status.Component = "git-lfs")
-        |> Option.forall (fun status -> status.Installed && status.Compatible)
-
-    let problems =
-        statuses
-        |> Array.filter (fun status -> not status.Installed || not status.Compatible)
-        |> Array.choose (fun status ->
-            let remediation =
-                status.Remediation
-                |> Option.map (fun text -> $" {text}")
-                |> Option.defaultValue ""
-
-            if status.Component = "git-lfs-configuration" then
-                if gitLfsWorks then
-                    Some $"Git LFS is installed but not set up.{remediation}"
-                else
-                    None
-            elif not status.Installed then
-                Some $"{status.Component} was not found or could not be run.{remediation}"
-            else
-                match status.Version with
-                | Some version -> Some $"{version} is not supported.{remediation}"
-                | None -> Some $"{status.Component} is not supported.{remediation}"
-        )
-
-    if problems.Length = 0 then
-        None
-    else
-        Some(String.concat "\n" problems)
+/// The version control provider answers once per opened ARC whether deduplication can work. On a no, the sidebar disables the button and its tooltip says why.
+let private lfsDedupUnavailableReason (canDeduplicate: bool option) =
+    match canDeduplicate with
+    | Some false ->
+        Some
+            "Not available for this ARC: deduplication needs copy-on-write file copies, which the file system of the ARC's folder does not support."
+    | _ -> None
 
 /// Remote transfer operations run cancellable git processes, so the cancel button is offered for all of them.
 let private isCancellableBusyOperation (busyOperation: Renderer.Context.GitWorkflow.GitBusyOperation) =
@@ -57,6 +21,70 @@ let private isCancellableBusyOperation (busyOperation: Renderer.Context.GitWorkf
     | Renderer.Context.GitWorkflow.GitBusyOperation.PushingToRemote
     | Renderer.Context.GitWorkflow.GitBusyOperation.CloningRepository _ -> true
     | _ -> false
+
+/// One background item per running file tree action. The label names the kind and the folder or file. The detail
+/// and the percent come from the progress that the action reported, the same text as on the file tree row. The
+/// log is the output that the action sent, taken from the logs by operation id.
+let backgroundActivityItems
+    (actions: Renderer.Context.LfsActivityContext.LfsRunningAction[])
+    (logs: Renderer.Context.LfsActivityContext.LfsRunningLogs)
+    : Swate.Components.Page.GitSidebarTypes.GitSidebarBackgroundActivity[] =
+    actions
+    |> Array.map (fun action ->
+        let item: Swate.Components.Page.GitSidebarTypes.GitSidebarBackgroundActivity = {
+            Label = Renderer.Context.LfsActivityContext.LfsRunningAction.label action
+            Detail = Renderer.Context.LfsActivityContext.LfsRunningAction.progressText action
+            ProgressPercent = Renderer.Context.LfsActivityContext.LfsRunningAction.progressPercent action
+            Log =
+                logs
+                |> Map.tryFind action.OperationId
+                |> Option.bind Renderer.Context.OperationLog.toSidebarLog
+        }
+
+        item
+    )
+
+/// The writes that take the mutation lock of the library, so they wait for a file tree action that holds it: the
+/// commit of a Save, Download Changes, Upload Changes, the discard, the restore of interrupted files, the creation
+/// and the switch of a branch, the steps of a merge resolution and the "Download now" retry. The other busy
+/// operations do not take the lock: refresh, fetch, clone, the initialization and the rename of the repository, the
+/// LFS settings, the cache maintenance, the dependency install and the lock removal.
+let private waitsForFileTreeActions (busyOperation: Renderer.Context.GitWorkflow.GitBusyOperation) =
+    match busyOperation with
+    | Renderer.Context.GitWorkflow.GitBusyOperation.CommittingSelectedChanges
+    | Renderer.Context.GitWorkflow.GitBusyOperation.CommittingAllChanges
+    | Renderer.Context.GitWorkflow.GitBusyOperation.PullingFromRemote
+    | Renderer.Context.GitWorkflow.GitBusyOperation.PushingToRemote
+    | Renderer.Context.GitWorkflow.GitBusyOperation.DiscardingSelectedChanges
+    | Renderer.Context.GitWorkflow.GitBusyOperation.RestoringInterruptedPaths
+    | Renderer.Context.GitWorkflow.GitBusyOperation.CreatingBranch
+    | Renderer.Context.GitWorkflow.GitBusyOperation.SwitchingBranch
+    | Renderer.Context.GitWorkflow.GitBusyOperation.ConfirmingMergeResolution _
+    | Renderer.Context.GitWorkflow.GitBusyOperation.FinalizingMerge
+    | Renderer.Context.GitWorkflow.GitBusyOperation.AbandoningMerge
+    | Renderer.Context.GitWorkflow.GitBusyOperation.RetryingMaterialization -> true
+    | _ -> false
+
+/// The headline of a busy sidebar operation that waits for a file tree action. It names the first action that
+/// started before the operation did, because only such an action can hold the mutation lock of the library. The
+/// headline covers the wait before the first report of the operation. A Save that has reported its commit and then
+/// waits for an action that started later shows its own headline, and the background notice still names that
+/// action. Without an earlier action the headline stays unset.
+let waitingHeadline
+    (busyOperation: Renderer.Context.GitWorkflow.GitBusyOperation option)
+    (operationReported: bool)
+    (operationStartedAt: float option)
+    (actions: Renderer.Context.LfsActivityContext.LfsRunningAction[])
+    : string option =
+    match busyOperation, operationStartedAt with
+    | Some operation, Some startedAt when waitsForFileTreeActions operation && not operationReported ->
+        actions
+        |> Array.tryFind (fun action -> action.StartedAt < startedAt)
+        |> Option.map (fun action ->
+            let label = Renderer.Context.LfsActivityContext.LfsRunningAction.label action
+            $"Waits for {label.Substring(0, 1).ToLowerInvariant()}{label.Substring 1} to finish"
+        )
+    | _ -> None
 
 [<ReactComponent>]
 let Main () =
@@ -71,6 +99,27 @@ let Main () =
     let runStatus = Renderer.Context.GitWorkflow.currentRunStatus gitStateCtx.state
     let errorCtx = useErrorModalCtx ()
     let appStateCtx = Renderer.Context.AppStateContext.useAppStateCtx ()
+
+    let runningLfsActions =
+        Renderer.Context.LfsActivityContext.useLfsRunningActionsCtx ()
+
+    // Only the sidebar reads the logs, so a batch of output renders this panel and leaves the file tree alone.
+    let runningLfsLogs = Renderer.Context.LfsActivityContext.useLfsRunningLogsCtx ()
+
+    let backgroundActivities =
+        React.useMemo (
+            (fun () -> backgroundActivityItems runningLfsActions runningLfsLogs),
+            [| box runningLfsActions; box runningLfsLogs |]
+        )
+
+    // The log changes with every batch of output. A sidebar render for something else keeps the mapped lines.
+    let operationLog =
+        React.useMemo (
+            (fun () -> Renderer.Context.OperationLog.toSidebarLog gitStateCtx.state.CurrentLog),
+            [| box gitStateCtx.state.CurrentLog |]
+        )
+
+    let lastLog = Renderer.Context.LastGitLog.useLastGitLog ()
 
     // The dialog resets its name and owner state when the prompt object changes. The model keeps
     // the same prompt object between unrelated updates, so a re-render of the panel keeps them.
@@ -108,38 +157,6 @@ let Main () =
     let onOpenArcError =
         createErrorModalCallback errorCtx.enqueue "Error opening ARC" appStateCtx
 
-    React.useEffectOnce (fun () ->
-        if not dependencyCheckStarted then
-            dependencyCheckStarted <- true
-
-            Renderer.VersionControlApiClient.checkDependencies {
-                OperationId = Renderer.VersionControlApiClient.newOperationId ()
-            }
-            |> Promise.map (fun result ->
-                let statuses =
-                    match result with
-                    | Ok(OperationResultDto.Succeeded outcome)
-                    | Ok(OperationResultDto.PartiallySucceeded(outcome, _)) -> outcome.Value
-                    | _ -> [||]
-
-                match result, dependencyProblemMessage statuses with
-                | _, Some message ->
-                    errorCtx.enqueue (ErrorModalRequest.create (message, title = "Version control dependencies"))
-                | Ok(OperationResultDto.Failed failure), None
-                | Ok(OperationResultDto.PartiallySucceeded(_, failure)), None ->
-                    errorCtx.enqueue (
-                        ErrorModalRequest.create (
-                            Renderer.Context.GitWorkflow.failureMessage failure,
-                            title = "Could not verify Git installation"
-                        )
-                    )
-                | Error message, None ->
-                    errorCtx.enqueue (ErrorModalRequest.create (message, title = "Could not verify Git installation"))
-                | _ -> ()
-            )
-            |> ignore
-    )
-
     let remoteActionsEnabled = authState.UsableActiveUser().IsSome
 
     let remoteActionsWarning =
@@ -157,7 +174,7 @@ let Main () =
     | None ->
         Renderer.Components.LeftSidebar.Git.GitSidebarEmptyState.Main(
             title = "Open an ARC to use Git features",
-            description = "Source control becomes available after you open or download an ARC.",
+            description = "Version control becomes available after you open or download an ARC.",
             iconClassName = "swt:fluent--folder-open-24-regular",
             primaryAction = {
                 Label = "Open ARC"
@@ -202,6 +219,17 @@ let Main () =
             changedFiles = gitStateCtx.state.ChangedFiles,
             branchOptions = gitStateCtx.state.BranchOptions,
             ?runStatus = runStatus,
+            backgroundActivities = backgroundActivities,
+            operationSteps = gitStateCtx.state.CurrentSteps,
+            ?operationLog = operationLog,
+            ?lastLog = lastLog,
+            ?lfsDedupUnavailableReason = lfsDedupUnavailableReason gitStateCtx.state.CanDeduplicateStorage,
+            ?busyHeadlineOverride =
+                waitingHeadline
+                    gitStateCtx.state.BusyOperation
+                    gitStateCtx.state.OperationReported
+                    gitStateCtx.state.OperationStartedAt
+                    runningLfsActions,
             ?hasRemote = Some(Renderer.Context.GitWorkflow.hasRemote gitStateCtx.state),
             ?selectedFile = gitStateCtx.state.SelectedChangePath,
             ?errorNotice = gitStateCtx.state.ErrorNotice,
@@ -249,14 +277,9 @@ let Main () =
             onUploadRightAwayChange = gitStateCtx.uploadRightAwayChanged,
             remoteActionsEnabled = remoteActionsEnabled,
             canCancelOperation = canCancelOperation,
-            canOpenRemoteRepository = gitStateCtx.state.OriginRemoteRepositoryWebUrl.IsSome,
+            ?remoteRepositoryWebUrl = gitStateCtx.state.OriginRemoteRepositoryWebUrl,
             onSubmitPublishRename = gitStateCtx.submitPublishRename,
             onCancelPublishRename = gitStateCtx.cancelPublishRename,
-            onOpenRemoteRepository =
-                (fun () ->
-                    match gitStateCtx.state.OriginRemoteRepositoryWebUrl with
-                    | Some repositoryWebUrl -> window.``open`` (repositoryWebUrl, "_blank") |> ignore
-                    | None -> ()
-                ),
+            onOpenRemoteRepository = (fun repositoryWebUrl -> window.``open`` (repositoryWebUrl, "_blank") |> ignore),
             ?remoteActionsWarning = remoteActionsWarning
         )

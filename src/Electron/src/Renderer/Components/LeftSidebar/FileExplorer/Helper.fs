@@ -5,6 +5,7 @@ open Swate.Components.Page.FileExplorer.Types
 open Swate.Components.Shared
 open Swate.Electron.Shared.FileIOHelper
 open Swate.Electron.Shared.FileIOTypes
+open Swate.Electron.Shared.RenamePathRules
 open ARCtrl
 open Types
 
@@ -74,24 +75,26 @@ let private folderIcon (path: string) =
     | Some "notes", _ -> FileItemIcon.Notebook
     | _ -> FileItemIcon.Folder
 
-let private fileIcon (path: string) =
-    let normalizedPath = normalizeNodePath path
-    let segments = pathSegments normalizedPath
-    let fileName = PathHelpers.getFileName normalizedPath |> lowerInvariant
+/// The icon of a file. The path is the normalized ARC-relative path of the entry and name is its last segment.
+/// Only isa.datamap.xlsx can be a DataMap, so the path parsing runs for that name alone.
+let private isInNotesFolder (path: string) =
+    let separator = path.IndexOf '/'
+    let first = if separator < 0 then path else path.Substring(0, separator)
+    String.Equals(first, "notes", StringComparison.OrdinalIgnoreCase)
 
-    match colorClassForDatamapPath normalizedPath with
-    | Some _ -> FileItemIcon.Map
-    | None ->
-        match iconForArcWorkbookFile fileName with
+let private fileIcon (name: string) (path: string) =
+    let lowerName = lowerInvariant name
+
+    if
+        lowerName = DatamapParentInfo.DatamapFileName
+        && (DatamapParentInfo.tryFromPath path).IsSome
+    then
+        FileItemIcon.Map
+    else
+        match iconForArcWorkbookFile lowerName with
         | Some icon -> icon
-        | None when
-            (segments
-             |> Array.tryHead
-             |> Option.exists (fun segment -> String.Equals(segment, "notes", StringComparison.OrdinalIgnoreCase)))
-            && fileName.EndsWith(".md", StringComparison.OrdinalIgnoreCase)
-            ->
-            FileItemIcon.Note
-        | None when fileName.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase) -> FileItemIcon.Table
+        | None when lowerName.EndsWith(".md", StringComparison.Ordinal) && isInNotesFolder path -> FileItemIcon.Note
+        | None when lowerName.EndsWith(".xlsx", StringComparison.Ordinal) -> FileItemIcon.Table
         | None -> FileItemIcon.Document
 
 let getItemIconClass (item: FileItem) =
@@ -161,34 +164,74 @@ let canRenameFileItem (item: FileItem) =
     |> Option.map PathHelpers.normalizeCanonicalRelativePath
     |> Option.exists (ArcEntityPathRules.isItemRenamePathAllowed (not item.IsDirectory))
 
-let tryGetArcEntityWorkbookName (folderPath: string) =
-    ArcEntityPathRules.tryGetRenameEntityFolderTarget (PathHelpers.normalizePath folderPath)
-    |> Option.bind (fun (zone, identifier) ->
-        ArcEntityPathRules.buildCanonicalEntityPaths zone identifier
-        |> List.tryHead
-        |> Option.map PathHelpers.getFileName
-    )
+let importRevealPaths
+    (result: Result<ImportExternalFilesResult option, exn>)
+    (targetRelativePath: string)
+    : string list =
+    match result with
+    | Ok(Some(ImportExternalFilesResult.Completed importedFolderPaths)) ->
+        targetRelativePath :: List.ofArray importedFolderPaths
+    | _ -> []
 
-let isArcEntityFolderViewOpen
-    (pageState: Renderer.Types.PageState option)
-    (selectedTreePath: string option)
-    (folderPath: string)
-    =
-    match pageState, selectedTreePath, tryGetArcEntityWorkbookName folderPath with
-    | Some(Renderer.Types.PageState.ArcFilePage _), Some selectedPath, Some workbookName ->
-        PathHelpers.pathsEqual selectedPath folderPath
-        || PathHelpers.pathsEqual selectedPath $"{PathHelpers.normalizePath folderPath}/{workbookName}"
-    | _ -> false
+/// Builds the row of an entry in one record. Entry paths are already normalized, so nothing normalizes them again.
+let createItem
+    (tryFindLfs: string -> Swate.Electron.Shared.VersionControlTypes.ObjectStateDto option)
+    (node: FileEntry)
+    : FileItem =
+    let path = node.path
 
-let createItem (node: FileTreeNode) : FileItem =
-    let item =
-        if node.isDirectory then
-            FileTree.createFolder node.name (Some node.path) (folderIcon node.path)
-        else
-            FileTree.createFile node.name (Some node.path) (fileIcon node.path)
+    if node.isDirectory then
+        {
+            Id = path
+            Name = node.name
+            Icon = folderIcon path
+            IconTone = None
+            IsExpanded = false
+            Children = Some []
+            IdRel = None
+            IsDirectory = true
+            IsLFS = None
+            IsLFSPointer = None
+            Checkout = None
+            Downloaded = None
+            LfsActivity = None
+            LfsActivityDetail = None
+            Size = None
+            SizeFormatted = None
+            ItemType = "node"
+            Label = Some node.name
+            Selectable = false
+            Path = Some path
+        }
+    else
+        let icon = fileIcon node.name path
 
-    { item with Id = node.path }
-    |> Renderer.Components.FileExplorerLfs.withFileTreeNodeLfsState node
+        let item: FileItem = {
+            Id = path
+            Name = node.name
+            Icon = icon
+            IconTone = None
+            IsExpanded = false
+            Children = None
+            IdRel = None
+            IsDirectory = false
+            IsLFS = None
+            IsLFSPointer = None
+            Checkout = None
+            Downloaded = None
+            LfsActivity = None
+            LfsActivityDetail = None
+            Size = None
+            SizeFormatted = None
+            ItemType = "node"
+            Label = Some node.name
+            Selectable = false
+            Path = Some path
+        }
+
+        match tryFindLfs path with
+        | None -> item
+        | Some _ -> Renderer.Components.FileExplorerLfs.withFileTreeNodeLfsState tryFindLfs node item
 
 let arcCreateKinds = [
     {
@@ -217,15 +260,6 @@ let arcCreateKinds = [
     }
 ]
 
-let isArcCreateIdentifierValid (identifier: string) =
-    let identifier = identifier.Trim()
-
-    (System.String.IsNullOrWhiteSpace identifier |> not)
-    && ARCtrl.Helper.Identifier.tryCheckValidCharacters identifier
-
-let arcCreateIdentifierError =
-    "Identifier is required and may only contain letters, digits, spaces, underscores, or dashes."
-
 let tryGetInlineArcCreateKind (rootPath: string) (item: FileItem) =
     if not item.IsDirectory then
         None
@@ -242,11 +276,9 @@ let tryGetInlineArcCreateKind (rootPath: string) (item: FileItem) =
         | _ -> None
 
 let tryBuildArcCreateDraft kind (identifier: string) (existingPaths: string seq) =
-    let identifier = identifier.Trim()
-
-    if isArcCreateIdentifierValid identifier |> not then
-        Error arcCreateIdentifierError
-    else
+    match validateArcIdentifier identifier with
+    | Error validationError -> Error validationError
+    | Ok identifier ->
         match arcCreateKinds |> List.tryFind (fun config -> config.Kind = kind) with
         | None -> Error $"Creating {kind} files is not supported from the file explorer."
         | Some config ->

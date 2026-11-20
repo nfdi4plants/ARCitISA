@@ -240,3 +240,103 @@ Vitest.describe (
                 Vitest.expect(store.Effective()).toEqual UserDefaults.builtIn
         )
 )
+
+Vitest.describe (
+    "User defaults Git executable path",
+    fun () ->
+        Vitest.test (
+            "a profile without a choice uses Git from PATH",
+            fun () ->
+                Vitest.expect(UserDefaults.builtIn.GitExecutablePath).toEqual None
+
+                Vitest.expect(storeOver (memoryFile None) |> fun store -> store.Effective().GitExecutablePath).toEqual
+                    None
+        )
+
+        Vitest.test (
+            "a chosen path is stored, read back by a new store and removed again by None",
+            fun () ->
+                let file = memoryFile None
+                let store = storeOver file
+
+                let chosen = {
+                    UserDefaults.builtIn with
+                        GitExecutablePath = Some(Main.Bindings.Path.resolve [| "tools"; "git" |])
+                }
+
+                Vitest.expect(expectUpdated store chosen).toEqual chosen
+                Vitest.expect(storeOver file |> fun reopened -> reopened.Effective()).toEqual chosen
+                Vitest.expect(storedKeys file).toEqual [| "gitExecutablePath"; "schemaVersion" |]
+
+                expectUpdated store UserDefaults.builtIn |> ignore
+                Vitest.expect(storedKeys file).toEqual [| "schemaVersion" |]
+                Vitest.expect(store.Effective().GitExecutablePath).toEqual None
+        )
+
+        Vitest.test (
+            "a stored value that is no string or is blank counts as absent and spares the other values",
+            fun () ->
+                for stored in [ "5"; "true"; "null"; "[]"; "\"\""; "\"   \"" ] do
+                    let file =
+                        memoryFile (
+                            Some
+                                $"""{{ "schemaVersion": 1, "gitExecutablePath": {stored}, "diffIndexingLimitMb": 2048 }}"""
+                        )
+
+                    Vitest.expect(storeOver file |> fun store -> store.Effective()).toEqual {
+                        UserDefaults.builtIn with
+                            DiffIndexingLimitMb = 2048
+                    }
+        )
+
+        Vitest.test (
+            "a stored path that no longer exists stays the choice",
+            fun () ->
+                let missing = Main.Bindings.Path.resolve [| "no-such-folder"; "git" |]
+
+                let file =
+                    memoryFile (
+                        Some(
+                            JS.JSON.stringify (
+                                {|
+                                    schemaVersion = 1
+                                    gitExecutablePath = missing
+                                |}
+                            )
+                        )
+                    )
+
+                Vitest.expect(storeOver file |> fun store -> store.Effective().GitExecutablePath).toEqual (Some missing)
+        )
+
+        Vitest.test (
+            "a stored path that no longer exists survives the change of another setting",
+            fun () ->
+                let missing = Main.Bindings.Path.resolve [| "no-such-folder"; "git" |]
+
+                let file =
+                    memoryFile (
+                        Some(
+                            JS.JSON.stringify (
+                                {|
+                                    schemaVersion = 1
+                                    gitExecutablePath = missing
+                                |}
+                            )
+                        )
+                    )
+
+                let store = storeOver file
+
+                let effective = store.Effective()
+
+                let updated =
+                    expectUpdated store {
+                        effective with
+                            UploadRightAway = false
+                    }
+
+                Vitest.expect(updated.GitExecutablePath).toEqual (Some missing)
+                Vitest.expect(updated.UploadRightAway).toBe false
+        )
+)

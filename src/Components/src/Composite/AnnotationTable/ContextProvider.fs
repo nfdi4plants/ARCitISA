@@ -14,6 +14,24 @@ type AnnotationTableContextProvider =
     static member AnnotationTableContextProvider(children: ReactElement) =
 
         let (data: Map<string, AnnotationTableContext>), setData =
-            React.useState (Map.empty)
+            React.useStateWithUpdater (Map.empty)
 
-        AnnotationTableStateCtx.Provider({ state = data; setState = setData }, [ children ])
+        let setSelection =
+            React.useCallback (
+                (fun (key: string) (range: CellCoordinateRange option) ->
+                    setData (Map.add key { SelectedCells = range })
+                ),
+                [||]
+            )
+
+        let clearSelection =
+            React.useCallback ((fun (key: string) -> setData (Map.remove key)), [||])
+
+        AnnotationTableStateCtx.Provider(
+            {
+                state = data
+                setSelection = setSelection
+                clearSelection = clearSelection
+            },
+            [ children ]
+        )

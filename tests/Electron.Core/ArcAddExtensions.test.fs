@@ -2,11 +2,16 @@ module ElectronCore.ArcAddExtensionsTests
 
 open Main.ArcMerge
 open Main.ArcVault
+open Main.ArcVaultState
+open Main.ArcVaultLargeObjects
+open Main.ArcVaultFileTree
+open Main.ArcVaultFileWatcher
 open Main.ARCtrlExtensions
 open Main.Bindings.Path
 open Swate.Components.Shared
 open Swate.Electron.Shared.FileIOHelper
 open ARCtrl
+open FsSpreadsheet.Js
 open Vitest
 
 let private expectSome (value: 'T option) (message: string) : 'T =
@@ -133,9 +138,10 @@ Vitest.describe (
                         let vault = ArcVault(testWindow ())
                         vault.path <- Some arcPath
                         vault.SetArc arc
+                        do! vault.EnqueueFileTreeScan()
 
                         let request =
-                            FileContentDTO.fromArcFile (ArcFiles.DataMap(Some parentInfo, DataMap.init ()))
+                            FileContentDTO.fromArcFile (ArcFiles.DataMap(Some parentInfo, Datamap.init ()))
                             |> expectSome
                             <| "Expected DataMap DTO."
 
@@ -143,20 +149,20 @@ Vitest.describe (
                         | Error error -> failwith error.Message
                         | Ok() -> ()
 
-                        Vitest.expect(arc.GetAssay("DataMapAssay").DataMap.IsSome).toBe (true)
+                        Vitest.expect(arc.GetAssay("DataMapAssay").Datamap.IsSome).toBe (true)
 
                         let dataMapPath = join [| arcPath; "assays"; "DataMapAssay"; "isa.datamap.xlsx" |]
                         let! dataMapExists = pathExistsAsync dataMapPath
                         Vitest.expect(dataMapExists).toBe (true)
 
                         let dataMapIsLoadedInFileTree =
-                            vault.fileTree.Values
+                            vault.FileTreeWriter.Tree.Entries
                             |> Seq.exists (fun entry -> PathHelpers.pathsEqual entry.path dataMapPath)
 
                         Vitest.expect(dataMapIsLoadedInFileTree).toBe (true)
 
                         let! reloadedArc = loadArcAsync arcPath
-                        Vitest.expect(reloadedArc.GetAssay("DataMapAssay").DataMap.IsSome).toBe (true)
+                        Vitest.expect(reloadedArc.GetAssay("DataMapAssay").Datamap.IsSome).toBe (true)
                     })
         )
 
@@ -165,11 +171,11 @@ Vitest.describe (
             fun () ->
                 withTempArc
                     (fun arc ->
-                        let dataMap = DataMap.init ()
+                        let dataMap = Datamap.init ()
                         dataMap.DataContexts.Add(DataContext(label = "Deleted data"))
 
                         let assay = ArcAssay("DataMapAssay")
-                        assay.DataMap <- Some dataMap
+                        assay.Datamap <- Some dataMap
                         arc.AddAssay assay
                     )
                     (fun arcPath -> promise {
@@ -180,7 +186,7 @@ Vitest.describe (
                         | Error error -> failwith error.Message
                         | Ok() -> ()
 
-                        let emptyDataMap = DataMap.init ()
+                        let emptyDataMap = Datamap.init ()
                         Vitest.expect(emptyDataMap.DataContexts.Count).toBe (0)
 
                         let request =
@@ -196,19 +202,19 @@ Vitest.describe (
 
                         Vitest.expect(requestedDataMap.DataContexts.Count).toBe (0)
 
-                        match! arc.TryAddArcFileAsync(arcPath, requestedArcFile, false) with
+                        match! arc.TryAddArcFileAsync(arcPath, requestedArcFile) with
                         | Error errors -> failwith (PathHelpers.formatContractErrors errors)
                         | Ok _ -> ()
 
                         let recreatedDataMap =
-                            arc.GetAssay("DataMapAssay").DataMap |> expectSome <| "Expected DataMap."
+                            arc.GetAssay("DataMapAssay").Datamap |> expectSome <| "Expected DataMap."
 
                         Vitest.expect(recreatedDataMap.DataContexts.Count).toBe (0)
 
                         let! reloadedArc = loadArcAsync arcPath
 
                         let persistedDataMap =
-                            reloadedArc.GetAssay("DataMapAssay").DataMap |> expectSome
+                            reloadedArc.GetAssay("DataMapAssay").Datamap |> expectSome
                             <| "Expected persisted DataMap."
 
                         let containsDeletedData =
@@ -239,7 +245,7 @@ Vitest.describe (
                         let parentInfo = DatamapParentInfo.create "DataMapAssay" DataMapParent.Assay
 
                         let request =
-                            FileContentDTO.fromArcFile (ArcFiles.DataMap(Some parentInfo, DataMap.init ()))
+                            FileContentDTO.fromArcFile (ArcFiles.DataMap(Some parentInfo, Datamap.init ()))
                             |> expectSome
                             <| "Expected DataMap DTO."
 
@@ -248,11 +254,11 @@ Vitest.describe (
                         | Ok() -> ()
 
                         let! reloadedArc = loadArcAsync arcPath
-                        Vitest.expect(reloadedArc.GetAssay("DataMapAssay").DataMap.IsSome).toBe (true)
+                        Vitest.expect(reloadedArc.GetAssay("DataMapAssay").Datamap.IsSome).toBe (true)
                         Vitest.expect(reloadedArc.GetAssay("DirtyAssay").Title).toEqual (Some "Persisted title")
 
                         let inMemoryArc = vault.arc |> expectSome <| "Expected vault ARC."
-                        Vitest.expect(inMemoryArc.GetAssay("DataMapAssay").DataMap.IsSome).toBe (true)
+                        Vitest.expect(inMemoryArc.GetAssay("DataMapAssay").Datamap.IsSome).toBe (true)
                         Vitest.expect(inMemoryArc.GetAssay("DirtyAssay").Title).toEqual (Some "Unsaved title")
                         Vitest.expect(vault.hasUnsavedArcChanges).toBe (true)
                     })
@@ -353,7 +359,7 @@ Vitest.describe (
                         let parentInfo = DatamapParentInfo.create "DataMapAssay" DataMapParent.Assay
 
                         let request () =
-                            FileContentDTO.fromArcFile (ArcFiles.DataMap(Some parentInfo, DataMap.init ()))
+                            FileContentDTO.fromArcFile (ArcFiles.DataMap(Some parentInfo, Datamap.init ()))
                             |> expectSome
                             <| "Expected DataMap DTO."
 
@@ -372,7 +378,7 @@ Vitest.describe (
                         | Ok() -> ()
 
                         let! reloadedArc = loadArcAsync arcPath
-                        Vitest.expect(reloadedArc.GetAssay("DataMapAssay").DataMap.IsSome).toBe (true)
+                        Vitest.expect(reloadedArc.GetAssay("DataMapAssay").Datamap.IsSome).toBe (true)
                         Vitest.expect(vault.isBusyWriting).toBe (false)
                     })
         )
@@ -485,7 +491,7 @@ Vitest.describe (
                 withTempArc
                     (fun arc ->
                         let assay = ArcAssay("ExistingAssay")
-                        assay.DataMap <- Some(DataMap.init ())
+                        assay.Datamap <- Some(Datamap.init ())
                         arc.AddAssay assay
                     )
                     (fun arcPath -> promise {
@@ -494,7 +500,7 @@ Vitest.describe (
                         let duplicateParent = DatamapParentInfo.create "ExistingAssay" DataMapParent.Assay
 
                         let! duplicateResult =
-                            arc.TryAddArcFileAsync(arcPath, ArcFiles.DataMap(Some duplicateParent, DataMap.init ()))
+                            arc.TryAddArcFileAsync(arcPath, ArcFiles.DataMap(Some duplicateParent, Datamap.init ()))
 
                         match duplicateResult with
                         | Ok _ -> failwith "Expected duplicate DataMap add to fail."
@@ -509,7 +515,7 @@ Vitest.describe (
                             DatamapParentInfo.create "MissingWorkflow" DataMapParent.Workflow
 
                         let! missingResult =
-                            arc.TryAddArcFileAsync(arcPath, ArcFiles.DataMap(Some missingParent, DataMap.init ()))
+                            arc.TryAddArcFileAsync(arcPath, ArcFiles.DataMap(Some missingParent, Datamap.init ()))
 
                         match missingResult with
                         | Ok _ -> failwith "Expected DataMap add for a missing workflow to fail."
@@ -532,7 +538,7 @@ Vitest.describe (
 
                         let unsupportedArcFiles = [|
                             ArcFiles.Investigation(ArcInvestigation("Investigation")), "investigation"
-                            ArcFiles.DataMap(None, DataMap.init ()), "which assay, study, run, or workflow"
+                            ArcFiles.DataMap(None, Datamap.init ()), "which assay, study, run, or workflow"
                             ArcFiles.Template(Template.init "Template"), "template"
                         |]
 
@@ -609,4 +615,90 @@ Vitest.describe (
                         Vitest.expect(vault.isBusyWriting).toBe (false)
                     })
         )
+)
+
+Vitest.describe (
+    "adding entities with adjacent DataMaps",
+    fun () ->
+        for parentKind, zone, workbookName in
+            [|
+                DataMapParent.Assay, "assays", "isa.assay.xlsx"
+                DataMapParent.Study, "studies", "isa.study.xlsx"
+                DataMapParent.Run, "runs", "isa.run.xlsx"
+                DataMapParent.Workflow, "workflows", "isa.workflow.xlsx"
+            |] do
+            Vitest.test (
+                $"adds a {zone} entity with an adjacent DataMap",
+                fun () ->
+                    withTempArc
+                        ignore
+                        (fun arcPath -> promise {
+                            let identifier = "ImportedParent"
+                            let dataMap = Datamap.init ()
+                            dataMap.DataContexts.Add(DataContext(name = "imported.csv"))
+
+                            let arcFile =
+                                match parentKind with
+                                | DataMapParent.Assay ->
+                                    let assay = ArcAssay(identifier)
+                                    assay.Datamap <- Some dataMap
+                                    ArcFiles.Assay assay
+                                | DataMapParent.Study ->
+                                    let study = ArcStudy(identifier)
+                                    study.Datamap <- Some dataMap
+                                    ArcFiles.Study(study, [])
+                                | DataMapParent.Run ->
+                                    let run = ArcRun(identifier)
+                                    run.Datamap <- Some dataMap
+                                    ArcFiles.Run run
+                                | DataMapParent.Workflow ->
+                                    let workflow = ArcWorkflow(identifier)
+                                    workflow.Datamap <- Some dataMap
+                                    ArcFiles.Workflow workflow
+
+                            // Imported files arrive through the same DTO conversion used by the add UI.
+                            let request =
+                                FileContentDTO.fromArcFile arcFile |> expectSome <| "Expected entity DTO."
+
+                            let importedArcFile =
+                                FileContentDTO.toArcFile request |> expectSome <| "Expected imported entity."
+
+                            let! arc = loadArcAsync arcPath
+
+                            match! arc.TryAddArcFileAsync(arcPath, importedArcFile) with
+                            | Ok _ -> ()
+                            | Error errors -> failwith (PathHelpers.formatContractErrors errors)
+
+                            let parentInfo = DatamapParentInfo.create identifier parentKind
+                            let dataMapPath = join [| arcPath; zone; identifier; "isa.datamap.xlsx" |]
+                            let! fileExists = pathExistsAsync dataMapPath
+                            Vitest.expect(fileExists).toBe (true)
+
+                            let! dataMapWorkbook = Xlsx.fromXlsxFile dataMapPath
+                            let persistedDataMap = ARCtrl.Spreadsheet.Datamap.fromFsWorkbook dataMapWorkbook
+
+                            Vitest.expect(persistedDataMap.DataContexts |> Seq.choose _.Name |> Seq.toArray).toEqual [|
+                                "imported.csv"
+                            |]
+
+                            let! parentWorkbook =
+                                Xlsx.fromXlsxFile (join [| arcPath; zone; identifier; workbookName |])
+
+                            let containsDataMapSheet =
+                                parentWorkbook.GetWorksheets()
+                                |> Seq.exists (fun sheet -> sheet.Name = "isa_datamap")
+
+                            Vitest.expect(containsDataMapSheet).toBe (false)
+
+                            let! reloadedArc = loadArcAsync arcPath
+
+                            let loadedDataMap =
+                                reloadedArc.TryGetDataMap parentInfo |> expectSome
+                                <| "Expected reloaded DataMap."
+
+                            Vitest.expect(loadedDataMap.DataContexts |> Seq.choose _.Name |> Seq.toArray).toEqual [|
+                                "imported.csv"
+                            |]
+                        })
+            )
 )

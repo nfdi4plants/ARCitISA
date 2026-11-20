@@ -30,6 +30,9 @@ module Extensions =
             |> Seq.map (fun (k, v) -> unbox<IReactProperty> (k, v))
             |> Array.ofSeq
 
+        static member inline onToggle(handler: Browser.Types.Event -> unit) : IReactProperty =
+            unbox ("onToggle", handler)
+
         static member inline style(value: obj) : IReactProperty = unbox ("style", value)
 
 module Keys =

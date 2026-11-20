@@ -47,7 +47,7 @@ Vitest.describe (
                 expectOk (Ok(OperationResultDto.PartiallySucceeded(outcome, failure)))
                 expectError (Ok(OperationResultDto.Failed failure))
 
-                match toUnitResult (Error "transport error") with
+                match toUnitResult (Error(exn "transport error")) with
                 | Error message -> Vitest.expect(message).toBe ("transport error")
                 | Ok() -> failwith "Expected transport Error, got Ok()."
         )

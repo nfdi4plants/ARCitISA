@@ -150,7 +150,7 @@ function DataMapTableContainer() {
 }
 
 function FileExplorerContainer() {
-  return <div className='swt:flex swt:flex-col swt:gap-4'>
+  return <div className='swt:flex swt:flex-col swt:gap-4 swt:max-w-md'>
     <h2 className='swt:text-5xl swt:font-bold swt:mb-4'>File Explorer</h2>
     <FileExplorerExample_Example />
   </div>
@@ -251,7 +251,7 @@ function DataAnnotatorContainer() {
 
 const App = () => {
     return (
-        <ArcFileEditorContainer />
+        <FileExplorerContainer />
     );
 };
 

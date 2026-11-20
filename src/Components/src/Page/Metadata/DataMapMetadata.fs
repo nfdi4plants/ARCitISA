@@ -12,7 +12,7 @@ type DataMapMetadata =
     [<ReactComponent(true)>]
     static member DataMapMetadata
         // 👀 If you rename these variables, ensure that the names are forwarded for lazy loading in `src\Components\src\Metadata\ArcFileMetadata.fs` as well!
-        (datamap: DataMap)
+        (datamap: Datamap)
         =
         Swate.Components.Primitive.LayoutComponents.LayoutComponents.Section [
             Swate.Components.Primitive.LayoutComponents.LayoutComponents.BoxedField(

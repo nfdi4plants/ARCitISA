@@ -12,6 +12,7 @@
     <Compile Include="Bindings\Filesystem.fs" />
     <Compile Include="Bindings\Path.fs" />
     <Compile Include="Bindings\NodeBindings.fs" />
+    <Compile Include="Bindings\ChildProcess.fs" />
     <Compile Include="Bindings\Menu.fs" />
     <Compile Include="Bindings\PromiseRace.fs" />
     <Compile Include="Helper\Assets.fs" />
@@ -25,8 +26,11 @@
     <Compile Include="Services\Settings\RecentArcStore.fs" />
     <Compile Include="ArcMerge\Types.fs" />
     <Compile Include="ArcMerge\ArcEntityRefHelper.fs" />
+    <Compile Include="ARCtrlExtensions\WorkflowPayloads.fs" />
     <Compile Include="ARCtrlExtensions\InMemoryChanges.fs" />
+    <Compile Include="ARCtrlExtensions\ContractExecutor.fs" />
     <Compile Include="ARCtrlExtensions\DataMapContract.fs" />
+    <Compile Include="ARCtrlExtensions\ContractPolicy.fs" />
     <Compile Include="ARCtrlExtensions\ArcFileCreateContracts.fs" />
     <Compile Include="ARCtrlExtensions\WriteAsync.fs" />
     <Compile Include="ARCtrlExtensions\LoadAsync.fs" />
@@ -42,10 +46,15 @@
     <Compile Include="VersionControl\ProviderComposition.fs" />
     <Compile Include="VersionControl\VersionControlSettings.fs" />
     <Compile Include="Services\Settings\UserDefaults.fs" />
+    <Compile Include="VersionControl\GitExecutableSetting.fs" />
     <Compile Include="VersionControl\VersionControlRuntime.fs" />
     <Compile Include="VersionControl\Mappings.fs" />
     <Compile Include="VersionControl\WorkspaceSessionHost.fs" />
+    <Compile Include="VersionControl\DependencyState.fs" />
     <Compile Include="VersionControl\TextDiffHandles.fs" />
+    <Compile Include="IndexedFileTree.fs" />
+    <Compile Include="Git\LargeObjectIndex.fs" />
+    <Compile Include="Git\GitStateStamp.fs" />
     <Compile Include="FileTreeCreator.fs" />
     <Compile Include="ArcVault\Types.fs" />
     <Compile Include="ArcVault\ArcVaultHelper.fs" />
@@ -54,6 +63,12 @@
     <Compile Include="ArcVault\WatcherHelpers.fs" />
     <Compile Include="ArcVault\FileImportAuthorization.fs" />
     <Compile Include="ArcVault\FileImportCoordinator.fs" />
+    <Compile Include="ArcVault\ArcDiskState.fs" />
+    <Compile Include="ArcVault\ArcVaultState.fs" />
+    <Compile Include="ArcVault\ArcVaultLargeObjects.fs" />
+    <Compile Include="ArcVault\ArcVaultFileTree.fs" />
+    <Compile Include="ArcVault\ArcVaultSync.fs" />
+    <Compile Include="ArcVault\ArcVaultFileWatcher.fs" />
     <Compile Include="ArcVault\ArcVault.fs" />
     <Compile Include="Provenance\ProvenanceGroupingReader.fs" />
     <Compile Include="IPC\IPCHelper.fs" />
@@ -70,7 +85,10 @@
     <Compile Include="IPC\IUserDefaultsApi.fs" />
     <Compile Include="IPC\IAppVersionApi.fs" />
     <Compile Include="Workers\TextDiffWorkerEntry.fs" />
-    <Compile Include="AppMenu.fs" />
+    <Compile Include="AppMenu\HelpMenu.fs" />
+    <Compile Include="AppMenu\ExternalTools.fs" />
+    <Compile Include="AppMenu\ArcMenu.fs" />
+    <Compile Include="AppMenu\AppMenu.fs" />
     <Compile Include="main.fs" />
     <None Include="ChokidarTest.fsx" />
   </ItemGroup>

@@ -37,8 +37,52 @@ type GitSidebarProgress = {
     Method: string option
     Stage: string option
     ProgressPercent: float option
-    Output: string option
 }
+
+/// One step of the running operation, for example "Fetching online changes". The steps before the current one
+/// are done. Detail is the latest message of the current step, such as "Receiving objects (12/80)".
+type GitSidebarStep = {
+    Label: string
+    Detail: string option
+    Percent: float option
+    IsCurrent: bool
+}
+
+/// One line of the raw output of a command. Kind is "command", "stdout", "stderr" or "notice".
+type GitSidebarLogLine = { Kind: string; Text: string }
+
+/// The raw output of an operation. Omitted counts the oldest lines that the log no longer holds.
+type GitSidebarLog = {
+    Lines: GitSidebarLogLine[]
+    Omitted: int
+}
+
+module GitSidebarLog =
+    /// The sentence that tells how many of the oldest lines the log no longer holds.
+    let omittedText (omitted: int) : string =
+        if omitted = 1 then
+            "1 earlier line was left out"
+        else
+            $"{omitted} earlier lines were left out"
+
+    /// The text of one line. A command line starts with "$ ".
+    let lineText (line: GitSidebarLogLine) : string =
+        if line.Kind = "command" then
+            "$ " + line.Text
+        else
+            line.Text
+
+    /// The plain text of a log: the omitted sentence when lines were dropped, then one text line per log line.
+    let toText (log: GitSidebarLog) : string =
+        [
+            if log.Omitted > 0 then
+                omittedText log.Omitted
+            yield! log.Lines |> Array.map lineText
+        ]
+        |> String.concat "\n"
+
+/// The log of the last operation that ended. Title names the operation and where and when it ran.
+type GitSidebarLastLog = { Title: string; Log: GitSidebarLog }
 
 [<RequireQualifiedAccess>]
 type GitSidebarRunStatus =
@@ -47,6 +91,16 @@ type GitSidebarRunStatus =
     | Progress of GitSidebarProgress
     /// Busy with no banner, for a refresh the user did not start.
     | BusyWithoutNotice
+
+/// A task that runs next to the sidebar's own operation, for example a download that the file tree started.
+type GitSidebarBackgroundActivity = {
+    Label: string
+    /// Extra text after the label, such as a count.
+    Detail: string option
+    ProgressPercent: float option
+    /// The raw output of the task. The notice offers "Show logs" when it holds a line.
+    Log: GitSidebarLog option
+}
 
 type GitSidebarCreateBranchRequest = {
     BranchName: string

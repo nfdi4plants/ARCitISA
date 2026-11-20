@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <PackageId>Fable.SimpleJson</PackageId>
+    <AssemblyName>Fable.SimpleJson</AssemblyName>
+    <Version>3.24.0</Version>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="TypeCheck.fs" />
+    <Compile Include="TypeInfo.fs" />
+    <Compile Include="TypeInfo.Converter.fs" />
+    <Compile Include="Json.fs" />
+    <Compile Include="Parser.fs" />
+    <Compile Include="SimpleJson.fs" />
+    <Compile Include="Json.Converter.fs" />
+    <Content Include="*.js" />
+    <PackageReference Include="Fable.Core" />
+    <PackageReference Include="Fable.Parsimmon" />
+  </ItemGroup>
+</Project>

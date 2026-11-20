@@ -290,7 +290,11 @@ let private toPoint (point: Elk.ElkPoint) : Point = { X = point.x; Y = point.y }
 /// A portrait box gets the compact layout instead: top to bottom and left aligned, with one chip per
 /// edge. Only the border box of the box decides, so no layout (and no scrollbar it brings) can make the
 /// choice flip back and forth.
-let layoutGraph
+///
+/// run executes the ELK graph. GraphCanvas passes a runner that works in a Web Worker, and layoutGraph runs ELK
+/// on the calling thread.
+let layoutGraphWith
+    (run: Elk.ElkNode -> JS.Promise<Elk.ElkLayoutResult>)
     (nodes: CanvasNode[])
     (edges: CanvasEdge[])
     (expanded: string[])
@@ -385,7 +389,7 @@ let layoutGraph
                     blocks)
 
         promise {
-            let! laid = Elk.layout graph
+            let! laid = run graph
 
             let positions =
                 defaultArg laid.children [||]
@@ -520,6 +524,16 @@ let layoutGraph
             |> Set.ofArray
 
         place false (fun id -> Set.contains id openIds)
+
+/// layoutGraphWith, with ELK running on the calling thread.
+let layoutGraph
+    (nodes: CanvasNode[])
+    (edges: CanvasEdge[])
+    (expanded: string[])
+    (measure: MeasureText)
+    (opts: LayoutOptions)
+    : JS.Promise<GraphLayout> =
+    layoutGraphWith Elk.layout nodes edges expanded measure opts
 
 /// True when the new measurement is within the noise of the old one, so the old value stays.
 let sameBox (current: MeasuredBox) (next: MeasuredBox) : bool =

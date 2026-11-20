@@ -1,9 +1,11 @@
 module ElectronCore.VersionControlSessionHostTests
 
+open ARCtrl
 open Fable.Core
 open Fable.Core.JsInterop
 open Fable.Electron
 open Main
+open Main.ArcVaultState
 open Main.Bindings.Path
 open Main.VersionControl
 open Swate.Components.Composite.Authentication.Types
@@ -24,6 +26,20 @@ let private mockResolvedValue (mock: obj) (value: obj) : unit = jsNative
 let private mockCallCount (mock: obj) : int = jsNative
 
 let private git (cwd: string) (args: string list) = execFile "git" (List.toArray args) cwd
+
+let private largeObjectTestOptions = TestOptions(timeout = 40000)
+
+let private waitUntilIndexReady (vault: ArcVault) = promise {
+    let mutable waited = 0
+
+    while vault.GetLargeObjectIndexSnapshot().state <> LargeObjectIndexStatus.Ready
+          && waited < 30000 do
+        do! Promise.sleep 50
+        waited <- waited + 50
+
+    if vault.GetLargeObjectIndexSnapshot().state <> LargeObjectIndexStatus.Ready then
+        failwith "The large object index did not become ready."
+}
 
 let private expectFailure (operation: string) (result: OperationResult<'T>) =
     match result with
@@ -332,6 +348,66 @@ Vitest.describe (
                     tracked.Complete()
                     Vitest.expect(fixture.Host.IsIdle fixture.RepoRoot).toBe true
                     Vitest.expect(fixture.Host.Cancel("op-1", None)).toBe false
+                })
+        )
+
+        Vitest.test (
+            "an operation started with an output callback gets an output channel that reaches the callback",
+            fun () ->
+                withFixture (fun fixture -> promise {
+                    let mutable received: OperationOutput[] list = []
+
+                    let tracked =
+                        match
+                            fixture.Host.TryBeginOperation(
+                                "op-with-output",
+                                Some fixture.RepoRoot,
+                                Some 1,
+                                false,
+                                ignore,
+                                Some(fun entries -> received <- entries :: received)
+                            )
+                        with
+                        | Ok tracked -> tracked
+                        | Error failure -> failwith failure.Message
+
+                    let batch = [|
+                        {
+                            CommandId = "git-1"
+                            Kind = OperationOutputKind.StdOut
+                            Text = "Uploading LFS objects"
+                            IsPartial = false
+                        }
+                    |]
+
+                    Vitest.expect(tracked.Context.OperationId).toBe "op-with-output"
+                    Vitest.expect(tracked.Context.ReportOutput.IsSome).toBe true
+                    tracked.Context.ReportOutput |> Option.iter (fun report -> report batch)
+                    Vitest.expect(received).toEqual [ batch ]
+                    tracked.Complete()
+                })
+        )
+
+        Vitest.test (
+            "an operation started without an output callback has no output channel",
+            fun () ->
+                withFixture (fun fixture -> promise {
+                    let tracked =
+                        match
+                            fixture.Host.TryBeginOperation(
+                                "op-without-output",
+                                Some fixture.RepoRoot,
+                                None,
+                                false,
+                                ignore,
+                                None
+                            )
+                        with
+                        | Ok tracked -> tracked
+                        | Error failure -> failwith failure.Message
+
+                    Vitest.expect(tracked.Context.ReportOutput.IsNone).toBe true
+                    tracked.Complete()
                 })
         )
 
@@ -683,6 +759,7 @@ let private fakeProviderRuntimeWithStoragePolicy
                     Version = Some "1.0"
                     Compatible = true
                     Remediation = None
+                    ProbeExecutablePath = None
                 }
             |])
 
@@ -751,6 +828,12 @@ let private withCreateArcSetup
         let cleanup () = promise {
             Vitest.vi.restoreAllMocks ()
             electronMock?reset () |> ignore
+
+            // Creating the ARC starts a file watcher. Leaving it running while the folder is deleted makes
+            // chokidar reject with EPERM on Windows after the test has finished.
+            for vault in Seq.toArray ARC_VAULTS.Vaults.Values do
+                do! vault.StopFileWatcher()
+
             ARC_VAULTS.Vaults.Clear()
 
             do! host.CloseAll() |> Async.StartAsPromise
@@ -762,6 +845,44 @@ let private withCreateArcSetup
             try
                 let api = Main.IPC.ArcVaultsApi.api (ipcEvent windowId)
                 do! testBody expectedArcPath api
+            with error ->
+                do! cleanup ()
+                return raise error
+
+            do! cleanup ()
+        finally
+            WorkspaceSessionHost.resetForTests ()
+    }
+
+/// Runs the body against the version control api of a window whose session offers the given
+/// object materialization service.
+let private withObjectApi
+    (windowId: int)
+    (service: ObjectMaterializationService option)
+    (body: IVersionControlApi -> JS.Promise<unit>)
+    =
+    promise {
+        let! root = createTempDirectoryAsync "swate-vc-object-api-"
+        let workspace = join [| root; "workspace" |]
+        Main.Bindings.Filesystem.mkdirSync workspace (Main.Bindings.Filesystem.MkdirOptions(recursive = true))
+
+        let runtime =
+            fakeProviderRuntimeWithStoragePolicy workspace (join [| root; "unused" |]) None service
+
+        let host = WorkspaceSessionHost.WorkspaceSessionHost(runtime)
+        WorkspaceSessionHost.initialize host
+        registerVault windowId workspace |> ignore
+
+        let cleanup () = promise {
+            electronMock?reset () |> ignore
+            ARC_VAULTS.Vaults.Clear()
+            do! host.CloseAll() |> Async.StartAsPromise
+            do! removeDirectoryAsync root
+        }
+
+        try
+            try
+                do! body (Main.IPC.IVersionControlApi.api (ipcEvent windowId))
             with error ->
                 do! cleanup ()
                 return raise error
@@ -833,29 +954,91 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "materialization defers successful tree refreshes and refreshes after failure",
+            "a NoOp result refreshes the tree only when AlwaysRefreshTree is true",
             fun () -> promise {
-                let! root = createTempDirectoryAsync "swate-vc-materialize-refresh-"
+                let! root = createTempDirectoryAsync "swate-vc-noop-refresh-"
                 let workspace = join [| root; "workspace" |]
                 Main.Bindings.Filesystem.mkdirSync workspace (Main.Bindings.Filesystem.MkdirOptions(recursive = true))
                 writeText (join [| workspace; "object.txt" |]) "object\n"
 
-                let mutable materializationFails = false
+                let objectMaterialization: ObjectMaterializationService = {
+                    ListObjects = fun _ -> async { return OperationResult.succeeded [||] }
+                    Materialize = fun _ _ -> async { return OperationResult.noOp (Some "already in state") () }
+                    Dematerialize = fun _ _ -> async { return OperationResult.noOp (Some "already in state") () }
+                }
+
+                let runtime =
+                    fakeProviderRuntimeWithStoragePolicy
+                        workspace
+                        (join [| root; "unused" |])
+                        None
+                        (Some objectMaterialization)
+
+                let host = WorkspaceSessionHost.WorkspaceSessionHost(runtime)
+                WorkspaceSessionHost.initialize host
+                let vault = registerVault 67 workspace
+
+                let cleanup () = promise {
+                    electronMock?reset () |> ignore
+                    ARC_VAULTS.Vaults.Clear()
+                    do! host.CloseAll() |> Async.StartAsPromise
+                    do! removeDirectoryAsync root
+                }
+
+                try
+                    try
+                        let api = Main.IPC.IVersionControlApi.api (ipcEvent 67)
+
+                        for materialize in [ true; false ] do
+                            let call (alwaysRefreshTree: bool) =
+                                let dto = {
+                                    OperationId = "noop-refresh"
+                                    Paths = [| "object.txt" |]
+                                    AlwaysRefreshTree = alwaysRefreshTree
+                                }
+
+                                if materialize then
+                                    api.materializeObjects dto
+                                else
+                                    api.dematerializeObjects dto
+
+                            vault.FileTreeWriter.Reset vault.isCaseInsensitive
+                            let! unchanged = call false
+                            expectDtoValue "no-op without a refresh request" unchanged |> ignore
+                            Vitest.expect(vault.FileTreeWriter.Tree.Count).toBe 0
+
+                            let! refreshed = call true
+                            expectDtoValue "no-op with a refresh request" refreshed |> ignore
+                            Vitest.expect(vault.FileTreeWriter.Tree.Count).toBeGreaterThan 0
+                    with error ->
+                        do! cleanup ()
+                        return raise error
+
+                    do! cleanup ()
+                finally
+                    WorkspaceSessionHost.resetForTests ()
+            }
+        )
+
+        Vitest.test (
+            "materialization hands every path to the session and returns its result",
+            fun () -> promise {
+                let! root = createTempDirectoryAsync "swate-vc-materialize-paths-"
+                let workspace = join [| root; "workspace" |]
+                Main.Bindings.Filesystem.mkdirSync workspace (Main.Bindings.Filesystem.MkdirOptions(recursive = true))
+
+                let received = ResizeArray<string>()
+
+                let batchFailure =
+                    OperationFailure.create ProviderError "fake_batch_failed" "The fake batch failed."
+                    |> OperationFailure.withDetails [| "b.bin: no space" |]
 
                 let objectMaterialization: ObjectMaterializationService = {
                     ListObjects = fun _ -> async { return OperationResult.succeeded [||] }
                     Materialize =
-                        fun _ _ -> async {
-                            if materializationFails then
-                                return
-                                    Failed(
-                                        OperationFailure.create
-                                            ProviderError
-                                            "fake_materialization_failed"
-                                            "The fake materialization failed."
-                                    )
-                            else
-                                return OperationResult.succeeded ()
+                        fun paths _ -> async {
+                            received.AddRange(paths |> Array.map RepositoryPath.value)
+                            return Failed batchFailure
                         }
                     Dematerialize = fun _ _ -> async { return OperationResult.succeeded () }
                 }
@@ -869,7 +1052,7 @@ Vitest.describe (
 
                 let host = WorkspaceSessionHost.WorkspaceSessionHost(runtime)
                 WorkspaceSessionHost.initialize host
-                let vault = registerVault 65 workspace
+                registerVault 66 workspace |> ignore
 
                 let cleanup () = promise {
                     electronMock?reset () |> ignore
@@ -880,30 +1063,19 @@ Vitest.describe (
 
                 try
                     try
-                        let api = Main.IPC.IVersionControlApi.api (ipcEvent 65)
-                        vault.fileTree.Clear()
+                        let api = Main.IPC.IVersionControlApi.api (ipcEvent 66)
 
-                        let! succeeded =
-                            api.materializeObject {
-                                OperationId = "materialize-success-no-refresh"
-                                Path = "object.txt"
-                                RefreshTree = Some false
+                        let! result =
+                            api.materializeObjects {
+                                OperationId = "materialize-objects"
+                                Paths = [| "a.bin"; "data/b.bin" |]
+                                AlwaysRefreshTree = false
                             }
 
-                        expectDtoValue "successful materialization" succeeded |> ignore
-                        Vitest.expect(vault.fileTree.Count).toBe 0
-
-                        materializationFails <- true
-
-                        let! failed =
-                            api.materializeObject {
-                                OperationId = "materialize-failure-refresh"
-                                Path = "object.txt"
-                                RefreshTree = Some false
-                            }
-
-                        expectDtoFailure "failed materialization" failed |> ignore
-                        Vitest.expect(vault.fileTree.Count).toBeGreaterThan 0
+                        let failure = expectDtoFailure "materialization" result
+                        Vitest.expect(received.ToArray()).toEqual [| "a.bin"; "data/b.bin" |]
+                        Vitest.expect(failure.Code).toBe "fake_batch_failed"
+                        Vitest.expect(failure.Details).toEqual [| "b.bin: no space" |]
                     with error ->
                         do! cleanup ()
                         return raise error
@@ -912,6 +1084,119 @@ Vitest.describe (
                 finally
                     WorkspaceSessionHost.resetForTests ()
             }
+        )
+
+        Vitest.test (
+            "dematerialization hands every path to the session and returns its result",
+            fun () ->
+                let received = ResizeArray<string>()
+
+                let batchFailure =
+                    OperationFailure.create ProviderError "fake_dematerialize_failed" "The fake free failed."
+                    |> OperationFailure.withDetails [| "a.bin: busy" |]
+
+                let service: ObjectMaterializationService = {
+                    ListObjects = fun _ -> async { return OperationResult.succeeded [||] }
+                    Materialize = fun _ _ -> async { return OperationResult.succeeded () }
+                    Dematerialize =
+                        fun paths _ -> async {
+                            received.AddRange(paths |> Array.map RepositoryPath.value)
+                            return Failed batchFailure
+                        }
+                }
+
+                withObjectApi
+                    94
+                    (Some service)
+                    (fun api -> promise {
+                        let! result =
+                            api.dematerializeObjects {
+                                OperationId = "dematerialize-objects"
+                                Paths = [| "a.bin"; "data/b.bin" |]
+                                AlwaysRefreshTree = false
+                            }
+
+                        let failure = expectDtoFailure "dematerialization" result
+                        Vitest.expect(received.ToArray()).toEqual [| "a.bin"; "data/b.bin" |]
+                        Vitest.expect(failure.Code).toBe "fake_dematerialize_failed"
+                        Vitest.expect(failure.Details).toEqual [| "a.bin: busy" |]
+                    })
+        )
+
+        Vitest.test (
+            "a call with an invalid path is refused before the provider is called",
+            fun () ->
+                let mutable calls = 0
+
+                let service: ObjectMaterializationService = {
+                    ListObjects = fun _ -> async { return OperationResult.succeeded [||] }
+                    Materialize =
+                        fun _ _ -> async {
+                            calls <- calls + 1
+                            return OperationResult.succeeded ()
+                        }
+                    Dematerialize =
+                        fun _ _ -> async {
+                            calls <- calls + 1
+                            return OperationResult.succeeded ()
+                        }
+                }
+
+                withObjectApi
+                    95
+                    (Some service)
+                    (fun api -> promise {
+                        let paths = [| "ok.bin"; "../first.bin"; "../second.bin" |]
+
+                        let! materialize =
+                            api.materializeObjects {
+                                OperationId = "materialize-invalid-path"
+                                Paths = paths
+                                AlwaysRefreshTree = false
+                            }
+
+                        let! dematerialize =
+                            api.dematerializeObjects {
+                                OperationId = "dematerialize-invalid-path"
+                                Paths = paths
+                                AlwaysRefreshTree = false
+                            }
+
+                        for result in [ materialize; dematerialize ] do
+                            let failure = expectDtoFailure "call with an invalid path" result
+                            Vitest.expect(failure.Code).toBe VersionControlCodes.InvalidPath
+                            Vitest.expect(failure.AffectedPaths).toEqual [| "../first.bin" |]
+
+                        Vitest.expect(calls).toBe 0
+                    })
+        )
+
+        Vitest.test (
+            "a session without the object materialization service answers service_unavailable",
+            fun () ->
+                withObjectApi
+                    96
+                    None
+                    (fun api -> promise {
+                        let! materialize =
+                            api.materializeObjects {
+                                OperationId = "materialize-without-service"
+                                Paths = [| "a.bin" |]
+                                AlwaysRefreshTree = false
+                            }
+
+                        let! dematerialize =
+                            api.dematerializeObjects {
+                                OperationId = "dematerialize-without-service"
+                                Paths = [| "a.bin" |]
+                                AlwaysRefreshTree = false
+                            }
+
+                        for result in [ materialize; dematerialize ] do
+                            let failure = expectDtoFailure "call without the service" result
+                            Vitest.expect(failure.Category).toEqual FailureCategoryDto.Unsupported
+                            Vitest.expect(failure.Code).toBe VersionControlCodes.ServiceUnavailable
+                    })
         )
 
         Vitest.test (
@@ -1377,6 +1662,7 @@ Vitest.describe (
 
         Vitest.test (
             "a save stores a small dataset file as a large object",
+            largeObjectTestOptions,
             fun () ->
                 withFixture (fun fixture -> promise {
                     let vault = registerVault 62 fixture.RepoRoot
@@ -1388,6 +1674,10 @@ Vitest.describe (
                         (Main.Bindings.Filesystem.MkdirOptions(recursive = true))
 
                     writeText (join [| fixture.RepoRoot; datasetPath |]) (String.replicate 100 "r")
+
+                    // Payload folders load on demand, and the refresh after the save revalidates the loaded ones.
+                    let! datasetLoaded = vault.LoadDirectory "assays/a1/dataset"
+                    Vitest.expect(datasetLoaded.IsOk).toBe true
 
                     let! status = api.getStatus (request "dataset-status")
                     let version = (expectDtoValue "dataset status" status).Value.WorkspaceVersion
@@ -1408,17 +1698,139 @@ Vitest.describe (
                     let attributes = git fixture.RepoRoot [ "cat-file"; "-p"; "HEAD:.gitattributes" ]
                     let datasetAbsolutePath = join [| fixture.RepoRoot; datasetPath |]
 
-                    let datasetEntry =
-                        vault.fileTree.Values
-                        |> Seq.tryFind (fun entry ->
-                            Swate.Components.Shared.PathHelpers.pathsEqual entry.path datasetAbsolutePath
-                        )
-                        |> Option.defaultWith (fun () -> failwith "The refreshed file tree omitted the dataset file.")
+                    // The refreshed tree must still list the file.
+                    vault.FileTreeWriter.Tree.Entries
+                    |> Seq.tryFind (fun entry ->
+                        Swate.Components.Shared.PathHelpers.pathsEqual entry.path datasetAbsolutePath
+                    )
+                    |> Option.defaultWith (fun () -> failwith "The refreshed file tree omitted the dataset file.")
+                    |> ignore
 
                     Vitest.expect(datasetContent.StartsWith("version https://git-lfs.github.com/spec/v1")).toBe true
 
                     Vitest.expect(attributes.Contains(datasetPath)).toBe true
-                    Vitest.expect(datasetEntry.largeObject.IsSome).toBe true
+
+                    // The index lists the saved file as a large object whose content is on disk.
+                    vault.StartLargeObjectIndex()
+                    do! waitUntilIndexReady vault
+
+                    let listed =
+                        vault.GetLargeObjectIndexSnapshot().entries
+                        |> Array.tryFind (fun dto -> dto.Path = datasetPath)
+                        |> Option.defaultWith (fun () -> failwith "The large object index omitted the dataset file.")
+
+                    Vitest.expect(listed.IsMaterialized).toBe true
+                    Vitest.expect(listed.ObjectId.IsSome).toBe true
+                    vault.DisposeLargeObjectIndex()
+                })
+        )
+
+        Vitest.test (
+            "a save invalidates the large object index of the vault",
+            largeObjectTestOptions,
+            fun () ->
+                withFixture (fun fixture -> promise {
+                    let vault = registerVault 64 fixture.RepoRoot
+                    let api = Main.IPC.IVersionControlApi.api (ipcEvent 64)
+                    let listings = ref 0
+
+                    vault.LargeObjectListing <-
+                        fun _ _ -> promise {
+                            listings.Value <- listings.Value + 1
+                            return Ok [||]
+                        }
+
+                    vault.LargeObjectInvalidationDebounceMs <- 20
+                    vault.StartLargeObjectIndex()
+                    do! waitUntilIndexReady vault
+                    Vitest.expect(listings.Value).toBe 1
+
+                    writeText (join [| fixture.RepoRoot; "note.txt" |]) "note\n"
+                    let! status = api.getStatus (request "invalidate-status")
+                    let version = (expectDtoValue "invalidate status" status).Value.WorkspaceVersion
+
+                    let! created =
+                        api.createRevision {
+                            OperationId = "invalidate-save"
+                            Message = "Save note"
+                            Paths = [| "note.txt" |]
+                            ExpectedWorkspaceVersion = version
+                        }
+
+                    expectDtoValue "save note" created |> ignore
+
+                    let mutable waited = 0
+
+                    while listings.Value < 2 && waited < 5000 do
+                        do! Promise.sleep 20
+                        waited <- waited + 20
+
+                    Vitest.expect(listings.Value).toBe 2
+                    vault.DisposeLargeObjectIndex()
+                })
+        )
+
+        Vitest.test (
+            "the large object index lists pointer and materialized files from a real repository",
+            largeObjectTestOptions,
+            fun () ->
+                withFixture (fun fixture -> promise {
+                    let pointerPath = join [| fixture.RepoRoot; "pointer.psd" |]
+                    let downloadedPath = join [| fixture.RepoRoot; "downloaded.psd" |]
+
+                    git fixture.RepoRoot [ "lfs"; "track"; "*.psd" ] |> ignore
+                    writeText pointerPath "Pointer-like content.\n"
+                    writeText downloadedPath "Hydrated-like content.\n"
+
+                    git fixture.RepoRoot [ "add"; ".gitattributes"; "pointer.psd"; "downloaded.psd" ]
+                    |> ignore
+
+                    writeText pointerPath (git fixture.RepoRoot [ "lfs"; "pointer"; "--file"; pointerPath ])
+
+                    let index =
+                        Main.LargeObjectIndex.LargeObjectIndex(
+                            (fun context -> Main.LargeObjectIndex.listObjectsFromSession fixture.RepoRoot context),
+                            (fun () -> false),
+                            ignore,
+                            30000
+                        )
+
+                    index.Invalidate()
+
+                    let mutable waited = 0
+
+                    while (index.Snapshot false).state <> LargeObjectIndexStatus.Ready && waited < 30000 do
+                        do! Promise.sleep 50
+                        waited <- waited + 50
+
+                    let entries = (index.Snapshot false).entries
+
+                    let find path =
+                        entries
+                        |> Array.tryFind (fun dto -> dto.Path = path)
+                        |> Option.defaultWith (fun () -> failwith $"The index omitted {path}.")
+
+                    let pointer = find "pointer.psd"
+                    let downloaded = find "downloaded.psd"
+
+                    Vitest.expect(pointer.IsMaterialized).toBe false
+                    Vitest.expect(pointer.IsLocallyAvailable).toBe true
+                    Vitest.expect(pointer.SizeBytes |> Option.get).toBeGreaterThan 0
+                    Vitest.expect(downloaded.IsMaterialized).toBe true
+                    Vitest.expect(downloaded.IsLocallyAvailable).toBe true
+
+                    for dto in [ pointer; downloaded ] do
+                        Vitest
+                            .expect(
+                                System.Text.RegularExpressions.Regex.IsMatch(
+                                    dto.ObjectId |> Option.get,
+                                    "^[0-9a-fA-F]{64}$"
+                                )
+                            )
+                            .toBe
+                            true
+
+                    index.Dispose()
                 })
         )
 
@@ -2020,6 +2432,45 @@ Vitest.describe (
         )
 
         Vitest.test (
+            "a Git operation that changes a workbook reaches memory",
+            fun () ->
+                withFixture (fun fixture -> promise {
+                    let workbookPath = "assays/A1/isa.assay.xlsx"
+                    let committedArc = ARC("GitArc")
+                    committedArc.AddAssay(ArcAssay("A1", title = "Committed title"))
+                    do! committedArc.WriteAsync fixture.RepoRoot
+                    git fixture.RepoRoot [ "add"; "-A" ] |> ignore
+                    git fixture.RepoRoot [ "commit"; "-m"; "Add assay" ] |> ignore
+
+                    // The workbook on disk and in memory both hold a title that Git does not.
+                    do! Promise.sleep 20
+                    let! editedArc = loadArcAsync fixture.RepoRoot
+                    editedArc.GetAssay("A1").Title <- Some "Edited title"
+                    do! editedArc.UpdateAsync fixture.RepoRoot
+
+                    let! loadedArc = loadArcAsync fixture.RepoRoot
+                    let vault = registerVault 72 fixture.RepoRoot
+                    vault.SetArc loadedArc
+                    do! seedKnownDisk vault
+                    Vitest.expect(vault.arc.Value.GetAssay("A1").Title).toEqual (Some "Edited title")
+
+                    let api = Main.IPC.IVersionControlApi.api (ipcEvent 72)
+                    let! status = api.getStatus (request "restore-status")
+                    let version = (expectDtoValue "restore status" status).Value.WorkspaceVersion
+
+                    let! restored =
+                        api.restorePaths {
+                            OperationId = "restore-workbook"
+                            Paths = [| workbookPath |]
+                            ExpectedWorkspaceVersion = version
+                        }
+
+                    expectDtoValue "restore the workbook" restored |> ignore
+                    Vitest.expect(vault.arc.Value.GetAssay("A1").Title).toEqual (Some "Committed title")
+                })
+        )
+
+        Vitest.test (
             "a mutation marks the vault busy while it runs and releases it on failure",
             fun () ->
                 withFixture (fun fixture -> promise {
@@ -2517,46 +2968,50 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "a close timeout approves the close and restores the timeout setting",
-            fun () ->
-                withFixture (fun fixture -> promise {
-                    let vaults, vault, invokeClose, getCloseCount = captureCloseWindow 73
+            "a close timeout waits 30 seconds before approving the close",
+            fun () -> promise {
+                let runtime =
+                    createRuntime "" VersionControlService.LakeFs.LakeFsCredentials.unconfigured (memoryBindings ())
 
-                    let tracked =
-                        fixture.Host.BeginOperation(
-                            "close-mutation-timeout",
-                            Some fixture.RepoRoot,
-                            Some 73,
-                            true,
-                            ignore
-                        )
+                let host = WorkspaceSessionHost.WorkspaceSessionHost(runtime)
+                WorkspaceSessionHost.initialize host
 
-                    let dialogSpy = Vitest.vi.spyOn (electron?dialog, "showMessageBox")
-                    mockResolvedValue dialogSpy (createObj [ "response" ==> 0.0 ])
-                    let mutable preventedCloseCount = 0
+                let vaults, vault, invokeClose, getCloseCount = captureCloseWindow 73
 
-                    let closeEvent =
-                        createObj [
-                            "preventDefault" ==> (fun () -> preventedCloseCount <- preventedCloseCount + 1)
-                        ]
+                let tracked =
+                    host.BeginOperation("close-mutation-timeout", None, Some 73, true, ignore)
 
-                    closeWaitTimeoutMilliseconds <- 5
+                let dialogSpy = Vitest.vi.spyOn (electron?dialog, "showMessageBox")
+                mockResolvedValue dialogSpy (createObj [ "response" ==> 0.0 ])
+                let mutable preventedCloseCount = 0
 
-                    try
-                        invokeClose closeEvent
-                        do! Promise.sleep 20
+                let closeEvent =
+                    createObj [
+                        "preventDefault" ==> (fun () -> preventedCloseCount <- preventedCloseCount + 1)
+                    ]
 
-                        Vitest.expect(mockCallCount dialogSpy).toBe 1
-                        Vitest.expect(preventedCloseCount).toBe 1
-                        Vitest.expect(vault.isWaitingForOperationsOnClose).toBe false
-                        Vitest.expect(vault.isOperationCloseApproved).toBe false
-                        Vitest.expect(getCloseCount ()).toBe 1
-                    finally
-                        closeWaitTimeoutMilliseconds <- 30000
-                        tracked.Complete()
-                        vaults.Vaults.Clear()
-                        Vitest.vi.restoreAllMocks ()
-                })
+                Vitest.vi.useFakeTimers () |> ignore
+
+                try
+                    invokeClose closeEvent
+                    do! Vitest.vi.advanceTimersByTimeAsync 29999
+
+                    Vitest.expect(vault.isWaitingForOperationsOnClose).toBe true
+                    Vitest.expect(getCloseCount ()).toBe 0
+
+                    do! Vitest.vi.advanceTimersByTimeAsync 1
+
+                    Vitest.expect(mockCallCount dialogSpy).toBe 1
+                    Vitest.expect(preventedCloseCount).toBe 1
+                    Vitest.expect(vault.isWaitingForOperationsOnClose).toBe false
+                    Vitest.expect(vault.isOperationCloseApproved).toBe false
+                    Vitest.expect(getCloseCount ()).toBe 1
+                finally
+                    Vitest.vi.useRealTimers () |> ignore
+                    tracked.Complete()
+                    vaults.Vaults.Clear()
+                    Vitest.vi.restoreAllMocks ()
+            }
         )
 
         Vitest.test (

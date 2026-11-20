@@ -1,0 +1,161 @@
+/// A bounded buffer for the raw output of one operation. The Git workflow keeps one for the sidebar and the
+/// file tree keeps one per running LFS action. The buffer holds plain data, so React state can store it.
+module Renderer.Context.OperationLog
+
+open System.Collections.Generic
+open Swate.Electron.Shared.VersionControlTypes
+
+type OperationLogLine = {
+    CommandId: string
+    Kind: string
+    Text: string
+    IsPartial: bool
+}
+
+type OperationLog = {
+    Lines: OperationLogLine[]
+    /// How many of the oldest lines the caps dropped so far.
+    Omitted: int
+}
+
+/// The name of an operation and the ARC it works on, decided when the operation starts.
+type OperationLogName = {
+    Label: string
+    ArcName: string option
+}
+
+/// The log of an operation that ended, kept so the user can read it after the operation is gone.
+type FinishedOperationLog = {
+    /// The name of the operation.
+    Label: string
+    /// The folder name of the ARC that was open, None without an ARC.
+    ArcName: string option
+    /// Date.now () when the operation ended.
+    FinishedAt: float
+    Log: OperationLog
+}
+
+[<Literal>]
+let MaxLines = 2000
+
+[<Literal>]
+let MaxCharacters = 1000000
+
+let empty: OperationLog = { Lines = [||]; Omitted = 0 }
+
+/// The stream of a line is its command and its kind. A command writes stdout and stderr at the same time, so
+/// the last line of a stream is not always the last line of the log.
+let private streamKey (commandId: string) (kind: string) = commandId + "\u0000" + kind
+
+/// Adds a batch of entries at the end. An entry replaces the last line of its stream when that line is partial,
+/// because the library sends a partial line again while the command rewrites it. When the log then holds more
+/// than MaxLines lines or MaxCharacters characters, the oldest lines go and Omitted counts them.
+///
+/// One batch costs one pass over the kept lines, at most MaxLines. The pass finds the last line of each stream
+/// and sums the characters. Every entry after that is constant work.
+let append (entries: VersionControlOutputEntryDto[]) (log: OperationLog) : OperationLog =
+    if entries.Length = 0 then
+        log
+    else
+        let lines = ResizeArray<OperationLogLine>(log.Lines)
+        let lastOfStream = Dictionary<string, int>()
+        let mutable characters = 0
+
+        for index in 0 .. lines.Count - 1 do
+            lastOfStream.[streamKey lines.[index].CommandId lines.[index].Kind] <- index
+            characters <- characters + lines.[index].Text.Length
+
+        for entry in entries do
+            let line: OperationLogLine = {
+                CommandId = entry.CommandId
+                Kind = entry.Kind
+                Text = entry.Text
+                IsPartial = entry.IsPartial
+            }
+
+            let key = streamKey line.CommandId line.Kind
+
+            match lastOfStream.TryGetValue key with
+            | true, index when lines.[index].IsPartial ->
+                characters <- characters - lines.[index].Text.Length + line.Text.Length
+                lines.[index] <- line
+            | _ ->
+                lines.Add line
+                lastOfStream.[key] <- lines.Count - 1
+                characters <- characters + line.Text.Length
+
+        let mutable dropped = max 0 (lines.Count - MaxLines)
+
+        for index in 0 .. dropped - 1 do
+            characters <- characters - lines.[index].Text.Length
+
+        while characters > MaxCharacters && dropped < lines.Count do
+            characters <- characters - lines.[dropped].Text.Length
+            dropped <- dropped + 1
+
+        if dropped > 0 then
+            lines.RemoveRange(0, dropped)
+
+        {
+            Lines = lines.ToArray()
+            Omitted = log.Omitted + dropped
+        }
+
+/// The log for the sidebar. A log without lines is None, so the notice offers no "Show logs" button for it.
+let toSidebarLog (log: OperationLog) : Swate.Components.Page.GitSidebarTypes.GitSidebarLog option =
+    if log.Lines.Length = 0 then
+        None
+    else
+        let lines =
+            log.Lines
+            |> Array.map (fun line ->
+                let mapped: Swate.Components.Page.GitSidebarTypes.GitSidebarLogLine = {
+                    Kind = line.Kind
+                    Text = line.Text
+                }
+
+                mapped
+            )
+
+        let mapped: Swate.Components.Page.GitSidebarTypes.GitSidebarLog = { Lines = lines; Omitted = log.Omitted }
+
+        Some mapped
+
+/// The log as plain text, the same text the sidebar copies. None for a log without lines.
+let tryText (log: OperationLog) : string option =
+    toSidebarLog log
+    |> Option.map Swate.Components.Page.GitSidebarTypes.GitSidebarLog.toText
+
+/// The log as the text of an error's technical details. A heading line in front lets the reader tell the log from
+/// other details. None for a log without lines.
+let tryDetails (log: OperationLog) : string option =
+    tryText log |> Option.map (fun text -> "Git output\n" + text)
+
+/// The last finished log for the sidebar. The title starts with the operation name and ends with the local time of
+/// the end, with the ARC name between them when there is one. A log without lines is None.
+let toSidebarLastLog (lastLog: FinishedOperationLog) : Swate.Components.Page.GitSidebarTypes.GitSidebarLastLog option =
+    toSidebarLog lastLog.Log
+    |> Option.map (fun log ->
+        let finishedAt =
+            System.DateTimeOffset.FromUnixTimeMilliseconds(int64 lastLog.FinishedAt).LocalDateTime.ToString("HH:mm")
+
+        let title =
+            [ Some lastLog.Label; lastLog.ArcName; Some finishedAt ]
+            |> List.choose id
+            |> String.concat " · "
+
+        let mapped: Swate.Components.Page.GitSidebarTypes.GitSidebarLastLog = { Title = title; Log = log }
+
+        mapped
+    )
+
+/// The log that ended later. With only one of them, that one. On a tie the first wins.
+let newest (first: FinishedOperationLog option) (second: FinishedOperationLog option) : FinishedOperationLog option =
+    match first, second with
+    | Some firstLog, Some secondLog ->
+        if secondLog.FinishedAt > firstLog.FinishedAt then
+            second
+        else
+            first
+    | Some _, None -> first
+    | None, _ -> second

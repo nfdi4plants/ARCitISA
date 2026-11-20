@@ -5,6 +5,10 @@ let showOpenDialogMock: ((...args: unknown[]) => unknown) | undefined;
 let showMessageBoxMock: ((...args: unknown[]) => unknown) | undefined;
 let fromIdMock: ((id: number) => unknown) | undefined;
 let applicationMenu: Menu | undefined;
+let protocolLookups = 0;
+let openExternalMock: ((url: string) => Promise<void>) | undefined;
+let openPathMock: ((path: string) => Promise<string>) | undefined;
+const focusListeners = new Set<(...args: unknown[]) => void>();
 
 // Electron Forge supplies these globals to the main process at build time.
 Object.assign(globalThis, {
@@ -21,6 +25,10 @@ export const __electronMock = {
         showMessageBoxMock = undefined;
         fromIdMock = undefined;
         applicationMenu = undefined;
+        protocolLookups = 0;
+        openExternalMock = undefined;
+        openPathMock = undefined;
+        focusListeners.clear();
     },
     setBrowserWindowFactory: (handler: (options: unknown) => object) => {
         browserWindowFactoryMock = handler;
@@ -37,6 +45,13 @@ export const __electronMock = {
     setBrowserWindowFromId: (handler: (id: number) => unknown) => {
         fromIdMock = handler;
     },
+    protocolLookupCount: () => protocolLookups,
+    setOpenExternal: (handler: (url: string) => Promise<void>) => { openExternalMock = handler; },
+    setOpenPath: (handler: (path: string) => Promise<string>) => { openPathMock = handler; },
+    focusWindow: (window: unknown) => {
+        for (const handler of focusListeners) handler({}, window);
+    },
+    focusListenerCount: () => focusListeners.size,
 };
 
 export const app = {
@@ -50,8 +65,18 @@ export const app = {
         return userDataPath;
     },
     quit: noop,
+    getApplicationInfoForProtocol: (_url: string) => {
+        protocolLookups++;
+        return Promise.reject(new Error('No protocol handler installed'));
+    },
+    getApplicationNameForProtocol: (_url: string) => { protocolLookups++; return ''; },
     whenReady: () => Promise.resolve(),
-    on: noop,
+    on: (event: string, handler: (...args: unknown[]) => void) => {
+        if (event === 'browser-window-focus') focusListeners.add(handler);
+    },
+    off: (event: string, handler: (...args: unknown[]) => void) => {
+        if (event === 'browser-window-focus') focusListeners.delete(handler);
+    },
 };
 
 export const safeStorage = {
@@ -126,4 +151,7 @@ export const dialog = {
 export const ipcMain = { handle: noop, on: noop };
 export const ipcRenderer = { invoke: noop, on: noop, removeListener: noop, send: noop };
 export const screen = { getPrimaryDisplay: () => ({ workAreaSize: { width: 1280, height: 720 } }) };
-export const shell = { openExternal: () => Promise.resolve() };
+export const shell = {
+    openExternal: (url: string) => openExternalMock?.(url) ?? Promise.resolve(),
+    openPath: (path: string) => openPathMock?.(path) ?? Promise.resolve(''),
+};

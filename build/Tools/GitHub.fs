@@ -44,6 +44,7 @@ type UpdateReleaseRequest = {
     body: string option
     draft: bool option
     prerelease: bool option
+    /// "true", "false", "legacy"
     make_latest: string option
 } with
 

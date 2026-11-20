@@ -151,10 +151,19 @@ type ComboBox =
 
         let onBlur =
             fun (e: Browser.Types.FocusEvent) ->
+                // While open, a null relatedTarget is a click on a list item or a switch to another window.
+                // The list stays open for both.
+                let focusLeftList =
+                    not (isNullOrUndefined e.relatedTarget)
+                    && match fluiContext.refs.floating.current with
+                       | Some floating -> not (floating.contains (unbox e.relatedTarget))
+                       | None -> true
+
                 if not isOpen then
                     onBlur |> Option.iter (fun f -> f e)
-                else
-                    ()
+                elif focusLeftList then
+                    close ()
+                    onBlur |> Option.iter (fun f -> f e)
 
         let ItemRenderer =
             React.useMemo (
@@ -345,7 +354,17 @@ type ComboBox =
                                                         (useInteractions.getItemProps (
                                                             {|
                                                                 key = index
-                                                                ref = fun node -> listRef.current.[index] <- node
+                                                                ref =
+                                                                    fun node ->
+                                                                        let nodes = listRef.current
+
+                                                                        while nodes.Count <= index do
+                                                                            nodes.Add
+                                                                                Unchecked.defaultof<
+                                                                                    Browser.Types.HTMLElement
+                                                                                 >
+
+                                                                        nodes.[index] <- node
                                                                 onClick = fun _ -> onSelect index item
                                                                 onMouseDown = fun _ -> onSelect index item
                                                             |}

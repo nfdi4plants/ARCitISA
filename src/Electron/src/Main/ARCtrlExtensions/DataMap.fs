@@ -12,23 +12,27 @@ open Swate.Electron.Shared.FileIOHelper
 module DataMapExtensions =
 
     let loadPersistedDataMapParentAsync (arcPath: string) (parentInfo: DatamapParentInfo) = promise {
-        let parentFilePath =
-            match parentInfo.Parent with
-            | DataMapParent.Assay -> ARCtrl.Helper.Identifier.Assay.fileNameFromIdentifier parentInfo.ParentId
-            | DataMapParent.Study -> ARCtrl.Helper.Identifier.Study.fileNameFromIdentifier parentInfo.ParentId
-            | DataMapParent.Run -> ARCtrl.Helper.Identifier.Run.fileNameFromIdentifier parentInfo.ParentId
-            | DataMapParent.Workflow -> ARCtrl.Helper.Identifier.Workflow.fileNameFromIdentifier parentInfo.ParentId
+        let parentFilePath = DataMapContract.parentWorkbookPath parentInfo
 
         if not (existsSync (join [| arcPath; parentFilePath |])) then
             return Ok None
         else
-            let persistedArc = ARC.fromFilePaths [| parentFilePath |]
+            let dataMapPath = DatamapParentInfo.toPath parentInfo
+
+            let paths = [|
+                parentFilePath
+                if existsSync (join [| arcPath; dataMapPath |]) then
+                    dataMapPath
+            |]
+
+            let persistedArc = ARC.fromFilePaths paths
             let contracts = persistedArc.GetReadContracts()
 
-            match! fullFillContractBatchAsync arcPath contracts with
+            match! ContractExecutor.fulfillReadContractsSwateAsync arcPath contracts with
             | Error errors -> return Error errors
             | Ok fulfilledContracts ->
                 persistedArc.SetISAFromContracts fulfilledContracts
+                applySeparateDatamaps persistedArc fulfilledContracts
                 return Ok(Some persistedArc)
     }
 
@@ -37,29 +41,29 @@ module DataMapExtensions =
         | DataMapParent.Assay ->
             arc.TryGetAssay parentInfo.ParentId
             |> Option.map (fun assay ->
-                assay.DataMap <- None
+                assay.Datamap <- None
                 assay.ToUpdateContract()
             )
         | DataMapParent.Study ->
             arc.TryGetStudy parentInfo.ParentId
             |> Option.map (fun study ->
-                study.DataMap <- None
+                study.Datamap <- None
                 study.ToUpdateContract()
             )
         | DataMapParent.Run ->
             arc.TryGetRun parentInfo.ParentId
             |> Option.map (fun run ->
-                run.DataMap <- None
+                run.Datamap <- None
                 run.ToUpdateContract()
             )
         | DataMapParent.Workflow ->
             arc.TryGetWorkflow parentInfo.ParentId
             |> Option.map (fun workflow ->
-                workflow.DataMap <- None
+                workflow.Datamap <- None
                 workflow.ToUpdateContract()
             )
 
-    type DataMap with
+    type Datamap with
 
         member this.ToCreateContract(parentInfo: DatamapParentInfo) : Contract = DataMapContract.create parentInfo this
 
@@ -105,7 +109,7 @@ module DataMapExtensions =
                                     $"The DataMap could not be deleted because parent '{parentPath}' was not found on disk. Refresh the File Explorer and try again."
                             )
                     | Some parentUpdateContract ->
-                        match! fullFillContractBatchAsync arcPath [| parentUpdateContract |] with
+                        match! ContractExecutor.fulfillContractsSwateAsync arcPath [| parentUpdateContract |] with
                         | Error errors ->
                             return
                                 Error(
@@ -115,7 +119,7 @@ module DataMapExtensions =
                         | Ok _ ->
                             let deleteContract = dataMap.ToDeleteContract(parentInfo)
 
-                            match! fullFillContractBatchAsync arcPath [| deleteContract |] with
+                            match! ContractExecutor.fulfillContractsSwateAsync arcPath [| deleteContract |] with
                             | Error errors ->
                                 return
                                     Error(

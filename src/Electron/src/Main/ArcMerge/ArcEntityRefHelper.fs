@@ -22,4 +22,8 @@ module ArcEntityRefExtensions =
                 | ArcEntityPathRules.AddZone.Studies -> ArcEntityRef.StudyDataMap identifier
                 | ArcEntityPathRules.AddZone.Workflows -> ArcEntityRef.WorkflowDataMap identifier
                 | ArcEntityPathRules.AddZone.Runs -> ArcEntityRef.RunDataMap identifier
-            | None -> ArcEntityRef.Unknown path
+            | None ->
+                if PathHelpers.pathMatchesAny ArcEntityPathRules.licenseFileNames path then
+                    ArcEntityRef.License
+                else
+                    ArcEntityRef.Unknown path

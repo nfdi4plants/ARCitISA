@@ -67,6 +67,22 @@ let private SelectableSample (initialSelectedIds: string list) =
 let private shiftClick (id: string) =
     RTL.fireEvent.click (RTL.screen.getByTestId id, {| shiftKey = true |})
 
+Vitest.test (
+    "default selection checkboxes follow row clicks and toggle their row",
+    fun () ->
+        RTL.render (SelectableSample []) |> ignore
+
+        let checkbox () =
+            RTL.screen.getByRole ("checkbox", ByRoleOptions(name = Text "Select Alpha")) :?> HTMLInputElement
+
+        Vitest.expect((checkbox ()).``checked``).toBe false
+        click "sortable-list-row-alpha"
+        Vitest.expect((checkbox ()).``checked``).toBe true
+        RTL.fireEvent.click (checkbox ())
+        Vitest.expect((checkbox ()).``checked``).toBe false
+        Vitest.expect((RTL.screen.getByTestId "selected-ids").textContent).toBe ""
+)
+
 Vitest.beforeEach (fun () -> installRowGeometry ())
 
 Vitest.afterEach (fun () ->
@@ -301,4 +317,49 @@ Vitest.test (
         let rowStyle = readRowStyle row
         Vitest.expect(rowStyle.backgroundColor).toBe "rgb(255, 0, 0)"
         Vitest.expect(rowStyle.height).toBe "80px"
+)
+
+Vitest.test (
+    "denied moves disable their arrow buttons and keep the order",
+    fun () ->
+        let mutable changed = None
+
+        RTL.render (
+            SortableList.SortableList(
+                sampleItems,
+                (fun items -> changed <- Some items),
+                isMoveAllowed = fun fromIndex toIndex -> fromIndex <> 2 && toIndex <> 2
+            )
+        )
+        |> ignore
+
+        Vitest.expect(isDisabled "sortable-list-down-beta").toBe true
+        Vitest.expect(isDisabled "sortable-list-up-gamma").toBe true
+        Vitest.expect(isDisabled "sortable-list-down-alpha").toBe false
+        click "sortable-list-down-beta"
+        click "sortable-list-up-gamma"
+        Vitest.expect(changed).toEqual None
+        expectOrder [| "alpha"; "beta"; "gamma" |]
+        click "sortable-list-down-alpha"
+        Vitest.expect(changed |> Option.map (Array.map _.id)).toEqual (Some [| "beta"; "alpha"; "gamma" |])
+)
+
+Vitest.test (
+    "a denied drop does not reorder",
+    fun () -> promise {
+        let mutable changed = None
+
+        RTL.render (
+            SortableList.SortableList(
+                sampleItems,
+                (fun items -> changed <- Some items),
+                isMoveAllowed = fun _ toIndex -> toIndex <> 2
+            )
+        )
+        |> ignore
+
+        do! dragTo 140
+        Vitest.expect(changed).toEqual None
+        expectOrder [| "alpha"; "beta"; "gamma" |]
+    }
 )

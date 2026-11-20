@@ -2,7 +2,7 @@ module Swate.Components.Composite.Template.TemplateActions
 
 open ARCtrl
 open Swate.Components.Shared
-open Swate.Components.Composite.Template.Types
+open Swate.Components.Composite.TableImport.Types
 
 /// Syncs the selected template IDs with the currently loaded templates, removing any IDs that no longer exist in the loaded templates.
 let syncSelectedTemplateIds
@@ -23,143 +23,50 @@ let toggleTemplateSelection (templateId: System.Guid) (selectedTemplateIds: Set<
     else
         selectedTemplateIds.Add templateId
 
-let getTemplateImportAction
-    (templateId: System.Guid)
-    (templateImportDecisions: Map<System.Guid, TemplateImportAction>)
-    =
-    templateImportDecisions
-    |> Map.tryFind templateId
-    |> Option.defaultValue TemplateImportAction.AppendToActiveTable
-
-let setTemplateImportAction
-    (templateId: System.Guid)
-    (importAction: TemplateImportAction)
-    (setTemplateImportDecisions:
-        (Map<System.Guid, TemplateImportAction> -> Map<System.Guid, TemplateImportAction>) -> unit)
-    =
-    setTemplateImportDecisions (fun decisions -> decisions.Add(templateId, importAction))
-    |> ignore
-
-let isTemplateColumnSelected
-    (templateId: System.Guid)
-    (columnIndex: int)
-    (deselectedTemplateColumns: Set<System.Guid * int>)
-    =
-    deselectedTemplateColumns.Contains(templateId, columnIndex) |> not
-
-let toggleTemplateColumnSelection
-    (templateId: System.Guid)
-    (columnIndex: int)
-    (setDeselectedTemplateColumns: (Set<System.Guid * int> -> Set<System.Guid * int>) -> unit)
-    =
-    setDeselectedTemplateColumns (fun deselected ->
-        if deselected.Contains(templateId, columnIndex) then
-            deselected.Remove(templateId, columnIndex)
-        else
-            deselected.Add(templateId, columnIndex)
-    )
-    |> ignore
-
-let selectAllTemplateColumns
-    (templateId: System.Guid)
-    (setDeselectedTemplateColumns: (Set<System.Guid * int> -> Set<System.Guid * int>) -> unit)
-    =
-    setDeselectedTemplateColumns (fun deselected ->
-        deselected
-        |> Set.filter (fun (candidateTemplateId, _) -> candidateTemplateId <> templateId)
-    )
-    |> ignore
-
-let unselectAllTemplateColumns
-    (template: Template)
-    (setDeselectedTemplateColumns: (Set<System.Guid * int> -> Set<System.Guid * int>) -> unit)
-    =
-    let allTemplateColumns =
-        template.Table.Columns
-        |> Seq.mapi (fun columnIndex _ -> template.Id, columnIndex)
-        |> Set.ofSeq
-
-    setDeselectedTemplateColumns (fun deselected -> Set.union deselected allTemplateColumns)
-    |> ignore
-
-let selectedTemplatesForImport
-    (templates: Template[])
-    (selectedTemplateIds: Set<System.Guid>)
-    (templateImportDecisions: Map<System.Guid, TemplateImportAction>)
-    =
+/// The import sources of the selected templates. The index of a source is the position of its template.
+let importSources (templates: Template[]) : ImportSource[] =
     templates
-    |> Array.filter (fun template -> selectedTemplateIds.Contains template.Id)
-    |> Array.choose (fun template ->
-        match getTemplateImportAction template.Id templateImportDecisions with
-        | TemplateImportAction.NoImport -> None
-        | nextAction -> Some(template, nextAction)
-    )
+    |> Array.mapi (fun index template -> {
+        Index = index
+        Name = template.Name
+        Table = template.Table
+    })
 
-let newTableNames
-    (existingTableNames: string seq)
-    (selectedTemplatesForImport: (Template * TemplateImportAction)[])
-    (enteredNames: Map<System.Guid, string>)
-    =
-    let newTableTemplates =
-        selectedTemplatesForImport
-        |> Array.choose (fun (template, action) ->
-            if action = TemplateImportAction.ImportAsNewTable then
-                Some template
-            else
-                None
-        )
+/// The decisions the template import starts from. The caller sets ActiveTableIndex.
+let defaultDecisions: TableImportDecisions = {
+    ImportType = TableJoinOptions.Headers
+    DefaultAction = TableImportAction.AppendToActiveTable
+    Actions = Map.empty
+    DeselectedColumns = Set.empty
+    DeselectedRows = Set.empty
+    EnteredNames = Map.empty
+    ActiveTableIndex = None
+}
 
-    newTableTemplates
-    |> Array.map (fun template -> template.Table.Name, enteredNames.TryFind template.Id)
-    |> resolveNewTableNames existingTableNames
-    |> Array.zip newTableTemplates
-    |> Array.map (fun (template, newTableName) -> template.Id, newTableName)
-    |> Map.ofArray
+/// Moves the choices of the templates that stay selected to their new positions and drops the others.
+/// The import dialog stays mounted while the selection changes, so its decisions have to follow the templates.
+let remapDecisions
+    (previousIds: System.Guid[])
+    (nextIds: System.Guid[])
+    (decisions: TableImportDecisions)
+    : TableImportDecisions =
+    let remapPair (index: int, value: 'a) =
+        Array.tryItem index previousIds
+        |> Option.bind (fun id -> Array.tryFindIndex ((=) id) nextIds)
+        |> Option.map (fun next -> next, value)
 
-let importIntoCopy (arcFile: ArcFiles) (activeTableIndex: int option) (payload: ImportModalConfirmPayload) =
-    let selected = payload.SelectedTemplatesForImport
-
-    let tableIndexById =
-        selected
-        |> Array.mapi (fun tableIndex (template, _) -> template.Id, tableIndex)
-        |> Map.ofArray
-
-    let importConfig = {
-        SelectiveImportConfig.init () with
-            ImportType = payload.ImportType
-            ImportTables =
-                selected
-                |> Array.mapi (fun tableIndex (template, action) ->
-                    let fullImport = action = TemplateImportAction.ImportAsNewTable
-
-                    ({
-                        Index = tableIndex
-                        FullImport = fullImport
-                        Name =
-                            if fullImport then
-                                payload.NewTableNames.TryFind template.Id |> Option.map _.Trim()
-                            else
-                                None
-                    }
-                    : ImportTable)
-                )
-                |> Array.toList
-            DeselectedColumns =
-                payload.DeselectedTemplateColumns
-                |> Seq.choose (fun (templateId, columnIndex) ->
-                    tableIndexById.TryFind templateId
-                    |> Option.map (fun tableIndex -> tableIndex, columnIndex)
-                )
-                |> Set.ofSeq
+    {
+        decisions with
+            Actions = decisions.Actions |> Map.toSeq |> Seq.choose remapPair |> Map.ofSeq
+            DeselectedColumns = decisions.DeselectedColumns |> Seq.choose remapPair |> Set.ofSeq
+            DeselectedRows = decisions.DeselectedRows |> Seq.choose remapPair |> Set.ofSeq
+            EnteredNames = decisions.EnteredNames |> Map.toSeq |> Seq.choose remapPair |> Map.ofSeq
     }
 
-    let nextArcFile = ArcFiles.refreshRef arcFile
-
-    Helper.updateTables
-        (selected |> Array.map (fun (template, _) -> template.Table) |> ResizeArray)
-        importConfig
-        activeTableIndex
-        (Some nextArcFile)
-    |> ignore
-
-    nextArcFile
+let importIntoCopy
+    (arcFile: ArcFiles)
+    (templates: Template[])
+    (decisions: TableImportDecisions)
+    : Result<ArcFiles, exn> =
+    Swate.Components.Composite.TableImport.Helper.applyImport arcFile (importSources templates) decisions
+    |> Result.map _.ArcFile

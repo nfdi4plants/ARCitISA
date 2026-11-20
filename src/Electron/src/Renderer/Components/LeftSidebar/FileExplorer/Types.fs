@@ -9,7 +9,7 @@ open Swate.Electron.Shared.FileIOTypes
 type PathActionConfig = {
     openPathInFileExplorer: string -> JS.Promise<Result<unit, exn>>
     openPathWithDefaultApplication: string -> JS.Promise<Result<unit, exn>>
-    importExternalFiles: string -> JS.Promise<Result<unit, exn>>
+    importExternalPaths: FileSystemItemKind -> string -> JS.Promise<Result<unit, exn>>
     enqueueError: ErrorModalRequest -> unit
 }
 
@@ -26,11 +26,16 @@ type ContextMenuConfig = {
     pathActionConfig: PathActionConfig
     enqueueError: ErrorModalRequest -> unit
     runToggleLfsMark: string -> bool -> JS.Promise<Result<unit, string>>
-    runDownloadLfsFile: string -> JS.Promise<Result<unit, string>>
-    runFreeLocalLfsCopy: string -> JS.Promise<Result<unit, string>>
+    runDownloadLfsFile: string -> JS.Promise<Result<unit, GitLfsActionFailure>>
+    runFreeLocalLfsCopy: string -> JS.Promise<Result<unit, GitLfsActionFailure>>
+    getFolderLargeObjects: string -> Renderer.Context.LargeObjectStore.FolderLargeObjects
+    runDownloadLfsFolder: string -> unit
+    requestFreeLfsFolder: string -> unit
+    /// Loads a folder again from disk, also when it is loaded already.
+    refreshDirectory: FileItem -> unit
     /// ARC-relative paths with a running Download or Free. Rename and Delete stay disabled on every
     /// folder that contains one of them.
-    lfsActivePaths: string list
+    lfsActivePaths: Renderer.Context.LfsActivityContext.LfsActivePathIndex
 }
 
 type ArcCreateDraft = { ArcFile: ArcFiles; Path: string }

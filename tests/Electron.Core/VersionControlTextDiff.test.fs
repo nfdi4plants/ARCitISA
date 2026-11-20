@@ -3,6 +3,7 @@ module ElectronCore.VersionControlTextDiffTests
 open Fable.Core
 open Fable.Core.JsInterop
 open Main
+open Main.ArcVaultState
 open Main.VersionControl
 open Swate.Electron.Shared.VersionControlTypes
 open VersionControlService.Abstractions
@@ -334,7 +335,7 @@ let private registerWindows (workspaceRoot: string) (windowIds: int list) =
         |> List.map (fun windowId ->
             let window = TestHelpers.testWindow ()
             window?id <- windowId
-            let vault = Main.ArcVault.ArcVault(window)
+            let vault = Main.ArcVaultState.ArcVault(window)
             vault.path <- Some workspaceRoot
             Main.ArcVault.ARC_VAULTS.Vaults.[windowId] <- vault
             windowId, window

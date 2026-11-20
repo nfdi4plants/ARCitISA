@@ -1,6 +1,7 @@
 module ARCtrl.Json
 
 open Swate.Components.Shared
+open Swate.Components.Composite.TableImport.Types
 
 open ARCtrl
 open System
@@ -11,27 +12,37 @@ module Generic =
     let readFromJsonMap =
         Map [
             (ArcFilesDiscriminate.Investigation, JsonExportFormat.ARCtrl),
-            fun json -> ArcInvestigation.fromJsonString json |> ArcFiles.Investigation
+            fun json ->
+                ARCtrl.JsonCompatibility.fromInvestigationJsonString json
+                |> ArcFiles.Investigation
             (ArcFilesDiscriminate.Investigation, JsonExportFormat.ARCtrlCompressed),
-            fun json -> ArcInvestigation.fromCompressedJsonString json |> ArcFiles.Investigation
+            fun json ->
+                ARCtrl.JsonCompatibility.fromInvestigationCompressedJsonString json
+                |> ArcFiles.Investigation
             (ArcFilesDiscriminate.Investigation, JsonExportFormat.ISA),
             fun json -> ArcInvestigation.fromISAJsonString json |> ArcFiles.Investigation
             (ArcFilesDiscriminate.Investigation, JsonExportFormat.ROCrate),
-            fun json -> ArcInvestigation.fromROCrateJsonString json |> ArcFiles.Investigation
+            fun json ->
+                JsonCompatibility.fromInvestigationROCrateJsonString json
+                |> ArcFiles.Investigation
 
             (ArcFilesDiscriminate.Study, JsonExportFormat.ARCtrl),
-            fun json -> ArcStudy.fromJsonString json |> fun x -> ArcFiles.Study(x, [])
+            fun json ->
+                ARCtrl.JsonCompatibility.fromStudyJsonString json
+                |> fun x -> ArcFiles.Study(x, [])
             (ArcFilesDiscriminate.Study, JsonExportFormat.ARCtrlCompressed),
-            fun json -> ArcStudy.fromCompressedJsonString json |> fun x -> ArcFiles.Study(x, [])
+            fun json ->
+                ARCtrl.JsonCompatibility.fromStudyCompressedJsonString json
+                |> fun x -> ArcFiles.Study(x, [])
             (ArcFilesDiscriminate.Study, JsonExportFormat.ISA),
             fun json -> ArcStudy.fromISAJsonString json |> ArcFiles.Study
             (ArcFilesDiscriminate.Study, JsonExportFormat.ROCrate),
             fun json -> ArcStudy.fromROCrateJsonString json |> ArcFiles.Study
 
             (ArcFilesDiscriminate.Assay, JsonExportFormat.ARCtrl),
-            fun json -> ArcAssay.fromJsonString json |> ArcFiles.Assay
+            fun json -> ARCtrl.JsonCompatibility.fromAssayJsonString json |> ArcFiles.Assay
             (ArcFilesDiscriminate.Assay, JsonExportFormat.ARCtrlCompressed),
-            fun json -> ArcAssay.fromCompressedJsonString json |> ArcFiles.Assay
+            fun json -> ARCtrl.JsonCompatibility.fromAssayCompressedJsonString json |> ArcFiles.Assay
             (ArcFilesDiscriminate.Assay, JsonExportFormat.ISA),
             fun json -> ArcAssay.fromISAJsonString json |> ArcFiles.Assay
             (ArcFilesDiscriminate.Assay, JsonExportFormat.ROCrate),
@@ -42,17 +53,20 @@ module Generic =
             (ArcFilesDiscriminate.Template, JsonExportFormat.ARCtrlCompressed),
             fun json -> Template.fromCompressedJsonString json |> ArcFiles.Template
 
-            (ArcFilesDiscriminate.Run, JsonExportFormat.ARCtrl), fun json -> ArcRun.fromJsonString json |> ArcFiles.Run
+            (ArcFilesDiscriminate.Run, JsonExportFormat.ARCtrl),
+            fun json -> ARCtrl.JsonCompatibility.fromRunJsonString json |> ArcFiles.Run
             (ArcFilesDiscriminate.Run, JsonExportFormat.ARCtrlCompressed),
-            fun json -> ArcRun.fromCompressedJsonString json |> ArcFiles.Run
+            fun json -> ARCtrl.JsonCompatibility.fromRunCompressedJsonString json |> ArcFiles.Run
 
             (ArcFilesDiscriminate.Workflow, JsonExportFormat.ARCtrl),
-            fun json -> ArcWorkflow.fromJsonString json |> ArcFiles.Workflow
+            fun json -> ARCtrl.JsonCompatibility.fromWorkflowJsonString json |> ArcFiles.Workflow
             (ArcFilesDiscriminate.Workflow, JsonExportFormat.ARCtrlCompressed),
-            fun json -> ArcWorkflow.fromCompressedJsonString json |> ArcFiles.Workflow
+            fun json ->
+                ARCtrl.JsonCompatibility.fromWorkflowCompressedJsonString json
+                |> ArcFiles.Workflow
 
             (ArcFilesDiscriminate.DataMap, JsonExportFormat.ARCtrl),
-            fun json -> ArcFiles.DataMap(None, DataMap.fromJsonString json)
+            fun json -> ArcFiles.DataMap(None, Datamap.fromJsonString json)
         ]
 
     let toFileName (id: string) (fileType: ArcFilesDiscriminate) (jsonType: JsonExportFormat) =
@@ -122,17 +136,12 @@ module Generic =
 
 module Import =
 
-    let private arcFileTypeLabel (fileType: ArcFilesDiscriminate) = fileType |> unbox<string>
-
     let applyToCurrentArcFile (currentArcFile: ArcFiles, importedArcFile: ArcFiles) =
         let currentFileType = currentArcFile.RelatedArcFilesDiscriminate
         let importedFileType = importedArcFile.RelatedArcFilesDiscriminate
 
         if currentFileType <> importedFileType then
-            Error(
-                exn
-                    $"Cannot import {arcFileTypeLabel importedFileType} JSON into the current {arcFileTypeLabel currentFileType} editor."
-            )
+            Error(exn $"Cannot import {importedFileType} JSON into the current {currentFileType} editor.")
         else
             match currentArcFile, importedArcFile with
             | ArcFiles.DataMap(currentParentInfo, _), ArcFiles.DataMap(_, importedDataMap) ->
@@ -141,28 +150,27 @@ module Import =
                 let importedTables = importedArcFile.Tables() |> Array.ofSeq
 
                 if importedTables.Length = 0 then
-                    Error(exn $"Imported {arcFileTypeLabel importedFileType} JSON does not contain tables to append.")
+                    Error(exn $"Imported {importedFileType} JSON does not contain tables to append.")
                 else
-                    let newTableNames =
+                    let sources =
                         importedTables
-                        |> Array.map (fun table -> table.Name, None)
-                        |> resolveNewTableNames (currentArcFile.ArcTables().TableNames)
+                        |> Array.mapi (fun index table -> {
+                            Index = index
+                            Name = table.Name
+                            Table = table
+                        })
 
-                    // Tables are added to a copy, so the open file stays untouched.
-                    let nextArcFile = ArcFiles.refreshRef currentArcFile
-
-                    Array.zip importedTables newTableNames
-                    |> Array.map (fun (table, newTableName) ->
-                        let copy = table.Copy()
-
-                        if newTableName.Name = copy.Name then
-                            copy
-                        else
-                            ArcTable.fromArcTableValues (newTableName.Name, copy.Headers, copy.Values)
-                    )
-                    |> nextArcFile.ArcTables().AddTables
-
-                    Ok nextArcFile
+                    Swate.Components.Composite.TableImport.Helper.applyImport
+                        currentArcFile
+                        sources
+                        Swate.Components.Composite.TableImport.Helper.defaultJsonDecisions
+                    |> Result.map (fun result -> result.ArcFile)
+            // The file keeps its identifier so its path stays the same.
+            | ArcFiles.Workflow currentWorkflow, ArcFiles.Workflow importedWorkflow ->
+                match ArcFiles.refreshRef (ArcFiles.Workflow importedWorkflow) with
+                | ArcFiles.Workflow copy ->
+                    Ok(ArcFiles.Workflow(IdentifierSetters.setWorkflowIdentifier currentWorkflow.Identifier copy))
+                | other -> Ok other
             | _ -> Ok importedArcFile
 
     let tryParseFromJsonString
@@ -171,30 +179,41 @@ module Import =
             jsonType: JsonExportFormat option,
             filetype: ArcFilesDiscriminate option,
             fileName: string option
-        ) : ArcFiles option =
-        let assumedJsonType =
-            match jsonType, filetype with
-            | Some jt, Some ft -> (jt, ft) |> Some
-            | _, _ ->
-                match fileName with
-                | Some name ->
-                    let resOpt = Generic.tryParseJsonFileName name
+        ) : Result<ArcFiles, exn> =
+        let article (label: string) =
+            if "AEIOUaeiou".Contains(label.Substring(0, 1)) then
+                "an"
+            else
+                "a"
 
-                    match resOpt with
-                    | Some(jf, af) -> Some(jf, af)
-                    | None -> None
-                | None -> None
+        let resolved =
+            match jsonType, filetype, fileName with
+            | Some jt, Some ft, _ -> Ok(jt, ft)
+            | _, _, None -> Error(exn "Could not detect the JSON format and file type, because no file name was given.")
+            | _, _, Some name ->
+                match Generic.tryParseJsonFileName name with
+                | Some(jf, af) -> Ok(jf, af)
+                | None ->
+                    Error(
+                        exn
+                            $"Could not detect the JSON format and file type from the file name \"{name}\". The name must contain both, separated by \"_\", for example \"ARCtrlCompressed_Assay.json\"."
+                    )
 
-        match assumedJsonType with
-        | Some(jsonFormat, arcfileType) ->
+        match resolved with
+        | Error e -> Error e
+        | Ok(jsonFormat, arcfileType) ->
+            let label = string arcfileType
+
             match Generic.readFromJsonMap.TryFind(arcfileType, jsonFormat) with
+            | None -> Error(exn $"{jsonFormat.AsStringRdbl} JSON is not supported for {article label} {label}.")
             | Some arcFileFn ->
                 try
-                    arcFileFn jsonString |> Some
-                with _ ->
-                    None
-            | None -> None
-        | None -> None
+                    Ok(arcFileFn jsonString)
+                with ex ->
+                    Error(
+                        exn
+                            $"Could not read the file as {jsonFormat.AsStringRdbl} JSON for {article label} {label}: {ex.Message}"
+                    )
 
     let parseFromJsonString
         (
@@ -204,10 +223,8 @@ module Import =
             fileName: string option
         ) : ArcFiles =
         match tryParseFromJsonString (jsonString, jsonType, filetype, fileName) with
-        | Some arcfile -> arcfile
-        | None ->
-            failwith
-                "Error. Unable to find correct JSON format. This function relies on correct naming conventions for the file. We will improve this in the future. The file name must contain the json format, as well as the file type, separated by \"_\". Example: 'ARCtrlCompressed_Assay.json"
+        | Ok file -> file
+        | Error exn -> raise exn
 
 module Export =
 
@@ -224,7 +241,15 @@ module Export =
             | ArcFiles.Investigation ai, JsonExportFormat.ISA ->
                 nameFromId ai.Identifier, ArcInvestigation.toISAJsonString 0 ai
             | ArcFiles.Investigation ai, JsonExportFormat.ROCrate ->
-                nameFromId ai.Identifier, ArcInvestigation.toROCrateJsonString 0 ai
+                nameFromId ai.Identifier,
+                // ARCtrl's toROCrateJsonString calls MakeDataFilesAbsolute() to normalize data paths
+                // against the ARC root. This mutates assay/study table and datamap paths in place.
+                // fromArcInvestigation shares those child objects, so copy first to protect the source.
+                // The workaround also restores datamap labels omitted by DataContext.Copy().
+                ai
+                |> DataMapCopyWorkaround.copyInvestigation
+                |> ARC.fromArcInvestigation
+                |> ARC.toROCrateJsonString 0
 
             | ArcFiles.Study(as', _), JsonExportFormat.ARCtrl ->
                 nameFromId as'.Identifier, ArcStudy.toJsonString 0 (as')
@@ -261,7 +286,7 @@ module Export =
             | ArcFiles.Workflow _, anyElse ->
                 failwithf "Error. It is not intended to parse Workflow to %s format." (string anyElse)
 
-            | ArcFiles.DataMap(_, d), JsonExportFormat.ARCtrl -> nameFromId "", DataMap.toJsonString 0 d
+            | ArcFiles.DataMap(_, d), JsonExportFormat.ARCtrl -> nameFromId "", Datamap.toJsonString 0 d
             | ArcFiles.DataMap(_, _), anyElse ->
                 failwithf "Error. It is not intended to parse Datamap to %s format." (string anyElse)
 

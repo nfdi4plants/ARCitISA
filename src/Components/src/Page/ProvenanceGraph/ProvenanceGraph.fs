@@ -147,6 +147,8 @@ open ProvenanceGraphHelper
 /// groups of a process, the nodes around a group and the lineage of a node. A click on a node opens the next
 /// level, and the breadcrumbs lead back. The parent builds the index once for each ARC. A new index object
 /// returns the page to the datasets. The page fills its parent, which needs a height.
+/// The up button in the header goes one level up. The location overview below the header lists the levels above
+/// the current view, and a click on one of its items opens that item.
 /// A view that cannot be shown says so with the message of the error, and the breadcrumbs stay usable.
 [<Erase; Mangle(false)>]
 type ProvenanceGraph =
@@ -284,13 +286,21 @@ type ProvenanceGraph =
 
     /// The breadcrumbs and the invisible copy of them that decides between the full and the narrow layout.
     /// The layout switches when the full crumbs do not fit on one line. A ResizeObserver reports two widths:
-    /// the header content area (the box) and the natural width of the full crumbs (the ruler). Both are
-    /// independent of the layout on screen, because the header is as wide as the page and the ruler always
-    /// holds all crumbs. The answer is therefore the same in either layout, so the header cannot flip back
-    /// and forth. The observed elements keep their size in both layouts, so a layout switch does not fire the
-    /// observer again.
+    /// the space between the up button and the overview toggle (the box) and the natural width of the full
+    /// crumbs (the ruler). Both are independent of the layout on screen, because the header is as wide as the
+    /// page and the ruler always holds all crumbs. The two buttons depend on the width of the page section only,
+    /// through container queries, so they have the same width in either layout. The answer is therefore the
+    /// same in either layout, so the header cannot flip back and forth. The observed elements keep their size in
+    /// both layouts, so a layout switch does not fire the observer again.
     [<ReactComponent>]
-    static member private Header(crumbs: Crumb[], onNavigate: ProvenanceView -> unit) =
+    static member private Header
+        (
+            crumbs: Crumb[],
+            onNavigate: ProvenanceView -> unit,
+            overviewOpen: bool,
+            onToggleOverview: (unit -> unit) option,
+            overviewId: string
+        ) =
         let boxRef = React.useRef<HTMLElement option> None
         let fullRef = React.useRef<HTMLElement option> None
         let narrow, setNarrow = React.useState false
@@ -419,69 +429,130 @@ type ProvenanceGraph =
                 ]
             ]
 
+        // The button goes one level up, like the crumb before the current one. It keeps its width, and its label
+        // is cut at the maximum width. The thresholds are widths of the page section, which is the container. A
+        // header with less than 28rem of content shows the arrow only, and below 16rem of content the crumbs alone
+        // lead back. The header pads 14px on each side, which adds 1.75rem to both thresholds.
+        let upButton (parent: Crumb) : ReactElement =
+            Html.button [
+                prop.type'.button
+                prop.testId "provenance-up"
+                prop.className
+                    "swt:btn swt:btn-sm swt:btn-outline swt:flex-none swt:max-w-[30%] swt:gap-1.5 swt:font-normal swt:@max-[17.75rem]/graph:hidden"
+                prop.ariaLabel $"Up to {parent.Label}"
+                prop.title $"Up to {parent.Label}"
+                prop.onClick (fun _ -> onNavigate parent.Target)
+                prop.children [
+                    Html.i [
+                        prop.ariaHidden true
+                        prop.className "swt:iconify swt:fluent--arrow-left-24-regular swt:size-4 swt:flex-none"
+                    ]
+                    Html.span [
+                        prop.className "swt:min-w-0 swt:truncate swt:@max-[29.75rem]/graph:hidden"
+                        prop.text (cutLabel parent.Label)
+                    ]
+                ]
+            ]
+
+        // The name stays the same in both states, because aria-expanded tells the state.
+        let overviewToggle (onToggle: unit -> unit) : ReactElement =
+            Html.button [
+                prop.type'.button
+                prop.testId "provenance-overview-toggle"
+                prop.className
+                    "swt:btn swt:btn-ghost swt:btn-sm swt:btn-square swt:flex-none swt:@max-[17.75rem]/graph:hidden"
+                prop.ariaLabel "Location overview"
+                prop.title "Location overview"
+                prop.custom ("aria-expanded", overviewOpen)
+                prop.custom ("aria-controls", overviewId)
+                prop.onClick (fun _ -> onToggle ())
+                prop.children [
+                    Html.i [
+                        prop.ariaHidden true
+                        prop.className "swt:iconify swt:fluent--text-bullet-list-tree-24-regular swt:size-5"
+                    ]
+                ]
+            ]
+
         Html.header [
             prop.className
                 "swt:relative swt:flex swt:flex-none swt:items-center swt:justify-between swt:gap-x-3.5 swt:border-b swt:border-base-300 swt:bg-base-200 swt:px-3.5 swt:py-2.5"
             prop.children [
-                Html.nav [
-                    prop.ariaLabel "Breadcrumb"
-                    // Without the menu nothing has to stick out of the nav, so what does not fit is cut. The list
-                    // of the menu needs the room below the nav.
-                    prop.className (
-                        if narrow && hiddenCount = 0 then
-                            "swt:breadcrumbs swt:min-w-0 swt:overflow-hidden swt:p-0 swt:text-sm"
-                        else
-                            "swt:breadcrumbs swt:min-w-0 swt:overflow-visible swt:p-0 swt:text-sm"
-                    )
-                    prop.children [
-                        Html.ol [
-                            prop.children [
-                                for position, crumb in Array.indexed layout.Visible do
-                                    if position = 1 && hiddenCount > 0 then
-                                        menuItem
+                // The empty slot keeps the following elements mounted, because React matches children by position.
+                if crumbs.Length > 1 then
+                    upButton crumbs.[crumbs.Length - 2]
+                else
+                    Html.none
 
-                                    crumbItem position crumb
-                            ]
-                        ]
-                    ]
-                ]
-                // The ruler is the invisible copy of all crumbs. Its box has the width of the header content
-                // area and no height. The ruler inside has its natural width and draws its text with CSS content,
-                // so assistive technology reads each label once.
                 Html.div [
-                    prop.ref boxRef
-                    prop.ariaHidden true
-                    prop.className
-                        "swt:pointer-events-none swt:invisible swt:absolute swt:top-0 swt:right-3.5 swt:left-3.5 swt:h-0 swt:overflow-hidden"
+                    prop.className "swt:relative swt:flex swt:min-w-0 swt:flex-1 swt:items-center"
                     prop.children [
-                        Html.div [
-                            prop.ref fullRef
-                            prop.className
-                                "swt:breadcrumbs swt:w-max swt:max-w-none swt:overflow-visible swt:p-0 swt:text-sm swt:whitespace-nowrap"
+                        Html.nav [
+                            prop.ariaLabel "Breadcrumb"
+                            // Without the menu nothing has to stick out of the nav, so what does not fit is cut. The list
+                            // of the menu needs the room below the nav.
+                            prop.className (
+                                if narrow && hiddenCount = 0 then
+                                    "swt:breadcrumbs swt:min-w-0 swt:overflow-hidden swt:p-0 swt:text-sm"
+                                else
+                                    "swt:breadcrumbs swt:min-w-0 swt:overflow-visible swt:p-0 swt:text-sm"
+                            )
                             prop.children [
                                 Html.ol [
                                     prop.children [
-                                        for position, crumb in Array.indexed crumbs ->
-                                            Html.li [
-                                                prop.key position
-                                                prop.children [
-                                                    Html.span [
-                                                        prop.className (
-                                                            if position = crumbs.Length - 1 then
-                                                                "swt:font-semibold swt:before:content-[attr(data-text)]"
-                                                            else
-                                                                "swt:before:content-[attr(data-text)]"
-                                                        )
-                                                        prop.custom ("data-text", cutLabel crumb.Label)
+                                        for position, crumb in Array.indexed layout.Visible do
+                                            if position = 1 && hiddenCount > 0 then
+                                                menuItem
+
+                                            crumbItem position crumb
+                                    ]
+                                ]
+                            ]
+                        ]
+                        // The ruler is the invisible copy of all crumbs. Its box has the width of the space between
+                        // the up button and the overview toggle, and no height. The ruler inside has its natural
+                        // width and draws its text with CSS content, so assistive technology reads each label once.
+                        Html.div [
+                            prop.ref boxRef
+                            prop.ariaHidden true
+                            prop.className
+                                "swt:pointer-events-none swt:invisible swt:absolute swt:top-0 swt:right-0 swt:left-0 swt:h-0 swt:overflow-hidden"
+                            prop.children [
+                                Html.div [
+                                    prop.ref fullRef
+                                    prop.className
+                                        "swt:breadcrumbs swt:w-max swt:max-w-none swt:overflow-visible swt:p-0 swt:text-sm swt:whitespace-nowrap"
+                                    prop.children [
+                                        Html.ol [
+                                            prop.children [
+                                                for position, crumb in Array.indexed crumbs ->
+                                                    Html.li [
+                                                        prop.key position
+                                                        prop.children [
+                                                            Html.span [
+                                                                prop.className (
+                                                                    if position = crumbs.Length - 1 then
+                                                                        "swt:font-semibold swt:before:content-[attr(data-text)]"
+                                                                    else
+                                                                        "swt:before:content-[attr(data-text)]"
+                                                                )
+                                                                prop.custom ("data-text", cutLabel crumb.Label)
+                                                            ]
+                                                        ]
                                                     ]
-                                                ]
                                             ]
+                                        ]
                                     ]
                                 ]
                             ]
                         ]
                     ]
                 ]
+
+                // The empty slot keeps the position of the elements around it, like the one before the crumbs.
+                match onToggleOverview with
+                | Some onToggle -> overviewToggle onToggle
+                | None -> Html.none
             ]
         ]
 
@@ -496,6 +567,9 @@ type ProvenanceGraph =
         // After the first navigation, whatever replaces the view takes focus, because the clicked node
         // or crumb is gone.
         let navigated, setNavigated = React.useState false
+        // The location overview is open until the user hides it, and it stays as chosen while the user navigates.
+        let overviewOpen, setOverviewOpen = React.useState true
+        let overviewId = React.useId ()
         // A new index is another ARC, so the selection of the old one must not outlive it. React lets a
         // component reset state while it renders, so nothing of the old selection is drawn.
         // The parent keeps the index identity stable while the ARC stays the same.
@@ -527,6 +601,35 @@ type ProvenanceGraph =
 
         let crumbs =
             React.useMemo ((fun () -> ProvenanceView.crumbs index view), [| box index; box viewKey |])
+
+        // The queries behind the overview run once for a level. A lineage that centers on another node keeps them
+        // and only marks another node in the last row. A failing query leaves the overview empty, and the path of
+        // the page stays usable.
+        let overviewQueryView = Overview.queryView view
+
+        let overviewBase =
+            React.useMemo (
+                (fun () ->
+                    try
+                        Overview.baseRows index overviewQueryView
+                    with error ->
+                        Browser.Dom.console.error ("Could not compute the provenance overview", error)
+                        [||]
+                ),
+                [|
+                    box index
+                    box (ProvenanceView.resetKey overviewQueryView)
+                |]
+            )
+
+        let overview =
+            React.useMemo ((fun () -> Overview.select view overviewBase), [| box overviewBase; box viewKey |])
+
+        let toggleOverview =
+            if overview.Length > 0 then
+                Some(fun () -> setOverviewOpen (not overviewOpen))
+            else
+                None
 
         let empty = emptyKindOf view content
 
@@ -589,6 +692,7 @@ type ProvenanceGraph =
                                     onNodeClick = (fun id -> navigate (ProvenanceView.next index view id)),
                                     ?centerNodeId = shown.CenterNodeId,
                                     focusOnMount = navigated,
+                                    imageFileName = ProvenanceView.imageFileName crumbs,
                                     ?layout = layout
                                 )
                             ]
@@ -638,10 +742,17 @@ type ProvenanceGraph =
             prop.testId "provenance-graph"
             prop.ariaLabel "Provenance graph"
             prop.className
-                "swt:flex swt:size-full swt:min-h-0 swt:flex-col swt:overflow-hidden swt:bg-base-100 swt:text-base-content"
+                "swt:@container/graph swt:flex swt:size-full swt:min-h-0 swt:flex-col swt:overflow-hidden swt:bg-base-100 swt:text-base-content"
             prop.style [ for name, value in palette -> style.custom (name, value) ]
             prop.children [
-                ProvenanceGraph.Header(crumbs, navigate)
+                ProvenanceGraph.Header(crumbs, navigate, overviewOpen, toggleOverview, overviewId)
+
+                // The empty slot keeps the error boundary and the canvas mounted when the overview comes and goes.
+                if overviewOpen && overview.Length > 0 then
+                    OverviewNav.OverviewNav(overview, overviewId, viewKey, navigate)
+                else
+                    Html.none
+
                 // An error while the body renders shows the alert in its place and leaves the header alone. A new
                 // view clears the error.
                 ErrorBoundary.ErrorBoundary(

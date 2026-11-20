@@ -4,9 +4,7 @@
     <TargetFramework>net10.0</TargetFramework>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="Components\Fixture.fs" />
     <Compile Include="Components\DataHub\ExplorePanelElmish.tests.fs" />
-    <Compile Include="Components\Table\ContextMenu.tests.fs" />
     <Compile Include="Components\Table\KeyboardNavigation.tests.fs" />
     <Compile Include="Spreadsheet\DataAnnotator.tests.fs" />
     <Compile Include="OfficeAddIn\AnnotationTable\SuccessfulTests.fs" />

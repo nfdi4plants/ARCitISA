@@ -148,7 +148,7 @@ module ConversionTypes =
                 | Some(ArcFiles.Run r) -> JsonArcFiles.Run, ArcRun.toJsonString 0 r
                 | Some(ArcFiles.Workflow w) -> JsonArcFiles.Workflow, ArcWorkflow.toJsonString 0 w
                 | Some(ArcFiles.DataMap(p, d)) ->
-                    let data = DataMap.encoder d |> Encode.toJsonString (Encode.defaultSpaces (Some 0))
+                    let data = Datamap.encoder d |> Encode.toJsonString (Encode.defaultSpaces (Some 0))
                     JsonArcFiles.DataMap p, data
                 | None -> JsonArcFiles.None, ""
 
@@ -169,18 +169,26 @@ module ConversionTypes =
 
                     match this.JsonArcFiles with
                     | JsonArcFiles.Investigation ->
-                        ArcInvestigation.fromJsonString decompressedString
+                        ARCtrl.JsonCompatibility.fromInvestigationJsonString decompressedString
                         |> ArcFiles.Investigation
                         |> Some
                     | JsonArcFiles.Study ->
-                        let s = ArcStudy.fromJsonString decompressedString
+                        let s = ARCtrl.JsonCompatibility.fromStudyJsonString decompressedString
                         ArcFiles.Study(s, []) |> Some
-                    | JsonArcFiles.Assay -> ArcAssay.fromJsonString decompressedString |> ArcFiles.Assay |> Some
-                    | JsonArcFiles.Run -> ArcRun.fromJsonString decompressedString |> ArcFiles.Run |> Some
+                    | JsonArcFiles.Assay ->
+                        ARCtrl.JsonCompatibility.fromAssayJsonString decompressedString
+                        |> ArcFiles.Assay
+                        |> Some
+                    | JsonArcFiles.Run ->
+                        ARCtrl.JsonCompatibility.fromRunJsonString decompressedString
+                        |> ArcFiles.Run
+                        |> Some
                     | JsonArcFiles.Workflow ->
-                        ArcWorkflow.fromJsonString decompressedString |> ArcFiles.Workflow |> Some
+                        ARCtrl.JsonCompatibility.fromWorkflowJsonString decompressedString
+                        |> ArcFiles.Workflow
+                        |> Some
                     | JsonArcFiles.DataMap p ->
-                        let dataMap = Decode.fromJsonString DataMap.decoder decompressedString
+                        let dataMap = Decode.fromJsonString Datamap.decoder decompressedString
                         ArcFiles.DataMap(p, dataMap) |> Some
                     | JsonArcFiles.Template -> Template.fromJsonString decompressedString |> ArcFiles.Template |> Some
                     | JsonArcFiles.None -> None

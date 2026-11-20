@@ -55,7 +55,7 @@ let tests =
             |> List.iter (fun (parentType, addParent) ->
                 let arc = ARC("test-arc")
                 let parentInfo = DatamapParentInfo.create "parent" parentType
-                let dataMap = DataMap.init ()
+                let dataMap = Datamap.init ()
 
                 Expect.isFalse
                     (arc.TrySetDataMap(parentInfo, Some dataMap))

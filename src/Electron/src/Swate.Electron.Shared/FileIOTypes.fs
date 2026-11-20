@@ -8,7 +8,6 @@ type FileEntry = {
     name: string
     isDirectory: bool
     path: string
-    largeObject: ObjectStateDto option
 }
 
 [<AutoOpen>]
@@ -21,38 +20,10 @@ module FileEntryExtensions =
 
     type FileEntry with
 
-        static member create
-            (name: string, path: string, isDirectory: bool, ?largeObject: ObjectStateDto option)
-            : FileEntry =
-            {
-                name = name
-                path = path
-                isDirectory = isDirectory
-                largeObject = defaultArg largeObject None
-            }
-
-type FileTreeNode = {
-    name: string
-    isDirectory: bool
-    path: string
-    largeObject: ObjectStateDto option
-    children: Dictionary<string, FileTreeNode>
-} with
-
-    static member create
-        (
-            name: string,
-            isDirectory: bool,
-            path: string,
-            children: Dictionary<string, FileTreeNode>,
-            ?largeObject: ObjectStateDto option
-        ) =
-        {
+        static member create(name: string, path: string, isDirectory: bool) : FileEntry = {
             name = name
-            isDirectory = isDirectory
             path = path
-            largeObject = defaultArg largeObject None
-            children = children
+            isDirectory = isDirectory
         }
 
 [<RequireQualifiedAccess; StringEnum>]
@@ -63,6 +34,11 @@ type FileContentType =
     | PlainText
     | Markdown
     | PDF
+    | PNG
+    | JPG
+    | SVG
+    | GIF
+    | Html
     | ISA_Investigation
     | ISA_Study
     | ISA_Assay
@@ -70,11 +46,24 @@ type FileContentType =
     | ISA_Workflow
     | ISA_Datamap
     | CLI
+    /// A file without text preview. The noPreview field of the DTO holds its size and the reason.
+    | NoPreview
+
+/// Why a file has no preview.
+[<RequireQualifiedAccess; StringEnum>]
+type NoPreviewReason =
+    | TooLarge
+    | Binary
 
 type FileContentDTO = {|
     fileType: FileContentType
     content: string
     path: string
+    noPreview:
+        {|
+            sizeBytes: float
+            reason: NoPreviewReason
+        |} option
 |}
 
 type RenamePathRequest = {
@@ -107,7 +96,7 @@ type ImportExternalFilesRequest = {
 
 [<RequireQualifiedAccess>]
 type ImportExternalFilesResult =
-    | Completed
+    | Completed of importedFolderPaths: string[]
     | Cancelled
 
 [<RequireQualifiedAccess>]
@@ -115,7 +104,34 @@ type FileImportPhase =
     | Copying
     | Finalizing
 
+[<RequireQualifiedAccess>]
+type FileImportStep =
+    | Scanning
+    | Copying
+    | Publishing
+
+type FileImportProgress = {
+    step: FileImportStep
+    completedItems: int
+    totalItems: int
+}
+
+module FileImportProgress =
+
+    let overallFraction (progress: FileImportProgress) =
+        let fractionDone =
+            if progress.totalItems <= 0 then
+                0.0
+            else
+                float progress.completedItems / float progress.totalItems
+
+        match progress.step with
+        | FileImportStep.Scanning -> 0.0
+        | FileImportStep.Copying -> 0.5 * fractionDone
+        | FileImportStep.Publishing -> 0.5 + 0.5 * fractionDone
+
 type ActiveFileImportState = {
     requestId: string
     phase: FileImportPhase
+    progress: FileImportProgress
 }

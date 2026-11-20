@@ -271,9 +271,9 @@ type WorkspaceSessionHost(runtime: VersionControlRuntime.VersionControlRuntime) 
     /// exactly one provider owns it, persists the binding and opens the session.
     /// Concurrent callers for one root share a single open, so a vault never ends up
     /// with two sessions. The shared open runs without cancellation, because a cancel
-    /// of one caller must not fail the others, and it reports progress to the first
-    /// caller only. Opening is short (a probe and a session construction), so both
-    /// limits are acceptable.
+    /// of one caller must not fail the others, and it reports progress and output to
+    /// the first caller only. Opening is short (a probe and a session construction), so
+    /// both limits are acceptable.
     member _.OpenSession(workspaceRoot: string, context: OperationContext) : Async<OperationResult<HostedSession>> = async {
         match tryFindSession workspaceRoot with
         | Some hosted -> return OperationResult.succeeded hosted
@@ -284,8 +284,10 @@ type WorkspaceSessionHost(runtime: VersionControlRuntime.VersionControlRuntime) 
                 match pendingOpens.TryGetValue key with
                 | true, inFlight -> inFlight
                 | _ ->
-                    let openContext =
-                        OperationContext.create context.OperationId OperationCancellation.none context.ReportProgress
+                    let openContext = {
+                        context with
+                            Cancellation = OperationCancellation.none
+                    }
 
                     let inFlight = promise {
                         try
@@ -366,13 +368,17 @@ type WorkspaceSessionHost(runtime: VersionControlRuntime.VersionControlRuntime) 
     /// the first progress event still lands. Each operation retains its workspace root
     /// and window id for lock cleanup and close handling. An id that a running operation
     /// already has is refused, so a call cannot take over the entry of another one.
+    /// An operation with a `reportOutput` callback asks the library for raw subprocess
+    /// output. Without one the context has no output channel and the library does no
+    /// output work.
     member _.TryBeginOperation
         (
             operationId: string,
             workspaceRoot: string option,
             windowId: int option,
             mutating: bool,
-            reportProgress: OperationProgress -> unit
+            reportProgress: OperationProgress -> unit,
+            reportOutput: (OperationOutput[] -> unit) option
         ) : Result<TrackedOperation, OperationFailure> =
         if operations.ContainsKey operationId then
             Error(
@@ -397,8 +403,13 @@ type WorkspaceSessionHost(runtime: VersionControlRuntime.VersionControlRuntime) 
                 ResolveCompletion = fun () -> resolveCompletion ()
             }
 
+            let context =
+                match reportOutput with
+                | Some report -> OperationContext.createWithOutput operationId source.Cancellation reportProgress report
+                | None -> OperationContext.create operationId source.Cancellation reportProgress
+
             Ok {
-                Context = OperationContext.create operationId source.Cancellation reportProgress
+                Context = context
                 Complete =
                     fun () ->
                         match operations.TryGetValue operationId with
@@ -409,6 +420,7 @@ type WorkspaceSessionHost(runtime: VersionControlRuntime.VersionControlRuntime) 
             }
 
     /// Registers an operation whose id the main process made. A duplicate id throws.
+    /// The operation has no output channel.
     member this.BeginOperation
         (
             operationId: string,
@@ -417,7 +429,7 @@ type WorkspaceSessionHost(runtime: VersionControlRuntime.VersionControlRuntime) 
             mutating: bool,
             reportProgress: OperationProgress -> unit
         ) : TrackedOperation =
-        match this.TryBeginOperation(operationId, workspaceRoot, windowId, mutating, reportProgress) with
+        match this.TryBeginOperation(operationId, workspaceRoot, windowId, mutating, reportProgress, None) with
         | Ok tracked -> tracked
         | Error failure -> failwith failure.Message
 

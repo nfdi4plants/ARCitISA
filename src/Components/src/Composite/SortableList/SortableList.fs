@@ -15,8 +15,9 @@ type SortableList =
             index: int,
             count: int,
             move: int -> int -> unit,
+            isMoveAllowed: int -> int -> bool,
             remove: string -> unit,
-            ?renderRow: SortableListRowRender<'A> -> ReactElement,
+            renderRow: SortableListRowRender<'A> -> ReactElement,
             ?rowProps: SortableListItem<'A> -> IReactProperty list,
             ?key: string
         ) =
@@ -42,8 +43,8 @@ type SortableList =
         let row: SortableListRowRender<'A> = {|
             item = item
             index = index
-            isFirst = index = 0
-            isLast = index = count - 1
+            canMoveUp = index > 0 && isMoveAllowed index (index - 1)
+            canMoveDown = index < count - 1 && isMoveAllowed index (index + 1)
             dragHandleProps = [
                 yield! prop.spread sortable.attributes
                 yield! prop.spread sortable.listeners
@@ -58,16 +59,13 @@ type SortableList =
             prop.testId $"sortable-list-row-{item.id}"
             prop.ref sortable.setNodeRef
             prop.style rowStyle
-            prop.children [
-                match renderRow with
-                | Some render -> render row
-                | None -> RowComponents.DefaultRow(row)
-            ]
+            prop.children [ renderRow row ]
         ]
 
     /// The parent owns items. Reorders and removals emit a new array without mutating the input.
     /// renderRow supplies table cells; rowProps customizes the surrounding sortable row.
     /// Inline row styles are preserved, with transform and transition reserved for sorting.
+    /// isMoveAllowed receives the from and to index of a move. A denied drop keeps the order and the arrow buttons render disabled.
     [<ReactComponent(true)>]
     static member SortableList
         (
@@ -77,10 +75,12 @@ type SortableList =
             ?setSelectedIds: (string list -> string list) -> unit,
             ?renderRow: SortableListRowRender<'A> -> ReactElement,
             ?rowProps: SortableListItem<'A> -> IReactProperty list,
+            ?isMoveAllowed: int -> int -> bool,
             ?className: string
         ) =
 
         let lastInteraction, setLastInteraction = React.useState (None: string option)
+        let isMoveAllowed = defaultArg isMoveAllowed (fun _ _ -> true)
 
         let move oldIndex newIndex =
             if
@@ -89,6 +89,7 @@ type SortableList =
                 && newIndex >= 0
                 && oldIndex < items.Length
                 && newIndex < items.Length
+                && isMoveAllowed oldIndex newIndex
             then
                 let itemId = items.[oldIndex].id
 
@@ -114,6 +115,10 @@ type SortableList =
                                 if lastInteraction.IsSome && item.id = lastInteraction.Value then
                                     "swt:outline swt:outline-primary"
                             ]
+                            prop.onMouseDown (fun event ->
+                                if event.shiftKey then
+                                    event.preventDefault ()
+                            )
                             prop.onClick (fun event ->
                                 let selectRange () =
                                     match lastInteraction with
@@ -193,6 +198,15 @@ type SortableList =
         let itemIds =
             React.useMemo ((fun () -> ResizeArray(items |> Array.map _.id)), [| box items |])
 
+        let renderRow =
+            fun row ->
+                match renderRow with
+                | Some render -> render row
+                | None when setSelectedIds.IsSome && selectedIds.IsSome ->
+                    let isSelected = selectedIds.Value |> List.contains row.item.id
+                    RowComponents.DefaultToggleRow(row, isSelected)
+                | None -> RowComponents.DefaultRow(row)
+
         DndKit.DndContext(
             sensors = sensors,
             collisionDetection = DndKit.pointerWithin,
@@ -241,8 +255,9 @@ type SortableList =
                                                         index,
                                                         items.Length,
                                                         move,
+                                                        isMoveAllowed,
                                                         remove,
-                                                        ?renderRow = renderRow,
+                                                        renderRow = renderRow,
                                                         ?rowProps = rowProps,
                                                         key = item.id
                                                     )

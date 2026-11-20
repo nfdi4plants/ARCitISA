@@ -55,6 +55,11 @@ let private isAutoCreateNotesFolderEnabled () : JS.Promise<bool> = promise {
         return true
 }
 
+/// The pick calls of the main process answer a closed dialog with an error that has this message.
+/// A closed dialog is no failure, so callers ignore it.
+let isPickCancelled (error: exn) : bool =
+    System.String.Equals(error.Message, "Cancelled", System.StringComparison.OrdinalIgnoreCase)
+
 let createErrorModalCallback
     (enqueueErrorModal: ErrorModalRequest -> unit)
     (title: string)

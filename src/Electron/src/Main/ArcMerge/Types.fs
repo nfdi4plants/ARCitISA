@@ -19,6 +19,7 @@ type FileEvent = { EventName: EventName; Path: string }
 [<RequireQualifiedAccess>]
 type ArcEntityRef =
     | Investigation
+    | License
     | Assay of string
     | AssayDataMap of string
     | Study of string

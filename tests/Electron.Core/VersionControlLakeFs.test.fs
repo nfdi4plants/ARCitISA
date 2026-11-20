@@ -466,17 +466,17 @@ Vitest.describe (
                         let! objects = api.listObjects (request "lakefs-list-objects")
 
                         let! materialize =
-                            api.materializeObject {
+                            api.materializeObjects {
                                 OperationId = "lakefs-materialize"
-                                Path = "data.txt"
-                                RefreshTree = None
+                                Paths = [| "data.txt" |]
+                                AlwaysRefreshTree = false
                             }
 
                         let! dematerialize =
-                            api.dematerializeObject {
+                            api.dematerializeObjects {
                                 OperationId = "lakefs-dematerialize"
-                                Path = "data.txt"
-                                RefreshTree = None
+                                Paths = [| "data.txt" |]
+                                AlwaysRefreshTree = false
                             }
 
                         let! getPolicy = api.getStoragePolicySettings (request "lakefs-get-policy")
@@ -503,8 +503,8 @@ Vitest.describe (
                         let! repositoryUrl = api.getRepositoryWebUrl (request "lakefs-repository-url")
 
                         expectServiceUnavailable "listObjects" objects
-                        expectServiceUnavailable "materializeObject" materialize
-                        expectServiceUnavailable "dematerializeObject" dematerialize
+                        expectServiceUnavailable "materializeObjects" materialize
+                        expectServiceUnavailable "dematerializeObjects" dematerialize
 
                         // These calls use the session host settings, so lakeFS answers them without a provider storage-policy service.
                         let policy = expectDtoValue "getStoragePolicySettings" getPolicy

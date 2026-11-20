@@ -2,7 +2,9 @@ module ElectronRenderer.LfsActivityContextTests
 
 open Browser.Dom
 open Fable.Core
+open Fable.Core.JsInterop
 open Feliz
+open Swate.Components.Page.FileExplorer.Types
 open Renderer.Context.LfsActivityContext
 open Swate.Components.Shared
 open Swate.Electron.Shared.FileIOTypes
@@ -47,9 +49,9 @@ let private ProviderHarness (arcRootPath: string option, showProbe: bool, onCont
         )
     )
 
-type private Deferred = {
-    pending: JS.Promise<Result<unit, string>>
-    resolve: Result<unit, string> -> unit
+type private Deferred<'error> = {
+    pending: JS.Promise<Result<unit, 'error>>
+    resolve: Result<unit, 'error> -> unit
 }
 
 let private deferred () =
@@ -62,39 +64,78 @@ let private deferred () =
         resolve = fun result -> resolveResult result
     }
 
+let private versionControlBridgeName = "FABLE_REMOTING_IVersionControlRendererApi"
+
+type private VersionControlProgress = Swate.Electron.Shared.VersionControlTypes.VersionControlProgressDto
+type private VersionControlOutput = Swate.Electron.Shared.VersionControlTypes.VersionControlOutputDto
+
+/// The provider listens for version control progress on the IPC bridge, which only exists inside Electron.
+/// `onListener` receives the listener that the provider registers.
+let private installVersionControlBridge
+    (onListener: (VersionControlProgress -> unit) option -> unit)
+    (onOutputListener: (VersionControlOutput -> unit) option -> unit)
+    =
+    let startedListeners = ResizeArray<obj>()
+
+    window?(versionControlBridgeName) <-
+        createObj [
+            "versionControlProgress"
+            ==> fun (listener: VersionControlProgress -> unit) ->
+                onListener (Some listener)
+                fun () -> onListener None
+            "versionControlOperationStarted"
+            ==> fun (listener: obj) ->
+                startedListeners.Add listener
+                fun () -> startedListeners.Remove listener |> ignore
+            "versionControlOutput"
+            ==> fun (listener: VersionControlOutput -> unit) ->
+                onOutputListener (Some listener)
+                fun () -> onOutputListener None
+        ]
+
+let private removeVersionControlBridge () : unit =
+    emitJsStatement versionControlBridgeName "delete window[$0]"
+
+Vitest.beforeEach (fun () -> installVersionControlBridge ignore ignore)
+Vitest.afterEach (fun () -> removeVersionControlBridge ())
+
 Vitest.describe (
     "LfsActivityState",
     fun () ->
         Vitest.test (
             "a busy path missing from the listing keeps its last known entry",
             fun () ->
-                let listed = [| fileEntry "runs"; fileEntry "runs/other.bin" |]
+                let listed = [| fileEntry "runs/other.bin" |]
                 let activities = Map.ofList [ "runs/big.bin", activity "Freeing" "runs/big.bin" ]
 
-                let merged = LfsActivityState.withBusyEntries activities listed
+                let merged =
+                    LfsActivityState.withBusyChildren (LfsActivityState.busyEntriesByParent activities) "runs" listed
 
-                Vitest.expect(merged |> Array.map _.path).toEqual ([| "runs"; "runs/other.bin"; "runs/big.bin" |])
+                Vitest.expect(merged |> Array.map _.path).toEqual ([| "runs/other.bin"; "runs/big.bin" |])
         )
 
         Vitest.test (
             "a busy path that is still listed is not added twice",
             fun () ->
-                let listed = [| fileEntry "runs"; fileEntry "runs/big.bin" |]
+                let listed = [| fileEntry "runs/big.bin" |]
 
                 let activities =
                     Map.ofList [ "runs/big.bin", activity "Downloading" "runs/big.bin" ]
 
-                let merged = LfsActivityState.withBusyEntries activities listed
+                let merged =
+                    LfsActivityState.withBusyChildren (LfsActivityState.busyEntriesByParent activities) "runs" listed
 
                 Vitest.expect(obj.ReferenceEquals(merged, listed)).toBe (true)
         )
 
         Vitest.test (
-            "an empty listing stays empty",
+            "a busy file of another folder is not added",
             fun () ->
                 let activities = Map.ofList [ "runs/big.bin", activity "Freeing" "runs/big.bin" ]
 
-                Vitest.expect(LfsActivityState.withBusyEntries activities [||]).toEqual ([||])
+                let busyByParent = LfsActivityState.busyEntriesByParent activities
+
+                Vitest.expect(LfsActivityState.withBusyChildren busyByParent "assays" [||]).toEqual ([||])
         )
 
         Vitest.test (
@@ -114,6 +155,36 @@ Vitest.describe (
                 let finished = LfsActivityState.finish "C:/arc-a" "a.bin" state
                 Vitest.expect(LfsActivityState.isBusy "C:/arc-a" "a.bin" finished).toBe (false)
                 Vitest.expect(LfsActivityState.isBusy "C:/arc-b" "b.bin" finished).toBe (true)
+        )
+
+        Vitest.test (
+            "a listing path in another Unicode form than its tree entry is keyed by the entry path",
+            fun () ->
+                let composedPath = "M\u00FCller/big.bin"
+                let decomposedFolder = "Mu\u0308ller"
+                let decomposedPath = "Mu\u0308ller/big.bin"
+                let store = Renderer.Context.FileTreeStore.FileTreeStore()
+                store.BeginLoad()
+
+                store.ApplySnapshot {|
+                    treeVersion = 1
+                    caseInsensitive = false
+                    entries = [|
+                        FileEntry.create (decomposedFolder, decomposedFolder, true)
+                        fileEntry decomposedPath
+                    |]
+                    loadedDirectories = [| ""; decomposedFolder |]
+                    fileWatcher = {|
+                        state = Swate.Electron.Shared.IPCTypes.FileWatcherStatus.Running
+                        reason = ""
+                    |}
+                |}
+
+                let key, entry = LfsActivityState.batchTarget store.Snapshot composedPath
+
+                Vitest.expect(key).toBe decomposedPath
+                Vitest.expect(entry |> Option.map _.path).toEqual (Some decomposedPath)
+                Vitest.expect(LfsActivityState.batchTarget store.Snapshot "other.bin").toEqual ("other.bin", None)
         )
 )
 
@@ -166,9 +237,9 @@ Vitest.describe (
 
                     root.render (ProviderHarness(Some "C:/arc", false, onController))
                     do! Promise.sleep 0
-                    action.resolve (Error "network down")
+                    action.resolve (Error(GitLfsActionFailure.ofMessage "network down"))
                     let! result = running
-                    Vitest.expect(result).toEqual (Error "network down")
+                    Vitest.expect(result).toEqual (Error(GitLfsActionFailure.ofMessage "network down"))
 
                     latest <- None
                     root.render (ProviderHarness(Some "C:/arc", true, onController))
@@ -227,5 +298,944 @@ Vitest.describe (
                     root.unmount ()
                     container.remove ()
             }
+        )
+
+        Vitest.test (
+            "runAll marks every path busy, runs the action once, and clears them, but leaves a busy path to its owner",
+            fun () -> promise {
+                let container = document.createElement ("div") :?> Browser.Types.HTMLDivElement
+                document.body.appendChild container |> ignore
+                let root = ReactDOM.createRoot container
+                let mutable latest: LfsActivityController option = None
+                let onController controller = latest <- Some controller
+                let owner = deferred ()
+                let batch = deferred ()
+                let mutable batchCalls = 0
+
+                let runBatch () =
+                    batchCalls <- batchCalls + 1
+                    batch.pending
+
+                let busyLabel path =
+                    latest
+                    |> Option.bind (fun c -> Map.tryFind path c.activities)
+                    |> Option.map _.Label
+
+                try
+                    root.render (ProviderHarness(Some "C:/arc", true, onController))
+                    do! waitFor (fun () -> latest.IsSome)
+
+                    let ownerRun = latest.Value.run "Downloading" None (fun _ -> owner.pending) "b.bin"
+                    do! waitFor (fun () -> busyLabel "b.bin" = Some "Downloading")
+
+                    let running =
+                        latest.Value.runAll
+                            "Freeing"
+                            [|
+                                "a.bin", Some(fileEntry "a.bin")
+                                "b.bin", None
+                                "c.bin", None
+                            |]
+                            runBatch
+
+                    do! waitFor (fun () -> busyLabel "a.bin" = Some "Freeing" && busyLabel "c.bin" = Some "Freeing")
+
+                    Vitest.expect(busyLabel "b.bin").toEqual (Some "Downloading")
+                    Vitest.expect(batchCalls).toBe (1)
+
+                    batch.resolve (Error(GitLfsActionFailure.ofMessage "disk full"))
+                    let! result = running
+                    Vitest.expect(result).toEqual (Error(GitLfsActionFailure.ofMessage "disk full"))
+                    do! waitFor (fun () -> busyLabel "a.bin" = None && busyLabel "c.bin" = None)
+
+                    Vitest.expect(busyLabel "b.bin").toEqual (Some "Downloading")
+
+                    owner.resolve (Ok())
+                    let! _ = ownerRun
+                    do! waitFor (fun () -> latest.Value.activities.IsEmpty)
+                finally
+                    root.unmount ()
+                    container.remove ()
+            }
+        )
+)
+
+let private eventOf
+    (operationId: string)
+    (phase: string)
+    (completed: float option)
+    (total: float option)
+    : VersionControlProgress =
+    {
+        OperationId = operationId
+        PhaseCode = phase
+        Item = None
+        Completed = completed
+        Total = total
+        DisplayMessage = None
+    }
+
+/// A count event of a batch with ten files.
+let private countEventFor (operationId: string) (completed: float) =
+    eventOf operationId LfsProgressPhase.MaterializeFiles (Some completed) (Some 10.0)
+
+let private runningAction (operationId: string) : LfsRunningAction = {
+    OperationId = operationId
+    Kind = LfsActionKind.Download
+    Target = "runs"
+    IsFolder = true
+    FileCount = 3
+    Count = None
+    StepPercent = None
+    StartedAt = 0.0
+}
+
+/// onRender runs on every render of the probe, which happens when the running actions change and not for other
+/// updates of the provider.
+[<ReactComponent>]
+let private RunningActionsProbe (onActions: LfsRunningAction[] -> unit, onRender: unit -> unit) =
+    let actions = useLfsRunningActionsCtx ()
+    onRender ()
+    React.useEffect ((fun () -> onActions actions), [| box actions |])
+    Html.none
+
+[<ReactComponent>]
+let private RunningLogsProbe (onLogs: LfsRunningLogs -> unit) =
+    let logs = useLfsRunningLogsCtx ()
+    React.useEffect ((fun () -> onLogs logs), [| box logs |])
+    Html.none
+
+[<ReactComponent>]
+let private LastLogProbe (onLastLog: Renderer.Context.OperationLog.FinishedOperationLog option -> unit) =
+    let lastLog = useLfsLastLogCtx ()
+    React.useEffect ((fun () -> onLastLog lastLog), [| box lastLog |])
+    Html.none
+
+/// The provider for the ARC of the argument with a probe for the controller, one for the running actions and one
+/// for the last log.
+[<ReactComponent>]
+let private ArcHarness
+    (
+        arcRootPath: string option,
+        onController: LfsActivityController -> unit,
+        onActions: LfsRunningAction[] -> unit,
+        onRender: unit -> unit,
+        onLastLog: Renderer.Context.OperationLog.FinishedOperationLog option -> unit
+    ) =
+    Renderer.Context.AppStateContext.AppStateCtx.Provider(
+        arcRootPath,
+        LfsActivityCtxProvider(
+            React.Fragment [
+                ControllerProbe onController
+                RunningActionsProbe(onActions, onRender)
+                LastLogProbe onLastLog
+            ]
+        )
+    )
+
+/// Mounts the provider with a probe for the controller, one for the running actions, one for their logs and one for
+/// the last log. The test reaches the listener that the provider registered on the IPC bridge to send it progress
+/// events. actionRenders counts the renders of the running actions probe.
+let private withRunningState
+    (body:
+        (unit -> LfsActivityController)
+            -> (unit -> LfsRunningAction[])
+            -> (unit -> LfsRunningLogs)
+            -> (unit -> Renderer.Context.OperationLog.FinishedOperationLog option)
+            -> (unit -> int)
+            -> (VersionControlProgress -> unit)
+            -> (VersionControlOutput -> unit)
+            -> JS.Promise<unit>)
+    =
+    promise {
+        let container = document.createElement ("div") :?> Browser.Types.HTMLDivElement
+        document.body.appendChild container |> ignore
+        let root = ReactDOM.createRoot container
+        let controller: LfsActivityController option ref = ref None
+        let actions: LfsRunningAction[] ref = ref [||]
+        let logs: LfsRunningLogs ref = ref LfsRunningLogs.empty
+
+        let lastLog: Renderer.Context.OperationLog.FinishedOperationLog option ref =
+            ref None
+
+        let actionRenders = ref 0
+
+        let progressListener: (VersionControlProgress -> unit) option ref = ref None
+        let outputListener: (VersionControlOutput -> unit) option ref = ref None
+
+        installVersionControlBridge
+            (fun listener -> progressListener.Value <- listener)
+            (fun listener -> outputListener.Value <- listener)
+
+        try
+            root.render (
+                Renderer.Context.AppStateContext.AppStateCtx.Provider(
+                    Some "C:/arc",
+                    LfsActivityCtxProvider(
+                        React.Fragment [
+                            ControllerProbe(fun c -> controller.Value <- Some c)
+                            RunningActionsProbe(
+                                (fun a -> actions.Value <- a),
+                                (fun () -> actionRenders.Value <- actionRenders.Value + 1)
+                            )
+                            RunningLogsProbe(fun l -> logs.Value <- l)
+                            LastLogProbe(fun l -> lastLog.Value <- l)
+                        ]
+                    )
+                )
+            )
+
+            do!
+                waitFor (fun () ->
+                    controller.Value.IsSome
+                    && progressListener.Value.IsSome
+                    && outputListener.Value.IsSome
+                )
+
+            do!
+                body
+                    (fun () -> controller.Value.Value)
+                    (fun () -> actions.Value)
+                    (fun () -> logs.Value)
+                    (fun () -> lastLog.Value)
+                    (fun () -> actionRenders.Value)
+                    (fun progress -> progressListener.Value.Value progress)
+                    (fun output -> outputListener.Value.Value output)
+        finally
+            root.unmount ()
+            container.remove ()
+    }
+
+/// The tests that need only the actions and the events.
+let private withRunningActions
+    (body:
+        (unit -> LfsActivityController)
+            -> (unit -> LfsRunningAction[])
+            -> (VersionControlProgress -> unit)
+            -> (VersionControlOutput -> unit)
+            -> JS.Promise<unit>)
+    =
+    withRunningState (fun controller actions _ _ _ sendProgress sendOutput ->
+        body controller actions sendProgress sendOutput
+    )
+
+Vitest.describe (
+    "LfsActivityCtxProvider progress",
+    fun () ->
+        Vitest.test (
+            "the latest count event of a tracked operation id is stored with its running action",
+            fun () ->
+                withRunningActions (fun controller actions sendProgress _ -> promise {
+                    let work = deferred ()
+                    let running = controller().track (runningAction "op-a") (fun () -> work.pending)
+
+                    do! waitFor (fun () -> actions().Length = 1)
+                    Vitest.expect(actions().[0].Count).toEqual (None)
+
+                    sendProgress (countEventFor "op-a" 2.0)
+                    sendProgress (countEventFor "op-a" 6.0)
+
+                    do! waitFor (fun () -> actions().[0].Count = Some(6, 10))
+                    Vitest.expect(actions().[0].OperationId).toBe ("op-a")
+
+                    work.resolve (Ok())
+                    let! _ = running
+                    ()
+                })
+        )
+
+        Vitest.test (
+            "track stamps the start time of the running action",
+            fun () ->
+                withRunningActions (fun controller actions _ _ -> promise {
+                    let before = Fable.Core.JS.Constructors.Date.now ()
+                    let work = deferred ()
+                    let running = controller().track (runningAction "op-a") (fun () -> work.pending)
+
+                    do! waitFor (fun () -> actions().Length = 1)
+
+                    let after = Fable.Core.JS.Constructors.Date.now ()
+                    Vitest.expect(actions().[0].StartedAt >= before && actions().[0].StartedAt <= after).toBe true
+
+                    work.resolve (Ok())
+                    let! _ = running
+                    ()
+                })
+        )
+
+        Vitest.test (
+            "progress of an unknown operation id is ignored",
+            fun () ->
+                withRunningActions (fun controller actions sendProgress _ -> promise {
+                    let work = deferred ()
+                    let running = controller().track (runningAction "op-a") (fun () -> work.pending)
+
+                    do! waitFor (fun () -> actions().Length = 1)
+
+                    sendProgress (countEventFor "op-other" 5.0)
+                    do! Promise.sleep 20
+                    Vitest.expect(actions().[0].Count).toEqual (None)
+
+                    // The provider is listening, because its own operation id still gets through.
+                    sendProgress (countEventFor "op-a" 1.0)
+                    do! waitFor (fun () -> actions().[0].Count = Some(1, 10))
+
+                    work.resolve (Ok())
+                    let! _ = running
+                    ()
+                })
+        )
+
+        Vitest.test (
+            "the running action goes away when the work settles and later progress does not bring it back",
+            fun () ->
+                withRunningActions (fun controller actions sendProgress _ -> promise {
+                    let work = deferred ()
+                    let running = controller().track (runningAction "op-a") (fun () -> work.pending)
+
+                    do! waitFor (fun () -> actions().Length = 1)
+
+                    work.resolve (Error(GitLfsActionFailure.ofMessage "network down"))
+                    let! result = running
+                    Vitest.expect(result).toEqual (Error(GitLfsActionFailure.ofMessage "network down"))
+
+                    do! waitFor (fun () -> actions().Length = 0)
+
+                    sendProgress (countEventFor "op-a" 9.0)
+                    do! Promise.sleep 20
+                    Vitest.expect(actions().Length).toBe (0)
+                })
+        )
+
+        Vitest.test (
+            "an action of another ARC that ends leaves the running actions and their readers alone",
+            fun () -> promise {
+                let container = document.createElement ("div") :?> Browser.Types.HTMLDivElement
+                document.body.appendChild container |> ignore
+                let root = ReactDOM.createRoot container
+                let controller: LfsActivityController option ref = ref None
+                let actions: LfsRunningAction[] ref = ref [||]
+                let renders = ref 0
+
+                let harness arcRootPath =
+                    ArcHarness(
+                        arcRootPath,
+                        (fun c -> controller.Value <- Some c),
+                        (fun a -> actions.Value <- a),
+                        (fun () -> renders.Value <- renders.Value + 1),
+                        ignore
+                    )
+
+                try
+                    root.render (harness (Some "C:/arc-a"))
+                    do! waitFor (fun () -> controller.Value.IsSome)
+
+                    let work = deferred ()
+
+                    let running =
+                        controller.Value.Value.track (runningAction "op-a") (fun () -> work.pending)
+
+                    do! waitFor (fun () -> actions.Value.Length = 1)
+
+                    root.render (harness (Some "C:/arc-b"))
+                    do! waitFor (fun () -> actions.Value.Length = 0)
+
+                    let before = actions.Value
+                    let rendersBefore = renders.Value
+
+                    work.resolve (Ok())
+                    let! _ = running
+                    do! Promise.sleep 20
+
+                    Vitest.expect(obj.ReferenceEquals(actions.Value, before)).toBe true
+                    Vitest.expect(renders.Value).toBe rendersBefore
+                finally
+                    root.unmount ()
+                    container.remove ()
+            }
+        )
+)
+
+let private outputFor (operationId: string) (lines: string list) : VersionControlOutput = {
+    OperationId = operationId
+    Entries =
+        lines
+        |> List.map (fun text ->
+            let entry: Swate.Electron.Shared.VersionControlTypes.VersionControlOutputEntryDto = {
+                CommandId = "cmd-1"
+                Kind = "stdout"
+                Text = text
+                IsPartial = false
+            }
+
+            entry
+        )
+        |> List.toArray
+}
+
+Vitest.describe (
+    "LfsActivityCtxProvider output",
+    fun () ->
+        Vitest.test (
+            "output of a tracked action is appended to the log of that action",
+            fun () ->
+                withRunningState (fun controller actions logs _ _ _ sendOutput -> promise {
+                    let work = deferred ()
+                    let running = controller().track (runningAction "op-a") (fun () -> work.pending)
+                    let other = controller().track (runningAction "op-b") (fun () -> work.pending)
+
+                    do! waitFor (fun () -> actions().Length = 2)
+
+                    sendOutput (outputFor "op-a" [ "first" ])
+                    sendOutput (outputFor "op-a" [ "second"; "third" ])
+                    sendOutput (outputFor "op-b" [ "other" ])
+
+                    do! waitFor (fun () -> logs().ContainsKey "op-b" && logs().["op-a"].Lines.Length = 3)
+
+                    Vitest.expect(logs().["op-a"].Lines |> Array.map _.Text).toEqual [| "first"; "second"; "third" |]
+                    Vitest.expect(logs().["op-b"].Lines |> Array.map _.Text).toEqual [| "other" |]
+
+                    work.resolve (Ok())
+                    let! _ = running
+                    let! _ = other
+                    ()
+                })
+        )
+
+        Vitest.test (
+            "output of an unknown operation id is ignored",
+            fun () ->
+                withRunningState (fun controller actions logs _ _ _ sendOutput -> promise {
+                    let work = deferred ()
+                    let running = controller().track (runningAction "op-a") (fun () -> work.pending)
+
+                    do! waitFor (fun () -> actions().Length = 1)
+
+                    sendOutput (outputFor "op-other" [ "not ours" ])
+                    do! Promise.sleep 20
+                    Vitest.expect(logs().ContainsKey "op-other").toBe false
+                    Vitest.expect(logs().IsEmpty).toBe true
+
+                    // The provider is listening, because its own operation id still gets through.
+                    sendOutput (outputFor "op-a" [ "ours" ])
+                    do! waitFor (fun () -> logs().ContainsKey "op-a")
+
+                    work.resolve (Ok())
+                    let! _ = running
+                    ()
+                })
+        )
+
+        Vitest.test (
+            "the log goes away when the work settles and later output does not bring it back",
+            fun () ->
+                withRunningState (fun controller actions logs _ _ _ sendOutput -> promise {
+                    let work = deferred ()
+                    let running = controller().track (runningAction "op-a") (fun () -> work.pending)
+
+                    do! waitFor (fun () -> actions().Length = 1)
+
+                    sendOutput (outputFor "op-a" [ "first" ])
+                    do! waitFor (fun () -> logs().ContainsKey "op-a")
+
+                    work.resolve (Ok())
+                    let! _ = running
+                    do! waitFor (fun () -> logs().IsEmpty)
+
+                    sendOutput (outputFor "op-a" [ "late" ])
+                    do! Promise.sleep 20
+                    Vitest.expect(logs().IsEmpty).toBe true
+                })
+        )
+
+        Vitest.test (
+            "a batch of output leaves the running actions reference-equal and does not render their readers",
+            fun () ->
+                withRunningState (fun controller actions logs _ actionRenders _ sendOutput -> promise {
+                    let work = deferred ()
+                    let running = controller().track (runningAction "op-a") (fun () -> work.pending)
+
+                    do! waitFor (fun () -> actions().Length = 1)
+
+                    let before = actions ()
+                    let rendersBefore = actionRenders ()
+
+                    sendOutput (outputFor "op-a" [ "first"; "second" ])
+                    do! waitFor (fun () -> logs().ContainsKey "op-a")
+                    sendOutput (outputFor "op-a" [ "third" ])
+                    do! waitFor (fun () -> logs().["op-a"].Lines.Length = 3)
+
+                    Vitest.expect(obj.ReferenceEquals(actions (), before)).toBe true
+                    Vitest.expect(actionRenders ()).toBe rendersBefore
+
+                    work.resolve (Ok())
+                    let! _ = running
+                    ()
+                })
+        )
+)
+
+/// Mounts ArcHarness on a root that the test renders again to switch the ARC. The test reaches the output listener
+/// that the provider registered on the IPC bridge.
+let private withArcSwitch
+    (body:
+        (string -> unit)
+            -> (unit -> LfsActivityController)
+            -> (unit -> LfsRunningAction[])
+            -> (unit -> Renderer.Context.OperationLog.FinishedOperationLog option)
+            -> (VersionControlOutput -> unit)
+            -> JS.Promise<unit>)
+    =
+    promise {
+        let container = document.createElement ("div") :?> Browser.Types.HTMLDivElement
+        document.body.appendChild container |> ignore
+        let root = ReactDOM.createRoot container
+        let controller: LfsActivityController option ref = ref None
+        let actions: LfsRunningAction[] ref = ref [||]
+
+        let lastLog: Renderer.Context.OperationLog.FinishedOperationLog option ref =
+            ref None
+
+        let outputListener: (VersionControlOutput -> unit) option ref = ref None
+
+        installVersionControlBridge ignore (fun listener -> outputListener.Value <- listener)
+
+        let harness arcRootPath =
+            ArcHarness(
+                Some arcRootPath,
+                (fun c -> controller.Value <- Some c),
+                (fun a -> actions.Value <- a),
+                ignore,
+                (fun l -> lastLog.Value <- l)
+            )
+
+        try
+            root.render (harness "C:/arc-a")
+            do! waitFor (fun () -> controller.Value.IsSome && outputListener.Value.IsSome)
+
+            do!
+                body
+                    (fun arcRootPath -> root.render (harness arcRootPath))
+                    (fun () -> controller.Value.Value)
+                    (fun () -> actions.Value)
+                    (fun () -> lastLog.Value)
+                    (fun output -> outputListener.Value.Value output)
+        finally
+            root.unmount ()
+            container.remove ()
+    }
+
+Vitest.describe (
+    "LfsActivityCtxProvider last log across an ARC switch",
+    fun () ->
+        Vitest.test (
+            "the file tree last log stays when the ARC changes",
+            fun () ->
+                withArcSwitch (fun switchTo controller actions lastLog sendOutput -> promise {
+                    let work = deferred ()
+                    let running = controller().track (runningAction "op-a") (fun () -> work.pending)
+
+                    do! waitFor (fun () -> actions().Length = 1)
+
+                    sendOutput (outputFor "op-a" [ "first" ])
+                    work.resolve (Ok())
+                    let! _ = running
+                    do! waitFor (fun () -> lastLog().IsSome)
+
+                    let before = lastLog ()
+                    let controllerBefore = controller ()
+
+                    switchTo "C:/arc-b"
+                    do! waitFor (fun () -> not (obj.ReferenceEquals(controller (), controllerBefore)))
+                    do! Promise.sleep 20
+
+                    Vitest.expect(obj.ReferenceEquals(lastLog (), before)).toBe true
+                })
+        )
+
+        Vitest.test (
+            "an action that ends after the ARC changed keeps the ARC name of the ARC it started in",
+            fun () ->
+                withArcSwitch (fun switchTo controller actions lastLog sendOutput -> promise {
+                    let work = deferred ()
+                    let running = controller().track (runningAction "op-a") (fun () -> work.pending)
+
+                    do! waitFor (fun () -> actions().Length = 1)
+
+                    sendOutput (outputFor "op-a" [ "first" ])
+
+                    switchTo "C:/arc-b"
+                    do! waitFor (fun () -> actions().Length = 0)
+
+                    work.resolve (Ok())
+                    let! _ = running
+                    do! waitFor (fun () -> lastLog().IsSome)
+
+                    Vitest.expect(lastLog().Value.ArcName).toEqual (Some(PathHelpers.getFileName "C:/arc-a"))
+                })
+        )
+)
+
+Vitest.describe (
+    "LfsActivityCtxProvider failure details and last log",
+    fun () ->
+        Vitest.test (
+            "a tracked action that fails after output returns the text of that output as the details",
+            fun () ->
+                withRunningState (fun controller actions logs _ _ _ sendOutput -> promise {
+                    let work = deferred ()
+                    let running = controller().track (runningAction "op-a") (fun () -> work.pending)
+
+                    do! waitFor (fun () -> actions().Length = 1)
+
+                    sendOutput (outputFor "op-a" [ "first"; "second" ])
+                    do! waitFor (fun () -> logs().ContainsKey "op-a")
+
+                    let details = Renderer.Context.OperationLog.tryDetails (logs().["op-a"])
+                    Vitest.expect(details.IsSome).toBe true
+
+                    work.resolve (Error(GitLfsActionFailure.ofMessage "network down"))
+                    let! result = running
+
+                    Vitest
+                        .expect(result)
+                        .toEqual (
+                            Error {
+                                GitLfsActionFailure.ofMessage "network down" with
+                                    Details = details
+                            }
+                        )
+                })
+        )
+
+        Vitest.test (
+            "a tracked action whose work fails with details after output returns those details followed by the output text",
+            fun () ->
+                withRunningState (fun controller actions logs _ _ _ sendOutput -> promise {
+                    let work = deferred ()
+                    let running = controller().track (runningAction "op-a") (fun () -> work.pending)
+
+                    do! waitFor (fun () -> actions().Length = 1)
+
+                    sendOutput (outputFor "op-a" [ "first"; "second" ])
+                    do! waitFor (fun () -> logs().ContainsKey "op-a")
+
+                    let outputText = Renderer.Context.OperationLog.tryDetails (logs().["op-a"])
+                    Vitest.expect(outputText.IsSome).toBe true
+
+                    let failure = {
+                        GitLfsActionFailure.ofMessage "network down" with
+                            Details = Some "a.bin: connection reset"
+                    }
+
+                    work.resolve (Error failure)
+                    let! result = running
+
+                    Vitest
+                        .expect(result)
+                        .toEqual (
+                            Error {
+                                failure with
+                                    Details = Some("a.bin: connection reset\n\n" + outputText.Value)
+                            }
+                        )
+                })
+        )
+
+        Vitest.test (
+            "a tracked action that fails without output returns no details",
+            fun () ->
+                withRunningState (fun controller actions _ _ _ _ _ -> promise {
+                    let work = deferred ()
+                    let running = controller().track (runningAction "op-a") (fun () -> work.pending)
+
+                    do! waitFor (fun () -> actions().Length = 1)
+
+                    work.resolve (Error(GitLfsActionFailure.ofMessage "network down"))
+                    let! result = running
+
+                    match result with
+                    | Error failure -> Vitest.expect(failure.Details).toEqual None
+                    | Ok() -> failwith "Expected the tracked action to fail."
+                })
+        )
+
+        Vitest.test (
+            "an action with output stores its label, ARC name and lines as the last log when it ends",
+            fun () ->
+                withRunningState (fun controller actions logs lastLog _ _ sendOutput -> promise {
+                    let work = deferred ()
+                    let action = runningAction "op-a"
+                    let running = controller().track action (fun () -> work.pending)
+
+                    do! waitFor (fun () -> actions().Length = 1)
+
+                    sendOutput (outputFor "op-a" [ "first"; "second" ])
+                    do! waitFor (fun () -> logs().ContainsKey "op-a")
+
+                    Vitest.expect(lastLog ()).toEqual None
+
+                    let before = Fable.Core.JS.Constructors.Date.now ()
+                    work.resolve (Ok())
+                    let! _ = running
+                    do! waitFor (fun () -> lastLog().IsSome)
+
+                    let finished = lastLog().Value
+                    Vitest.expect(finished.Label).toBe (LfsRunningAction.label action)
+                    Vitest.expect(finished.ArcName).toEqual (Some(PathHelpers.getFileName "C:/arc"))
+                    Vitest.expect(finished.FinishedAt >= before).toBe true
+                    Vitest.expect(finished.Log.Lines |> Array.map _.Text).toEqual [| "first"; "second" |]
+                })
+        )
+
+        Vitest.test (
+            "an action without output leaves the previous last log unchanged",
+            fun () ->
+                withRunningState (fun controller actions logs lastLog _ _ sendOutput -> promise {
+                    let work = deferred ()
+                    let running = controller().track (runningAction "op-a") (fun () -> work.pending)
+
+                    do! waitFor (fun () -> actions().Length = 1)
+
+                    sendOutput (outputFor "op-a" [ "first" ])
+                    do! waitFor (fun () -> logs().ContainsKey "op-a")
+
+                    work.resolve (Ok())
+                    let! _ = running
+                    do! waitFor (fun () -> lastLog().IsSome && actions().Length = 0)
+
+                    let previous = lastLog ()
+                    let quietWork = deferred ()
+                    let quiet = controller().track (runningAction "op-b") (fun () -> quietWork.pending)
+
+                    do! waitFor (fun () -> actions().Length = 1)
+
+                    quietWork.resolve (Ok())
+                    let! _ = quiet
+                    do! waitFor (fun () -> actions().Length = 0)
+
+                    Vitest.expect(obj.ReferenceEquals(lastLog (), previous)).toBe true
+                })
+        )
+)
+
+let private applyEvent (action: LfsRunningAction) (progress: VersionControlProgress) =
+    match LfsRunningActionsState.applyProgress progress [ ("scope", action) ] with
+    | [ _, next ] -> next
+    | _ -> failwith "Expected the single running action."
+
+Vitest.describe (
+    "LfsRunningActionsState.applyProgress",
+    fun () ->
+        Vitest.test (
+            "a meter event with numbers sets the step percent and a meter event without numbers clears it",
+            fun () ->
+                let transfer = LfsProgressPhase.MaterializeTransfer
+
+                let running =
+                    applyEvent (runningAction "op-a") (eventOf "op-a" transfer (Some 45.0) (Some 100.0))
+
+                Vitest.expect(running.StepPercent).toEqual (Some 45.0)
+
+                let checkout =
+                    applyEvent running (eventOf "op-a" LfsProgressPhase.MaterializeCheckout (Some 10.0) (Some 100.0))
+
+                Vitest.expect(checkout.StepPercent).toEqual (Some 10.0)
+
+                let cleared = applyEvent checkout (eventOf "op-a" transfer None None)
+                Vitest.expect(cleared.StepPercent).toEqual (None)
+        )
+
+        Vitest.test (
+            "the count and the step percent are independent",
+            fun () ->
+                let counted = applyEvent (runningAction "op-a") (countEventFor "op-a" 4.0)
+
+                let metered =
+                    applyEvent counted (eventOf "op-a" LfsProgressPhase.MaterializeTransfer (Some 30.0) (Some 100.0))
+
+                Vitest.expect(metered.Count).toEqual (Some(4, 10))
+                Vitest.expect(metered.StepPercent).toEqual (Some 30.0)
+
+                // A repeated event with the same numbers does not produce a new state.
+                let state = [ ("scope", metered) ]
+
+                let repeated =
+                    LfsRunningActionsState.applyProgress
+                        (eventOf "op-a" LfsProgressPhase.MaterializeTransfer (Some 30.0) (Some 100.0))
+                        state
+
+                Vitest.expect(obj.ReferenceEquals(repeated, state)).toBe true
+        )
+
+        Vitest.test (
+            "an event of a phase that is no meter clears the step percent and keeps the count",
+            fun () ->
+                let metered = {
+                    runningAction "op-a" with
+                        Count = Some(4, 10)
+                        StepPercent = Some 30.0
+                }
+
+                for phase in
+                    [
+                        "lfs-materialize"
+                        "lfs-dematerialize"
+                        "lfs-download"
+                        "git"
+                    ] do
+                    let next = applyEvent metered (eventOf "op-a" phase (Some 9.0) (Some 10.0))
+
+                    Vitest.expect(next.StepPercent).toEqual None
+                    Vitest.expect(next.Count).toEqual (Some(4, 10))
+
+                // A count event clears the step percent too and applies its count.
+                let counted = applyEvent metered (countEventFor "op-a" 5.0)
+                Vitest.expect(counted.StepPercent).toEqual None
+                Vitest.expect(counted.Count).toEqual (Some(5, 10))
+
+                // Without a step percent such an event changes nothing.
+                let idle = { metered with StepPercent = None }
+                let state = [ ("scope", idle) ]
+
+                let unchanged =
+                    LfsRunningActionsState.applyProgress (eventOf "op-a" "lfs-materialize" (Some 9.0) (Some 10.0)) state
+
+                Vitest.expect(obj.ReferenceEquals(unchanged, state)).toBe true
+        )
+)
+
+Vitest.describe (
+    "LfsRunningActionsState.forScope",
+    fun () ->
+        let first = runningAction "op-a"
+        let second = runningAction "op-b"
+
+        Vitest.test (
+            "the scoped actions come back in start order and none without a scope",
+            fun () ->
+                let state = [ "scope-1", first; "scope-2", second ]
+
+                Vitest.expect(LfsRunningActionsState.forScope (Some "scope-1") [||] state).toEqual [| first |]
+                Vitest.expect(LfsRunningActionsState.forScope (Some "scope-3") [||] state).toEqual [||]
+                Vitest.expect(LfsRunningActionsState.forScope None [||] state).toEqual [||]
+        )
+
+        Vitest.test (
+            "the previous array comes back while the scoped actions are the same records",
+            fun () ->
+                let before =
+                    LfsRunningActionsState.forScope (Some "scope-1") [||] [ "scope-1", first ]
+
+                // An action of another ARC starts, and the state list is a new one.
+                let after =
+                    LfsRunningActionsState.forScope (Some "scope-1") before [ "scope-1", first; "scope-2", second ]
+
+                Vitest.expect(obj.ReferenceEquals(after, before)).toBe true
+        )
+
+        Vitest.test (
+            "a new array comes back when a scoped action starts, ends or changes",
+            fun () ->
+                let before =
+                    LfsRunningActionsState.forScope (Some "scope-1") [||] [ "scope-1", first ]
+
+                let started =
+                    LfsRunningActionsState.forScope (Some "scope-1") before [ "scope-1", first; "scope-1", second ]
+
+                let counted = { first with Count = Some(1, 3) }
+
+                let changed =
+                    LfsRunningActionsState.forScope (Some "scope-1") before [ "scope-1", counted ]
+
+                let ended = LfsRunningActionsState.forScope (Some "scope-1") before []
+
+                Vitest.expect(started.Length).toBe 2
+                Vitest.expect(obj.ReferenceEquals(started, before)).toBe false
+                Vitest.expect(changed).toEqual [| counted |]
+                Vitest.expect(obj.ReferenceEquals(changed, before)).toBe false
+                Vitest.expect(ended.Length).toBe 0
+        )
+)
+
+Vitest.describe (
+    "LfsRunningAction.progressText",
+    fun () ->
+        let folder = {
+            runningAction "op-a" with
+                FileCount = 40
+        }
+
+        let single = {
+            runningAction "op-a" with
+                IsFolder = false
+                FileCount = 1
+        }
+
+        Vitest.test (
+            "a folder reads 0 of its file count before the first count event",
+            fun () -> Vitest.expect(LfsRunningAction.progressText folder).toEqual (Some $"0/{folder.FileCount}")
+        )
+
+        Vitest.test (
+            "a folder reads the count of the latest count event",
+            fun () ->
+                let counted = { folder with Count = Some(3, 38) }
+                Vitest.expect(LfsRunningAction.progressText counted).toEqual (Some "3/38")
+        )
+
+        Vitest.test (
+            "a folder appends the step percent rounded down",
+            fun () ->
+                let metered = {
+                    folder with
+                        Count = Some(3, 40)
+                        StepPercent = Some 45.9
+                }
+
+                Vitest.expect(LfsRunningAction.progressText metered).toEqual (Some "3/40 45%")
+        )
+
+        Vitest.test (
+            "a single file shows no text and no percent, even with a step percent",
+            fun () ->
+                let metered = { single with StepPercent = Some 7.5 }
+
+                Vitest.expect(LfsRunningAction.progressText single).toEqual None
+                Vitest.expect(LfsRunningAction.progressText metered).toEqual None
+                Vitest.expect(LfsRunningAction.progressPercent metered).toEqual None
+        )
+)
+
+Vitest.describe (
+    "LfsRunningAction.progressPercent",
+    fun () ->
+        let folder = {
+            runningAction "op-a" with
+                FileCount = 40
+        }
+
+        Vitest.test (
+            "a folder uses the step percent while Git LFS reports one",
+            fun () ->
+                let metered = {
+                    folder with
+                        Count = Some(10, 40)
+                        StepPercent = Some 45.9
+                }
+
+                Vitest.expect(LfsRunningAction.progressPercent metered).toEqual (Some 45.9)
+        )
+
+        Vitest.test (
+            "a folder falls back to the share of finished files without a step percent",
+            fun () ->
+                let counted = { folder with Count = Some(10, 40) }
+                Vitest.expect(LfsRunningAction.progressPercent counted).toEqual (Some 25.0)
+        )
+
+        Vitest.test (
+            "a folder has no percent before the first count event and without a step percent",
+            fun () -> Vitest.expect(LfsRunningAction.progressPercent folder).toEqual None
         )
 )

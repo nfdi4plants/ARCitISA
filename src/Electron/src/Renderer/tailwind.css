@@ -9,8 +9,11 @@
 
 @source "../fable_output/**/*.fs.jsx";
 @plugin "@tailwindcss/typography";
+/* The arcitisa set holds the app's own icons from src/Renderer/icons, for example swt:arcitisa--arc-sync. The plugin
+   reads the folder relative to the working directory of the build, which is src/Electron. */
 @plugin "@iconify/tailwind4" {
- prefixes: fluent;
+ prefixes: fluent, arcitisa;
+ icon-sets: from-folder(arcitisa, "./src/Renderer/icons");
 }
 
 @plugin "daisyui" {

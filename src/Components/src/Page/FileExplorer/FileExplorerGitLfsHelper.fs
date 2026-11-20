@@ -10,9 +10,11 @@ let private downloadLabel = "Download LFS file"
 let private downloadIcon = "swt:fluent--cloud-arrow-down-24-regular"
 let private freeCopyLabel = "Free local LFS copy"
 let private freeCopyIcon = "swt:fluent--document-arrow-up-20-regular"
+let private downloadFolderLabel = "Download all LFS files"
+let private freeFolderLabel = "Free all local LFS copies"
 
 let toggleLfsMark
-    (setError: string option -> unit)
+    (setError: GitLfsActionFailure option -> unit)
     (runToggle: string -> bool -> JS.Promise<Result<unit, string>>)
     : (FileItem -> bool -> unit) =
     fun item markAsLfs ->
@@ -21,22 +23,25 @@ let toggleLfsMark
             | None -> ()
             | Some relativePath ->
                 if System.String.IsNullOrWhiteSpace relativePath then
-                    setError (Some "Cannot mark ARC root as a Git LFS file.")
+                    setError (Some(GitLfsActionFailure.ofMessage "Cannot mark ARC root as a Git LFS file."))
                 else
                     match GitLfsRules.tryGetToggleBlockedReason relativePath item.Size markAsLfs with
-                    | Some blockedReason -> setError (Some blockedReason)
+                    | Some blockedReason -> setError (Some(GitLfsActionFailure.ofMessage blockedReason))
                     | None ->
                         let! result = runToggle relativePath markAsLfs
 
                         match result with
                         | Ok _ -> setError None
-                        | Error msg -> setError (Some $"Git LFS update failed for '{item.Name}': {msg}")
+                        | Error msg ->
+                            setError (
+                                Some(GitLfsActionFailure.ofMessage $"Git LFS update failed for '{item.Name}': {msg}")
+                            )
         }
         |> Promise.start
 
 let private runLfsFileAction
-    (setError: string option -> unit)
-    (runAction: string -> JS.Promise<Result<unit, string>>)
+    (setError: GitLfsActionFailure option -> unit)
+    (runAction: string -> JS.Promise<Result<unit, GitLfsActionFailure>>)
     (rootError: string)
     (canRun: FileItem -> bool)
     (blockedMessage: FileItem -> string)
@@ -46,20 +51,27 @@ let private runLfsFileAction
         promise {
             match item.Path with
             | None -> ()
-            | Some path when System.String.IsNullOrWhiteSpace path -> setError (Some rootError)
+            | Some path when System.String.IsNullOrWhiteSpace path ->
+                setError (Some(GitLfsActionFailure.ofMessage rootError))
             | Some _ when not (FileItemHelper.isLfs item) ->
-                setError (Some $"'{item.Name}' is not marked as a Git LFS file.")
-            | Some _ when not (canRun item) -> setError (Some(blockedMessage item))
+                setError (Some(GitLfsActionFailure.ofMessage $"'{item.Name}' is not marked as a Git LFS file."))
+            | Some _ when not (canRun item) -> setError (Some(GitLfsActionFailure.ofMessage (blockedMessage item)))
             | Some path ->
                 match! runAction path with
                 | Ok _ -> setError None
-                | Error msg -> setError (Some(failureMessage item msg))
+                | Error failure ->
+                    setError (
+                        Some {
+                            failure with
+                                Message = failureMessage item failure.Message
+                        }
+                    )
         }
         |> Promise.start
 
 let freeLocalLfsCopy
-    (setError: string option -> unit)
-    (runCleanup: string -> JS.Promise<Result<unit, string>>)
+    (setError: GitLfsActionFailure option -> unit)
+    (runCleanup: string -> JS.Promise<Result<unit, GitLfsActionFailure>>)
     : FileItem -> unit =
     runLfsFileAction
         setError
@@ -70,8 +82,8 @@ let freeLocalLfsCopy
         (fun item msg -> $"Git LFS cleanup failed for '{item.Name}': {msg}")
 
 let downloadLfsFile
-    (setError: string option -> unit)
-    (runDownload: string -> JS.Promise<Result<unit, string>>)
+    (setError: GitLfsActionFailure option -> unit)
+    (runDownload: string -> JS.Promise<Result<unit, GitLfsActionFailure>>)
     : FileItem -> unit =
     runLfsFileAction
         setError
@@ -90,7 +102,34 @@ let private lfsAction label icon item enabled action =
             ContextMenuItem.disabled label icon
     )
 
-let lfsPillAction (item: FileItem) onDownloadLfsFile onFreeLocalLfsCopy =
+/// The folder entries that download or free every Git LFS file below a folder. The counts come from the caller.
+/// A folder without an LFS file below it gets no entries. The function disables both entries while an action runs
+/// on the folder, and while the caller reports the folder as busy (for example when an action runs on a path below
+/// it).
+let folderContextMenuItems
+    (item: FileItem)
+    (isBusy: bool)
+    (pendingDownloads: int)
+    (localCopies: int)
+    (onDownloadFolder: FileItem -> unit)
+    (onFreeFolder: FileItem -> unit)
+    : ContextMenuItem list =
+    if not item.IsDirectory || pendingDownloads + localCopies = 0 then
+        []
+    else
+        let isIdle = item.LfsActivity.IsNone && not isBusy
+
+        [
+            yield!
+                lfsAction downloadFolderLabel downloadIcon item (pendingDownloads > 0 && isIdle) (Some onDownloadFolder)
+                |> Option.toList
+
+            yield!
+                lfsAction freeFolderLabel freeCopyIcon item (localCopies > 0 && isIdle) (Some onFreeFolder)
+                |> Option.toList
+        ]
+
+let lfsPillAction (item: FileItem) onDownloadLfsFile =
     let withFallback label icon enabled action =
         lfsAction label icon item enabled action
         |> Option.defaultValue (ContextMenuItem.disabled label icon)
@@ -102,7 +141,8 @@ let lfsPillAction (item: FileItem) onDownloadLfsFile onFreeLocalLfsCopy =
     elif FileItemHelper.needsLfsDownload item then
         withFallback downloadLabel downloadIcon isIdle onDownloadLfsFile |> Some
     elif FileItemHelper.hasLocalLfsCopy item then
-        withFallback freeCopyLabel freeCopyIcon isIdle onFreeLocalLfsCopy |> Some
+        // A click on the pill must not free a local copy. Free stays in the context menu.
+        None
     else
         ContextMenuItem.disabled downloadLabel downloadIcon |> Some
 

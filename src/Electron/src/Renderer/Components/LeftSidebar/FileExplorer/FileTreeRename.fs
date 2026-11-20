@@ -32,7 +32,7 @@ module FileTreeRenameWorkflow =
         (pageState: Renderer.Types.PageState option)
         =
         match pageState with
-        | Some(Renderer.Types.PageState.ArcFilePage(arcFile, _)) ->
+        | Some(Renderer.Types.PageState.ArcFilePage(arcFile, _, _)) ->
             arcFile.TryGetRelativePath()
             |> Option.bind (PathHelpers.tryRemapPathPrefix sourcePath targetPath)
         | _ -> None
@@ -54,7 +54,7 @@ module FileTreeRenameWorkflow =
         match config.pendingRenameDraft with
         | None -> config.closeRenameModal ()
         | Some renameDraft ->
-            match validateRenameName newName with
+            match validateRenameDraftName renameDraft newName with
             | Error validationError -> applyError validationError
             | Ok normalizedNewName ->
                 let targetPath = buildRenamedSiblingPath renameDraft.SourcePath normalizedNewName

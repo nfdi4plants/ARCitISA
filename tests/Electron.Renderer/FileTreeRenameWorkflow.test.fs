@@ -112,7 +112,10 @@ Vitest.describe (
 )
 
 let private getRenameMenuItems (item: FileItem) =
-    FileTreeContextMenu.renameContextMenuItems [] (fun _ -> ()) item
+    FileTreeContextMenu.renameContextMenuItems
+        Renderer.Context.LfsActivityContext.LfsActivePathIndex.empty
+        (fun _ -> ())
+        item
 
 let private expectRenameMenuVisibility expectedCount item =
     let menuItems = getRenameMenuItems item
@@ -180,6 +183,26 @@ let private expectRenameRequest probe expectedRelativePath expectedNewName =
 Vitest.describe (
     "FileTreeRenameWorkflow",
     fun () ->
+
+        Vitest.test (
+            "invalid entity identifiers never dispatch a rename and keep the dialog open",
+            fun () ->
+                for zone in [ "assays"; "studies"; "workflows"; "runs" ] do
+                    let draft = createFolderItem "Old" $"{zone}/Old" |> buildRenameDraftOrFail
+                    let probe = createRenameWorkflowProbe ()
+                    let mutable errors = []
+
+                    let config = {
+                        createConfirmRenameConfig draft draft.SourcePath None probe with
+                            enqueueError = fun error -> errors <- error :: errors
+                    }
+
+                    RenameWorkflow.confirmRenameItem config "invalid.identifier"
+                    Vitest.expect(probe.RenameRequest).toEqual None
+                    Vitest.expect(probe.Closed).toBe false
+                    Vitest.expect(probe.GitStatusRefreshCount).toBe 0
+                    Vitest.expect(errors.Length).toBe 1
+        )
 
         Vitest.test (
             "rename context menu item is shown for assay, study, workflow, and run entity folders",
@@ -287,7 +310,11 @@ Vitest.describe (
                 let requestRenameItem =
                     RenameWorkflow.requestRenameItem (fun draft -> pendingRenameDraft <- draft) ignore
 
-                let menuItems = FileTreeContextMenu.renameContextMenuItems [] requestRenameItem item
+                let menuItems =
+                    FileTreeContextMenu.renameContextMenuItems
+                        Renderer.Context.LfsActivityContext.LfsActivePathIndex.empty
+                        requestRenameItem
+                        item
 
                 Vitest.expect(menuItems.Length).toBe (1)
                 menuItems.[0].OnClick()
@@ -334,7 +361,10 @@ Vitest.describe (
                     renderToBody (
                         Swate.Components.Page.FileExplorer.FileExplorer.FileExplorer(
                             initialItems = items,
-                            getItemActions = FileTreeContextMenu.renameContextMenuItems [] onRenameItem
+                            getItemActions =
+                                FileTreeContextMenu.renameContextMenuItems
+                                    Renderer.Context.LfsActivityContext.LfsActivePathIndex.empty
+                                    onRenameItem
                         )
                     )
 
@@ -369,7 +399,7 @@ Vitest.describe (
                     createConfirmRenameConfig
                         renameDraft
                         "assays/OldAssay/notes/protocol.md"
-                        (Some(Renderer.Types.PageState.ArcFilePage(ArcFiles.Assay(ArcAssay.init "OldAssay"), None)))
+                        (Some(Renderer.Types.PageState.ArcFilePage(ArcFiles.Assay(ArcAssay.init "OldAssay"), None, 0)))
                         probe
 
                 RenameWorkflow.confirmRenameItem config "NewAssay"
@@ -380,6 +410,28 @@ Vitest.describe (
                 Vitest.expect(probe.RenamedSelection.Value.TreePath).toEqual (Some "assays/NewAssay/notes/protocol.md")
                 Vitest.expect(probe.ReloadedPreviewPath).toEqual (Some "assays/NewAssay/isa.assay.xlsx")
                 Vitest.expect(probe.GitStatusRefreshCount).toBe (1)
+            }
+        )
+
+        Vitest.test (
+            "renaming an entity folder moves the selection along when its workbook is selected",
+            fun () -> promise {
+                let renameDraft =
+                    createFolderItem "OldAssay" "assays/OldAssay" |> buildRenameDraftOrFail
+
+                let probe = createRenameWorkflowProbe ()
+
+                let config =
+                    createConfirmRenameConfig
+                        renameDraft
+                        "assays/OldAssay/isa.assay.xlsx"
+                        (Some(Renderer.Types.PageState.ArcFilePage(ArcFiles.Assay(ArcAssay.init "OldAssay"), None, 0)))
+                        probe
+
+                RenameWorkflow.confirmRenameItem config "NewAssay"
+                do! waitUntil ((fun () -> probe.RenameRequest.IsSome && probe.Closed), 50)
+
+                Vitest.expect(probe.RenamedSelection.Value.TreePath).toEqual (Some "assays/NewAssay/isa.assay.xlsx")
             }
         )
 

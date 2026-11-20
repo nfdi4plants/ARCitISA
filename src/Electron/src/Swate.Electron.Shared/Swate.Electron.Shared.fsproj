@@ -24,12 +24,12 @@
     <PackageReference Include="ARCtrl.Javascript" />
     <PackageReference Include="YAMLicious" />
     <PackageReference Include="Fable.Electron" />
-    <PackageReference Include="Fable.Electron.Remoting" />
     <PackageReference Include="Fable.Electron.Forge" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\..\Components\src\Swate.Components.fsproj" />
+    <ProjectReference Include="..\..\..\Fable.Electron.Remoting.Compatibility\Fable.Electron.Remoting.fsproj" />
   </ItemGroup>
 
 </Project>

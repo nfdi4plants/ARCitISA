@@ -2,13 +2,15 @@ import React, { useState } from 'react';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, userEvent, waitFor, within } from 'storybook/test';
 import { PublicationsInput } from './PublicationsInput.fs.ts';
-import { Publication } from '../../../../fable_modules/ARCtrl.Core.3.0.0-beta.12/Publication.fs.ts';
+import { emptyPublication } from './PublicationsInput.sample.fs.js';
+
+type Publication = ReturnType<typeof emptyPublication>;
 
 const title = 'A practical atlas of plant biology';
 const doi = '10.1234/plant-atlas';
 
 function PublicationEditor() {
-  const [publications, setPublications] = useState(() => [Publication.empty()]);
+  const [publications, setPublications] = useState(() => [emptyPublication()]);
   return (
     <div className="swt:max-w-3xl swt:mx-auto swt:p-4">
       <PublicationsInput

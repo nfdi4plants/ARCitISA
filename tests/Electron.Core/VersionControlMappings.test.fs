@@ -163,6 +163,34 @@ Vitest.describe (
                 Vitest.expect(mapped.Completed).toEqual (Some 3221225472.0)
                 Vitest.expect(mapped.Total).toEqual (Some 6442450944.0)
         )
+
+        Vitest.test (
+            "output keeps the operation id and maps the four kinds",
+            fun () ->
+                let entry kind : OperationOutput = {
+                    CommandId = "git-1"
+                    Kind = kind
+                    Text = "line"
+                    IsPartial = false
+                }
+
+                let mapped =
+                    Mappings.output "op-1" [|
+                        entry OperationOutputKind.Command
+                        entry OperationOutputKind.StdOut
+                        entry OperationOutputKind.StdErr
+                        {
+                            entry OperationOutputKind.Notice with
+                                IsPartial = true
+                        }
+                    |]
+
+                Vitest.expect(mapped.OperationId).toBe "op-1"
+                Vitest.expect(mapped.Entries |> Array.map _.Kind).toEqual [| "command"; "stdout"; "stderr"; "notice" |]
+                Vitest.expect(mapped.Entries[0].CommandId).toBe "git-1"
+                Vitest.expect(mapped.Entries[0].Text).toBe "line"
+                Vitest.expect(mapped.Entries[3].IsPartial).toBe true
+        )
 )
 
 Vitest.describe (
@@ -386,6 +414,7 @@ Vitest.describe (
                             Version = Some "2.51.0"
                             Compatible = true
                             Remediation = None
+                            ProbeExecutablePath = Some "/usr/bin/git"
                         }
                     )
                     .toEqual
@@ -395,6 +424,7 @@ Vitest.describe (
                         Version = Some "2.51.0"
                         Compatible = true
                         Remediation = None
+                        ProbeExecutablePath = Some "/usr/bin/git"
                     }
         )
 )

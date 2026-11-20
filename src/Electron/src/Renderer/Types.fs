@@ -216,11 +216,14 @@ type GitDiffPageData = {
 
 [<RequireQualifiedAccess>]
 type PageState =
-    | ArcFilePage of arcFile: ArcFiles * requestedView: ActiveView option
+    | ArcFilePage of arcFile: ArcFiles * requestedView: ActiveView option * revision: int
     | MarkdownPage of string
-    | PDFPage of string
+    | PDFPage of string * string
+    | ImagePage of FileContentType * string * string
+    | HtmlPage of string * string
     | TextPage of string
     | UnknownPage
+    | LargeFilePage of path: string * sizeBytes: float * reason: NoPreviewReason
     //| LandingDraftPage
     | NotesDraftPage
     | NotesSearchPage
@@ -236,10 +239,15 @@ type PageState =
     | Changelog of version: string * requestId: string
     | SettingsPage
 
-    static member fromFileContentDTO(dto: FileContentDTO) : PageState =
+    static member fromFileContentDTO(dto: FileContentDTO, revision: int) : PageState =
         match dto.fileType with
         | FileContentType.Markdown -> PageState.MarkdownPage dto.content
-        | FileContentType.PDF -> PageState.PDFPage dto.content
+        | FileContentType.PDF -> PageState.PDFPage(dto.content, dto.path)
+        | FileContentType.PNG
+        | FileContentType.JPG
+        | FileContentType.SVG
+        | FileContentType.GIF -> PageState.ImagePage(dto.fileType, dto.content, dto.path)
+        | FileContentType.Html -> PageState.HtmlPage(dto.content, dto.path)
         | FileContentType.FileContentTypeIsPlainTextVariant -> PageState.TextPage dto.content
         | FileContentType.FileContentTypeIsISAFileVariant ->
             let arcfile = FileContentDTO.toArcFile dto
@@ -250,24 +258,24 @@ type PageState =
 
                 if
                     normalizedPath.EndsWith(
-                        ARCtrl.ArcPathHelper.DataMapFileName,
+                        ARCtrl.ArcPathHelper.DatamapFileName,
                         System.StringComparison.OrdinalIgnoreCase
                     )
                 then
-                    PageState.ArcFilePage(arcFile, Some ActiveView.DataMap)
+                    PageState.ArcFilePage(arcFile, Some ActiveView.DataMap, revision)
                 elif normalizedPath.EndsWith(".xlsx", System.StringComparison.OrdinalIgnoreCase) then
-                    let startingView =
-                        if arcFile.Tables().Count > 0 then
-                            ActiveView.Table 0
-                        else
-                            ActiveView.Metadata
+                    let startingView = ActiveView.Metadata
 
-                    PageState.ArcFilePage(arcFile, Some startingView)
+                    PageState.ArcFilePage(arcFile, Some startingView, revision)
                 else
-                    PageState.ArcFilePage(arcFile, None)
+                    PageState.ArcFilePage(arcFile, None, revision)
             | None ->
                 PageState.ErrorPage
                     $"Failed to parse ARC file: {dto.path} - {dto.fileType} - unsupported format or corrupted content."
+        | FileContentType.NoPreview ->
+            match dto.noPreview with
+            | Some info -> PageState.LargeFilePage(dto.path, info.sizeBytes, info.reason)
+            | None -> PageState.UnknownPage
         | _ -> PageState.UnknownPage
 
 

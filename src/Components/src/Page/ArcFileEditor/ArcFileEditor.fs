@@ -16,12 +16,13 @@ open Swate.Components.Page.ArcFileEditor.Types
 open Swate.Components.Composite.AnnotationTable
 open Swate.Components.Composite.Widgets.DataAnnotator.Types
 open Swate.Components.Page.ArcFileEditor.EmptyTableView.Types
+open Swate.Components.Composite.Table.Types
 
 type private LazyComponents =
 
     [<ReactLazyComponent>]
-    static member LazyDataMap(datamap: DataMap, setDatamap: DataMap -> unit) =
-        DataMapTable.DataMapTable(datamap = datamap, setDatamap = setDatamap)
+    static member LazyDataMap(datamap: Datamap, setDatamap: Datamap -> unit, tableRef: IRefValue<TableHandle>) =
+        DataMapTable.DataMapTable(datamap = datamap, setDatamap = setDatamap, tableRef = tableRef)
 
     [<ReactLazyComponent>]
     static member LazyBuildingBlockWidget
@@ -61,12 +62,14 @@ type private LazyComponents =
         (
             arcFile: ArcFiles,
             setArcFile: ArcFiles -> unit,
+            activeTableIndex: int option,
             onImportJson: (JsonImportRequest -> JS.Promise<Result<unit, exn>>) option,
-            onError: exn -> unit
+            onError: JsonImportError -> unit
         ) =
         Swate.Components.Composite.Widgets.JsonImport.JsonImport.JsonImport(
             arcFile = arcFile,
             setArcFile = setArcFile,
+            ?activeTableIndex = activeTableIndex,
             ?onImportJson = onImportJson,
             onError = onError
         )
@@ -152,7 +155,8 @@ type Main =
             arcFileState: ArcFiles,
             setArcFileState: ArcFiles -> unit,
             onImportPersons: (unit -> JS.Promise<Person[]>) option,
-            fetchArcNodes: (unit -> JS.Promise<ArcNodeTable[]>) option
+            fetchArcNodes: (unit -> JS.Promise<ArcNodeTable[]>) option,
+            tableRef: IRefValue<TableHandle>
         ) =
         match activeView with
         | ActiveView.Metadata ->
@@ -183,7 +187,7 @@ type Main =
                         Some index,
                         ?fetchArcNodes = fetchArcNodes
                     )
-                | _ -> AnnotationTable.AnnotationTable(table, setTable)
+                | _ -> AnnotationTable.AnnotationTable(table, setTable, tableRef = tableRef)
             | None ->
                 Html.div [
                     prop.className "swt:p-4 swt:text-error"
@@ -191,47 +195,50 @@ type Main =
                 ]
         | ActiveView.DataMap ->
             match arcFileState with
-            | ArcFiles.Assay assay when assay.DataMap.IsSome ->
-                let setDatamap (nextDatamap: DataMap) =
-                    assay.DataMap <- Some nextDatamap
+            | ArcFiles.Assay assay when assay.Datamap.IsSome ->
+                let setDatamap (nextDatamap: Datamap) =
+                    assay.Datamap <- Some nextDatamap
                     setArcFileState (ArcFiles.refreshRef arcFileState)
 
                 Main.LazyLoaderWithMessage(
-                    LazyComponents.LazyDataMap(assay.DataMap.Value, setDatamap),
+                    LazyComponents.LazyDataMap(assay.Datamap.Value, setDatamap, tableRef),
                     "Loading DataMap..."
                 )
-            | ArcFiles.Study(study, assays) when study.DataMap.IsSome ->
-                let setDatamap (nextDatamap: DataMap) =
-                    study.DataMap <- Some nextDatamap
+            | ArcFiles.Study(study, assays) when study.Datamap.IsSome ->
+                let setDatamap (nextDatamap: Datamap) =
+                    study.Datamap <- Some nextDatamap
                     setArcFileState (ArcFiles.refreshRef (ArcFiles.Study(study, assays)))
 
                 Main.LazyLoaderWithMessage(
-                    LazyComponents.LazyDataMap(study.DataMap.Value, setDatamap),
+                    LazyComponents.LazyDataMap(study.Datamap.Value, setDatamap, tableRef),
                     "Loading DataMap..."
                 )
-            | ArcFiles.Run run when run.DataMap.IsSome ->
-                let setDatamap (nextDatamap: DataMap) =
-                    run.DataMap <- Some nextDatamap
+            | ArcFiles.Run run when run.Datamap.IsSome ->
+                let setDatamap (nextDatamap: Datamap) =
+                    run.Datamap <- Some nextDatamap
                     setArcFileState (ArcFiles.refreshRef arcFileState)
 
                 Main.LazyLoaderWithMessage(
-                    LazyComponents.LazyDataMap(run.DataMap.Value, setDatamap),
+                    LazyComponents.LazyDataMap(run.Datamap.Value, setDatamap, tableRef),
                     "Loading DataMap..."
                 )
-            | ArcFiles.Workflow workflow when workflow.DataMap.IsSome ->
-                let setDatamap (nextDatamap: DataMap) =
-                    workflow.DataMap <- Some nextDatamap
+            | ArcFiles.Workflow workflow when workflow.Datamap.IsSome ->
+                let setDatamap (nextDatamap: Datamap) =
+                    workflow.Datamap <- Some nextDatamap
                     setArcFileState (ArcFiles.refreshRef arcFileState)
 
                 Main.LazyLoaderWithMessage(
-                    LazyComponents.LazyDataMap(workflow.DataMap.Value, setDatamap),
+                    LazyComponents.LazyDataMap(workflow.Datamap.Value, setDatamap, tableRef),
                     "Loading DataMap..."
                 )
             | ArcFiles.DataMap(parent, datamap) ->
-                let setDatamap (nextDatamap: DataMap) =
+                let setDatamap (nextDatamap: Datamap) =
                     setArcFileState (ArcFiles.DataMap(parent, nextDatamap))
 
-                Main.LazyLoaderWithMessage(LazyComponents.LazyDataMap(datamap, setDatamap), "Loading DataMap...")
+                Main.LazyLoaderWithMessage(
+                    LazyComponents.LazyDataMap(datamap, setDatamap, tableRef),
+                    "Loading DataMap..."
+                )
             | _ ->
                 Html.div [
                     prop.className "swt:p-4 swt:text-error"
@@ -326,7 +333,8 @@ type Main =
             ?onImportJson: JsonImportRequest -> JS.Promise<Result<unit, exn>>,
             ?onError: string -> unit,
             ?onImportPersons: unit -> JS.Promise<Person[]>,
-            ?fetchArcNodes: unit -> JS.Promise<ArcNodeTable[]>
+            ?fetchArcNodes: unit -> JS.Promise<ArcNodeTable[]>,
+            ?onJsonImportError: JsonImportError -> unit
         ) =
 
         let onError =
@@ -359,6 +367,7 @@ type Main =
         }
 
         let activeTableIndex = activeView.TryTableIndex
+        let tableRef = React.useRef<TableHandle> (null)
 
         let canAddDataMap =
             onAddDataMap.IsSome
@@ -372,7 +381,11 @@ type Main =
 
         let navbar =
             Navbar.Main(
-                left = Swate.Components.Page.ArcFileEditor.Widgets.Main.WidgetToggleBtns(),
+                left =
+                    React.Fragment [
+                        SearchField.SearchField(arcFile, activeView, tableRef)
+                        Swate.Components.Page.ArcFileEditor.Widgets.Main.WidgetToggleBtns()
+                    ],
                 right = trailingNavbarElement,
                 className = "swt:border swt:border-base-300"
             )
@@ -412,8 +425,17 @@ type Main =
                     LazyComponents.LazyJsonImportWidget(
                         arcFile,
                         setArcFile,
+                        activeTableIndex,
                         onImportJson,
-                        (fun exn -> onError exn.Message)
+                        defaultArg
+                            onJsonImportError
+                            (fun error ->
+                                onError (
+                                    match error.Details with
+                                    | Some details -> $"{error.Message} {details}"
+                                    | None -> error.Message
+                                )
+                            )
                     ),
                     "Loading JSON Import Widget..."
                 )
@@ -432,7 +454,14 @@ type Main =
                     Html.div [
                         prop.className "swt:grow swt:flex swt:flex-col swt:overflow-hidden"
                         prop.children [
-                            Main.ArcFileContentView(activeView, arcFile, setArcFile, onImportPersons, fetchArcNodes)
+                            Main.ArcFileContentView(
+                                activeView,
+                                arcFile,
+                                setArcFile,
+                                onImportPersons,
+                                fetchArcNodes,
+                                tableRef
+                            )
                         ]
                     ]
                     Main.AddRowsFooter(activeView, arcFile, setArcFile)
@@ -483,7 +512,7 @@ type Main =
                     else
                         startAssay.AddTable(ArcTable.init (sprintf "Table %i" i))
 
-                startAssay.DataMap <- Some(ARCtrl.DataMap.init ())
+                startAssay.Datamap <- Some(ARCtrl.Datamap.init ())
 
                 startAssay
             )

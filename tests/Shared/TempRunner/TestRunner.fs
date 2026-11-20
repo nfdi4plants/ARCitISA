@@ -15,15 +15,17 @@ let private createLfsItem (downloaded: bool) (isPointer: bool) = {
 
 let private lfsBusyTests =
     testList "FileExplorer LFS busy actions" [
-        testCase "pill action stays disabled during download or free"
+        testCase "pill action stays disabled during download and is absent while freeing"
         <| fun _ ->
             let downloading = createLfsItem false true
             let freeing = createLfsItem true false
 
-            for item in [ downloading; freeing ] do
-                match lfsPillAction item (Some ignore) (Some ignore) with
-                | Some action -> Expect.equal action.Disabled (Some true) "The active pill action must be disabled."
-                | None -> failtest "An active LFS file must keep its pill action."
+            match lfsPillAction downloading (Some ignore) with
+            | Some action -> Expect.equal action.Disabled (Some true) "The downloading pill action must be disabled."
+            | None -> failtest "A downloading LFS file must keep its pill action."
+
+            // A file with a local copy has no pill action, so freeing it cannot be triggered from the pill.
+            Expect.isNone (lfsPillAction freeing (Some ignore)) "A freeing LFS file must not offer a pill action."
 
         testCase "context menu actions stay disabled during download or free"
         <| fun _ ->

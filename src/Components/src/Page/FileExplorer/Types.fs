@@ -83,6 +83,8 @@ type FileItem = {
     Checkout: string option
     Downloaded: bool option
     LfsActivity: string option
+    /// Live detail next to the busy pill while LfsActivity is set, for example "3/40 45%".
+    LfsActivityDetail: string option
     Size: int64 option
     SizeFormatted: string option
     ItemType: string
@@ -99,6 +101,14 @@ type FileItemConfig = {
     IsDirectory: bool
     ItemType: string
 }
+
+/// The failure of a Git LFS file action. Details holds text for a technical section, for example the output of the commands that ran.
+type GitLfsActionFailure = {
+    Message: string
+    Details: string option
+} with
+
+    static member ofMessage(message: string) = { Message = message; Details = None }
 
 // ============================================================================
 // FILE TREE OPERATIONS
@@ -127,6 +137,7 @@ module FileTree =
         Checkout = None
         Downloaded = None
         LfsActivity = None
+        LfsActivityDetail = None
         Size = None
         SizeFormatted = None
         ItemType = "node"
@@ -149,6 +160,7 @@ module FileTree =
         Checkout = None
         Downloaded = None
         LfsActivity = None
+        LfsActivityDetail = None
         Size = None
         SizeFormatted = None
         ItemType = "node"
@@ -171,6 +183,7 @@ module FileTree =
         Checkout = None
         Downloaded = None
         LfsActivity = None
+        LfsActivityDetail = None
         Size = None
         SizeFormatted = None
         ItemType = config.ItemType
@@ -232,6 +245,7 @@ module FileTree =
         Checkout = None
         Downloaded = None
         LfsActivity = None
+        LfsActivityDetail = None
         Size = None
         SizeFormatted = None
         ItemType = "empty"
@@ -321,17 +335,6 @@ module ContextMenuItem =
 
 module FileExplorerLogic =
 
-    let private expandedIdsFromPath itemId items =
-        let pathItems =
-            match FileTree.getPath itemId items [] with
-            | Some pathItems -> pathItems
-            | None -> []
-
-        pathItems
-        |> List.take (max 0 (List.length pathItems - 1))
-        |> List.choose (fun item -> if item.Children.IsSome then Some item.Id else None)
-        |> Set.ofList
-
     let rec private collectExpandedIds acc items =
         items
         |> List.fold
@@ -344,34 +347,65 @@ module FileExplorerLogic =
             )
             acc
 
-    let rec private collectIds acc items =
-        items
-        |> List.fold
-            (fun accIds item ->
-                let next = Set.add item.Id accIds
 
-                match item.Children with
-                | Some children -> collectIds next children
-                | None -> next
+    let canExpandDirectory (item: FileItem) = item.IsDirectory
+    // I removed this, as it removed the toggle "Anchor" from an empty directory.
+    // This might be okay with default folder icons, but i prefer a consistent ui look.
+    // && (
+    //     match item.Children with
+    //     | Some children -> not (List.isEmpty children)
+    //     | None -> true
+    // )
+
+    /// One visible row of the tree in display order.
+    type VisibleRow = {
+        Id: string
+        Item: FileItem
+        Depth: int
+        SetSize: int
+        PosInSet: int
+    }
+
+    /// Rows that are visible with the given expanded directories, in display order. Children of
+    /// collapsed directories and of directories without loaded children are not visible.
+    let flattenVisibleRows (expandedIds: Set<string>) (items: FileItem list) : VisibleRow[] =
+        let rows = ResizeArray<VisibleRow>()
+
+        let rec walk depth (siblings: FileItem list) =
+            let setSize = List.length siblings
+
+            siblings
+            |> List.iteri (fun index item ->
+                rows.Add {
+                    Id = item.Id
+                    Item = item
+                    Depth = depth
+                    SetSize = setSize
+                    PosInSet = index + 1
+                }
+
+                if item.IsDirectory && expandedIds.Contains item.Id then
+                    match item.Children with
+                    | Some children -> walk (depth + 1) children
+                    | None -> ()
             )
-            acc
 
+        walk 0 items
+        rows.ToArray()
+
+    /// State the component keeps when the parent does not control expansion or selection.
     type Model = {
-        Items: FileItem list
         SelectedId: string option
-        SelectedPath: FileItem list
         ExpandedIds: Set<string>
     }
 
     type Msg =
         | SetExpanded of itemId: string * isExpanded: bool
+        | ExpandMany of Set<string>
         | SelectItem of string
-        | UpdateItems of FileItem list * selectedItemId: string option option
 
     let init items = {
-        Items = items
         SelectedId = None
-        SelectedPath = []
         ExpandedIds = collectExpandedIds Set.empty items
     }
 
@@ -386,53 +420,34 @@ module FileExplorerLogic =
 
             { model with ExpandedIds = expandedIds }
 
-        | SelectItem itemId ->
-            let path =
-                match FileTree.getPath itemId model.Items [] with
-                | Some p -> p
-                | None -> []
+        | ExpandMany itemIds -> {
+            model with
+                ExpandedIds = Set.union model.ExpandedIds itemIds
+          }
 
-            {
-                model with
-                    SelectedId = Some itemId
-                    SelectedPath = path
-            }
+        | SelectItem itemId -> { model with SelectedId = Some itemId }
 
-        | UpdateItems(items, selectedItemId) ->
-            let validIds = collectIds Set.empty items
+/// The stable callbacks of a tree row. The rows read them through the latest props of the explorer,
+/// so a memoized row calls the current functions even when its own props did not change.
+type TreeRowHandlers = {
+    GetItemIconClass: FileItem -> string option
+    GetItemActions: FileItem -> ContextMenuItem list
+    GetItemStatusAction: FileItem -> ContextMenuItem option
+    CanCreateItem: FileItem -> bool
+    OnCreateItem: (FileItem -> unit) option
+    CanDeleteItem: FileItem -> bool
+    OnDeleteItem: (FileItem -> unit) option
+    /// Selects the file or toggles the directory with the given row id.
+    OnRowClick: string -> unit
+}
 
-            let persistedExpanded =
-                model.ExpandedIds |> Set.filter (fun id -> validIds.Contains id)
-
-            let persistedSelectedId = model.SelectedId |> Option.filter validIds.Contains
-
-            let nextSelectedId =
-                selectedItemId
-                |> Option.map (Option.filter validIds.Contains)
-                |> Option.defaultValue persistedSelectedId
-
-            let selectionChanged = nextSelectedId <> model.SelectedId
-
-            let selectedPath =
-                match nextSelectedId with
-                | Some itemId ->
-                    match FileTree.getPath itemId items [] with
-                    | Some path -> path
-                    | None -> []
-                | None -> []
-
-            let expandedFromSelection =
-                if selectionChanged then
-                    nextSelectedId
-                    |> Option.map (fun itemId -> expandedIdsFromPath itemId items)
-                    |> Option.defaultValue Set.empty
-                else
-                    Set.empty
-
-            {
-                model with
-                    Items = items
-                    SelectedId = nextSelectedId
-                    SelectedPath = selectedPath
-                    ExpandedIds = persistedExpanded |> Set.union expandedFromSelection
-            }
+type TreeRowProps = {
+    Row: FileExplorerLogic.VisibleRow
+    IsSelected: bool
+    /// Selected rows and the ancestors of the selected row.
+    IsHighlighted: bool
+    IsExpanded: bool
+    Handlers: TreeRowHandlers
+    /// Mirrors truncateOverflowingItemNames of the explorer.
+    TruncateNames: bool
+}

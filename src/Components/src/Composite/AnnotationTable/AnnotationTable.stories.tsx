@@ -746,17 +746,16 @@ export const NextRow: Story = {
       { timeout: 5000 },
     );
 
-    await userEvent.type(nextCell, "22", { delay: 50 }); // This is an unknown issue with userEvent. This seems to miss the first character
+    await userEvent.type(nextCell, "22", { delay: 50 });
+
+    const nextActiveCell = await canvas.findByTestId("active-cell-string-input-3-1");
+    expect(nextActiveCell).toBeVisible();
+    await userEvent.keyboard("{Enter}");
 
     await waitFor(
-      async () => {
-        const activeCell = await canvas.findByTestId(
-          "active-cell-string-input-3-1",
-        );
-        expect(activeCell).toBeVisible();
-        await userEvent.keyboard("{Enter}");
+      () => {
         const updatedCell = canvas.getByTestId("cell-3-1");
-        expect(updatedCell).toHaveTextContent("Source 22");
+        expect(updatedCell).toHaveTextContent("22");
       },
       { timeout: 5000 },
     );

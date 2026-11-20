@@ -117,7 +117,7 @@ module private Helper =
                             createNewTableItem (
                                 "Datamap",
                                 fun _ ->
-                                    let dataMap = DataMap.init ()
+                                    let dataMap = Datamap.init ()
                                     let arcFile = ArcFiles.DataMap(None, dataMap)
                                     arcFile |> UpdateArcFile |> InterfaceMsg |> dispatch
                             )

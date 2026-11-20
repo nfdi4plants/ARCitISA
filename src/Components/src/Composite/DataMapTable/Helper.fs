@@ -10,7 +10,7 @@ open Swate.Components.Composite.DataMapTable.ClipboardTarget
 open Swate.Components.Composite.Table.Types
 
 let private captureCells
-    (dataMap: DataMap)
+    (dataMap: Datamap)
     (coordinates: seq<CellCoordinate>)
     : ClipboardContract.Types.ClipboardContent =
     let coordinates =
@@ -28,26 +28,43 @@ let private captureCells
         Cells = Some cells
     }
 
-let copyCells (dataMap: DataMap) (coordinates: seq<CellCoordinate>) =
+let copyCells (dataMap: Datamap) (coordinates: seq<CellCoordinate>) =
     let content = captureCells dataMap coordinates
     Swate.Components.ClipboardCodec.write content.PlainText content.Cells
 
-let updateDataMap (dataMap: DataMap) (setDataMap: DataMap -> unit) (update: DataMap -> unit) =
+let updateDataMap (dataMap: Datamap) (setDataMap: Datamap -> unit) (update: Datamap -> unit) =
     // Always mutate a copy so memoized views compare against the unchanged current value.
     let nextDataMap = DataMapCopyWorkaround.copy dataMap
     update nextDataMap
     setDataMap nextDataMap
 
-let cutCells (dataMap: DataMap) (coordinates: CellCoordinate[]) (setDataMap: DataMap -> unit) =
+let duplicateRows (dataMap: Datamap) (coordinates: seq<CellCoordinate>) (setDataMap: Datamap -> unit) =
+    updateDataMap
+        dataMap
+        setDataMap
+        (fun nextDataMap ->
+            for rowIndex in Swate.Components.Composite.Table.Helper.selectedRowIndices dataMap.RowCount coordinates do
+                let source = dataMap.DataContexts.[rowIndex]
+                let duplicate = source.Copy()
+                // ARCtrl's copy omits Label and shares mutable ontology annotations and comments.
+                duplicate.Label <- source.Label
+                duplicate.Explication <- source.Explication |> Option.map _.Copy()
+                duplicate.Unit <- source.Unit |> Option.map _.Copy()
+                duplicate.ObjectType <- source.ObjectType |> Option.map _.Copy()
+                duplicate.Comments <- source.Comments |> Seq.map _.Copy() |> ResizeArray
+                nextDataMap.DataContexts.Insert(rowIndex + 1, duplicate)
+        )
+
+let cutCells (dataMap: Datamap) (coordinates: CellCoordinate[]) (setDataMap: Datamap -> unit) =
     Swate.Components.ClipboardContract.Actions.cut
         (captureCells dataMap coordinates)
         (fun () -> updateDataMap dataMap setDataMap _.ClearCells(coordinates))
 
 let pasteFromClipboard
-    (dataMap: DataMap)
+    (dataMap: Datamap)
     (coordinate: CellCoordinate)
     (selection: CellCoordinate[])
-    (setDataMap: DataMap -> unit)
+    (setDataMap: Datamap -> unit)
     =
     promise {
         let! content = Swate.Components.ClipboardCodec.read ()

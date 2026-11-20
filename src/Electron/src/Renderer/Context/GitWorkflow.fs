@@ -27,6 +27,7 @@ let builtInUserDefaults: UserDefaultValuesDto = {
     DiffIndexingLimitMb = DefaultDiffIndexingLimitMb
     UploadRightAway = true
     AutoCreateNotesFolder = true
+    GitExecutablePath = None
 }
 
 [<RequireQualifiedAccess>]
@@ -154,7 +155,12 @@ type GitProvisionedRemote = {
     IsBound: bool
 }
 
-type GitErrorNotification = { Title: string; Message: string }
+type GitErrorNotification = {
+    Title: string
+    Message: string
+    /// The output of the operation that failed. Empty for an error that is no failure of the running operation.
+    Log: OperationLog.OperationLog
+}
 
 /// The automatic reopen of a diff page whose worker session ended (it sat idle or a newer diff
 /// took its slot), whose preparation token went stale, or whose side turned out not to be UTF-8
@@ -174,6 +180,9 @@ type GitState = {
     /// The provider refs behind BranchOptions, kept so requests carry the opaque ref.
     Refs: LogicalRefDto[]
     OriginRemoteRepositoryWebUrl: string option
+    /// Whether the version control provider can deduplicate the ARC. None until the check answers or
+    /// when it could not tell.
+    CanDeduplicateStorage: bool option
     PendingConfirmation: GitSidebarConfirmationDialog option
     PendingRemoteAction: GitPendingRemoteAction
     PendingPublishRename: GitPublishRenamePrompt option
@@ -185,6 +194,9 @@ type GitState = {
     /// A primary save that still has to publish once the update or merge is done.
     PendingPostMergePush: bool
     PendingRecovery: GitPendingRecovery option
+    /// The message of a large-file download that an index lock stopped. The lock dialog is open for it. A removed
+    /// lock turns it into the download offer, and any other end of that dialog drops it.
+    RetryMaterializationAfterLockClear: string option
     ProvisionedRemote: GitProvisionedRemote option
     /// A publish that waits until the refresh of a renamed ARC root has loaded the
     /// workspace token.
@@ -218,8 +230,34 @@ type GitState = {
     BusyNotice: string option
     /// The operation the renderer can cancel. The renderer chooses its id before the call starts.
     CurrentOperation: OperationRequestDto option
+    /// The id of the non-silent refresh that runs. A refresh keeps CurrentOperation empty, because a new refresh
+    /// request replaces a running refresh, while a write that reports the Refreshing phase owns CurrentOperation
+    /// and holds new refreshes back.
+    RefreshOperationId: string option
     CurrentProgress: GitSidebarProgress option
     CurrentProgressPhase: string option
+    /// The steps that the progress events of the running operation went through, in the order they started.
+    /// The step with IsCurrent is the one that runs.
+    CurrentSteps: GitSidebarStep[]
+    /// The phase code of each step, in the order of CurrentSteps. A step start event with a known phase code
+    /// makes that step current again instead of adding one.
+    CurrentStepPhases: string[]
+    /// The raw output that the running operation sent. Only the output of the operation that the sidebar shows
+    /// lands here, see isForeignOperation.
+    CurrentLog: OperationLog.OperationLog
+    /// The name of the running operation for the last log, decided when the operation starts. None for a
+    /// refresh, so a refresh log never becomes the last log.
+    CurrentLogName: OperationLog.OperationLogName option
+    /// The log of the last operation that ended with output. It stays when another ARC opens and is gone when
+    /// the window closes or reloads, since it lives only in memory.
+    LastLog: OperationLog.FinishedOperationLog option
+    /// Whether the busy operation has sent any progress or output of its own since it started. The sidebar says
+    /// that the operation waits for a file tree action only while this is false. The flag survives a phase change
+    /// of a write and resets when a busy operation starts or ends.
+    OperationReported: bool
+    /// Date.now () when the busy operation started. A file tree action that started earlier can hold the session
+    /// lock of the library, so only those actions can make the operation wait.
+    OperationStartedAt: float option
     ErrorNotice: string option
     WarningNotice: string option
     PendingRefreshWarningNotice: string option
@@ -255,6 +293,7 @@ type GitState = {
         BranchOptions = [||]
         Refs = [||]
         OriginRemoteRepositoryWebUrl = None
+        CanDeduplicateStorage = None
         PendingConfirmation = None
         PendingRemoteAction = GitPendingRemoteAction.None
         PendingPublishRename = None
@@ -262,6 +301,7 @@ type GitState = {
         PublishOwnerChoice = None
         PendingPostMergePush = false
         PendingRecovery = None
+        RetryMaterializationAfterLockClear = None
         ProvisionedRemote = None
         PendingPublishAfterRefresh = false
         PendingPublishForPath = None
@@ -282,8 +322,16 @@ type GitState = {
         BusyOperation = None
         BusyNotice = None
         CurrentOperation = None
+        RefreshOperationId = None
         CurrentProgress = None
         CurrentProgressPhase = None
+        CurrentSteps = [||]
+        CurrentStepPhases = [||]
+        CurrentLog = OperationLog.empty
+        CurrentLogName = None
+        LastLog = None
+        OperationReported = false
+        OperationStartedAt = None
         ErrorNotice = None
         WarningNotice = None
         PendingRefreshWarningNotice = None
@@ -518,6 +566,8 @@ type WriteRequest =
 
 /// SelectedChangePath uses None for no override and Some None to clear the selection.
 /// Published says whether the synchronize published. It is None when the write was not a synchronize.
+/// ObjectsMissing says whether a large object is still missing after a lock removal. It is None when the write was
+/// not a lock removal or when the listing after it failed.
 type WriteUnitSuccess = {
     Refresh: GitRefreshResult
     PageChange: GitPageChange
@@ -525,6 +575,7 @@ type WriteUnitSuccess = {
     Warning: string option
     Partial: OperationFailureDto option
     Published: bool option
+    ObjectsMissing: bool option
 }
 
 type WriteSuccess =
@@ -538,6 +589,7 @@ let private unitSuccess (refresh: GitRefreshResult) = {
     Warning = None
     Partial = None
     Published = None
+    ObjectsMissing = None
 }
 
 let private joinMessages first second =
@@ -620,9 +672,11 @@ type GitDiffMsg =
 type Msg =
     | ResetWorkflow
     | DiffPageMsg of GitDiffMsg
-    | SetCurrentProgress of VersionControlProgressDto option
+    | SetCurrentProgress of VersionControlProgressDto
+    | OperationOutputReceived of VersionControlOutputDto
     | OperationStarted of OperationRequestDto
     | ArcPathChanged of ArcRootPath
+    | StorageDeduplicationChecked of arcSessionId: int * canDeduplicate: bool
     | GitRepositoryInitialized of arcPath: string
     | RefreshRequested
     | RefreshRequestedSilently
@@ -685,12 +739,12 @@ type Msg =
 
 /// The text diff calls of the main process, kept in one record so tests can replace them.
 type GitTextDiffClient = {
-    openTextDiff: OpenTextDiffRequestDto -> JS.Promise<Result<OperationResultDto<ResumableOpenDto>, string>>
-    readTextDiffPage: ReadTextDiffPageRequestDto -> JS.Promise<Result<OperationResultDto<ResumablePageDto>, string>>
-    replayTextDiffPage: ReplayTextDiffPageRequestDto -> JS.Promise<Result<OperationResultDto<DiffPageDto>, string>>
-    expandTextDiff: ExpandTextDiffRequestDto -> JS.Promise<Result<OperationResultDto<ResumablePartsDto>, string>>
-    readTextDiffLine: ReadTextDiffLineRequestDto -> JS.Promise<Result<OperationResultDto<ResumableLineDto>, string>>
-    closeTextDiff: TextDiffHandleRequestDto -> JS.Promise<Result<OperationResultDto<unit>, string>>
+    openTextDiff: OpenTextDiffRequestDto -> JS.Promise<Result<OperationResultDto<ResumableOpenDto>, exn>>
+    readTextDiffPage: ReadTextDiffPageRequestDto -> JS.Promise<Result<OperationResultDto<ResumablePageDto>, exn>>
+    replayTextDiffPage: ReplayTextDiffPageRequestDto -> JS.Promise<Result<OperationResultDto<DiffPageDto>, exn>>
+    expandTextDiff: ExpandTextDiffRequestDto -> JS.Promise<Result<OperationResultDto<ResumablePartsDto>, exn>>
+    readTextDiffLine: ReadTextDiffLineRequestDto -> JS.Promise<Result<OperationResultDto<ResumableLineDto>, exn>>
+    closeTextDiff: TextDiffHandleRequestDto -> JS.Promise<Result<OperationResultDto<unit>, exn>>
 }
 
 /// What the renderer needs from the main process. Every function returns the
@@ -698,48 +752,47 @@ type GitTextDiffClient = {
 /// Calls that can be canceled take the request with the operation id the workflow
 /// allocated, so the cancel button knows the id before the call has started.
 type GitDependencies = {
-    getSessionInfo: OperationRequestDto -> JS.Promise<Result<OperationResultDto<WorkspaceSessionInfoDto>, string>>
-    getStatus: OperationRequestDto -> JS.Promise<Result<OperationResultDto<WorkspaceStatusDto>, string>>
-    listRefs: OperationRequestDto -> JS.Promise<Result<OperationResultDto<LogicalRefDto[]>, string>>
-    getRepositoryWebUrl: OperationRequestDto -> JS.Promise<Result<OperationResultDto<string option>, string>>
+    getSessionInfo: OperationRequestDto -> JS.Promise<Result<OperationResultDto<WorkspaceSessionInfoDto>, exn>>
+    getStatus: OperationRequestDto -> JS.Promise<Result<OperationResultDto<WorkspaceStatusDto>, exn>>
+    listRefs: OperationRequestDto -> JS.Promise<Result<OperationResultDto<LogicalRefDto[]>, exn>>
+    getRepositoryWebUrl: OperationRequestDto -> JS.Promise<Result<OperationResultDto<string option>, exn>>
     getStoragePolicySettings:
-        OperationRequestDto -> JS.Promise<Result<OperationResultDto<StoragePolicySettingsDto>, string>>
-    setStoragePolicySettings: StoragePolicySettingsRequestDto -> JS.Promise<Result<OperationResultDto<unit>, string>>
+        OperationRequestDto -> JS.Promise<Result<OperationResultDto<StoragePolicySettingsDto>, exn>>
+    setStoragePolicySettings: StoragePolicySettingsRequestDto -> JS.Promise<Result<OperationResultDto<unit>, exn>>
     /// The checkbox value the main process holds for the open ARC. These two calls are not
     /// operations: they take no operation id and the main process runs them without a lock.
-    getUploadRightAway: unit -> JS.Promise<Result<OperationResultDto<bool>, string>>
-    setUploadRightAway: bool -> JS.Promise<Result<OperationResultDto<unit>, string>>
+    getUploadRightAway: unit -> JS.Promise<Result<OperationResultDto<bool>, exn>>
+    setUploadRightAway: bool -> JS.Promise<Result<OperationResultDto<unit>, exn>>
     loadConflictPage: ConflictSessionSummaryDto -> string -> string -> JS.Promise<Result<PageState, string>>
     /// Replaces the page state with the result of the function, applied to the page state the
     /// app holds when the update runs.
     updatePageState: (PageState option -> PageState option) -> unit
-    initializeWorkspace: InitializeWorkspaceRequestDto -> JS.Promise<Result<OperationResultDto<string>, string>>
-    bindWorkspace: BindWorkspaceRequestDto -> JS.Promise<Result<OperationResultDto<WorkspaceSessionInfoDto>, string>>
+    initializeWorkspace: InitializeWorkspaceRequestDto -> JS.Promise<Result<OperationResultDto<string>, exn>>
+    bindWorkspace: BindWorkspaceRequestDto -> JS.Promise<Result<OperationResultDto<WorkspaceSessionInfoDto>, exn>>
     createRemoteProject: CreateProjectRequest -> JS.Promise<Result<ExploreProjectDto, CreateProjectError>>
     loadPublishOwners: unit -> JS.Promise<Result<PublishOwnersDto, GitLabError>>
     renameOpenArcRoot: string -> JS.Promise<Result<string, string>>
-    checkDependencies: OperationRequestDto -> JS.Promise<Result<OperationResultDto<DependencyStatusDto[]>, string>>
-    installDependency:
-        InstallDependencyRequestDto -> JS.Promise<Result<OperationResultDto<DependencyStatusDto>, string>>
-    refreshSynchronization:
-        OperationRequestDto -> JS.Promise<Result<OperationResultDto<SynchronizationStateDto>, string>>
-    synchronize: SynchronizeRequestDto -> JS.Promise<Result<OperationResultDto<SynchronizationStateDto>, string>>
-    cancelOperation: OperationRequestDto -> JS.Promise<Result<bool, string>>
-    cloneWorkspace: CloneWorkspaceRequestDto -> JS.Promise<Result<OperationResultDto<string>, string>>
-    createRef: CreateRefRequestDto -> JS.Promise<Result<OperationResultDto<LogicalRefDto>, string>>
-    switchRef: SwitchRefRequestDto -> JS.Promise<Result<OperationResultDto<WorkspaceStatusDto>, string>>
-    preflightSwitchRef: SwitchRefRequestDto -> JS.Promise<Result<OperationResultDto<SwitchPreflightDto>, string>>
-    createRevision: CreateRevisionRequestDto -> JS.Promise<Result<OperationResultDto<string>, string>>
-    restorePaths: RestorePathsRequestDto -> JS.Promise<Result<OperationResultDto<unit>, string>>
+    checkDependencies: OperationRequestDto -> JS.Promise<Result<OperationResultDto<DependencyStatusDto[]>, exn>>
+    installDependency: InstallDependencyRequestDto -> JS.Promise<Result<OperationResultDto<DependencyStatusDto>, exn>>
+    refreshSynchronization: OperationRequestDto -> JS.Promise<Result<OperationResultDto<SynchronizationStateDto>, exn>>
+    synchronize: SynchronizeRequestDto -> JS.Promise<Result<OperationResultDto<SynchronizationStateDto>, exn>>
+    cancelOperation: OperationRequestDto -> JS.Promise<Result<bool, exn>>
+    cloneWorkspace: CloneWorkspaceRequestDto -> JS.Promise<Result<OperationResultDto<string>, exn>>
+    createRef: CreateRefRequestDto -> JS.Promise<Result<OperationResultDto<LogicalRefDto>, exn>>
+    switchRef: SwitchRefRequestDto -> JS.Promise<Result<OperationResultDto<WorkspaceStatusDto>, exn>>
+    preflightSwitchRef: SwitchRefRequestDto -> JS.Promise<Result<OperationResultDto<SwitchPreflightDto>, exn>>
+    createRevision: CreateRevisionRequestDto -> JS.Promise<Result<OperationResultDto<string>, exn>>
+    restorePaths: RestorePathsRequestDto -> JS.Promise<Result<OperationResultDto<unit>, exn>>
     resolveConflict:
-        ResolveConflictRequestDto -> JS.Promise<Result<OperationResultDto<ConflictResolutionOutcomeDto>, string>>
-    finalizeConflict: FinalizeConflictRequestDto -> JS.Promise<Result<OperationResultDto<string option>, string>>
-    cancelConflict: CancelConflictRequestDto -> JS.Promise<Result<OperationResultDto<unit>, string>>
-    listObjects: OperationRequestDto -> JS.Promise<Result<OperationResultDto<ObjectStateDto[]>, string>>
-    materializeObject: ObjectPathRequestDto -> JS.Promise<Result<OperationResultDto<unit>, string>>
-    pruneStorage: OperationRequestDto -> JS.Promise<Result<OperationResultDto<string>, string>>
-    deduplicateStorage: OperationRequestDto -> JS.Promise<Result<OperationResultDto<string>, string>>
-    clearStaleLock: OperationRequestDto -> JS.Promise<Result<OperationResultDto<WorkspaceStatusDto>, string>>
+        ResolveConflictRequestDto -> JS.Promise<Result<OperationResultDto<ConflictResolutionOutcomeDto>, exn>>
+    finalizeConflict: FinalizeConflictRequestDto -> JS.Promise<Result<OperationResultDto<string option>, exn>>
+    cancelConflict: CancelConflictRequestDto -> JS.Promise<Result<OperationResultDto<unit>, exn>>
+    listObjects: OperationRequestDto -> JS.Promise<Result<OperationResultDto<ObjectStateDto[]>, exn>>
+    materializeObjects: ObjectPathsRequestDto -> JS.Promise<Result<OperationResultDto<unit>, exn>>
+    pruneStorage: OperationRequestDto -> JS.Promise<Result<OperationResultDto<string>, exn>>
+    deduplicateStorage: OperationRequestDto -> JS.Promise<Result<OperationResultDto<string>, exn>>
+    canDeduplicateStorage: OperationRequestDto -> JS.Promise<Result<OperationResultDto<bool>, exn>>
+    clearStaleLock: OperationRequestDto -> JS.Promise<Result<OperationResultDto<WorkspaceStatusDto>, exn>>
     textDiff: GitTextDiffClient
     hasUsableAccount: unit -> bool
     delay: int -> JS.Promise<unit>
@@ -771,7 +824,7 @@ let busyNoticeFromOperation =
     | GitBusyOperation.InstallingDependency componentName -> Some $"Installing {componentName}"
     | GitBusyOperation.RenamingRepository -> Some "Renaming ARC"
     | GitBusyOperation.PruningGitLfsCache -> Some "Cleaning Git LFS cache"
-    | GitBusyOperation.DeduplicatingGitLfsStorage -> Some "Reducing Git LFS duplicate storage"
+    | GitBusyOperation.DeduplicatingGitLfsStorage -> Some "Deduplicating large files"
     | GitBusyOperation.ConfirmingMergeResolution _ -> Some "Confirming merge resolution"
     | GitBusyOperation.FinalizingMerge -> Some "Finalizing merge"
     | GitBusyOperation.AbandoningMerge -> Some "Abandoning merge"
@@ -860,14 +913,18 @@ let providerRefOf (model: GitState) (refName: string) =
     |> Array.tryFind (fun reference -> String.Equals(reference.Name, refName, StringComparison.Ordinal))
     |> Option.map _.ProviderRef
 
-let private progressPercent (progress: VersionControlProgressDto) =
+let progressPercent (progress: VersionControlProgressDto) =
     match progress.Completed, progress.Total with
     | Some completed, Some total when total > 0.0 -> Some(Math.Min(100.0, completed / total * 100.0))
     | _ -> None
 
-let private mergeProgressUpdate (model: GitState) (progress: VersionControlProgressDto) =
+/// The headline of an event that starts a phase without a display message (a reset) stays on the label of the
+/// current step. The busy notice shows only while the operation has no step yet.
+let private mergeProgressUpdate (model: GitState) (steps: GitSidebarStep[]) (progress: VersionControlProgressDto) =
     let incomingPercent = progressPercent progress
     let samePhase = model.CurrentProgressPhase = Some progress.PhaseCode
+
+    let currentStepLabel = steps |> Array.tryFind _.IsCurrent |> Option.map _.Label
 
     let current =
         model.CurrentProgress
@@ -875,7 +932,6 @@ let private mergeProgressUpdate (model: GitState) (progress: VersionControlProgr
             Method = None
             Stage = model.BusyNotice
             ProgressPercent = None
-            Output = None
         }
 
     if samePhase then
@@ -886,18 +942,90 @@ let private mergeProgressUpdate (model: GitState) (progress: VersionControlProgr
                 |> Option.orElse current.Stage
                 |> Option.orElse model.BusyNotice
             ProgressPercent = incomingPercent |> Option.orElse current.ProgressPercent
-            Output = None
         }
     else
         {
             Method = None
-            Stage = progress.DisplayMessage |> Option.orElse model.BusyNotice
+            Stage =
+                progress.DisplayMessage
+                |> Option.orElse currentStepLabel
+                |> Option.orElse model.BusyNotice
             ProgressPercent = incomingPercent
-            Output = None
         }
 
+/// The label of a meter message: the text before the first " (". A message without " (" is its own label.
+let stepLabelOf (message: string) : string =
+    match message.IndexOf(" (", StringComparison.Ordinal) with
+    | index when index > 0 -> message.Substring(0, index)
+    | _ -> message
+
+/// True for a meter message: a label followed by " (k/n)", with or without a trailing size or rate.
+let private isMeterMessage (message: string) =
+    System.Text.RegularExpressions.Regex.IsMatch(message, @"^[^(]+ \(\d+/\d+\)")
+
+/// Applies one progress event to the step list. A step belongs to one phase code, so the steps never outnumber
+/// the phase codes of the operation. A phase that repeats (one materialization per file) keeps its step.
+/// - An event with a display message and no numbers starts the step of its phase code. A phase that has a step
+///   makes that step current again and keeps its label.
+/// - An event with a display message that is a meter ("Downloading LFS objects (0/1), 1.2 MB") starts the step of
+///   its phase code when the phase has none. The step is labelled with the meter's label only.
+/// - Every other event changes only the step with the phase code of the event. The detail is the display message
+///   when it differs from the label, and the percent is the one of the event, or none when the event has no
+///   numbers. The step becomes current. An event of a phase without a step that starts none changes nothing, for
+///   example the "Preparing" and "materialized" events of a download that carry numbers but no meter.
+let private applyProgressToSteps
+    (steps: GitSidebarStep[])
+    (stepPhases: string[])
+    (progress: VersionControlProgressDto)
+    : GitSidebarStep[] * string[] =
+    let percent = progressPercent progress
+    let hasNumbers = progress.Completed.IsSome || progress.Total.IsSome
+
+    let message =
+        progress.DisplayMessage
+        |> Option.filter (fun text -> not (String.IsNullOrWhiteSpace text))
+
+    let detailFor (label: string) (previous: string option) =
+        match message with
+        | Some text when text <> label -> Some text
+        | Some _ -> None
+        | None -> previous
+
+    match stepPhases |> Array.tryFindIndex (fun phase -> phase = progress.PhaseCode) with
+    | Some index ->
+        let updated =
+            steps
+            |> Array.mapi (fun stepIndex step ->
+                if stepIndex <> index then
+                    { step with IsCurrent = false }
+                else
+                    {
+                        step with
+                            Detail = detailFor step.Label step.Detail
+                            Percent = percent
+                            IsCurrent = true
+                    }
+            )
+
+        updated, stepPhases
+    | None ->
+        match message with
+        | Some text when not hasNumbers || isMeterMessage text ->
+            let label = if isMeterMessage text then stepLabelOf text else text
+            let earlier = steps |> Array.map (fun step -> { step with IsCurrent = false })
+
+            let started: GitSidebarStep = {
+                Label = label
+                Detail = detailFor label None
+                Percent = percent
+                IsCurrent = true
+            }
+
+            Array.append earlier [| started |], Array.append stepPhases [| progress.PhaseCode |]
+        | _ -> steps, stepPhases
+
 /// The message shown for a structured failure: the library message plus its
-/// recovery instructions when it has any.
+/// recovery instructions when it has any. A path_not_found failure also lists up to five affected paths.
 let failureMessage (failure: OperationFailureDto) =
     // Only a commit that exists while the index lags behind gets Swate's text. A held
     // lock without a commit keeps the library's instructions for the lock dialog.
@@ -916,16 +1044,39 @@ let failureMessage (failure: OperationFailureDto) =
         | Some recovery -> recovery.Instructions
         | None -> None
 
+    // The library message names no path, so the sentence lists the first few paths that the library reports.
+    let message =
+        if
+            failure.Code = VersionControlCodes.PathNotFound
+            && failure.AffectedPaths.Length > 0
+        then
+            let maxShown = 5
+
+            let shown =
+                failure.AffectedPaths
+                |> Array.truncate maxShown
+                |> Array.map (fun path -> $"'{path}'")
+                |> String.concat ", "
+
+            let more = failure.AffectedPaths.Length - maxShown
+
+            if more > 0 then
+                $"{failure.Message} Affected paths: {shown} and {more} more."
+            else
+                $"{failure.Message} Affected paths: {shown}."
+        else
+            failure.Message
+
     match instructions with
-    | Some instructions when not (String.IsNullOrWhiteSpace instructions) -> $"{failure.Message} {instructions}"
-    | _ -> failure.Message
+    | Some instructions when not (String.IsNullOrWhiteSpace instructions) -> $"{message} {instructions}"
+    | _ -> message
 
 /// A partial success counts as a success here. The explorer actions have no warning
 /// channel, so a partial that lands on one of these calls (a session-open failure the
 /// host reports once) is dropped on this path.
-let toUnitResult (result: Result<OperationResultDto<unit>, string>) : Result<unit, string> =
+let toUnitResult (result: Result<OperationResultDto<unit>, exn>) : Result<unit, string> =
     match result with
-    | Error message -> Error message
+    | Error error -> Error error.Message
     | Ok(OperationResultDto.Succeeded _) -> Ok()
     | Ok(OperationResultDto.PartiallySucceeded _) -> Ok()
     | Ok(OperationResultDto.Failed failure) -> Error(failureMessage failure)
@@ -935,6 +1086,18 @@ let recoveryCode (failure: OperationFailureDto) =
 
 let isCanceled (failure: OperationFailureDto) =
     failure.Category = FailureCategoryDto.Canceled
+
+/// The text of a partial failure. The library message of a large-file download that failed after an update quotes the
+/// git-lfs output with object ids and no file names. The last log already shows that output, so the warning and the
+/// download offer get a plain sentence.
+let partialFailureMessage (failure: OperationFailureDto) =
+    if
+        failure.Code = VersionControlCodes.HydrationFailed
+        && recoveryCode failure = Some VersionControlCodes.Recovery.RetryMaterialization
+    then
+        "Some large files could not be downloaded."
+    else
+        failureMessage failure
 
 let needsDependencyInstall (failure: OperationFailureDto) =
     failure.Category = FailureCategoryDto.DependencyMissing
@@ -951,11 +1114,51 @@ let recoveryOfPartial (partial: OperationFailureDto option) : GitPendingRecovery
     |> Option.bind (fun failure ->
         match recoveryCode failure with
         | Some code when code = VersionControlCodes.Recovery.RetryMaterialization ->
-            Some(GitPendingRecovery.RetryMaterialization(failureMessage failure))
+            Some(GitPendingRecovery.RetryMaterialization(partialFailureMessage failure))
         | Some code when code = VersionControlCodes.Recovery.RetryPublish ->
             Some(GitPendingRecovery.RetryPublish(failureMessage failure))
+        | Some code when code = VersionControlCodes.Recovery.RemoveIndexLock ->
+            Some(GitPendingRecovery.ClearStaleLock(failure.RecoveryAction |> Option.bind _.Instructions))
         | _ -> None
     )
+
+/// The message of a large-file download that a held index lock stopped. The failure keeps the
+/// hydration code and carries the lock removal as its recovery. The message leaves out the lock
+/// instructions, because the offer that uses it opens after the lock is removed.
+let lockBlockedDownloadMessage (partial: OperationFailureDto option) : string option =
+    partial
+    |> Option.filter (fun failure ->
+        failure.Code = VersionControlCodes.HydrationFailed
+        && recoveryCode failure = Some VersionControlCodes.Recovery.RemoveIndexLock
+    )
+    |> Option.map _.Message
+
+/// The text of the download offer after a Download now retry stopped at a Git lock. The library message of that
+/// failure says the lock is still held, which is no longer true when the offer opens.
+let retryLockStoppedMessage =
+    "The download of the large files stopped at a Git lock."
+
+/// The large objects whose file git-lfs already wrote while the index entry stayed stale, as after a checkout that a
+/// held lock stopped. The listing marks such an object as materialized because the file has the full size, and the
+/// status lists the path as modified. The status has no split between index and working tree, so a path counts when
+/// it is a plain modification. An added, deleted, renamed or conflicted path is left out. The library restages only
+/// files that hold the committed object and refuses a real edit, so a plain modification that is an edit does no harm.
+let staleLfsPaths (objects: ObjectStateDto[]) (status: WorkspaceStatusDto) : string[] =
+    let modified =
+        status.Changes
+        |> Array.filter (fun change -> change.Kind = FileChangeKindDto.Modified && change.OldPath.IsNone)
+        |> Array.map _.Path
+        |> Set.ofArray
+
+    objects
+    |> Array.filter (fun objectState -> objectState.IsMaterialized && modified.Contains objectState.Path)
+    |> Array.map _.Path
+    |> Array.distinct
+
+/// Whether every path of the failure was refused because it has a local edit. The restage of a stale path and the
+/// download of a pending path ask for paths that may hold real edits, and the library refuses those with its own code.
+let private isLocalChangesRefusal (failure: OperationFailureDto) =
+    failure.Code = VersionControlCodes.LocalChanges
 
 /// The dialog the sidebar shows for a recovery. Confirm runs it, cancel keeps the
 /// workspace as it is. Restoring interrupted files discards local changes on them.
@@ -1234,7 +1437,7 @@ let private applyWriteSuccessModel model success =
         success.PageChange,
         success.Warning,
         recoveryOfPartial success.Partial,
-        success.Partial |> Option.map failureMessage,
+        success.Partial |> Option.map partialFailureMessage,
         success.Published
     | CloneSuccess _ -> model, GitPageChange.NoChange, None, None, None, None
 
@@ -1287,17 +1490,33 @@ let private applyPageChangeCmd (setPageState: PageState option -> unit) =
         fun _dispatch -> setPageState None
       ]
 
-let private reportErrorCmd (deps: GitDependencies) (title: string) (message: string) : Cmd<Msg> = [
-    fun _dispatch -> deps.reportError { Title = title; Message = message }
-]
+/// Reports the failure of the operation whose output the log holds, so the error details show that output.
+let private reportOperationErrorCmd
+    (deps: GitDependencies)
+    (log: OperationLog.OperationLog)
+    (title: string)
+    (message: string)
+    : Cmd<Msg> =
+    [
+        fun _dispatch ->
+            deps.reportError {
+                Title = title
+                Message = message
+                Log = log
+            }
+    ]
+
+/// Reports an error that is no failure of a running operation, so the error details carry no log.
+let private reportErrorCmd (deps: GitDependencies) (title: string) (message: string) : Cmd<Msg> =
+    reportOperationErrorCmd deps OperationLog.empty title message
 
 /// The checkbox is a convenience. The update logs a failed call and never shows it to the user.
 let private logUploadRightAwayFailure (action: string) (detail: string) =
     Browser.Dom.console.error ($"Could not {action} the Upload right away choice: {detail}")
 
-let private failureOfResult (result: Result<OperationResultDto<'T>, string>) =
+let private failureOfResult (result: Result<OperationResultDto<'T>, exn>) =
     match result with
-    | Error message -> Some message
+    | Error error -> Some error.Message
     | Ok(OperationResultDto.Failed failure) -> Some failure.Message
     | Ok _ -> None
 
@@ -1328,27 +1547,45 @@ let private loadUploadRightAwayCmd (deps: GitDependencies) (arcSessionId: int) :
                     dispatch (UploadRightAwayLoaded(arcSessionId, outcome.Value))
                 // A failed result means the main process holds no value, so the checkbox keeps its own.
                 | Ok(OperationResultDto.Failed _) -> ()
-                | Error message -> logUploadRightAwayFailure "load" message
+                | Error error -> logUploadRightAwayFailure "load" error.Message
             with err ->
                 logUploadRightAwayFailure "load" (string err)
         }
         |> Promise.start
     )
 
-/// The first refresh of an ARC that reaches an open session starts the read of the stored
-/// checkbox value. Later refreshes of the same ARC do not read again, because the load has left NotStarted.
-let private startUploadRightAwayLoad
+/// Asks the version control provider of the open ARC whether deduplication can work. Only a
+/// successful answer is dispatched, because an unknown result is what the model starts with.
+let private loadStorageDeduplicationCmd (deps: GitDependencies) (arcSessionId: int) : Cmd<Msg> =
+    Cmd.ofEffect (fun dispatch ->
+        promise {
+            match! deps.canDeduplicateStorage { OperationId = deps.newOperationId () } with
+            | Ok(OperationResultDto.Succeeded outcome) ->
+                dispatch (StorageDeduplicationChecked(arcSessionId, outcome.Value))
+            | _ -> ()
+        }
+        |> Promise.start
+    )
+
+/// The first refresh of an ARC that reaches an open session reads the stored checkbox value. When
+/// the session offers storage maintenance it also asks whether deduplication can work. Later
+/// refreshes of the same ARC do not read again, because the checkbox load has left NotStarted.
+let private startArcSessionLoads
     (deps: GitDependencies)
     (refreshResult: GitRefreshResult)
     (model: GitState)
     : GitState * Cmd<Msg> =
     match model.UploadRightAwayLoad, refreshResult.Session with
-    | UploadRightAwayLoad.NotStarted, Ok _ ->
+    | UploadRightAwayLoad.NotStarted, Ok session ->
         {
             model with
                 UploadRightAwayLoad = UploadRightAwayLoad.Pending
         },
-        loadUploadRightAwayCmd deps model.ArcSessionId
+        Cmd.batch [
+            loadUploadRightAwayCmd deps model.ArcSessionId
+            if session.Services.Maintenance then
+                loadStorageDeduplicationCmd deps model.ArcSessionId
+        ]
     | _ -> model, Cmd.none
 
 let private titleForWriteRequest =
@@ -1364,7 +1601,7 @@ let private titleForWriteRequest =
     | SaveLfsSettings(GitBusyOperation.SavingDiffIndexingLimit, _) -> "Could not save the background indexing limit"
     | SaveLfsSettings _ -> "Could not save Git LFS settings"
     | PruneLfsCache -> "Could not clean Git LFS cache"
-    | DedupLfsStorage -> "Could not reduce Git LFS storage"
+    | DedupLfsStorage -> "Could not deduplicate large files"
     | CreateBranch _ -> "Could not create branch"
     | SwitchBranch _ -> "Could not switch branch"
     | FinalizeMerge -> "Could not finalize merge"
@@ -1373,8 +1610,8 @@ let private titleForWriteRequest =
     | RestoreInterruptedPaths _ -> "Could not restore interrupted files"
     | RetryMaterialization -> "Could not download large files"
 
-let private reportWriteErrorCmd deps request message =
-    reportErrorCmd deps (titleForWriteRequest request) message
+let private reportWriteErrorCmd deps log request message =
+    reportOperationErrorCmd deps log (titleForWriteRequest request) message
 
 let private isLocalPrimarySaveFailure (success: WriteSuccess) =
     let partialFailure =
@@ -1388,14 +1625,56 @@ let private isLocalPrimarySaveFailure (success: WriteSuccess) =
         recovery = Some VersionControlCodes.Recovery.ReconcileIndex
     )
 
-let private withBusyOperation busyOperation model = {
-    model with
-        BusyOperation = busyOperation
-        BusyNotice = busyOperation |> Option.bind busyNoticeFromOperation
-        CurrentProgress = None
-        CurrentProgressPhase = None
-        CurrentOperation = None
+/// Moves the output of the operation that ends into LastLog. An operation without output and a refresh (no
+/// CurrentLogName) keep the previous last log.
+let private keepLastLog (model: GitState) : GitState =
+    match model.CurrentLogName with
+    | Some name when model.CurrentLog.Lines.Length > 0 ->
+        let finished: OperationLog.FinishedOperationLog = {
+            Label = name.Label
+            ArcName = name.ArcName
+            FinishedAt = JS.Constructors.Date.now ()
+            Log = model.CurrentLog
+        }
+
+        { model with LastLog = Some finished }
+    | _ -> model
+
+/// A log name with the folder of the ARC path as the ARC name.
+let private logName (label: string) (arcPath: string option) : OperationLog.OperationLogName = {
+    Label = label
+    ArcName = arcPath |> Option.map Swate.Components.Shared.PathHelpers.getFileName
 }
+
+/// The log name of an operation: its busy notice and the folder of the open ARC.
+let private operationLogName (model: GitState) (operation: GitBusyOperation) : OperationLog.OperationLogName option =
+    busyNoticeFromOperation operation
+    |> Option.map (fun label -> logName label model.CurrentArcPath)
+
+let private withBusyOperation
+    (busyOperation: GitBusyOperation option)
+    (name: OperationLog.OperationLogName option)
+    model
+    =
+    {
+        model with
+            BusyOperation = busyOperation
+            BusyNotice = busyOperation |> Option.bind busyNoticeFromOperation
+            CurrentProgress = None
+            CurrentProgressPhase = None
+            CurrentSteps = [||]
+            CurrentStepPhases = [||]
+            CurrentLog = OperationLog.empty
+            CurrentLogName = name
+            OperationReported = false
+            OperationStartedAt = busyOperation |> Option.map (fun _ -> JS.Constructors.Date.now ())
+            CurrentOperation = None
+            RefreshOperationId = None
+    }
+
+/// Starts an operation whose log is named after its busy notice.
+let private startOperation (operation: GitBusyOperation) (model: GitState) =
+    withBusyOperation (Some operation) (operationLogName model operation) model
 
 let private startRefreshRequest requestId model = {
     model with
@@ -1420,12 +1699,12 @@ let private transportFailure (message: string) : OperationFailureDto = {
 
 /// Flattens the transport error and the structured result: Ok carries the outcome and
 /// the partial failure when there is one, Error carries the failure.
-let private toResult (call: JS.Promise<Result<OperationResultDto<'T>, string>>) = promise {
+let private toResult (call: JS.Promise<Result<OperationResultDto<'T>, exn>>) = promise {
     let! result = call
 
     return
         match result with
-        | Error message -> Error(transportFailure message)
+        | Error error -> Error(transportFailure error.Message)
         | Ok(OperationResultDto.Succeeded outcome) -> Ok(outcome, None)
         | Ok(OperationResultDto.PartiallySucceeded(outcome, failure)) -> Ok(outcome, Some failure)
         | Ok(OperationResultDto.Failed failure) -> Error failure
@@ -1723,14 +2002,14 @@ module GitDiffPageLoader =
     ]
 
     let private send
-        (call: 'Request -> JS.Promise<Result<'T, string>>)
+        (call: 'Request -> JS.Promise<Result<'T, exn>>)
         (request: 'Request)
         (toMsg: 'Request -> Result<'T, string> -> GitDiffMsg)
         : Cmd<Msg> =
         Cmd.OfPromise.either
             call
             request
-            (fun result -> DiffPageMsg(toMsg request result))
+            (fun result -> DiffPageMsg(toMsg request (result |> Result.mapError _.Message)))
             (fun error -> DiffPageMsg(toMsg request (Error error.Message)))
 
     let private track (operationId: string) (page: GitDiffPageData) = {
@@ -1750,7 +2029,7 @@ module GitDiffPageLoader =
             HandleId = handle.Id
             HandleVersion = handle.Version
         }
-        |> Promise.catch (fun error -> Error error.Message)
+        |> Promise.catch (fun error -> Error error)
         |> Promise.start
 
     let private closeHandleCmd (deps: GitDependencies) (handle: DiffHandleDto) : Cmd<Msg> = [
@@ -1763,7 +2042,7 @@ module GitDiffPageLoader =
         for operationId in page.RunningOperations do
             fun _ ->
                 deps.cancelOperation { OperationId = operationId }
-                |> Promise.catch (fun error -> Error error.Message)
+                |> Promise.catch (fun error -> Error error)
                 |> Promise.start
         match page.Handle with
         | Some handle -> yield! closeHandleCmd deps handle
@@ -2425,16 +2704,20 @@ module GitDiffPageLoader =
                 Continuation = Some continuation
         }
         |> Promise.map (fun result ->
-            match valueOf result with
-            | Ok(ResumableOpenDto.Ready(OpenDiffResultDto.Opened(handle, _, _, _, _))) -> closeHandle deps handle
-            | Ok(ResumableOpenDto.Scanning(_, next, _)) -> abandonOpen deps request next
+            match result with
+            | Ok(OperationResultDto.Succeeded outcome)
+            | Ok(OperationResultDto.PartiallySucceeded(outcome, _)) ->
+                match outcome.Value with
+                | ResumableOpenDto.Ready(OpenDiffResultDto.Opened(handle, _, _, _, _)) -> closeHandle deps handle
+                | ResumableOpenDto.Scanning(_, next, _) -> abandonOpen deps request next
+                | _ -> ()
             | _ -> ()
         )
         |> Promise.catch ignore
         |> Promise.start
 
         deps.cancelOperation { OperationId = operationId }
-        |> Promise.catch (fun error -> Error error.Message)
+        |> Promise.catch (fun error -> Error error)
         |> Promise.start
 
     /// Releases what an Open answer holds when its page was left or replaced.
@@ -3380,6 +3663,7 @@ let private completeAfterUpdateAsync
                                 Warning = pendingWarning
                                 Partial = partialToKeep
                                 Published = None
+                                ObjectsMissing = None
                             }
                         )
                     )
@@ -3418,7 +3702,7 @@ let private completeAfterUpdateAsync
                         Completed(
                             UnitSuccess {
                                 unitSuccess refreshResult with
-                                    Warning = partial |> Option.map failureMessage
+                                    Warning = partial |> Option.map partialFailureMessage
                                     Partial = partial
                             }
                         )
@@ -3489,6 +3773,7 @@ let private refreshAfterSuccessWithOutcome
                             Warning = warningMessage
                             Partial = partial
                             Published = published
+                            ObjectsMissing = None
                         }
                     )
                 )
@@ -3502,7 +3787,7 @@ let private refreshAfterSuccess
     (warningMessage: string option)
     =
     let combinedWarningMessage =
-        joinMessages warningMessage (partial |> Option.map failureMessage)
+        joinMessages warningMessage (partial |> Option.map partialFailureMessage)
 
     refreshAfterSuccessWithOutcome deps partial pageChange selectedChangePathOverride combinedWarningMessage None
 
@@ -3516,7 +3801,7 @@ let private completeAfterSynchronizeAsync
         if partial |> Option.exists isConflictPartial then
             return! completeAfterUpdateAsync deps partial pendingWarning
         else
-            let partialMessage = partial |> Option.map failureMessage
+            let partialMessage = partial |> Option.map partialFailureMessage
 
             let finalWarning =
                 match recoveryOfPartial partial with
@@ -3556,7 +3841,7 @@ let private acceptanceConfirmation
 /// routed structurally.
 let private runTrackedWriteAsync
     (deps: GitDependencies)
-    (call: unit -> JS.Promise<Result<OperationResultDto<'T>, string>>)
+    (call: unit -> JS.Promise<Result<OperationResultDto<'T>, exn>>)
     (onSuccess: OperationOutcomeDto<'T> -> OperationFailureDto option -> JS.Promise<Result<WriteAttemptOutcome, string>>)
     : JS.Promise<Result<WriteAttemptOutcome, string>> =
     promise {
@@ -3567,10 +3852,7 @@ let private runTrackedWriteAsync
         | Error failure -> return! routedToOutcome deps (routeFailure None failure)
     }
 
-let private simpleWriteAsync
-    (deps: GitDependencies)
-    (call: unit -> JS.Promise<Result<OperationResultDto<'T>, string>>)
-    =
+let private simpleWriteAsync (deps: GitDependencies) (call: unit -> JS.Promise<Result<OperationResultDto<'T>, exn>>) =
     runTrackedWriteAsync deps call (fun _ partial -> refreshAfterSuccess deps partial GitPageChange.NoChange None None)
 
 let private requireWorkspaceVersion (state: GitState) =
@@ -3620,6 +3902,11 @@ let private runCloneAttemptAsync (deps: GitDependencies) (cloneRequest: CloneWor
         return
             Error(
                 $"The ARC was cloned to '{outcome.Value}', but its large files could not be downloaded. Open the folder and use Download LFS file to get them."
+            )
+    | Ok(outcome, Some failure) when recoveryCode failure = Some VersionControlCodes.Recovery.RemoveIndexLock ->
+        return
+            Error(
+                $"The ARC was cloned to '{outcome.Value}', but a Git lock (index.lock) blocked the download of its large files. Open the folder, remove the lock once no other Git program uses it, and use Download LFS file to get the files."
             )
     | Ok(outcome, _) -> return Ok(Completed(CloneSuccess outcome.Value))
     | Error failure ->
@@ -4228,33 +4515,39 @@ let private materializePendingAfterFinalizeAsync
                     None
             )
 
-        let mutable firstFailedPath = None
-
-        for (path, localObject) in pathsToMaterialize do
+        match pathsToMaterialize with
+        | [] -> return None
+        | firstRequested :: _ ->
             let! materialized =
                 toResult (
-                    deps.materializeObject {
+                    deps.materializeObjects {
                         OperationId = deps.newOperationId ()
-                        Path = path
-                        RefreshTree = Some true
+                        Paths = pathsToMaterialize |> List.map fst |> List.toArray
+                        AlwaysRefreshTree = true
                     }
                 )
 
-            match materialized with
-            | Ok(_, None) -> ()
-            | Ok(_, Some _)
-            | Error _ ->
-                if firstFailedPath.IsNone then
-                    firstFailedPath <- Some(path, localObject)
+            let failure =
+                match materialized with
+                | Ok(_, None) -> None
+                | Ok(_, Some failure)
+                | Error failure -> Some failure
 
-        return
-            firstFailedPath
-            |> Option.map (fun (path, localObject) ->
-                if localObject then
-                    $"Could not restore '{path}' from the local cache. Use Download LFS file to try again."
-                else
-                    $"Could not download '{path}'. Use Download LFS file to try again."
-            )
+            return
+                failure
+                |> Option.map (fun failure ->
+                    let path, localObject =
+                        failure.AffectedPaths
+                        |> Array.tryPick (fun affected ->
+                            pathsToMaterialize |> List.tryFind (fun (path, _) -> path = affected)
+                        )
+                        |> Option.defaultValue firstRequested
+
+                    if localObject then
+                        $"Could not restore '{path}' from the local cache. Use Download LFS file to try again."
+                    else
+                        $"Could not download '{path}'. Use Download LFS file to try again."
+                )
     }
 
 let private runFinalizeMergeAttemptAsync (deps: GitDependencies) (state: GitState) = promise {
@@ -4311,13 +4604,71 @@ let private runAbandonMergeAttemptAsync (deps: GitDependencies) (state: GitState
                 (fun _ partial -> refreshAfterSuccess deps partial GitPageChange.Clear (Some None) None)
 }
 
-/// Removes a stale lock and refreshes. The refreshed status decides what follows: an
-/// active conflict session is abandoned through the normal path.
+/// Lists the large objects and the paths among them that a lock-blocked checkout left with a stale index.
+/// The status is read only when some object is on disk, because only those can be stale.
+let private listObjectsWithStalePathsAsync (deps: GitDependencies) = promise {
+    let! listed = toResult (deps.listObjects (request deps))
+
+    match listed with
+    | Error failure -> return Error failure
+    | Ok(objectsOutcome, _) ->
+        let objects = objectsOutcome.Value
+
+        if objects |> Array.exists _.IsMaterialized then
+            let! status = toResult (deps.getStatus (request deps))
+
+            return
+                status
+                |> Result.map (fun (statusOutcome, _) -> objects, staleLfsPaths objects statusOutcome.Value)
+        else
+            return Ok(objects, [||])
+}
+
+let private anyObjectMissing (objects: ObjectStateDto[]) =
+    objects |> Array.exists (fun objectState -> not objectState.IsMaterialized)
+
+/// Asks the library to restage the stale large-file paths after a lock removal. A path that holds a real edit
+/// is refused with the code local_changes and stays as it is. Any other failure of that call, a held lock
+/// included, is returned. A listing or status that fails means there is nothing known to restage. The refresh
+/// that follows reports a workspace that is really broken.
+/// The result says whether a large object is still missing after the restage. It is None when the listing
+/// after the restage failed.
+let private restageStaleLfsPathsAsync (deps: GitDependencies) : JS.Promise<Result<bool option, OperationFailureDto>> = promise {
+    let! listed = listObjectsWithStalePathsAsync deps
+
+    match listed with
+    | Error _ -> return Ok None
+    | Ok(objects, [||]) -> return Ok(Some(anyObjectMissing objects))
+    | Ok(_, stalePaths) ->
+        let! restaged =
+            toResult (
+                deps.materializeObjects {
+                    OperationId = deps.newOperationId ()
+                    Paths = stalePaths
+                    AlwaysRefreshTree = false
+                }
+            )
+
+        match restaged with
+        | Error failure
+        | Ok(_, Some failure) when not (isLocalChangesRefusal failure) -> return Error failure
+        | _ ->
+            let! relisted = toResult (deps.listObjects (request deps))
+
+            return
+                match relisted with
+                | Ok(objectsOutcome, _) -> Ok(Some(anyObjectMissing objectsOutcome.Value))
+                | Error _ -> Ok None
+}
+
+/// Removes a stale lock, restages the large files that git-lfs had already written when the lock stopped a
+/// checkout, and refreshes. The refreshed status decides what follows: an active conflict session is abandoned
+/// through the normal path.
 let private runClearStaleLockAttemptAsync (deps: GitDependencies) =
     runTrackedWriteAsync
         deps
         (fun () -> deps.clearStaleLock (request deps))
-        (fun outcome partial ->
+        (fun outcome partial -> promise {
             let removedLockPaths =
                 outcome.Warnings
                 |> Array.choose (fun warning ->
@@ -4335,8 +4686,27 @@ let private runClearStaleLockAttemptAsync (deps: GitDependencies) =
                     let joined = String.concat ", " paths
                     Some $"Removed stale lock files: {joined}."
 
-            refreshAfterSuccess deps partial GitPageChange.NoChange None warningMessage
-        )
+            let! restaged = restageStaleLfsPathsAsync deps
+
+            match restaged with
+            | Error failure -> return! routedToOutcome deps (routeFailure None failure)
+            | Ok objectsMissing ->
+                let! refreshed = refreshAfterSuccess deps partial GitPageChange.NoChange None warningMessage
+
+                return
+                    refreshed
+                    |> Result.map (
+                        function
+                        | Completed(UnitSuccess success) ->
+                            Completed(
+                                UnitSuccess {
+                                    success with
+                                        ObjectsMissing = objectsMissing
+                                }
+                            )
+                        | other -> other
+                    )
+        })
 
 let private runRestoreInterruptedPathsAttemptAsync (deps: GitDependencies) (state: GitState) (paths: string[]) = promise {
     match requireWorkspaceVersion state with
@@ -4355,38 +4725,55 @@ let private runRestoreInterruptedPathsAttemptAsync (deps: GitDependencies) (stat
                 (fun _ partial -> refreshAfterSuccess deps partial GitPageChange.Clear (Some None) None)
 }
 
-/// Downloads the large objects an interrupted update left behind, one per object,
-/// stopping at the first failure so its message is reported.
+/// The library's instruction for a failed download tells the caller to materialize the path again. In the app
+/// that is the Download LFS file action, so the error names it instead.
+let private withDownloadAgainInstructions (failure: OperationFailureDto) =
+    match failure.RecoveryAction with
+    | Some recovery when recovery.Code = VersionControlCodes.Recovery.RetryMaterialization -> {
+        failure with
+            RecoveryAction =
+                Some {
+                    recovery with
+                        Instructions = Some "Use Download LFS file to try again."
+                }
+      }
+    | _ -> failure
+
+/// Downloads the large objects an interrupted update left behind with one call. The library tries every
+/// object and reports the first real failure. The stale paths of a lock-blocked checkout are requested as
+/// well, so the library restages them. A requested path that holds a real edit, stale or pending, is refused
+/// with the code local_changes and keeps its edit. A result in which every failed path was such a refusal
+/// counts as success, and otherwise the failure is reported.
 let private runRetryMaterializationAttemptAsync (deps: GitDependencies) = promise {
-    let! objects = toResult (deps.listObjects (request deps))
+    let! listed = listObjectsWithStalePathsAsync deps
 
-    match objects with
+    match listed with
     | Error failure -> return! routedToOutcome deps (routeFailure None failure)
-    | Ok(outcome, _) ->
+    | Ok(objects, stalePaths) ->
         let pending =
-            outcome.Value
+            objects
             |> Array.filter (fun objectState -> not objectState.IsMaterialized)
+            |> Array.map _.Path
+            |> Array.append stalePaths
+            |> Array.distinct
 
-        let mutable failure: OperationFailureDto option = None
+        if pending.Length = 0 then
+            return! refreshAfterSuccess deps None GitPageChange.NoChange None None
+        else
+            let! materialized =
+                toResult (
+                    deps.materializeObjects {
+                        OperationId = deps.newOperationId ()
+                        Paths = pending
+                        AlwaysRefreshTree = true
+                    }
+                )
 
-        for index, objectState in pending |> Array.indexed do
-            if failure.IsNone then
-                let! materialized =
-                    toResult (
-                        deps.materializeObject {
-                            OperationId = deps.newOperationId ()
-                            Path = objectState.Path
-                            RefreshTree = Some(index = pending.Length - 1)
-                        }
-                    )
-
-                match materialized with
-                | Ok _ -> ()
-                | Error error -> failure <- Some error
-
-        match failure with
-        | Some error -> return! routedToOutcome deps (routeFailure None error)
-        | None -> return! refreshAfterSuccess deps None GitPageChange.NoChange None None
+            match materialized with
+            | Error failure
+            | Ok(_, Some failure) when not (isLocalChangesRefusal failure) ->
+                return! routedToOutcome deps (routeFailure None (withDownloadAgainInstructions failure))
+            | _ -> return! refreshAfterSuccess deps None GitPageChange.NoChange None None
 }
 
 let private executeWriteAttemptOnce
@@ -4673,6 +5060,25 @@ let private withSeededGitValues (defaults: UserDefaultValuesDto) (model: GitStat
 }
 
 let private resetFor (model: GitState) =
+    // An operation that still runs when the ARC changes ends here for the sidebar. Its output goes to the last
+    // log, and a closing line tells the reader that the log is cut off. An operation without output keeps the
+    // previous last log, as everywhere else.
+    let ended =
+        if model.BusyOperation.IsSome && model.CurrentLog.Lines.Length > 0 then
+            let cutOff: VersionControlOutputEntryDto = {
+                CommandId = ""
+                Kind = "notice"
+                Text = "The ARC changed before this operation ended, so the log stops here."
+                IsPartial = false
+            }
+
+            {
+                model with
+                    CurrentLog = OperationLog.append [| cutOff |] model.CurrentLog
+            }
+        else
+            model
+
     {
         GitState.Empty with
             SidebarVisible = model.SidebarVisible
@@ -4680,6 +5086,7 @@ let private resetFor (model: GitState) =
             // The page load counter keeps counting. A page load of an ARC that closed could finish after
             // a counter that started again at 0 has reached its id in a later ARC.
             PageLoadRequestId = model.PageLoadRequestId
+            LastLog = (keepLastLog ended).LastLog
     }
     |> withSeededGitValues model.UserDefaults
 
@@ -4702,12 +5109,19 @@ let private clearPageOnFirstMissingCmd (setPageState: PageState option -> unit) 
     | GitRepositoryAvailability.Ready -> applyPageChangeCmd setPageState GitPageChange.Clear
 
 let private clearBusy (model: GitState) = {
-    model with
+    keepLastLog model with
         BusyOperation = None
         BusyNotice = None
         CurrentProgress = None
         CurrentProgressPhase = None
+        CurrentSteps = [||]
+        CurrentStepPhases = [||]
+        CurrentLog = OperationLog.empty
+        CurrentLogName = None
+        OperationReported = false
+        OperationStartedAt = None
         CurrentOperation = None
+        RefreshOperationId = None
 }
 
 let private writeErrorModel (message: string) (model: GitState) = {
@@ -4736,6 +5150,20 @@ let private busyOperationForWriteRequest =
     | ClearStaleLock -> GitBusyOperation.ClearingStaleLock
     | RestoreInterruptedPaths _ -> GitBusyOperation.RestoringInterruptedPaths
     | RetryMaterialization -> GitBusyOperation.RetryingMaterialization
+
+/// The title of the log of a write is the busy notice of its operation. A save is titled "Saving changes",
+/// because its busy operation changes with the phase of the save. A clone runs before its ARC opens, so its log
+/// names the folder of the clone target.
+let private logNameForWriteRequest
+    (model: GitState)
+    (writeRequest: WriteRequest)
+    : OperationLog.OperationLogName option =
+    match writeRequest with
+    | PrimarySave _ -> Some(logName "Saving changes" model.CurrentArcPath)
+    | Clone(cloneRequest, _) ->
+        busyNoticeFromOperation (busyOperationForWriteRequest writeRequest)
+        |> Option.map (fun label -> logName label (Some cloneRequest.TargetPath))
+    | _ -> operationLogName model (busyOperationForWriteRequest writeRequest)
 
 let private requiresArcForWriteRequest =
     function
@@ -4790,6 +5218,31 @@ let private operationRootId (operationId: string) =
     else
         operationId.Substring(0, separatorIndex)
 
+/// Whether an event belongs to an operation other than the one this workflow runs, such as
+/// a file tree action that started in the same window. The sub-operations of a write share the root
+/// id of the write. A workflow that does not know its operation id (a silent refresh, the rename of the ARC
+/// folder) takes every event.
+let private isForeignOperation (model: GitState) (operationId: string) =
+    let ownOperationId =
+        model.CurrentOperation
+        |> Option.map _.OperationId
+        |> Option.orElse model.RefreshOperationId
+
+    match ownOperationId with
+    | Some current -> operationRootId current <> operationRootId operationId
+    | None -> false
+
+/// Whether the sidebar shows the events (progress and output) of the operation with this id. A silent refresh has
+/// no notice text. Events from another source, such as the text diff scan, would otherwise show the progress
+/// banner that the silent refresh avoids. The rename of the ARC folder runs no version control call, so any event
+/// belongs to another operation.
+let private showsOperationEvents (model: GitState) (operationId: string) =
+    match model.BusyOperation with
+    | None -> false
+    | Some GitBusyOperation.Refreshing when model.BusyNotice.IsNone -> false
+    | Some GitBusyOperation.RenamingRepository -> false
+    | Some _ -> not (isForeignOperation model operationId)
+
 let private writeCmd
     (deps: GitDependencies)
     (model: GitState)
@@ -4820,6 +5273,12 @@ let private writeCmd
 let private shouldRunPostMergePush (model: GitState) =
     model.PendingPostMergePush && model.ActiveConflict.IsNone
 
+/// The restage after a lock removal found every large object on disk, so Download now would have nothing to fetch.
+let private lockRemovalFoundNoMissingObject (success: WriteSuccess) =
+    match success with
+    | UnitSuccess { ObjectsMissing = Some false } -> true
+    | _ -> false
+
 let private updateCore
     (deps: GitDependencies)
     (setPageState: PageState option -> unit)
@@ -4829,27 +5288,30 @@ let private updateCore
     match msg with
     | ResetWorkflow -> resetFor model, Cmd.none
     | DiffPageMsg diffMsg -> GitDiffPageLoader.update deps diffMsg model
-    // A silent refresh has no notice text. Progress from another source, such as the text diff
-    // scan, would otherwise show the progress banner that the silent refresh avoids.
-    | SetCurrentProgress(Some _) when
-        model.BusyOperation = Some GitBusyOperation.Refreshing
-        && model.BusyNotice.IsNone
-        ->
-        model, Cmd.none
-    | SetCurrentProgress(Some progress) when model.BusyOperation.IsSome ->
+    | SetCurrentProgress progress when showsOperationEvents model progress.OperationId ->
+        let steps, stepPhases =
+            applyProgressToSteps model.CurrentSteps model.CurrentStepPhases progress
+
         {
             model with
-                CurrentProgress = Some(mergeProgressUpdate model progress)
+                CurrentProgress = Some(mergeProgressUpdate model steps progress)
                 CurrentProgressPhase = Some progress.PhaseCode
+                CurrentSteps = steps
+                CurrentStepPhases = stepPhases
+                OperationReported = true
         },
         Cmd.none
-    | SetCurrentProgress _ ->
+    // Progress of a silent refresh, of another operation, of the rename of the ARC folder or after the busy
+    // operation ended. The same model instance returns, so the many events of a file tree action cause no render.
+    | SetCurrentProgress _ -> model, Cmd.none
+    | OperationOutputReceived output when showsOperationEvents model output.OperationId ->
         {
             model with
-                CurrentProgress = None
-                CurrentProgressPhase = None
+                CurrentLog = OperationLog.append output.Entries model.CurrentLog
+                OperationReported = true
         },
         Cmd.none
+    | OperationOutputReceived _ -> model, Cmd.none
     | OperationStarted key when model.BusyOperation.IsSome ->
         match model.CurrentOperation with
         | Some currentOperation ->
@@ -4909,6 +5371,13 @@ let private updateCore
             | None -> applyPageChangeCmd setPageState GitPageChange.Clear
 
         nextModel, cmd
+    | StorageDeduplicationChecked(arcSessionId, _) when arcSessionId <> model.ArcSessionId -> model, Cmd.none
+    | StorageDeduplicationChecked(_, canDeduplicate) ->
+        {
+            model with
+                CanDeduplicateStorage = Some canDeduplicate
+        },
+        Cmd.none
     | SidebarVisibilityChanged false ->
         {
             model with
@@ -5004,13 +5473,17 @@ let private updateCore
         Cmd.none
     | RefreshRequested ->
         let requestId = nextRefreshRequestId model
+        // The calls of the refresh take sub-ids of this id. isForeignOperation then drops the progress of other
+        // operations, such as a file tree action in the same window.
+        let operationId = deps.newOperationId ()
 
         let nextModel =
             model
-            |> withBusyOperation (Some GitBusyOperation.Refreshing)
+            |> withBusyOperation (Some GitBusyOperation.Refreshing) None
             |> startRefreshRequest requestId
             |> fun state -> {
                 state with
+                    RefreshOperationId = Some operationId
                     ErrorNotice = None
                     WarningNotice =
                         match state.PendingRefreshWarningNotice with
@@ -5021,7 +5494,7 @@ let private updateCore
         let cmd =
             Cmd.OfPromise.either
                 refreshAllAsync
-                deps
+                (withFirstOperationId deps operationId)
                 (fun refreshResult -> RefreshCompleted(requestId, Ok refreshResult))
                 (fun err -> RefreshCompleted(requestId, Error(string err)))
 
@@ -5054,7 +5527,7 @@ let private updateCore
 
         let nextModel =
             model
-            |> withBusyOperation (Some GitBusyOperation.Refreshing)
+            |> withBusyOperation (Some GitBusyOperation.Refreshing) None
             |> startRefreshRequest requestId
             // No notice text, so the sidebar shows no banner that pushes its content down.
             |> fun state -> { state with BusyNotice = None }
@@ -5080,7 +5553,7 @@ let private updateCore
         nextModel,
         Cmd.batch [
             applyPageChangeCmd setPageState GitPageChange.Clear
-            reportErrorCmd deps "Could not refresh Git state" message
+            reportOperationErrorCmd deps model.CurrentLog "Could not refresh Git state" message
         ]
     | RefreshCompleted(_, Ok refreshResult) when refreshFailure refreshResult |> Option.exists isMissingRepository ->
         missingRepositoryModel model, clearPageOnFirstMissingCmd setPageState model
@@ -5092,14 +5565,14 @@ let private updateCore
             | Some message ->
                 Cmd.batch [
                     applyPageChangeCmd setPageState GitPageChange.Clear
-                    reportErrorCmd deps "Could not refresh Git state" message
+                    reportOperationErrorCmd deps model.CurrentLog "Could not refresh Git state" message
                 ]
             | None when nextModel.PendingPublishAfterRefresh ->
                 Cmd.ofMsg (WriteRequested(Push GitUpdateAcceptance.RequirePreview))
             | None -> Cmd.none
 
         let loadingModel, loadCmd =
-            startUploadRightAwayLoad deps refreshResult {
+            startArcSessionLoads deps refreshResult {
                 nextModel with
                     PendingPublishAfterRefresh = false
             }
@@ -5124,7 +5597,7 @@ let private updateCore
         let nextModel = model |> applyRefreshResult refreshResult |> clearBusy
 
         let loadingModel, loadCmd =
-            startUploadRightAwayLoad deps refreshResult {
+            startArcSessionLoads deps refreshResult {
                 nextModel with
                     ErrorNotice = model.ErrorNotice
                     WarningNotice = model.WarningNotice
@@ -5141,19 +5614,22 @@ let private updateCore
         loadingModel, Cmd.batch [ publishCmd; loadCmd ]
     | InitRepositoryRequested when model.CurrentArcPath.IsNone -> model, Cmd.none
     | InitRepositoryRequested ->
+        let operationId = deps.newOperationId ()
+
         let nextModel =
             model
-            |> withBusyOperation (Some GitBusyOperation.InitializingRepository)
+            |> startOperation GitBusyOperation.InitializingRepository
             |> fun state -> {
                 state with
                     ErrorNotice = None
                     WarningNotice = None
+                    CurrentOperation = Some { OperationId = operationId }
             }
 
         let cmd =
             Cmd.OfPromise.either
                 (fun (deps, arcPath) -> runInitRepositoryAsync deps arcPath)
-                (deps, Option.get model.CurrentArcPath)
+                (withFirstOperationId deps operationId, Option.get model.CurrentArcPath)
                 (fun result -> InitRepositoryCompleted(model.ArcSessionId, result))
                 (fun err -> InitRepositoryCompleted(model.ArcSessionId, Error(string err)))
 
@@ -5167,7 +5643,7 @@ let private updateCore
                 PendingRefreshWarningNotice = None
         }
 
-        nextModel, reportErrorCmd deps "Could not initialize Git repository" message
+        nextModel, reportOperationErrorCmd deps model.CurrentLog "Could not initialize Git repository" message
     | InitRepositoryCompleted(_, Ok()) ->
         let nextModel = {
             clearBusy model with
@@ -5263,11 +5739,14 @@ let private updateCore
                     |> Option.exists (fun candidate -> candidate.Preview.IsNone && candidate.Object.IsNone)
                 | ConflictResolutionDto.SupplyResolvedContent _ -> false
 
+            let operationId = deps.newOperationId ()
+
             let nextModel =
                 model
-                |> withBusyOperation (Some(GitBusyOperation.ConfirmingMergeResolution resolution.Path))
+                |> startOperation (GitBusyOperation.ConfirmingMergeResolution resolution.Path)
                 |> fun state -> {
                     state with
+                        CurrentOperation = Some { OperationId = operationId }
                         MergeResolutionPendingPath = Some resolution.Path
                         ErrorNotice = None
                         WarningNotice =
@@ -5294,7 +5773,7 @@ let private updateCore
                             deletedCandidatePick
                             resolution
                     )
-                    (deps,
+                    (withFirstOperationId deps operationId,
                      model.DownloadLargeFiles,
                      model.PendingMaterializations,
                      model.PendingMaterializationSessionId,
@@ -5348,7 +5827,7 @@ let private updateCore
         Cmd.batch [
             applyPageChangeCmd setPageState GitPageChange.Clear
             Cmd.ofMsg RefreshRequested
-            reportErrorCmd deps "Could not confirm merge resolution" message
+            reportOperationErrorCmd deps model.CurrentLog "Could not confirm merge resolution" message
         ]
     | ConfirmMergeResolutionCompleted(_,
                                       Error(ConfirmMergeResolutionError.Failed(message,
@@ -5378,7 +5857,7 @@ let private updateCore
         nextModel,
         Cmd.batch [
             Cmd.ofMsg RefreshRequested
-            reportErrorCmd deps "Could not confirm merge resolution" message
+            reportOperationErrorCmd deps model.CurrentLog "Could not confirm merge resolution" message
         ]
     | ConfirmMergeResolutionCompleted(_, Ok outcome) ->
         let nextModel =
@@ -5473,7 +5952,9 @@ let private updateCore
                 Cmd.OfPromise.either
                     deps.cancelOperation
                     key
-                    (fun result -> CancelCurrentOperationCompleted(model.ArcSessionId, key, result))
+                    (fun result ->
+                        CancelCurrentOperationCompleted(model.ArcSessionId, key, result |> Result.mapError _.Message)
+                    )
                     (fun err -> CancelCurrentOperationCompleted(model.ArcSessionId, key, Error(string err)))
 
             model, cmd
@@ -5659,7 +6140,7 @@ let private updateCore
                             model with
                                 PublishOwnerChoice = Some choice
                         }
-                        |> withBusyOperation (Some GitBusyOperation.RenamingRepository)
+                        |> startOperation GitBusyOperation.RenamingRepository
                         |> fun state -> { state with ErrorNotice = None }
 
                     let cmd =
@@ -5709,7 +6190,7 @@ let private updateCore
             clearBusy model with
                 ErrorNotice = Some message
         },
-        reportErrorCmd deps "Could not rename ARC" message
+        reportOperationErrorCmd deps model.CurrentLog "Could not rename ARC" message
     | PublishRenameCompleted(_, Ok _, selection) ->
         {
             clearBusy model with
@@ -5748,7 +6229,7 @@ let private updateCore
 
                 let nextModel =
                     model
-                    |> withBusyOperation (Some GitBusyOperation.SwitchingBranch)
+                    |> startOperation GitBusyOperation.SwitchingBranch
                     |> fun state -> {
                         state with
                             ErrorNotice = None
@@ -5764,7 +6245,13 @@ let private updateCore
                             TargetRef = providerRef
                             ExpectedWorkspaceVersion = version
                         }
-                        (fun result -> SwitchBranchPreflightCompleted(model.ArcSessionId, normalizedBranchName, result))
+                        (fun result ->
+                            SwitchBranchPreflightCompleted(
+                                model.ArcSessionId,
+                                normalizedBranchName,
+                                result |> Result.mapError _.Message
+                            )
+                        )
                         (fun err ->
                             SwitchBranchPreflightCompleted(model.ArcSessionId, normalizedBranchName, Error(string err))
                         )
@@ -5779,7 +6266,7 @@ let private updateCore
                 ErrorNotice = Some message
                 WarningNotice = None
         },
-        reportErrorCmd deps "Could not switch branch" message
+        reportOperationErrorCmd deps model.CurrentLog "Could not switch branch" message
     | SwitchBranchPreflightCompleted(_, refName, Ok(OperationResultDto.Succeeded outcome)) when outcome.Value.IsSafe ->
         clearBusy model, Cmd.ofMsg (WriteRequested(SwitchBranch refName))
     | SwitchBranchPreflightCompleted(_, _, Ok(OperationResultDto.Succeeded outcome)) ->
@@ -5796,7 +6283,7 @@ let private updateCore
                 ErrorNotice = Some message
                 WarningNotice = None
         },
-        reportErrorCmd deps "Could not switch branch" message
+        reportOperationErrorCmd deps model.CurrentLog "Could not switch branch" message
     | SwitchBranchPreflightCompleted(_, _, Ok(OperationResultDto.Failed failure)) when isCanceled failure ->
         {
             clearBusy model with
@@ -5813,7 +6300,7 @@ let private updateCore
                     WarningNotice = None
             },
             Cmd.batch [
-                reportErrorCmd deps "Could not switch branch" message
+                reportOperationErrorCmd deps model.CurrentLog "Could not switch branch" message
                 Cmd.ofMsg RefreshRequested
             ]
         | routed ->
@@ -5824,14 +6311,14 @@ let private updateCore
                     ErrorNotice = Some message
                     WarningNotice = None
             },
-            reportErrorCmd deps "Could not switch branch" message
+            reportOperationErrorCmd deps model.CurrentLog "Could not switch branch" message
     | SwitchBranchPreflightCompleted(_, _, Error message) ->
         {
             clearBusy model with
                 ErrorNotice = Some message
                 WarningNotice = None
         },
-        reportErrorCmd deps "Could not switch branch" message
+        reportOperationErrorCmd deps model.CurrentLog "Could not switch branch" message
     | PruneLfsCacheRequested ->
         let message =
             "This cleans hidden Git LFS cache files for the current ARC. Files that are still needed can be downloaded again from the remote. Continue?"
@@ -5863,6 +6350,7 @@ let private updateCore
         {
             model with
                 PendingRecovery = None
+                RetryMaterializationAfterLockClear = None
                 RefreshPending = false
                 PendingPostMergePush =
                     if shouldRunPostMergePush model then
@@ -5883,7 +6371,9 @@ let private updateCore
 
         let nextModel =
             model
-            |> withBusyOperation (Some(busyOperationForWriteRequest writeRequest))
+            |> withBusyOperation
+                (Some(busyOperationForWriteRequest writeRequest))
+                (logNameForWriteRequest model writeRequest)
             |> fun state -> {
                 state with
                     ErrorNotice = None
@@ -5902,6 +6392,7 @@ let private updateCore
             model with
                 BusyOperation = Some phase
                 BusyNotice = busyNoticeFromOperation phase
+                // The bar starts over with each phase. The steps and the log cover the whole write.
                 CurrentProgress = None
                 CurrentProgressPhase = None
         },
@@ -5922,7 +6413,7 @@ let private updateCore
         nextModel,
         Cmd.batch [
             resolveCloneReplyCmd writeRequest (Error message)
-            reportWriteErrorCmd deps writeRequest message
+            reportWriteErrorCmd deps model.CurrentLog writeRequest message
             Cmd.ofMsg RefreshRequested
         ]
     | WriteCompleted(_, _, writeRequest, Ok(OperationCancelled message)) ->
@@ -5943,7 +6434,7 @@ let private updateCore
         nextModel,
         Cmd.batch [
             resolveCloneReplyCmd writeRequest (Error message)
-            reportWriteErrorCmd deps writeRequest message
+            reportWriteErrorCmd deps model.CurrentLog writeRequest message
         ]
     | WriteCompleted(_, _, _, Ok(RequiresRemoteProjectRename(message, owners, clearOwnerChoice))) ->
         let ownedModel = {
@@ -5972,14 +6463,21 @@ let private updateCore
         nextModel,
         Cmd.batch [
             Cmd.ofMsg RefreshRequested
-            reportWriteErrorCmd deps writeRequest message
+            reportWriteErrorCmd deps model.CurrentLog writeRequest message
         ]
     | WriteCompleted(_, _, writeRequest, Ok(RequiresRecovery(recovery, message))) ->
         // The recovery offer stays open. A refresh requested meanwhile runs after the offer is resolved.
+        // A download retry that a held lock stopped is remembered like the hydration of a pull, so the
+        // download is offered again once the lock is gone. The library message of the retry failure says
+        // the lock is still held, so the offer gets a fixed sentence.
         let nextModel = {
             clearBusy model with
                 ErrorNotice = None
                 WarningNotice = Some message
+                RetryMaterializationAfterLockClear =
+                    match writeRequest, recovery with
+                    | RetryMaterialization, GitPendingRecovery.ClearStaleLock _ -> Some retryLockStoppedMessage
+                    | _ -> model.RetryMaterializationAfterLockClear
                 PendingRecovery = Some recovery
                 PendingConfirmation = Some(recoveryDialog recovery)
                 PendingRemoteAction = GitPendingRemoteAction.Recover
@@ -6018,7 +6516,7 @@ let private updateCore
         nextModel,
         Cmd.batch [
             resolveCloneReplyCmd writeRequest (Error message)
-            reportErrorCmd deps "Version control dependency required" message
+            reportOperationErrorCmd deps model.CurrentLog "Version control dependency required" message
         ]
     | WriteInstallPromptAnswered(sessionId, writeRequest, componentName, true) ->
         let busyOperation = busyOperationForWriteRequest writeRequest
@@ -6044,7 +6542,9 @@ let private updateCore
                     OperationId = installOperationId
                     Component = componentName
                 }
-                (fun installResult -> WriteInstallCompleted(sessionId, writeRequest, installResult))
+                (fun installResult ->
+                    WriteInstallCompleted(sessionId, writeRequest, installResult |> Result.mapError _.Message)
+                )
                 (fun err -> WriteInstallCompleted(sessionId, writeRequest, Error(string err)))
 
         nextModel, cmd
@@ -6062,7 +6562,7 @@ let private updateCore
         nextModel,
         Cmd.batch [
             resolveCloneReplyCmd writeRequest (Error message)
-            reportErrorCmd deps "Could not install the dependency" message
+            reportOperationErrorCmd deps model.CurrentLog "Could not install the dependency" message
         ]
     | WriteInstallCompleted(_, writeRequest, Ok(OperationResultDto.Failed failure)) ->
         let message = failureMessage failure
@@ -6078,7 +6578,7 @@ let private updateCore
         nextModel,
         Cmd.batch [
             resolveCloneReplyCmd writeRequest (Error message)
-            reportErrorCmd deps "Could not install the dependency" message
+            reportOperationErrorCmd deps model.CurrentLog "Could not install the dependency" message
         ]
     | WriteInstallCompleted(sessionId, writeRequest, Ok _) ->
         // The dependency is configured. The failed stage runs again with the same
@@ -6140,9 +6640,9 @@ let private updateCore
         let report =
             match writeRequest with
             | PrimarySave _ when isLocalPrimarySaveFailure success ->
-                reportErrorCmd deps "Changes saved, but Git's index needs attention" message
-            | PrimarySave _ -> reportErrorCmd deps "Could not push saved changes" message
-            | _ -> reportWriteErrorCmd deps writeRequest message
+                reportOperationErrorCmd deps model.CurrentLog "Changes saved, but Git's index needs attention" message
+            | PrimarySave _ -> reportOperationErrorCmd deps model.CurrentLog "Could not push saved changes" message
+            | _ -> reportWriteErrorCmd deps model.CurrentLog writeRequest message
 
         nextModel,
         Cmd.batch [
@@ -6158,7 +6658,7 @@ let private updateCore
                 PendingPostMergePush = false
         }
 
-        nextModel, reportWriteErrorCmd deps writeRequest message
+        nextModel, reportWriteErrorCmd deps model.CurrentLog writeRequest message
     | WriteCompleted(_, _, writeRequest, Ok(Completed success)) ->
         let baseModel, pageChange, warningMessage, recovery, partial, published =
             applyWriteSuccessModel model success
@@ -6169,6 +6669,10 @@ let private updateCore
                 WarningNotice = warningMessage
                 PendingPublishRename = None
                 PendingRecovery = recovery
+                RetryMaterializationAfterLockClear =
+                    match success with
+                    | UnitSuccess completed -> lockBlockedDownloadMessage completed.Partial
+                    | CloneSuccess _ -> None
                 PendingConfirmation = recovery |> Option.map recoveryDialog
                 PendingRemoteAction =
                     match recovery with
@@ -6193,6 +6697,13 @@ let private updateCore
             match writeRequest with
             // A cleared lock revealed an open merge: the abandon path runs it.
             | ClearStaleLock when nextModel.ActiveConflict.IsSome -> Cmd.ofMsg (WriteRequested AbandonMerge)
+            // No download offer follows the lock removal, so the publish that waited for the download resumes here.
+            | ClearStaleLock when
+                model.RetryMaterializationAfterLockClear.IsSome
+                && lockRemovalFoundNoMissingObject success
+                && shouldRunPostMergePush nextModel
+                ->
+                Cmd.ofMsg (WriteRequested(Push GitUpdateAcceptance.RequirePreview))
             | FinalizeMerge when shouldRunPostMergePush nextModel ->
                 Cmd.ofMsg (WriteRequested(Push GitUpdateAcceptance.RequirePreview))
             | RetryMaterialization when shouldRunPostMergePush nextModel ->
@@ -6209,6 +6720,15 @@ let private updateCore
                 nextModel with
                     PendingPostMergePush = false
               }
+            | ClearStaleLock when
+                model.RetryMaterializationAfterLockClear.IsSome
+                && lockRemovalFoundNoMissingObject success
+                && shouldRunPostMergePush nextModel
+                  ->
+                  {
+                      nextModel with
+                          PendingPostMergePush = false
+                  }
             | AbandonMerge -> {
                 nextModel with
                     PendingPostMergePush = false
@@ -6218,10 +6738,12 @@ let private updateCore
             // Only a materialization recovery leaves the publish undone with nothing else
             // offering it. The publish resumes after that recovery. The retry_publish partial
             // is its own offer, and an unmapped partial has no path that could resume.
+            // A download that an index lock stopped reaches the same retry once the lock is gone.
             | (PrimarySave _ | Push _) when published = Some false && partial.IsSome ->
                 let resumesAfterMaterialization =
                     match recovery with
                     | Some(GitPendingRecovery.RetryMaterialization _) -> true
+                    | Some(GitPendingRecovery.ClearStaleLock _) -> nextModel.RetryMaterializationAfterLockClear.IsSome
                     | _ -> false
 
                 {
@@ -6248,6 +6770,31 @@ let private updateCore
             followUp
         ]
 
+/// A removed index lock turns the stopped download into the download offer. Any other end of the
+/// lock removal drops it, because the next pull offers the download again. The offer is dropped as well when
+/// the restage after the lock removal found no large object missing, because Download now would have nothing to fetch.
+let private offerDownloadAfterLockRemoval (msg: Msg) (model: GitState) (next: GitState) =
+    match msg with
+    | WriteCompleted(sessionId, writeRequestId, ClearStaleLock, result) when
+        sessionId = model.ArcSessionId && writeRequestId = model.WriteRequestId
+        ->
+        match result, model.RetryMaterializationAfterLockClear with
+        | Ok(Completed success), Some message when not (lockRemovalFoundNoMissingObject success) ->
+            let recovery = GitPendingRecovery.RetryMaterialization message
+
+            {
+                next with
+                    RetryMaterializationAfterLockClear = None
+                    PendingRecovery = Some recovery
+                    PendingConfirmation = Some(recoveryDialog recovery)
+                    PendingRemoteAction = GitPendingRemoteAction.Recover
+            }
+        | _ -> {
+            next with
+                RetryMaterializationAfterLockClear = None
+          }
+    | _ -> next
+
 /// The wrapper holds a refresh until the write finishes and any open confirmation is resolved.
 /// It also waits for the pending recovery to be handled.
 let update
@@ -6273,6 +6820,8 @@ let update
                       PublishOwnerChoice = None
               }
         | _ -> next
+
+    let next = offerDownloadAfterLockRemoval msg model next
 
     // Every way of leaving a diff page ends here: another selection, another page, a closed
     // page or a reset for another ARC.
@@ -6311,8 +6860,9 @@ let subscribe (_model: GitState) : Sub<Msg> = [
     fun dispatch ->
         let dispose =
             Renderer.IpcReceiver.subscribeProxyReceiver<IVersionControlRendererApi> {
-                versionControlProgress = fun progress -> dispatch (SetCurrentProgress(Some progress))
+                versionControlProgress = fun progress -> dispatch (SetCurrentProgress progress)
                 versionControlOperationStarted = fun key -> dispatch (OperationStarted key)
+                versionControlOutput = fun output -> dispatch (OperationOutputReceived output)
             }
 
         { new System.IDisposable with

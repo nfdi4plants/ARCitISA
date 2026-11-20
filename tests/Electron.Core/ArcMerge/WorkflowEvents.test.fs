@@ -51,14 +51,14 @@ Vitest.describe (
             "change event: in-memory DataMap is forwarded onto disc workflow when no datamap event exists",
             fun () ->
                 let arcLocal, arcRemote = withWorkflow ()
-                arcLocal.Workflows.[0].DataMap <- Some(DataMap.init ())
+                arcLocal.Workflows.[0].Datamap <- Some(Datamap.init ())
                 arcRemote.Workflows.[0].Title <- Some "Disc Workflow Title"
 
                 let merged =
                     ARC.merge arcLocal arcRemote [ workflowEvent EventName.Change "My Workflow" ]
 
                 Vitest.expect(merged.Workflows.[0].Title).toEqual (Some "Disc Workflow Title")
-                Vitest.expect(merged.Workflows.[0].DataMap.IsSome).toBe (true)
+                Vitest.expect(merged.Workflows.[0].Datamap.IsSome).toBe (true)
         )
 
         Vitest.test (

@@ -15,6 +15,6 @@ let Main (model: Model, dispatch: Msg -> unit) =
     let datamap = model.SpreadsheetModel.DataMapOrDefault
 
     let setDatamap =
-        fun (dm: DataMap) -> Spreadsheet.UpdateDatamap(Some dm) |> SpreadsheetMsg |> dispatch
+        fun (dm: Datamap) -> Spreadsheet.UpdateDatamap(Some dm) |> SpreadsheetMsg |> dispatch
 
     DataMapTable.DataMapTable(datamap, setDatamap)

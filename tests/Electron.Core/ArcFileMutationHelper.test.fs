@@ -37,19 +37,70 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "inferTextFileTypeFromPath detects markdown by .md extension",
+            "inferFileTypeFromPath detects markdown by .md extension",
             fun () ->
-                Vitest
-                    .expect(FileContentDTO.inferTextFileTypeFromPath "notes/readme.md")
-                    .toEqual (FileContentType.Markdown)
+                Vitest.expect(FileContentDTO.inferFileTypeFromPath "notes/readme.md").toEqual (FileContentType.Markdown)
+
+                Vitest.expect(FileContentDTO.inferFileTypeFromPath "notes/README.MD").toEqual (FileContentType.Markdown)
+
+                Vitest.expect(FileContentDTO.inferFileTypeFromPath "notes/README").toEqual (FileContentType.Markdown)
 
                 Vitest
-                    .expect(FileContentDTO.inferTextFileTypeFromPath "notes/README.MD")
-                    .toEqual (FileContentType.Markdown)
-
-                Vitest
-                    .expect(FileContentDTO.inferTextFileTypeFromPath "assays/assay_1/notes.txt")
+                    .expect(FileContentDTO.inferFileTypeFromPath "assays/assay_1/notes.txt")
                     .toEqual (FileContentType.PlainText)
+
+        )
+
+        Vitest.test (
+            "inferFileTypeFromPath detects PDF by .pdf extension",
+            fun () ->
+                Vitest.expect(FileContentDTO.inferFileTypeFromPath "docs/manual.pdf").toEqual (FileContentType.PDF)
+
+                Vitest.expect(FileContentDTO.inferFileTypeFromPath "docs/MANUAL.PDF").toEqual (FileContentType.PDF)
+        )
+
+        Vitest.test (
+            "inferFileTypeFromPath detects HTML by .html extension",
+            fun () ->
+                Vitest.expect(FileContentDTO.inferFileTypeFromPath "web/index.html").toEqual (FileContentType.Html)
+
+                Vitest.expect(FileContentDTO.inferFileTypeFromPath "web/INDEX.HTML").toEqual (FileContentType.Html)
+        )
+
+        Vitest.test (
+            "inferFileTypeFromPath detects GIF by .gif extension",
+            fun () ->
+                Vitest.expect(FileContentDTO.inferFileTypeFromPath "images/animation.gif").toEqual (FileContentType.GIF)
+
+                Vitest.expect(FileContentDTO.inferFileTypeFromPath "images/ANIMATION.GIF").toEqual (FileContentType.GIF)
+        )
+
+        Vitest.test (
+            "inferFileTypeFromPath detects PNG by .png extension",
+            fun () ->
+                Vitest.expect(FileContentDTO.inferFileTypeFromPath "images/picture.png").toEqual (FileContentType.PNG)
+
+                Vitest.expect(FileContentDTO.inferFileTypeFromPath "images/PICTURE.PNG").toEqual (FileContentType.PNG)
+        )
+
+        Vitest.test (
+            "inferFileTypeFromPath detects JPG by .jpg extension",
+            fun () ->
+                Vitest.expect(FileContentDTO.inferFileTypeFromPath "images/photo.jpg").toEqual (FileContentType.JPG)
+
+                Vitest.expect(FileContentDTO.inferFileTypeFromPath "images/photo.jpeg").toEqual (FileContentType.JPG)
+
+                Vitest.expect(FileContentDTO.inferFileTypeFromPath "images/PHOTO.JPEG").toEqual (FileContentType.JPG)
+
+                Vitest.expect(FileContentDTO.inferFileTypeFromPath "images/PHOTO.JPG").toEqual (FileContentType.JPG)
+        )
+
+        Vitest.test (
+            "inferFileTypeFromPath detects SVG by .svg extension",
+            fun () ->
+                Vitest.expect(FileContentDTO.inferFileTypeFromPath "images/vector.svg").toEqual (FileContentType.SVG)
+
+                Vitest.expect(FileContentDTO.inferFileTypeFromPath "images/VECTOR.SVG").toEqual (FileContentType.SVG)
         )
 
         Vitest.test (
@@ -78,13 +129,13 @@ Vitest.describe (
             fun () ->
                 let oldArc = ARC("test-arc")
 
-                let existingDataMap = DataMap.init ()
+                let existingDataMap = Datamap.init ()
                 existingDataMap.StaticHash <- 777
 
                 let assay = ArcAssay("assay_1", datamap = existingDataMap)
                 oldArc.AddAssay(assay)
 
-                let incomingDataMap = DataMap.init ()
+                let incomingDataMap = Datamap.init ()
                 incomingDataMap.StaticHash <- 5
 
                 let datamapParent = DatamapParentInfo.create "assay_1" DataMapParent.Assay
@@ -99,7 +150,7 @@ Vitest.describe (
                 let updatedDataMap =
                     updatedArc.TryGetAssay("assay_1") |> expectSome
                     <| "Expected assay to exist after datamap update."
-                    |> fun updatedAssay -> updatedAssay.DataMap
+                    |> fun updatedAssay -> updatedAssay.Datamap
                     |> expectSome
                     <| "Expected datamap to be present on assay."
 
@@ -112,19 +163,19 @@ Vitest.describe (
                 let arc = ARC("test-arc")
 
                 let assay = ArcAssay("assay_1")
-                assay.DataMap <- Some(DataMap.init ())
+                assay.Datamap <- Some(Datamap.init ())
                 arc.AddAssay assay
 
                 let study = ArcStudy("study_1")
-                study.DataMap <- Some(DataMap.init ())
+                study.Datamap <- Some(Datamap.init ())
                 arc.AddStudy study
 
                 let workflow = ArcWorkflow("workflow_1")
-                workflow.DataMap <- Some(DataMap.init ())
+                workflow.Datamap <- Some(Datamap.init ())
                 arc.AddWorkflow workflow
 
                 let run = ArcRun("run_1")
-                run.DataMap <- Some(DataMap.init ())
+                run.Datamap <- Some(Datamap.init ())
                 arc.AddRun run
 
                 let cases = [|

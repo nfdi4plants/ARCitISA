@@ -1,7 +1,7 @@
 /// The app-wide text diff worker pool. Creating the supervisor is asynchronous (it prepares
 /// its temp folder), so the first caller starts the setup and every later caller shares the
 /// same promise. A failed setup is logged and retried by the next caller. The supervisor
-/// starts Git by name unless its GitExecutable option names an explicit executable.
+/// asks the library's Git selection each time it starts Git.
 module Main.VersionControl.TextDiffWorkers
 
 open Fable.Core
@@ -70,7 +70,6 @@ let private createPool () : JS.Promise<TextDiffPool.TextDiffPool option> = promi
                         (Main.Bindings.Node.homeDirectory ())
                         (fun () -> app.getPath Enums.App.GetPath.Name.Temp)
                         (app.getName ())
-                GitExecutable = None
                 OnEvent = None
             }
 

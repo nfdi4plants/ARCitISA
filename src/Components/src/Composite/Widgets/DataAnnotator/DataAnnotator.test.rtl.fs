@@ -93,10 +93,13 @@ Vitest.test (
 
         Vitest.expect(submitted).toHaveLength 0
         Vitest.expect((TestHelpers.insertButton "Insert selectors").disabled).toBe true
+        RTL.screen.getByText "Select table cells" |> ignore
 
         rendered.rerender (
             Swate.Components.Composite.Widgets.DataAnnotator.DataAnnotator.Main(onInsert = onInsert, canInsert = true)
         )
+
+        Vitest.expect(RTL.screen.queryByText("Select table cells").IsNone).toBe true
 
         RTL.fireEvent.click (RTL.screen.getByTestId "sortable-list-row-cell=3,1")
         RTL.fireEvent.click (RTL.screen.getByTestId "sortable-list-row-cell=2,1")

@@ -16,6 +16,116 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 🐛 Fixed
+
+- Regular expressions in "Update Rows" now respect anchors such as `^` and `$` and replace only their actual matches. #943 (by @Gitarackur)
+
+## 3.3.0 - 2026-11-19
+
+### ✨ Added
+
+- The JSON import opens a dialog that lists the tables of the file with their columns and values. You choose which tables and columns to import, and whether each table becomes a new table or is appended to the table open in the editor. (by @Etschbeijer)
+- In the JSON import dialog you can import column headers only, headers with units, or headers with all values, and you can rename new tables. (by @Etschbeijer)
+- After a JSON import, the dialog lists the new and changed tables and reminds you to save the ARC. (by @Etschbeijer)
+- The JSON and template import dialogs show each table as a scrollable grid, where you can leave out rows the same way as columns. In "Headers only" mode the grid hides the row checkboxes, because that mode imports no values. When you append a table, left-out rows stay empty, so the other rows keep lining up with the table in the editor. The dialog also explains that appended rows line up by position and that columns the table in the editor already has, including Input and Output, stay as they are. (by @Etschbeijer)
+- Image and Html files are now supported and are directly displayed in the App. Common types such as .png, .jp(e)g, .gif, ect. are now supported with a small metadata box #1380 (by @Rookabu)
+- Files with no ending are treated as markdown files which makes them editable with the markdown editor. #1491 (by @Rookabu)
+- "Show last log" in the Git sidebar unfolds the output of the last Git operation after it ended, whether it worked or failed, including Git LFS downloads and frees from the file tree. It stays until another Git operation replaces it or the window closes, and refreshing keeps it. It also appears on the DataHub page after an ARC download. (by @caroott)
+- When a Git action fails, "Technical details" in the error message show the output of the Git commands it ran. (by @caroott)
+- If Git or Git LFS can't be used, for example because it is missing or too old, a warning below the navigation bar of every window says why. It stays until the problem is fixed and lets you open the settings or check again. (by @caroott)
+- The Git defaults in the settings show which Git program ARCitISA uses and its version. You can pick a different Git program there, or go back to the one ARCitISA finds by itself. (by @caroott)
+- Added "Duplicate Row/Column" to the annotation table context menu and "Duplicate Row" to the datamap context menu. #945 (by @Freymaurer)
+- Added search function for in-table-search. #417 (by @Freymaurer)
+
+### 🔄 Changed
+
+- Releases are now automatically created as draft. This is part of quality control. The App will first be tested and the docs updated before the release is pushed into "New update available" status. #1488 (by @Freymaurer)
+- When a commit fails because a selected file can't be found, the error message names the affected files. (by @caroott)
+- When large files could not be downloaded after an update, "Download now" tries every missing file, even when one of them fails. (by @caroott)
+- When large files could not be downloaded after an update, the warning and the "Download now" question no longer show the raw Git LFS output. "Show last log" still has it. If "Download now" fails, the message points to "Download LFS file" to try again. (by @caroott)
+- When a file of the open ARC changes on disk, for example after you save it in Excel or after a Git pull, its new content replaces your unsaved edits to that file. Unsaved edits to other files stay, and a warning below the navigation bar names each file whose unsaved edits were replaced. (by @Freymaurer)
+- While ARCitISA loads changes that another program or a Git operation made, the open page does not accept edits and shows the wait cursor, and the save button shows a sync icon and cannot be clicked. While the ARC saves, the save button shows a spinner. Afterwards the open page shows the new content. An edit made on content that has changed in the meantime is refused with a message, and the page shows the current content. (by @Freymaurer)
+- Clicking a study, assay, workflow or run folder in the file tree only expands or collapses it, and its right-click menu no longer offers "Open". The metadata opens from the workbook inside the folder, such as "isa.assay.xlsx". A new study, assay, workflow or run opens its workbook. (by @Freymaurer)
+- Creating a file, folder, study, assay, workflow, run or DataMap in the File Explorer now opens the folders that lead to it, so you can see it right away. (by @Etschbeijer)
+- After importing files or folders, the File Explorer opens the folder you imported into and each imported folder. (by @Etschbeijer)
+- Opening a isa workbook file, will now open on the metadata sheet not on the first table. (by @Freymaurer)
+- Integrate new ARCitISA icon set into the application. (by @caroott + @Freymaurer)
+- Improve visual feedback in data annotator and file picker components. #1437 (by @Freymaurer)
+- Typing into an already-filled table cell will now overwrite its content instead of appending to it. #924 (by @Freymaurer)
+- Changed "Move Column" UI to reuse the same component as "File Picker" and "Data Annotator". Columns move only within their group, so the order stays after saving. (by @Freymaurer + @caroott)
+- The Git sidebar uses plainer names: "Version Control" as its title and on hover, "Fetch Changes", "Create Branch", "Switch To Branch" and "Deduplicate Large Files". The button tooltips list the Git commands that really run. (by @caroott)
+- The Git sidebar disables "Deduplicate Large Files" and gives the reason in its tooltip when the file system of the ARC cannot deduplicate files. ARCitISA checks this once when an ARC opens. (by @caroott)
+- The Git sidebar shows the online namespace and ARC next to the branch, and the "Open ARC in DataHUB" tooltip shows the address it opens. (by @caroott)
+
+### 🐛 Fixed
+
+- The File Picker, Data Annotator and Building Block widgets act only on the cells you see selected, also after switching tabs or sheets. (by @caroott)
+- Delete Row in the right-click menu of a table cell removes the row of that cell. (by @caroott)
+- Edits typed right after a Save are no longer replaced a few seconds later by the saved file. (by @Freymaurer)
+- A change that another program saved shortly before a Save in ARCitISA now loads before the Save writes. Before, it could be missed. (by @Freymaurer)
+- Adding a study, assay, workflow, run or DataMap no longer reports an error when another workbook in the ARC can't be read. (by @Freymaurer)
+- A Save that fails, for example because Excel has the workbook open, keeps the changes marked as unsaved, so the next Save writes them. (by @Freymaurer)
+- When a changed file can't be loaded, a notice says so, and the file loads once it is fixed. Before, the failure was only logged. (by @Freymaurer)
+- DataMaps are read from and saved to the adjacent `isa.datamap.xlsx`. A legacy DataMap sheet inside a parent workbook is read only when that file is missing and moves to the file when the parent is saved. (by @Freymaurer)
+- Fix bug where deselecting a table cell was not correctly propagated to the file picker and data annotator components. (by @Freymaurer)
+- Fix bug where "Rename" on study, assay, workflow or run folders in the file tree did not correctly warn against invalid characters. #1444 (by @Freymaurer)
+
+## 3.2.0 - 2026-11-02
+
+### ✨ Added
+
+- Right-clicking a folder or the ARC name offers "Import folders", which copies the folders you pick, with everything inside them. It is available wherever "New Folder" is. #1429 (by @Etschbeijer)
+- Imported folders that would stay empty get an empty ".gitkeep" file, so they are kept when the ARC is uploaded. #1429 (by @Etschbeijer)
+- "Refresh folder" in the file tree's right-click menu reads a folder from disk again. (by @caroott)
+- The provenance graph has an up button that takes you one level back and names that level. (by @caroott)
+- An overview above the provenance graph shows where you are in the ARC and lets you jump to a neighboring dataset, process, group or node. (by @caroott)
+- A minimap in the corner of the provenance graph shows the whole graph and the visible part, and a click or drag on it moves the view. (by @caroott)
+- The whole provenance graph can be saved as a PNG image or copied to paste into Slack or Teams. (by @caroott)
+- Right-clicking a folder in the file tree offers "Download all LFS files" and "Free all local LFS copies", which act on every Git LFS file in the folder and its subfolders. (by @caroott)
+- While a folder downloads or frees its Git LFS files, its row in the file tree shows how many files are done, such as "3/40", and during a download the progress of the current step. (by @caroott)
+- The Git sidebar lists the steps of Download Changes and Upload Changes as they run, for example "Fetching online changes" and "Merging online changes", with live progress for the current step. A Save lists its steps in the same way. (by @caroott)
+- "Show logs" in the Git sidebar unfolds the output of the Git commands that the running operation sends. A copy button next to it puts the log on the clipboard. (by @caroott)
+- The Git sidebar shows the Git LFS downloads and frees that run from the file tree. When a Save waits for such an action, or another change to the repository does, such as Download Changes or switching a branch, the sidebar names the action it waits for. (by @caroott)
+
+### 🔄 Changed
+
+- Choosing a JSON file no longer changes the ARC right away. The ARC changes only when you confirm the import in the dialog. (by @Etschbeijer)
+- For an investigation, workflow, template or DataMap, the JSON import asks before it replaces the content of the open file. A workflow keeps its identifier, so it stays in its folder. (by @Etschbeijer)
+- The JSON import describes each JSON format and says why a file could not be read. If a file has no tables in the selected format, the message names that format. (by @Etschbeijer)
+- The template import dialog uses the same choices as the JSON import ("Create new table", "Append to active table", "Do not import", and "Headers only", "With units", "With values"). It shows the size of each template and explains each import mode. (by @Etschbeijer)
+- Import in the template dialog stays disabled while an imported template has no column or no row selected. The JSON and template import dialogs say why Import is disabled next to the button. (by @Etschbeijer)
+- New files and folders and renamed items can't use names that Windows does not allow, such as names with a colon or names like CON and AUX, so the ARC can also be downloaded and used on Windows. #1429 (by @Etschbeijer)
+- "Import files" and "Import folders" stop with a message if a name does not work on Windows, for example a name with a colon or a device name like CON or AUX, or if a name starts or ends with a space. This covers everything inside picked folders, too. #1429 (by @Etschbeijer)
+- "Import files" and "Import folders" treat upper and lower case as the same. They stop with a message if an item with the same name, ignoring case, already exists in the target folder, or if two imported items in the same folder differ only in case. The same holds for names that look alike but are stored differently, such as "Café" with a combined or a separate accent. #1429 (by @Etschbeijer)
+- "Import files" and "Import folders" stop with a message for an item named ".git", picked or inside a picked folder, because its files would not be uploaded with the ARC. #1429 (by @Etschbeijer)
+- "Import files" and "Import folders" do not open the picker while ARCitISA is saving or importing. #1429 (by @Etschbeijer)
+- While files or folders are imported, the notice shows the current step and how many items are done. The taskbar progress now covers the whole import, including adding the items to the ARC. #1429 (by @Etschbeijer)
+- Creating and renaming items says why a name can't be used, for example for a "dataset" folder inside an assay or an ARC metadata file name. #1429 (by @Etschbeijer)
+- Files above the preview size limit or with binary content open as a page that shows the file name and size, with a button to open the file in its default application. (by @caroott)
+- The Git LFS badge of a downloaded file no longer frees its local copy. Freeing is in the right-click menu and asks for confirmation first. (by @caroott)
+- Downloading or freeing a single Git LFS file is faster in large ARCs. (by @caroott)
+- Large ARCs open faster. The file tree shows the ARC structure first and reads other folders when you expand them. #1340 (by @caroott, @Etschbeijer)
+- Changes that other programs make inside data folders appear when the ARCitISA window gets focus, or after "Refresh folder". #1340 (by @caroott)
+- Git LFS badges come from one background listing per ARC. They update after Git operations in ARCitISA, and after changes made outside it when the window gets focus. #1340 (by @caroott, @Etschbeijer)
+- Switching views in the provenance graph keeps the previous graph on screen until the new one is ready, so the view no longer flashes. (by @caroott)
+- The provenance graph lays out large graphs in the background, so the app stays responsive in the meantime. (by @caroott)
+
+### 🐛 Fixed
+
+- Collapsing a parent folder in the file tree keeps the selected descendant and its path highlighted. #1469 (by @Gitarackur)
+- Files and folders named ".gitkeep", ".gitattributes" or "README.md" can be deleted from the file tree, including the ".gitkeep" files generated for empty imported folders. #1429 (by @Etschbeijer)
+- The file tree now hides Office lock files for additional document types, such as "~$Report.docx", and LibreOffice lock files such as ".~lock.notes.odt#". #1429 (by @Etschbeijer)
+- File names of Git LFS files stay visible in narrow file tree rows. The badge drops its text and size first. (by @caroott)
+- ARCitISA no longer keeps several CPU cores busy while a large ARC is open, because it watches only the ARC structure. #1340 (by @caroott, @Etschbeijer)
+- The file tree stays responsive in folders with thousands of files. #1340 (by @caroott, @Etschbeijer)
+- Renaming the ARC folder on Windows retries for longer and reports the reason when it fails. (by @caroott)
+- Canceling the download of large files during Download Changes or a clone no longer leaves a Git lock behind. (by @caroott)
+- When a Git lock stops the download of large files, ARCitISA offers "Remove lock" and then "Download now". A Save or Upload Changes that was held back from publishing continues after the download, or when you close the lock dialog. (by @caroott)
+- When a Git lock also stops "Download now", ARCitISA offers "Remove lock" and then "Download now" again. (by @caroott)
+- After a Git lock stopped a download of large files, removing the lock in ARCitISA also clears the files that git-lfs had already written from the changed files list. ARCitISA then offers "Download now" only when a large file is still missing. (by @caroott)
+- "Download now" no longer shows an error for a large file with your own edits. The file keeps its edit. (by @caroott)
+
+
 ## 3.1.0 - 2026-10-21
 
 ### ✨ Added

@@ -12,6 +12,13 @@ let environmentVariable (name: string) : string option = jsNative
 [<Import("homedir", "os")>]
 let homeDirectory () : string = jsNative
 
+type FileUrl =
+    abstract host: string
+    abstract pathname: string
+
+[<Import("pathToFileURL", "url")>]
+let pathToFileUrl (path: string) : FileUrl = jsNative
+
 [<Emit("$0.length")>]
 let bufferLength (buffer: obj) : int = jsNative
 
@@ -34,3 +41,6 @@ let utf8ByteLength (text: string) : int = jsNative
 /// TextEncoder.encodeInto never writes half a character, so a surrogate pair stays whole.
 [<Emit("new TextEncoder().encodeInto($0, new Uint8Array($1)).read")>]
 let utf8PrefixUnits (text: string) (maxBytes: int) : int = jsNative
+
+[<Emit("performance.now()")>]
+let performanceNow () : float = jsNative

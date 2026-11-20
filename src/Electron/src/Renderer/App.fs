@@ -17,6 +17,8 @@ open Swate.Electron.Shared.IPCTypes.MainToRendererIpc
 type private Model = {
     // Current ARC root shared with renderer contexts.
     ArcRootPath: ArcRootPath
+    // Whether the last pathChange renamed the open ARC folder.
+    ArcRootIsRename: bool
     // Bumped for main-process live updates so stale snapshot replies are ignored.
     ArcRootPathLiveUpdateVersion: int
     // Bumped for each snapshot request so older async replies cannot win.
@@ -27,6 +29,7 @@ type private Model = {
 
     static member Empty = {
         ArcRootPath = None
+        ArcRootIsRename = false
         ArcRootPathLiveUpdateVersion = 0
         ArcRootPathRequestVersion = 0
         PageState = None
@@ -36,7 +39,7 @@ type private Model = {
 type private Msg =
     | ArcRootPathSnapshotRequested
     | ArcRootPathSnapshotLoaded of requestVersion: int * liveUpdateVersionAtStart: int * Result<ArcRootPath, exn>
-    | ArcRootPathChanged of ArcRootPath
+    | ArcRootPathChanged of ArcRootPath * isRename: bool
     | PageStateChanged of PageState option
     | PageStateUpdated of (PageState option -> PageState option)
     | SetLeftSidebarTarget of LeftSidebarPage
@@ -90,18 +93,24 @@ let private update (msg: Msg) (model: Model) : Model * Cmd<Msg> =
         requestVersion = model.ArcRootPathRequestVersion
         && liveUpdateVersionAtStart = model.ArcRootPathLiveUpdateVersion
         ->
-        model |> applyArcRootPath arcRootPath, Cmd.none
+        { model with ArcRootIsRename = false } |> applyArcRootPath arcRootPath, Cmd.none
     | ArcRootPathSnapshotLoaded(requestVersion, _, _) when requestVersion = model.ArcRootPathRequestVersion ->
         model, Cmd.none
     | ArcRootPathSnapshotLoaded _ -> model, Cmd.none
-    | ArcRootPathChanged appState ->
+    | ArcRootPathChanged(appState, isRename) ->
         let model = {
             model with
                 ArcRootPathLiveUpdateVersion = model.ArcRootPathLiveUpdateVersion + 1
         }
 
         match appState with
-        | Some _ -> model |> applyArcRootPath appState, Cmd.none
+        | Some _ ->
+            {
+                model with
+                    ArcRootIsRename = isRename
+            }
+            |> applyArcRootPath appState,
+            Cmd.none
         | None -> model |> resetForClosedArc, Cmd.none
     | PageStateChanged pageStateOption ->
         {
@@ -123,18 +132,21 @@ let private update (msg: Msg) (model: Model) : Model * Cmd<Msg> =
         Cmd.none
 
 let private subscribe (_model: Model) : Sub<Msg> = [
-    [ "appPathChange" ],
-    fun dispatch ->
-        let dispose =
-            Renderer.IpcReceiver.subscribeProxyReceiver<IPathChangeRendererApi> {
-                pathChange = ArcRootPathChanged >> dispatch
-            }
+    ([ "appPathChange" ],
+     fun dispatch ->
+         let dispose =
+             Renderer.IpcReceiver.subscribeProxyReceiver<IPathChangeRendererApi> {
+                 pathChange =
+                     fun change ->
+                         ArcRootPathChanged(change |> Option.map _.path, change |> Option.exists _.isRename)
+                         |> dispatch
+             }
 
-        dispatch ArcRootPathSnapshotRequested
+         dispatch ArcRootPathSnapshotRequested
 
-        { new System.IDisposable with
-            member _.Dispose() = dispose ()
-        }
+         { new System.IDisposable with
+             member _.Dispose() = dispose ()
+         })
 ]
 
 [<ReactComponent>]
@@ -225,7 +237,7 @@ let private LeftActionButtons (leftSidebarTarget: LeftSidebarPage) setLeftSideba
 
             Layout.LayoutBtn(
                 iconClassName = "swt:fluent--branch-fork-24-regular",
-                tooltip = "Git",
+                tooltip = "Version Control",
                 isActive = (leftSidebarTarget = LeftSidebarPage.Git),
                 onClick = fun () -> toggleTarget LeftSidebarPage.Git
             )
@@ -247,6 +259,22 @@ let private LeftActionButtons (leftSidebarTarget: LeftSidebarPage) setLeftSideba
                 onClick = fun () -> toggleProvenanceGraph ()
             )
     ]
+
+/// The window's layout with the app's banners. It renders inside the context providers, so the banner
+/// hooks read their contexts. Each banner source adds its entry to the list.
+[<ReactComponent>]
+let private WindowLayout (children: ReactElement) (leftSidebar: ReactElement option) (leftActions: ReactElement) =
+    let dependencyBanner = VersionControlDependencyBanner.useBannerEntry ()
+    let syncBanners = MainContent.ArcSyncNotice.useBannerEntries ()
+    let banners = Array.append (Array.choose id [| dependencyBanner |]) syncBanners
+
+    Layout.Main(
+        children = children,
+        navbar = Renderer.Components.Navbar.Main(),
+        banners = banners,
+        ?leftSidebar = leftSidebar,
+        leftActions = leftActions
+    )
 
 [<ReactComponent>]
 let Main () =
@@ -301,43 +329,66 @@ let Main () =
         Swate.Components.Composite.TermSearch.TermSearchConfigProvider.TIBQueryProvider(
             Context.AppStateContext.AppStateCtx.Provider(
                 model.ArcRootPath,
-                Renderer.Context.FileStateContext.FileStateCtxProviderWithSnapshots(
-                    (fun () -> Api.ipcArcVaultApi.getFileTree ()),
-                    {
-                        loadActiveImport = fun () -> Api.ipcArcVaultApi.getActiveFileImport ()
-                        pickAbsolutePaths = fun () -> Api.ipcArcVaultApi.pickAbsolutePaths ()
-                        runImport = Api.ipcArcVaultApi.tryImportExternalFiles
-                        cancelImport = Api.ipcArcVaultApi.cancelImportExternalFiles
-                    },
-                    Renderer.Context.PageStateContext.PageStateCtx.Provider(
-                        pageCtx,
-                        Renderer.Context.PageStateContext.PageStateUpdateCtx.Provider(
-                            updatePageState,
-                            ErrorModalProvider.ErrorModalProvider(
-                                Renderer.Context.AuthStateContext.Provider(
-                                    Renderer.Context.LfsActivityContext.LfsActivityCtxProvider(
-                                        Renderer.Context.GitStateContext.GitStateCtxProvider(
-                                            Swate
-                                                .Components
-                                                .Composite
-                                                .AnnotationTable
-                                                .AnnotationTableContextProvider
-                                                .AnnotationTableContextProvider(
-                                                    Layout.Main(
-                                                        children =
-                                                            React.Fragment [|
-                                                                children
-                                                                CloseWindowController.CloseWindowController()
-                                                            |],
-                                                        navbar = Renderer.Components.Navbar.Main(),
-                                                        ?leftSidebar = leftSidebar,
-                                                        leftActions = leftActions
+                Renderer.Context.ArcSyncContext.Provider(
+                    model.ArcRootIsRename,
+                    Renderer.Context.FileStateContext.FileStateCtxProviderWithSnapshots(
+                        {
+                            arcRootPath = model.ArcRootPath
+                            isRename = model.ArcRootIsRename
+                            changeVersion = model.ArcRootPathLiveUpdateVersion
+                        },
+                        (fun () -> Api.ipcArcVaultApi.getFileTreeSnapshot ()),
+                        {
+                            loadActiveImport = fun () -> Api.ipcArcVaultApi.getActiveFileImport ()
+                            pickAbsolutePaths = Api.ipcArcVaultApi.pickAbsolutePaths
+                            runImport = Api.ipcArcVaultApi.tryImportExternalFiles
+                            cancelImport = Api.ipcArcVaultApi.cancelImportExternalFiles
+                        },
+                        Renderer.Context.PageStateContext.PageStateCtx.Provider(
+                            pageCtx,
+                            Renderer.Context.PageStateContext.PageStateUpdateCtx.Provider(
+                                updatePageState,
+                                ErrorModalProvider.ErrorModalProvider(
+                                    Renderer.Context.AuthStateContext.Provider(
+                                        Renderer.Context.LargeObjectStore.LargeObjectStoreProviderWith(
+                                            model.ArcRootPath,
+                                            model.ArcRootIsRename,
+                                            (fun () -> Api.ipcArcVaultApi.getLargeObjectIndex ()),
+                                            Renderer.Context.LfsActivityContext.LfsActivityCtxProvider(
+                                                Renderer.Context.FileTreeExpansionContext.FileTreeExpansionCtxProvider(
+                                                    {
+                                                        loadDirectory = Api.ipcArcVaultApi.loadDirectory
+                                                        revalidateDirectories = Api.ipcArcVaultApi.revalidateDirectories
+                                                        statFile = Api.ipcArcVaultApi.statFile
+                                                    },
+                                                    Renderer.Context.GitStateContext.GitStateCtxProvider(
+                                                        Swate
+                                                            .Components
+                                                            .Composite
+                                                            .AnnotationTable
+                                                            .AnnotationTableContextProvider
+                                                            .AnnotationTableContextProvider(
+                                                                Renderer
+                                                                    .Context
+                                                                    .VersionControlDependencyContext
+                                                                    .Provider(
+                                                                        WindowLayout
+                                                                            (React.Fragment [|
+                                                                                children
+                                                                                CloseWindowController
+                                                                                    .CloseWindowController()
+                                                                            |])
+                                                                            leftSidebar
+                                                                            leftActions
+                                                                    )
+                                                            )
                                                     )
                                                 )
+                                            )
                                         )
-                                    )
-                                ),
-                                ?scopeId = currentArcScopeId
+                                    ),
+                                    ?scopeId = currentArcScopeId
+                                )
                             )
                         )
                     )

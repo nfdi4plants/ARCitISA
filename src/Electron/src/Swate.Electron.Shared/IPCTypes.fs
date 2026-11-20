@@ -57,6 +57,8 @@ type UserDefaultValuesDto = {
     DiffIndexingLimitMb: int
     UploadRightAway: bool
     AutoCreateNotesFolder: bool
+    /// Absolute path of the Git executable to use. None takes Git from PATH.
+    GitExecutablePath: string option
 }
 
 /// The values new sessions start from, next to the values Swate ships with.
@@ -94,6 +96,77 @@ type IValidationPackageIPC = {
     getAllPackages: unit -> JS.Promise<Result<ValidationPackageDTO[], exn>>
 }
 
+[<RequireQualifiedAccess; StringEnum>]
+type LargeObjectIndexStatus =
+    | NotLoaded
+    | Loading
+    | Ready
+    | Unavailable
+
+/// State of the large object index of a vault. entries is empty unless the state is ready. caseInsensitive is the
+/// flag the paths of the entries were keyed with.
+type LargeObjectIndexSnapshot = {|
+    version: int
+    state: LargeObjectIndexStatus
+    caseInsensitive: bool
+    entries: ObjectStateDto[]
+|}
+
+[<RequireQualifiedAccess; StringEnum>]
+type FileWatcherStatus =
+    | Running
+    | Degraded
+    | Unavailable
+
+/// Whether the structural file watcher works. reason is the error text of a degraded or unavailable watcher and
+/// empty otherwise.
+type FileWatcherStateDto = {|
+    state: FileWatcherStatus
+    reason: string
+|}
+
+/// Structural snapshot of the open ARC's file tree. Paths are ARC-relative and the root is "". loadedDirectories
+/// lists the directories whose children are in entries. treeVersion orders snapshots and updates of one vault.
+type FileTreeSnapshotDto = {|
+    treeVersion: int
+    entries: FileEntry[]
+    loadedDirectories: string[]
+    caseInsensitive: bool
+    fileWatcher: FileWatcherStateDto
+|}
+
+/// The current children of one loaded directory.
+type FileTreeDirectoryChildrenDto = {|
+    directoryPath: string
+    children: FileEntry[]
+|}
+
+/// The current children of the loaded directories that one writer job changed, parents first, stamped with the
+/// tree version of the job. The renderer applies all directories in one step.
+type FileTreeDirectoryUpdateDto = {|
+    treeVersion: int
+    directories: FileTreeDirectoryChildrenDto[]
+|}
+
+/// Size and modification time of one file, as stat reports them.
+type FileStatDto = {| sizeBytes: float; mtimeMs: float |}
+
+type OpenFileResult = {|
+    content: FileContentDTO
+    revision: int
+|}
+
+type SetArcFileInMemoryRequest = {|
+    file: FileContentDTO
+    baseRevision: int
+|}
+
+[<RequireQualifiedAccess; StringEnum>]
+type SetArcFileOutcome =
+    | Applied
+    /// A sync changed the file after the edit's revision, or a sync is running. The edit was not applied.
+    | Refused
+
 /// Two Way Bridge: Renderer <-> Main
 type IArcVaultsApi = {
     /// Open ARC via folder dialog. Main decides: current window / new window / focus existing.
@@ -111,14 +184,25 @@ type IArcVaultsApi = {
 
     pickArcPaths: unit -> JS.Promise<Result<string[], exn>>
     pickDirectory: unit -> JS.Promise<Result<string, exn>>
-    pickAbsolutePaths: unit -> JS.Promise<Result<string option, exn>>
+    /// Opens a native file picker for one executable. Cancelling answers with the same "Cancelled" error as pickDirectory.
+    pickExecutable: unit -> JS.Promise<Result<string, exn>>
+    pickAbsolutePaths: FileSystemItemKind -> JS.Promise<Result<string option, exn>>
     pickExternalTextFiles: unit -> JS.Promise<Result<ImportedTextFile[], exn>>
     tryImportExternalFiles: ImportExternalFilesRequest -> JS.Promise<Result<ImportExternalFilesResult, exn>>
     cancelImportExternalFiles: string -> JS.Promise<Result<unit, exn>>
     getActiveFileImport: unit -> JS.Promise<Result<ActiveFileImportState option, exn>>
-    getFileTree: unit -> JS.Promise<Result<System.Collections.Generic.Dictionary<string, FileEntry>, exn>>
+    /// Pulls the structural file tree of the open ARC. Other directories load through loadDirectory.
+    getFileTreeSnapshot: unit -> JS.Promise<Result<FileTreeSnapshotDto, exn>>
+    /// Reconciles one directory (ARC-relative path), loads it when needed and answers with its current children.
+    loadDirectory: string -> JS.Promise<Result<FileTreeDirectoryUpdateDto, exn>>
+    /// Reconciles the given loaded directories and publishes the ones that changed. Unloaded ones are skipped.
+    revalidateDirectories: string[] -> JS.Promise<Result<unit, exn>>
+    /// Stats one ARC-relative file. None when it is missing or not a file.
+    statFile: string -> JS.Promise<Result<FileStatDto option, exn>>
+    /// Pulls the current large object index of the vault. A vault without an index answers notLoaded with no entries.
+    getLargeObjectIndex: unit -> JS.Promise<Result<LargeObjectIndexSnapshot, exn>>
     pathExists: string -> JS.Promise<Result<bool, exn>>
-    openFile: string -> JS.Promise<Result<FileContentDTO, exn>>
+    openFile: string -> JS.Promise<Result<OpenFileResult, exn>>
     openArcFolderInFileExplorer: unit -> JS.Promise<Result<unit, exn>>
     showPathInFileExplorer: string -> JS.Promise<Result<unit, exn>>
     openPathWithDefaultApplication: string -> JS.Promise<Result<unit, exn>>
@@ -134,8 +218,8 @@ type IArcVaultsApi = {
     /// Persists the active in-memory ARC scaffold to disk.
     saveArcFile: unit -> JS.Promise<Result<unit, exn>>
     /// Applies ARC file changes to the active vault's in-memory ARC without writing to disk.
-    setArcFileInMemory: FileContentDTO -> JS.Promise<Result<unit, exn>>
-    /// Adds a new ARC entity from the file tree. The file watcher performs the follow-up merge and file-tree update.
+    setArcFileInMemory: SetArcFileInMemoryRequest -> JS.Promise<Result<SetArcFileOutcome, exn>>
+    /// Adds a new ARC entity from the file tree as an own write. Memory holds the entity when it returns.
     addArcFile: FileContentDTO -> JS.Promise<Result<unit, exn>>
     /// Creates a generic file or folder inside a safe ARC directory.
     createFileSystemItem: CreateFileSystemItemRequest -> JS.Promise<Result<string, exn>>
@@ -175,8 +259,8 @@ type IVersionControlApi = {
     finalizeConflict: FinalizeConflictRequestDto -> JS.Promise<Result<OperationResultDto<string option>, exn>>
     cancelConflict: CancelConflictRequestDto -> JS.Promise<Result<OperationResultDto<unit>, exn>>
     listObjects: OperationRequestDto -> JS.Promise<Result<OperationResultDto<ObjectStateDto[]>, exn>>
-    materializeObject: ObjectPathRequestDto -> JS.Promise<Result<OperationResultDto<unit>, exn>>
-    dematerializeObject: ObjectPathRequestDto -> JS.Promise<Result<OperationResultDto<unit>, exn>>
+    materializeObjects: ObjectPathsRequestDto -> JS.Promise<Result<OperationResultDto<unit>, exn>>
+    dematerializeObjects: ObjectPathsRequestDto -> JS.Promise<Result<OperationResultDto<unit>, exn>>
     getStoragePolicySettings:
         OperationRequestDto -> JS.Promise<Result<OperationResultDto<StoragePolicySettingsDto>, exn>>
     setStoragePolicySettings: StoragePolicySettingsRequestDto -> JS.Promise<Result<OperationResultDto<unit>, exn>>
@@ -188,10 +272,19 @@ type IVersionControlApi = {
     setPathStoragePolicy: PathStoragePolicyRequestDto -> JS.Promise<Result<OperationResultDto<unit>, exn>>
     pruneStorage: OperationRequestDto -> JS.Promise<Result<OperationResultDto<string>, exn>>
     deduplicateStorage: OperationRequestDto -> JS.Promise<Result<OperationResultDto<string>, exn>>
+    /// Whether Deduplicate can work for the ARC open in the calling window, as the version control provider
+    /// reports it. A failed result means the answer is unknown.
+    canDeduplicateStorage: OperationRequestDto -> JS.Promise<Result<OperationResultDto<bool>, exn>>
     getRepositoryWebUrl: OperationRequestDto -> JS.Promise<Result<OperationResultDto<string option>, exn>>
     /// Removes a stale provider lock left by a killed process, only while no operation
     /// of this session runs, then refreshes and returns the status.
     clearStaleLock: OperationRequestDto -> JS.Promise<Result<OperationResultDto<WorkspaceStatusDto>, exn>>
+    /// The latest dependency check of the main process. The result of a running check arrives through
+    /// IVersionControlDependencyRendererApi.
+    getDependencyState: unit -> JS.Promise<VersionControlDependencyStateDto>
+    /// Starts a dependency check, or queues one more run when a check is running, and answers at once
+    /// with the state that says it is running. The result arrives through IVersionControlDependencyRendererApi.
+    recheckDependencies: unit -> JS.Promise<VersionControlDependencyStateDto>
     /// Opens a paged diff of one path. A Scanning result returns a continuation for the
     /// next openTextDiff call. The handle belongs to the calling window.
     openTextDiff: OpenTextDiffRequestDto -> JS.Promise<Result<OperationResultDto<ResumableOpenDto>, exn>>
@@ -235,7 +328,14 @@ type IAuthApi = {
 /// One Way Bridge: Main -> Renderer
 module MainToRendererIpc =
 
-    type IPathChangeRendererApi = { pathChange: string option -> unit }
+    /// The new ARC root. isRename is true when the same ARC folder got a new name, so ARC-relative state such as
+    /// expanded folders stays valid. The renderer pulls the file tree after it.
+    type PathChangeDto = {| path: string; isRename: bool |}
+
+    /// Tells the renderer that the open ARC root changed.
+    type IPathChangeRendererApi = {
+        pathChange: PathChangeDto option -> unit
+    }
 
     type IRecentArcsRendererApi = {
         recentARCsUpdate: ARCPointer[] -> unit
@@ -246,7 +346,17 @@ module MainToRendererIpc =
     }
 
     type IFileTreeRendererApi = {
-        fileTreeUpdate: System.Collections.Generic.Dictionary<string, FileEntry> -> unit
+        fileTreeDirectoryUpdate: FileTreeDirectoryUpdateDto -> unit
+        fileContentChanged:
+            {|
+                path: string
+                sizeBytes: float
+                mtimeMs: float
+            |}
+                -> unit
+        /// The state of the structural file watcher changed. Only unavailable needs a notice.
+        fileWatcherStateChanged: FileWatcherStateDto -> unit
+        largeObjectIndexUpdate: LargeObjectIndexSnapshot -> unit
     }
 
     type IFileImportRendererApi = {
@@ -260,6 +370,12 @@ module MainToRendererIpc =
     type IVersionControlRendererApi = {
         versionControlProgress: VersionControlProgressDto -> unit
         versionControlOperationStarted: OperationRequestDto -> unit
+        versionControlOutput: VersionControlOutputDto -> unit
+    }
+
+    /// Sent to every window whenever the dependency state changes, at the start and at the end of a check.
+    type IVersionControlDependencyRendererApi = {
+        versionControlDependenciesChanged: VersionControlDependencyStateDto -> unit
     }
 
     type IHasUnsavedArcChangesRendererApi = {
@@ -283,6 +399,18 @@ module MainToRendererIpc =
 type IArcFileWatcherApi = {
     /// This function is called when ARC is reloaded due to local file changes.
     IsLoadingChanges: bool -> unit
+}
+
+type ArcSyncFinishedDto = {|
+    changedPaths: string[]
+    replacedUnsaved: string[]
+|}
+
+/// One Way Bridge: Main -> Renderer
+type IArcSyncRendererApi = {
+    arcSyncStarted: unit -> unit
+    arcSyncFinished: ArcSyncFinishedDto -> unit
+    arcSyncFailed: string -> unit
 }
 
 type IMainSaveBeforeQuitApi = { requestSaveBeforeQuit: unit -> unit }

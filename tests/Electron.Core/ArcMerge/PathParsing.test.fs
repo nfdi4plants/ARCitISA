@@ -152,4 +152,14 @@ Vitest.describe (
 
                 Vitest.expect(didThrow).toBe (true)
         )
+
+        Vitest.test (
+            "license file at root",
+            fun () -> Vitest.expect(ArcEntityRef.fromPath "LICENSE").toEqual (ArcEntityRef.License)
+        )
+
+        Vitest.test (
+            "license file name in a folder stays unknown",
+            fun () -> Vitest.expect(ArcEntityRef.fromPath "foo/LICENSE").toEqual (ArcEntityRef.Unknown "foo/LICENSE")
+        )
 )

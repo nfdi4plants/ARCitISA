@@ -309,3 +309,43 @@ module React =
             (elemRef: IRefValue<#HTMLElement option>, action: KeyboardEvent -> unit, ?options: AddEventListenerOptions)
             =
             useElementListener.on (elemRef, "keydown", action, ?options = options)
+
+/// Starts the Web Worker of a definition (see Util/WebWorker.fs) for as long as the component is mounted.
+///
+/// Returns the definition and a stable dispatch function. The definition is returned as it came in, so a
+/// caller that does not need it writes `let _, dispatch = useWebWorker MyWorker.Worker`. The worker is created
+/// in an effect and terminated on cleanup. A request sent before that effect has run, or after the worker has
+/// failed, runs the handler on the main thread. A request that is still pending when the component unmounts
+/// never settles, so the caller has to ignore a late result itself.
+///
+/// The definition must be a module-level value, because a new definition starts a new worker.
+[<Hook>]
+let useWebWorker
+    (def: Util.WebWorker.WorkerDef<'Req, 'Res>)
+    : Util.WebWorker.WorkerDef<'Req, 'Res> * ('Req -> JS.Promise<'Res>) =
+    let client = React.useRef<Util.WebWorker.WorkerClient<'Req, 'Res> option> None
+
+    React.useEffect (
+        (fun () ->
+            let started = Util.WebWorker.start def
+            client.current <- Some started
+
+            FsReact.createDisposable (fun () ->
+                client.current <- None
+                started.Terminate()
+            )
+        ),
+        [| box def |]
+    )
+
+    let dispatch =
+        React.useCallback (
+            (fun (req: 'Req) ->
+                match client.current with
+                | Some started -> started.Dispatch req
+                | None -> def.Handle req
+            ),
+            [| box def |]
+        )
+
+    def, dispatch

@@ -22,6 +22,25 @@ let NotesDraftTarget () =
     let pageStateCtx = Renderer.Context.PageStateContext.usePageStateCtx ()
     let fileStateCtx = Renderer.Context.FileStateContext.useFileStateCtx ()
 
+    // The entity files sit directly in the entity folders of the zone folders, which the tree always loads. The
+    // selector returns the same array until one of those files appears, disappears or changes.
+    let entityFiles =
+        Renderer.Context.FileTreeHooks.useFileTreeSelector
+            (fun snapshot ->
+                [|
+                    ARCtrl.ArcPathHelper.StudiesFolderName
+                    ARCtrl.ArcPathHelper.AssaysFolderName
+                |]
+                |> Array.collect (fun zone ->
+                    Renderer.Context.FileTreeStore.children snapshot zone
+                    |> Array.collect (fun folder -> Renderer.Context.FileTreeStore.children snapshot folder.path)
+                )
+            )
+            (fun left right ->
+                left.Length = right.Length
+                && Array.forall2 (fun a b -> obj.ReferenceEquals(a, b)) left right
+            )
+
     let availableNotesTargets =
         React.useMemo (
             (fun _ ->
@@ -40,9 +59,9 @@ let NotesDraftTarget () =
                              Kind = NotesTargetKind.Assay
                          })
                     ]
-                    fileStateCtx.state.FileTree
+                    entityFiles
             ),
-            [| box fileStateCtx.state.FileTree |]
+            [| box entityFiles |]
         )
 
     let setSubmitState isSubmitting error =
@@ -76,10 +95,12 @@ let NotesDraftTarget () =
 
             match previewResult with
             | Ok previewData ->
-                let pageState = Renderer.Types.PageState.fromFileContentDTO previewData
+                let pageState =
+                    Renderer.Types.PageState.fromFileContentDTO (previewData.content, previewData.revision)
+
                 pageStateCtx.setState (Some pageState)
             | Result.Error _ ->
-                let pageState = Renderer.Types.PageState.fromFileContentDTO request
+                let pageState = Renderer.Types.PageState.fromFileContentDTO (request, 0)
                 pageStateCtx.setState (Some pageState)
     }
 
@@ -108,7 +129,7 @@ let NotesDraftTarget () =
 
             let request: FileContentDTO =
                 FileContentDTO.create
-                    (FileContentDTO.inferTextFileTypeFromPath targetPath)
+                    (FileContentDTO.inferFileTypeFromPath targetPath)
                     payload.Intent.Content
                     targetPath
 

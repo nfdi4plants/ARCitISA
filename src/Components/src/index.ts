@@ -54,7 +54,8 @@ export { default as TemplateBrowser } from './dist/Composite/TemplateBrowser/Tem
 export { default as TemplateCacheProvider } from './dist/Composite/TemplateBrowser/TemplateCacheProvider.fs';
 export { default as TemplateFilter } from './dist/Composite/TemplateBrowser/TemplateFilter.fs';
 export { default as TemplateImportModal } from './dist/Composite/TemplateBrowser/TemplateImportModal.fs';
-export { default as TemplateImportModalPreview } from './dist/Composite/TemplateBrowser/TemplateImportModalPreview.fs';
+export { default as ImportModeSelect } from './dist/Composite/TableImport/ImportModeSelect.fs';
+export { default as TableImportPreview } from './dist/Composite/TableImport/TableImportPreview.fs';
 export { default as TemplatesDisplay } from './dist/Composite/TemplateBrowser/TemplatesDisplay.fs';
 export { default as TemplateWidget } from './dist/Composite/Widgets/TemplateWidget.fs';
 export { default as TermSearch } from './dist/Composite/TermSearch/TermSearch.fs';
@@ -85,6 +86,9 @@ export { default as ValidationPackageBrowser } from './dist/Page/ValidationPacka
 
 export { Viewer as GitMergeConflictViewer } from './dist/Page/GitComparison/GitMergeConflictViewer.fs';
 export { TitleStack, HeaderRow, PanelShell, SectionCard } from './dist/Page/GitComparison/GitComparisonView.fs';
+export { default as HtmlViewer } from './dist/Page/FileViewer/HtmlViewer.fs';
+export { default as ImageViewer } from './dist/Page/FileViewer/ImageViewer.fs';
+export { default as PDFViewer } from './dist/Page/FileViewer/PDFViewer.fs';
 
 // -- Metadata --
 export { default as ArcFileMetadata } from './dist/Page/Metadata/ArcFileMetadata.fs';
