@@ -16,6 +16,7 @@ open Main.ArcMerge
 open Main.ArcVaultHelper
 open Main.ArcDiskState
 open Main.FileImportCoordinator
+open Main.Services.MarkdownResolverService
 open Swate.Components.Shared
 open Swate.Electron.Shared.IPCTypes
 open Swate.Electron.Shared.IPCTypes.IPCTypesHelper
@@ -147,6 +148,9 @@ type ArcVault(window: BrowserWindow) =
         )
 
     member val window: BrowserWindow = window with get
+
+    /// One per window. Serves images and checks link targets for Markdown.
+    member val MarkdownResolver = MarkdownResolverService(window.id, (fun () -> arcPath)) with get
 
     member this.path
         with get () = arcPath
@@ -288,6 +292,9 @@ type ArcVault(window: BrowserWindow) =
     /// Loads the ARC for a sync. Tests replace it to gate a load or count loads.
     member val internal SnapshotLoad: string -> Fable.Core.JS.Promise<Result<ARC, string[]>> =
         (fun arcPath -> ARC.LoadAsyncSwate arcPath) with get, set
+
+    /// The text editor of the window has unsaved edits, as the renderer last reported. A reload resets it.
+    member val hasUnsavedTextChanges: bool = false with get, set
 
     /// Indicates whether a close confirmation dialog is currently open.
     member val isCloseRequestPending: bool = false with get, set

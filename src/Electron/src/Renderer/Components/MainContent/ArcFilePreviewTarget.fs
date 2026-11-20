@@ -22,6 +22,7 @@ let ArcFilePreviewTarget (arcFile: ArcFiles, requestedView: ActiveView option, r
 
     let syncCtx = Renderer.Context.ArcSyncContext.useArcSyncCtx ()
     let fileStateCtx = Renderer.Context.FileStateContext.useFileStateCtx ()
+    let navigation = Renderer.Components.Helper.FileNavigation.useFileNavigation ()
 
     let setArcFilePageState nextRequestedView (nextArcFile: ArcFiles) =
         pageStateCtx.setState (Some(Renderer.Types.PageState.ArcFilePage(nextArcFile, nextRequestedView, revision)))
@@ -197,6 +198,7 @@ let ArcFilePreviewTarget (arcFile: ArcFiles, requestedView: ActiveView option, r
                 onJsonImportError = (fun error -> errorModal.enqueue (jsonImportErrorModalRequest error)),
                 onImportPersons = importPersons,
                 fetchArcNodes = fetchArcNodes,
+                onClose = (fun () -> navigation.CloseFile() |> Promise.start),
                 onError =
                     (fun message ->
                         errorModal.enqueue (

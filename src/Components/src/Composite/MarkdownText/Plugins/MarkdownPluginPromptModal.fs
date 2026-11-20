@@ -175,6 +175,7 @@ module MarkdownPluginPromptModal =
                         prop.onClick (fun _ -> onSubmitPromptDialog ())
                     ]
                 ],
-            initialFocusRef = unbox promptInputRef,
+            // A file prompt has no text input. The modal then focuses the drop zone, not the hidden file input.
+            ?initialFocusRef = (if isFilePrompt then None else Some(unbox promptInputRef)),
             className = "swt:bg-base-100 swt:text-base-content"
         )

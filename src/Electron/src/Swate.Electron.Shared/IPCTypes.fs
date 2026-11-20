@@ -11,6 +11,7 @@ open Swate.Components.Shared.ProvenanceGraph.Types
 open Swate.Electron.Shared.DTOs.NoteSearchDto
 open Swate.Electron.Shared.DTOs.ProvenanceGroupingDto
 open Swate.Electron.Shared.DTOs.ArcNodesDto
+open Swate.Electron.Shared.DTOs.MarkdownResolverDto
 open AuthTypes
 open FileIOTypes
 open VersionControlTypes
@@ -154,6 +155,7 @@ type FileStatDto = {| sizeBytes: float; mtimeMs: float |}
 type OpenFileResult = {|
     content: FileContentDTO
     revision: int
+    text: TextDocumentInfo option
 |}
 
 type SetArcFileInMemoryRequest = {|
@@ -230,7 +232,24 @@ type IArcVaultsApi = {
     movePath: MovePathRequest -> JS.Promise<Result<unit, exn>>
     renameOpenArcRoot: string -> JS.Promise<Result<string, exn>>
     writeFile: FileContentDTO -> JS.Promise<Result<unit, exn>>
+    /// Saves a text file the renderer opened. Refuses when the file changed on disk since it was read, unless overwrite is set.
+    saveTextFile: SaveTextFileRequest -> JS.Promise<Result<SaveTextFileOutcome, exn>>
     resolveCloseRequest: SaveBeforeQuitDecision -> JS.Promise<Result<unit, exn>>
+    /// The renderer reports whether its text editor has unsaved edits, so closing the window asks first.
+    setHasUnsavedTextChanges: bool -> JS.Promise<Result<unit, exn>>
+}
+
+/// Renderer -> Main: images and link targets of Markdown documents in the open ARC.
+type IMarkdownResolverApi = {
+    /// arc-asset://w<windowId>-<nonce>/ for the calling window. Fails when no ARC is open.
+    getAssetBaseUrl: unit -> JS.Promise<Result<string, exn>>
+    /// Why the image at an ARC-relative path is not served, or None when it is.
+    describeAsset: string -> JS.Promise<Result<AssetRefusal option, exn>>
+    /// One result per ARC-relative path, in order. At most LinkDiagnostics.maxCheckedPaths paths per call.
+    checkPaths: string[] -> JS.Promise<Result<PathCheck[], exn>>
+    /// One level of an ARC folder for the path completion of the editor. Git metadata, lock files and symbolic links
+    /// are left out.
+    listFolder: ListFolderRequestDto -> JS.Promise<Result<FolderListing, exn>>
 }
 
 /// Two Way Bridge: Renderer <-> Main

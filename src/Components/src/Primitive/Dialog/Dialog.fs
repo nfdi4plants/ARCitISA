@@ -103,7 +103,9 @@ type Dialog =
                         prop.className "swt:input swt:w-full"
                         prop.children [
                             Html.input [
-                                prop.autoFocus true
+                                // The modal focuses it once it is open. React's autoFocus would focus it earlier, and a
+                                // context menu that closes for this dialog then takes the focus back to its trigger.
+                                prop.custom ("data-autofocus", "")
                                 prop.disabled isBusy
                                 prop.value value
                                 prop.onChange setValue

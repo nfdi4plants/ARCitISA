@@ -70,6 +70,10 @@ module FileTreeCreateWorkflow =
         =
         createAndReveal config (fun () -> createItem request) (toItem (request.kind = FileSystemItemKind.Folder))
 
+    /// Creates a note file and opens it in the text editor like a click on it in the tree.
+    let createNote (config: CreateConfig) (createNoteFile: unit -> JS.Promise<Result<string, exn>>) =
+        createAndReveal config createNoteFile (toItem false)
+
     let createDataMap
         (config: CreateConfig)
         (addArcFile: FileContentDTO -> JS.Promise<Result<unit, exn>>)

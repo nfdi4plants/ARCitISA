@@ -58,6 +58,38 @@ let validateRenameName (newName: string) =
         else
             Ok normalizedNewName
 
+/// Checks the name of a new file or folder, which may put it in folders below the chosen one, such as
+/// "docs/guide.md". Each part between the / follows validateRenameName. The result joins the trimmed parts with /.
+let validateNewItemPath (path: string) : Result<string, string> =
+    let trimmed = path.Trim()
+
+    if String.IsNullOrWhiteSpace trimmed then
+        Error "A name is required."
+    elif trimmed.Contains "\\" then
+        Error "Use / to separate folders."
+    elif trimmed.StartsWith "/" then
+        Error "Start with a folder or file name, not with /."
+    elif trimmed.EndsWith "/" then
+        Error "End with a file or folder name, not with /."
+    else
+        let parts = trimmed.Split('/') |> Array.map _.Trim()
+
+        if parts |> Array.exists String.IsNullOrEmpty then
+            Error "A folder name is missing between two /."
+        else
+            let failure =
+                parts
+                |> Array.tryPick (fun part ->
+                    match validateRenameName part with
+                    | Error message when parts.Length > 1 -> Some $"'{part}': {message}"
+                    | Error message -> Some message
+                    | Ok _ -> None
+                )
+
+            match failure with
+            | Some message -> Error message
+            | None -> Ok(String.Join("/", parts))
+
 let arcIdentifierError =
     "Identifier is required and may only contain letters, digits, spaces, underscores, or dashes."
 

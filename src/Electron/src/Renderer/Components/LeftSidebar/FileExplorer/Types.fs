@@ -17,7 +17,8 @@ type ContextMenuConfig = {
     openItem: FileItem -> unit
     arcRootPath: string option
     openCreateModal: ArcFilesDiscriminate -> unit
-    openNoteDraft: unit -> unit
+    /// Asks for the title of a note on the folder. A study or assay folder keeps the note.
+    openNoteDialog: FileItem -> unit
     createDataMap: DatamapParentInfo -> unit
     tryFindDataMapItemByPath: string -> FileItem option
     openFileSystemCreateModal: FileSystemItemKind -> FileItem -> unit

@@ -9,15 +9,19 @@
     <Compile Include="DTOs\NoteSearchDto.fs" />
     <Compile Include="DTOs\ProvenanceGroupingDto.fs" />
     <Compile Include="DTOs\ArcNodesDto.fs" />
+    <Compile Include="DTOs\MarkdownResolverDto.fs" />
     <Compile Include="ARCtrlJsonObject.fs" />
     <Compile Include="VersionControlTypes.fs" />
     <Compile Include="FileIOTypes.fs" />
     <Compile Include="AuthTypes.fs" />
     <Compile Include="ApplicationVersion.fs" />
+    <Compile Include="MarkdownAssetUrl.fs" />
     <Compile Include="IPCTypes.fs" />
     <Compile Include="Types.fs" />
     <Compile Include="RenamePathRules.fs" />
     <Compile Include="FileIOHelper.fs" />
+    <Compile Include="TextDocumentHelper.fs" />
+    <Compile Include="TextDocumentSchemas.fs" />
   </ItemGroup>
 
   <ItemGroup>

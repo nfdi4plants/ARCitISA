@@ -8,42 +8,11 @@ open Swate.Electron.Shared.FileIOTypes
 open Swate.Electron.Shared.RenamePathRules
 open Main.Bindings.Filesystem
 open Main.Bindings.Path
+open Main.Helper.ArcPathContainment
 
 
 let private fsPromisesDynamic: obj = importAll "fs/promises"
 let private pathDynamic: obj = importAll "path"
-
-[<RequireQualifiedAccess>]
-module ArcPathValidation =
-
-    let normalizePathForComparison (pathValue: string) =
-        PathHelpers.normalizePathForFsComparison pathValue
-
-    let containsTraversalSegments (pathValue: string) =
-        PathHelpers.containsPathTraversalSegments pathValue
-
-    let isSafeRelativePathCandidate (pathValue: string) =
-        let normalizedPath = PathHelpers.normalizePath pathValue
-
-        not (String.IsNullOrWhiteSpace normalizedPath)
-        && normalizedPath <> "."
-        && not (pathDynamic?isAbsolute (normalizedPath) |> unbox<bool>)
-        && not (containsTraversalSegments normalizedPath)
-
-    let isWithinRootPath (rootPath: string) (candidatePath: string) =
-        let normalizedRootPath =
-            pathDynamic?resolve (rootPath) |> unbox<string> |> normalizePathForComparison
-
-        let normalizedCandidatePath =
-            pathDynamic?resolve (candidatePath)
-            |> unbox<string>
-            |> normalizePathForComparison
-
-        normalizedCandidatePath = normalizedRootPath
-        || normalizedCandidatePath.StartsWith(normalizedRootPath + "/")
-
-let resolveAbsolutePath (pathValue: string) =
-    pathDynamic?resolve (pathValue) |> unbox<string>
 
 let tryResolveRealPathAsync (absolutePath: string) : JS.Promise<string> = promise {
     try
@@ -51,45 +20,6 @@ let tryResolveRealPathAsync (absolutePath: string) : JS.Promise<string> = promis
     with _ ->
         return absolutePath
 }
-
-let tryGetArcRelativePath (arcPath: string) (requestedAbsolutePath: string) =
-    let arcRoot = resolveAbsolutePath arcPath
-    let absolutePath = resolveAbsolutePath requestedAbsolutePath
-
-    let relativePath =
-        pathDynamic?relative (arcRoot, absolutePath)
-        |> unbox<string>
-        |> PathHelpers.normalizePath
-
-    if String.IsNullOrWhiteSpace relativePath || relativePath = "." then
-        Ok ""
-    elif not (ArcPathValidation.isSafeRelativePathCandidate relativePath) then
-        Error(exn $"Path '{requestedAbsolutePath}' is outside the active ARC root.")
-    elif not (ArcPathValidation.isWithinRootPath arcRoot absolutePath) then
-        Error(exn $"Path '{requestedAbsolutePath}' is outside the active ARC root.")
-    else
-        Ok relativePath
-
-/// Resolves a relative path against the ARC root and rejects absolute or traversal-based escapes.
-let tryResolveArcRelativePath (arcPath: string) (requestedRelativePath: string) =
-    let relativePath = PathHelpers.normalizePath requestedRelativePath
-
-    if String.IsNullOrWhiteSpace relativePath then
-        Error(exn "RelativePath must not be empty.")
-    elif not (ArcPathValidation.isSafeRelativePathCandidate relativePath) then
-        if pathDynamic?isAbsolute (relativePath) |> unbox<bool> then
-            Error(exn "RelativePath must not be absolute.")
-        else
-            Error(exn "RelativePath must not contain path traversal segments.")
-    else
-        let arcRoot = resolveAbsolutePath arcPath
-        let absolutePath = pathDynamic?resolve (arcRoot, relativePath) |> unbox<string>
-
-        if ArcPathValidation.isWithinRootPath arcRoot absolutePath then
-            Ok absolutePath
-        else
-            Error(exn "RelativePath resolves outside the ARC root.")
-
 
 let pathExistsAsync (absolutePath: string) : JS.Promise<bool> = promise {
     let! fileExists = ARCtrl.FileSystemHelper.fileExistsAsync absolutePath
@@ -743,6 +673,8 @@ module ArcFileSystemHelper =
 
     type CreateFileSystemItemPlan = {
         ParentPath: string
+        /// The folders the create makes above the target, outermost first. Folders that exist are not in it.
+        NewFolders: string list
         TargetPath: string
         Kind: FileSystemItemKind
     }
@@ -765,15 +697,6 @@ module ArcFileSystemHelper =
         | Error pathError, _
         | _, Error pathError -> Error pathError
         | Ok firstAbsolutePath, Ok secondAbsolutePath -> Ok(firstAbsolutePath, secondAbsolutePath)
-
-    let private resolveCreatePathPair arcPath parentRelativePath targetRelativePath =
-        match
-            resolveArcRootOrRelativePath arcPath parentRelativePath,
-            tryResolveArcRelativePath arcPath targetRelativePath
-        with
-        | Error pathError, _
-        | _, Error pathError -> Error pathError
-        | Ok parentAbsolutePath, Ok targetAbsolutePath -> Ok(parentAbsolutePath, targetAbsolutePath)
 
     let private createTargetAsync kind targetAbsolutePath =
         match kind with
@@ -826,51 +749,186 @@ module ArcFileSystemHelper =
                 return Error moveError
     }
 
-    let tryBuildCreateFileSystemItemPlan
-        (request: CreateFileSystemItemRequest)
-        : Result<CreateFileSystemItemPlan, exn> =
-        match
-            tryBuildGenericFileSystemChildPath (request.kind = FileSystemItemKind.File) request.parentPath request.name
-        with
-        | Error validationError -> Error(exn validationError)
-        | Ok targetPath ->
-            Ok {
-                ParentPath = PathHelpers.normalizeCanonicalRelativePath request.parentPath
-                TargetPath = targetPath
-                Kind = request.kind
-            }
+    /// The entry that differs from name only in case, or None when an entry has exactly that name.
+    let tryFindOtherCaseEntry (entryNames: string[]) (name: string) : string option =
+        if entryNames |> Array.contains name then
+            None
+        else
+            entryNames
+            |> Array.tryFind (fun entry -> String.Equals(entry, name, StringComparison.OrdinalIgnoreCase))
 
+    /// Walks down the folder parts of a new item's name. A folder that exists is used as it is. From the first
+    /// missing folder on, every folder is new and follows the rules for a new folder in its parent. Returns the
+    /// folder that will hold the item and the new folders, outermost first. A typed name that reaches an existing
+    /// folder with another case is refused, because the returned path would then not match the one on disk.
+    let rec private planFoldersAsync
+        (arcPath: string)
+        (itemPath: string)
+        (current: string)
+        (newFolders: string list)
+        (remaining: string list)
+        : JS.Promise<Result<string * string list, exn>> =
+        promise {
+            match remaining with
+            | [] -> return Ok(current, List.rev newFolders)
+            | part :: rest ->
+                let addNewFolder () =
+                    match tryBuildGenericFileSystemChildPath false current part with
+                    | Error reason -> promise { return Error(exn reason) }
+                    | Ok folderPath -> planFoldersAsync arcPath itemPath folderPath (folderPath :: newFolders) rest
+
+                if not newFolders.IsEmpty then
+                    return! addNewFolder ()
+                else
+                    let next =
+                        if String.IsNullOrWhiteSpace current then
+                            part
+                        else
+                            $"{current}/{part}"
+
+                    match tryResolveArcRelativePath arcPath next with
+                    | Error pathError -> return Error pathError
+                    | Ok nextAbsolutePath ->
+                        let! isDirectory = ARCtrl.FileSystemHelper.directoryExistsAsync nextAbsolutePath
+
+                        if isDirectory then
+                            let! siblingNames = readdirAsync (dirname nextAbsolutePath)
+
+                            match tryFindOtherCaseEntry siblingNames part with
+                            | Some onDisk ->
+                                return Error(exn $"A folder named '{onDisk}' already exists. Use that spelling.")
+                            | None -> return! planFoldersAsync arcPath itemPath next newFolders rest
+                        else
+                            let! exists = pathExistsAsync nextAbsolutePath
+
+                            if exists then
+                                return Error(exn $"Cannot create '{itemPath}' because '{next}' is a file.")
+                            else
+                                return! addNewFolder ()
+        }
+
+    /// Plans a create without writing anything. The name may put the item in folders below the parent, such as
+    /// "docs/guide.md", and the create makes the folders that are missing.
+    let planCreateFileSystemItemAsync
+        (arcPath: string)
+        (request: CreateFileSystemItemRequest)
+        : JS.Promise<Result<CreateFileSystemItemPlan, exn>> =
+        promise {
+            match validateNewItemPath request.name with
+            | Error message -> return Error(exn message)
+            | Ok itemPath ->
+                let parentPath = PathHelpers.normalizeCanonicalRelativePath request.parentPath
+                let parts = itemPath.Split('/') |> List.ofArray
+
+                match resolveArcRootOrRelativePath arcPath parentPath with
+                | Error pathError -> return Error pathError
+                | Ok parentAbsolutePath ->
+                    match!
+                        ensureDirectory parentAbsolutePath $"Cannot create item because '{parentPath}' is not a folder."
+                    with
+                    | Error directoryError -> return Error directoryError
+                    | Ok _ ->
+                        match! planFoldersAsync arcPath itemPath parentPath [] (List.take (parts.Length - 1) parts) with
+                        | Error error -> return Error error
+                        | Ok(folderPath, newFolders) ->
+                            match
+                                tryBuildGenericFileSystemChildPath
+                                    (request.kind = FileSystemItemKind.File)
+                                    folderPath
+                                    (List.last parts)
+                            with
+                            | Error reason -> return Error(exn reason)
+                            | Ok targetPath ->
+                                return
+                                    Ok {
+                                        ParentPath = parentPath
+                                        NewFolders = newFolders
+                                        TargetPath = targetPath
+                                        Kind = request.kind
+                                    }
+        }
+
+    /// Creates the item and the missing folders above it once every check passed, so a refused create writes
+    /// nothing. Returns the path of the item. A create that fails after it made folders does not remove them.
+    /// The error then comes with those folders, outermost first, and its message names them.
     let createFileSystemItemOnDisk
         (arcPath: string)
         (request: CreateFileSystemItemRequest)
-        : JS.Promise<Result<string, exn>> =
+        : JS.Promise<Result<string, exn * string list>> =
         promise {
-            match tryBuildCreateFileSystemItemPlan request with
-            | Error validationError -> return Error validationError
-            | Ok plan ->
-                match resolveCreatePathPair arcPath plan.ParentPath plan.TargetPath with
-                | Error pathError -> return Error pathError
-                | Ok(parentAbsolutePath, targetAbsolutePath) ->
-                    try
+            try
+                match! planCreateFileSystemItemAsync arcPath request with
+                | Error planError -> return Error(planError, [])
+                | Ok plan ->
+                    let resolved =
+                        plan.NewFolders @ [ plan.TargetPath ]
+                        |> List.map (tryResolveArcRelativePath arcPath)
+
+                    let pathErrors =
+                        resolved
+                        |> List.choose (fun result ->
+                            match result with
+                            | Error pathError -> Some pathError
+                            | Ok _ -> None
+                        )
+
+                    match pathErrors with
+                    | pathError :: _ -> return Error(pathError, [])
+                    | [] ->
+                        let absolutePaths = resolved |> List.choose Result.toOption
+                        let folderAbsolutePaths = absolutePaths |> List.take plan.NewFolders.Length
+                        let targetAbsolutePath = List.last absolutePaths
+
                         match!
-                            ensureDirectory
-                                parentAbsolutePath
-                                $"Cannot create item because '{plan.ParentPath}' is not a folder."
+                            ensureTargetDoesNotExist
+                                targetAbsolutePath
+                                $"A file or folder already exists at '{plan.TargetPath}'."
                         with
-                        | Error directoryError -> return Error directoryError
-                        | Ok _ ->
-                            match!
-                                ensureTargetDoesNotExist
-                                    targetAbsolutePath
-                                    $"A file or folder already exists at '{plan.TargetPath}'."
-                            with
-                            | Error targetError -> return Error targetError
-                            | Ok() ->
+                        | Error targetError -> return Error(targetError, [])
+                        | Ok() ->
+                            let createdFolders = ResizeArray<string>()
+
+                            try
+                                for folderPath, folderAbsolutePath in List.zip plan.NewFolders folderAbsolutePaths do
+                                    do! mkdirAsync folderAbsolutePath
+                                    createdFolders.Add folderPath
+
                                 do! createTargetAsync plan.Kind targetAbsolutePath
                                 return Ok plan.TargetPath
-                    with createError ->
-                        return Error createError
+                            with createError ->
+                                let createdFolders = List.ofSeq createdFolders
+
+                                if createdFolders.IsEmpty then
+                                    return Error(createError, [])
+                                else
+                                    let names =
+                                        createdFolders |> List.map (fun path -> $"'{path}'") |> String.concat ", "
+
+                                    let message =
+                                        $"{createError.Message} The folders created before the error are still there: "
+                                        + $"{names}."
+
+                                    return Error(exn message, createdFolders)
+            with createError ->
+                return Error(createError, [])
         }
+
+    /// The paths a create of targetPath in parentPath may have added, from the first one below the parent down to
+    /// the target. Their parents are the folders whose listing changes.
+    let createdPathChain (parentPath: string) (targetPath: string) : string list =
+        let parent = PathHelpers.normalizeCanonicalRelativePath parentPath
+        let target = PathHelpers.normalizeCanonicalRelativePath targetPath
+
+        let parentDepth =
+            if String.IsNullOrWhiteSpace parent then
+                0
+            else
+                parent.Split('/').Length
+
+        let segments = target.Split('/')
+
+        [ parentDepth + 1 .. segments.Length ]
+        |> List.map (fun count -> String.Join("/", segments.[.. count - 1]))
 
     /// True when `relativePath` names a file directly inside an add zone (for example `studies/notes.md`
     /// or `studies/.DS_Store`). Most such paths have the shape of entity folders, so the IPC layer routes

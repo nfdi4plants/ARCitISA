@@ -6,5 +6,6 @@ export default defineConfig({
         // dotnet fable --run starts vitest with NODE_ENV=production. React Testing Library needs the development build of React for act.
         env: { NODE_ENV: "test" },
         include: ["output/**/*.test.js", "output/*.test.rtl.js"],
+        setupFiles: ["./ipcSenderBridges.setup.mts"],
     },
 });

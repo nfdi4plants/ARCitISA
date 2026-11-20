@@ -5,8 +5,8 @@ open Fable.Core
 open ARCtrl
 open Swate.Components
 open Swate.Components.Primitive
-open Swate.Components.Primitive.Buttons
 open Swate.Components.Page.ArcFileEditor
+open Swate.Components.Composite.EditorToolbar
 open Swate.Components.Composite.Widgets
 open Swate.Components.Composite.Widgets.Context
 
@@ -21,68 +21,44 @@ module private WidgetsHelper =
         WidgetType.JsonExport
     ]
 
+    /// The label and the icon class of the toggle button of a widget.
     let widgetInfo (widgetType: WidgetType) =
         match widgetType with
-        | WidgetType.BuildingBlock ->
-            "Add Building Block",
-            Html.i [
-                prop.className "swt:iconify swt:fluent--table-column-insert-24-filled swt:size-6"
-            ]
-        | WidgetType.Template ->
-            "Add Template",
-            Html.i [
-                prop.className "swt:iconify swt:fluent--table-add-24-filled swt:size-6"
-            ]
-        | WidgetType.FilePicker ->
-            "File Picker",
-            Html.i [
-                prop.className "swt:iconify swt:fluent--document-text-link-20-filled swt:size-6"
-            ]
-        | WidgetType.DataAnnotator ->
-            "Data Annotator",
-            Html.i [
-                prop.className "swt:iconify swt:fluent--document-data-link-24-filled swt:size-6"
-            ]
-        | WidgetType.JsonImport ->
-            "Import JSON",
-            Html.i [
-                prop.className "swt:iconify swt:fluent--arrow-import-20-filled swt:size-6 swt:rotate-180"
-            ]
-        | WidgetType.JsonExport ->
-            "Export JSON",
-            Html.i [
-                prop.className "swt:iconify swt:fluent--arrow-export-20-filled swt:size-6"
-            ]
-        | WidgetType.Playground -> "Playground", Icons.Templates()
+        | WidgetType.BuildingBlock -> "Add Building Block", "swt:fluent--table-column-insert-24-regular"
+        | WidgetType.Template -> "Add Template", "swt:fluent--table-add-24-regular"
+        | WidgetType.FilePicker -> "File Picker", "swt:fluent--document-text-link-24-regular"
+        | WidgetType.DataAnnotator -> "Data Annotator", "swt:fluent--document-data-link-24-regular"
+        | WidgetType.JsonImport -> "Import JSON", "swt:fluent--arrow-import-24-regular swt:rotate-180"
+        | WidgetType.JsonExport -> "Export JSON", "swt:fluent--arrow-export-24-regular"
+        | WidgetType.Playground -> "Playground", "swt:fluent--beaker-24-regular"
 
 open WidgetsHelper
 
 [<Erase; Mangle(false)>]
 type Main =
 
-    [<ReactComponent>]
-    static member private WidgetToggleBtn(widgetType: WidgetType, isOpen: bool, toggle: unit -> unit) =
-
-        let label, icon = widgetInfo widgetType
-
-        Buttons.QuickAccessButton(
-            icon,
-            label,
-            (fun _ -> toggle ()),
-            classes = (if isOpen then "swt:!text-primary" else ""),
-            tooltipPosition = "swt:tooltip-start swt:tooltip-bottom"
-        )
-
+    /// One toggle button per widget, joined like a button group of the editor toolbar. A pressed button shows that
+    /// its widget is open.
     [<ReactComponent>]
     static member WidgetToggleBtns() =
 
         let context = useWidgetControllerCtx ()
 
-        React.Fragment [
-            for widgetType in widgetTypes do
-                let isOpen = context.isActive widgetType
-                let toggle = fun () -> context.toggleWidget widgetType
-                Main.WidgetToggleBtn(widgetType, isOpen, toggle)
+        Html.div [
+            prop.className "swt:join"
+            prop.children [
+                for widgetType in widgetTypes do
+                    let label, iconClass = widgetInfo widgetType
+
+                    EditorToolbar.ToolbarButton(
+                        label,
+                        iconClass,
+                        (fun () -> context.toggleWidget widgetType),
+                        joined = true,
+                        pressed = context.isActive widgetType,
+                        key = label
+                    )
+            ]
         ]
 
     [<ReactComponent>]

@@ -350,6 +350,7 @@ type FileExplorerItem =
                     prop.children [
                         Html.button [
                             prop.type'.button
+                            prop.custom ("data-file-item-name", "")
                             prop.className [
                                 "swt:flex swt:flex-1 swt:items-center swt:gap-2 swt:bg-transparent swt:border-0 swt:p-0 swt:text-left swt:cursor-default"
                                 if truncateNames then "swt:min-w-24" else "swt:min-w-0"
@@ -451,6 +452,7 @@ type FileExplorerItem =
                 Html.button [
                     prop.type'.button
                     prop.custom ("data-file-item-id", item.Id)
+                    prop.custom ("data-file-item-name", "")
                     prop.className [
                         "swt:flex swt:flex-1 swt:items-center swt:gap-2 swt:bg-transparent swt:border-0 swt:p-0 swt:text-left swt:cursor-default"
                         if truncateNames then "swt:min-w-24" else "swt:min-w-0"

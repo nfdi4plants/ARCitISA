@@ -32,6 +32,18 @@ module private FileExplorerHelper =
     [<Emit("$0.focus({ preventScroll: true })")>]
     let focusWithoutScroll (element: Browser.Types.HTMLElement) : unit = jsNative
 
+    /// The name button of the drawn row of itemId, which is the element a click on the row name focuses. The row
+    /// marks it with data-file-item-name, so other controls of the row cannot take its place.
+    let tryFindRowButton (tree: Browser.Types.HTMLElement) (itemId: string) : Browser.Types.HTMLElement option =
+        let rows = tree.querySelectorAll "[role=treeitem]"
+
+        [
+            for i in 0 .. int rows.length - 1 -> rows.item i :?> Browser.Types.HTMLElement
+        ]
+        |> List.tryFind (fun row -> row.getAttribute "data-file-item-id" = itemId)
+        |> Option.bind (fun row -> row.querySelector "[data-file-item-name]" |> Option.ofObj)
+        |> Option.map (fun button -> button :?> Browser.Types.HTMLElement)
+
     let tryGetEventTargetElement (e: Browser.Types.Event) : Browser.Types.Element option =
         let targetObj: obj = box e.target
 
@@ -162,7 +174,9 @@ type FileExplorer =
             ?expandedIds: Set<string>,
             ?onExpandedIdsChange: Set<string> -> unit,
             ?onRefreshDirectory: FileItem -> unit,
-            ?ariaLabel: string
+            ?ariaLabel: string,
+            ?revealRequest: FileExplorerRevealRequest,
+            ?onRevealDone: FileExplorerRevealRequest -> unit
         ) =
         // A row re-renders when the parent supplies new row functions. The identities are taken before the defaults are applied.
         let rowFunctionIdentities = [|
@@ -460,6 +474,41 @@ type FileExplorer =
                 | None -> lastScrolledId.current <- None
             ),
             [| box selectedPropId; box selectedIndex |]
+        )
+
+        // A reveal request scrolls to its row once the row is among the visible rows. The row takes the focus once
+        // it is drawn, which can be a render after the scroll. onRevealDone then tells the owner, which drops the
+        // request, so a later mount of the explorer does not focus the row again.
+        let handledRevealToken = React.useRef (None: int option)
+        let pendingFocus = React.useRef (None: FileExplorerRevealRequest option)
+        let onRevealDoneRef = React.useRef onRevealDone
+        onRevealDoneRef.current <- onRevealDone
+
+        React.useEffect (
+            (fun () ->
+                match revealRequest with
+                | Some request when handledRevealToken.current <> Some request.Token ->
+                    match rows |> Array.tryFindIndex (fun row -> row.Id = request.ItemId) with
+                    | Some index ->
+                        handledRevealToken.current <- Some request.Token
+                        pendingFocus.current <- Some request
+                        virtualizer.scrollToIndex index
+                    | None -> ()
+                | _ -> ()
+            ),
+            [| box revealRequest; box rows |]
+        )
+
+        React.useEffect (fun () ->
+            match pendingFocus.current, treeRef.current with
+            | Some request, Some tree ->
+                match FileExplorerHelper.tryFindRowButton tree request.ItemId with
+                | Some button ->
+                    pendingFocus.current <- None
+                    FileExplorerHelper.focusWithoutScroll button
+                    onRevealDoneRef.current |> Option.iter (fun notify -> notify request)
+                | None -> ()
+            | _ -> ()
         )
 
         let scrollContainerClassName =

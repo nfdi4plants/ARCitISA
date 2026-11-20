@@ -140,7 +140,7 @@ let copyPathContextMenuItems (arcRootPath: string option) (item: FileItem) = [
 
 let arcCreateContextMenuItems
     (openCreateModal: ArcFilesDiscriminate -> unit)
-    (openNoteDraft: unit -> unit)
+    (openNoteDialog: FileItem -> unit)
     (item: FileItem)
     =
     if item.IsDirectory then
@@ -151,7 +151,7 @@ let arcCreateContextMenuItems
                     ContextMenuItem.create $"Add {config.Label}" config.Icon (fun () -> openCreateModal config.Kind)
                 )
 
-            ContextMenuItem.create "Add Note" "swt:fluent--note-add-24-regular" openNoteDraft
+            ContextMenuItem.create "Add Note" "swt:fluent--note-add-24-regular" (fun () -> openNoteDialog item)
         ]
     else
         []
@@ -214,7 +214,7 @@ let rootContextMenuItems (config: ContextMenuConfig) (rootItem: FileItem) =
     withDividers [
         importContextMenuItems config.pathActionConfig rootItem ""
         fileSystemCreateContextMenuItems config.openFileSystemCreateModal rootItem
-        arcCreateContextMenuItems config.openCreateModal config.openNoteDraft rootItem
+        arcCreateContextMenuItems config.openCreateModal config.openNoteDialog rootItem
     ]
 
 /// True when a Download or Free runs on the item or on a path inside the item's delete scope.
@@ -302,7 +302,7 @@ let createContextMenuItems (config: ContextMenuConfig) arcScopeId =
 
                 yield! folderLfsContextMenuItems config item
             ]
-            arcCreateContextMenuItems config.openCreateModal config.openNoteDraft item
+            arcCreateContextMenuItems config.openCreateModal config.openNoteDialog item
             [
                 yield! renameContextMenuItems config.lfsActivePaths config.requestRenameItem item
                 yield! deleteContextMenuItems config.lfsActivePaths config.requestDeleteItem item

@@ -56,7 +56,7 @@ let NotesSearchTarget () =
                 fileTreeCtx.setSelection (ArcSelection.forTreePath (Some selectedPath))
 
                 let pageState =
-                    Renderer.Types.PageState.fromFileContentDTO (dto.content, dto.revision)
+                    Renderer.Types.PageState.fromFileContentDTO (dto.content, dto.revision, dto.text)
 
                 pageCtx.setState (Some pageState)
             | Result.Error exn ->

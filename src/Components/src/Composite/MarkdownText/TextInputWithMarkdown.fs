@@ -9,6 +9,7 @@ open Feliz
 open Swate.Components
 open Swate.Components.Composite.MarkdownText.Types
 open Swate.Components.Composite.MarkdownText.JsBindings
+open Swate.Components.Composite.MarkdownText.Links.Types
 open Swate.Components.Composite.MarkdownText.Plugins
 open Swate.Components.Primitive.LayoutComponents
 
@@ -75,7 +76,8 @@ type TextInputWithMarkdown =
             ?mode: PreviewMode,
             ?previewClassName: string,
             ?plugins: MarkdownToolbarPlugin list,
-            ?filePickerAdapter: MarkdownFilePickerAdapter
+            ?filePickerAdapter: MarkdownFilePickerAdapter,
+            ?linkContext: IMarkdownLinkContext
         ) =
         let disabled = defaultArg disabled false
         let isJoin = defaultArg isJoin false
@@ -545,11 +547,10 @@ type TextInputWithMarkdown =
                                                 prop.className
                                                     "swt:min-w-0 swt:h-full swt:overflow-auto swt:bg-base-100"
                                                 prop.children [
-                                                    ReactMDEditor.MarkdownPreview(
+                                                    MarkdownView.MarkdownView(
                                                         tempValue,
                                                         className = previewClassName,
-                                                        components = Preview.components,
-                                                        rehypePlugins = Preview.rehypePlugins
+                                                        ?linkContext = linkContext
                                                     )
                                                 ]
                                             ]
