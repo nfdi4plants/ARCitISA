@@ -242,9 +242,9 @@ const navigationPlay = (width: number): NonNullable<PropsStory['play']> => async
     await expect(canvas.queryByTestId('settings-general')).toBeNull();
     await expectMarked(canvas, 'settings-largeFiles');
 
-    // Opening Git expands it, and it stays expanded on another page, so its settings lead back to it.
-    await openCategory(canvas, 'settings-git');
-    await openCategory(canvas, 'settings-largeFiles');
+    // The arrow expands Git without leaving the page, and a Git setting then opens the Git page.
+    await userEvent.click(canvas.getByTestId('SettingsNavigationToggle-settings-git'));
+    await expect(canvas.getByTestId('settings-largeFiles')).toBeVisible();
     const gitSetting = canvas.getByTestId('SettingsNavigation-settings-git-0');
     await expect(gitSetting).toBeVisible();
     await userEvent.click(gitSetting);
@@ -252,12 +252,10 @@ const navigationPlay = (width: number): NonNullable<PropsStory['play']> => async
     await expect(canvas.queryByTestId('settings-largeFiles')).toBeNull();
     await expectMarked(canvas, 'settings-git');
 
-    // The shown category collapses and expands again without leaving its page.
-    await userEvent.click(canvas.getByTestId('SettingsNavigation-settings-git'));
+    // Collapsing Git keeps its page.
+    await userEvent.click(canvas.getByTestId('SettingsNavigationToggle-settings-git'));
     await expect(gitSetting).not.toBeVisible();
     await expect(canvas.getByTestId('settings-git')).toBeVisible();
-    await userEvent.click(canvas.getByTestId('SettingsNavigation-settings-git'));
-    await expect(gitSetting).toBeVisible();
   });
 
 export const NavigationBesidePage: PropsStory = {

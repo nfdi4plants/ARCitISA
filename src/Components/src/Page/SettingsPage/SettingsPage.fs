@@ -425,7 +425,7 @@ type SettingsPage =
             prop.children [
                 Html.span [
                     prop.testId "SettingsDataHub"
-                    prop.className "swt:min-w-0 swt:break-all swt:text-sm"
+                    prop.className "swt:min-w-0 swt:flex-1 swt:break-all swt:text-sm"
                     prop.text url
                 ]
                 Html.button [
@@ -532,7 +532,8 @@ type SettingsPage =
             categories: CategorySettings[],
             active: SettingsCategory,
             expanded: Set<SettingsCategory>,
-            onSelectCategory: SettingsCategory -> unit,
+            onOpenCategory: SettingsCategory -> unit,
+            onToggleCategory: SettingsCategory -> unit,
             onSelectField: SettingsCategory -> int -> unit
         ) =
         Html.nav [
@@ -547,23 +548,57 @@ type SettingsPage =
                     prop.children [
                         for settings in categories do
                             let isActive = settings.Category = active
+                            let isExpanded = expanded.Contains settings.Category
                             let sectionId = SettingsPageHelper.pageId settings.Category
 
                             Html.li [
                                 Html.details [
-                                    prop.custom ("open", expanded.Contains settings.Category)
+                                    prop.custom ("open", isExpanded)
                                     prop.children [
+                                        // The arrow expands or collapses the category. The rest of the row opens
+                                        // its page. The arrow is a button of its own, so it replaces the drawn one.
                                         Html.summary [
                                             prop.testId $"SettingsNavigation-{sectionId}"
+                                            prop.className [
+                                                "swt:grid-cols-[1fr_auto] swt:after:hidden"
+                                                if isActive then
+                                                    "swt:bg-primary/10 swt:font-semibold swt:text-primary"
+                                            ]
                                             if isActive then
-                                                prop.className "swt:bg-primary/10 swt:font-semibold swt:text-primary"
                                                 prop.custom ("aria-current", "page")
-                                            prop.text (settings.Title)
-                                            // The page decides what a click opens or collapses.
                                             prop.onClick (fun e ->
                                                 e.preventDefault ()
-                                                onSelectCategory settings.Category
+                                                onOpenCategory settings.Category
                                             )
+                                            prop.children [
+                                                Html.span (settings.Title)
+                                                Html.button [
+                                                    prop.testId $"SettingsNavigationToggle-{sectionId}"
+                                                    prop.type'.button
+                                                    prop.className "swt:btn swt:btn-ghost swt:btn-xs swt:btn-square"
+                                                    prop.ariaLabel (
+                                                        if isExpanded then
+                                                            $"Collapse {settings.Title}"
+                                                        else
+                                                            $"Expand {settings.Title}"
+                                                    )
+                                                    prop.ariaExpanded isExpanded
+                                                    prop.onClick (fun e ->
+                                                        e.preventDefault ()
+                                                        e.stopPropagation ()
+                                                        onToggleCategory settings.Category
+                                                    )
+                                                    prop.children [
+                                                        Html.span [
+                                                            prop.className [
+                                                                "swt:iconify swt:fluent--chevron-down-16-regular swt:size-4 swt:transition-transform"
+                                                                if isExpanded then
+                                                                    "swt:rotate-180"
+                                                            ]
+                                                        ]
+                                                    ]
+                                                ]
+                                            ]
                                         ]
                                         Html.ul [
                                             for index, field in Array.indexed settings.Fields do
@@ -821,18 +856,18 @@ type SettingsPage =
             [| box active |]
         )
 
-        // The shown category collapses or expands again. Another category opens its page, at its top.
-        let selectCategory (category: SettingsCategory) =
-            if category = shownCategory then
-                setExpanded (
-                    if expanded.Contains category then
-                        expanded.Remove category
-                    else
-                        expanded.Add category
-                )
-            else
-                rootRef.current |> Option.iter (fun root -> Dom.scrollIntoView root false)
-                openCategory category
+        let toggleCategory (category: SettingsCategory) =
+            setExpanded (
+                if expanded.Contains category then
+                    expanded.Remove category
+                else
+                    expanded.Add category
+            )
+
+        // A page opens at its top.
+        let openPage (category: SettingsCategory) =
+            rootRef.current |> Option.iter (fun root -> Dom.scrollIntoView root false)
+            openCategory category
 
         let selectField (category: SettingsCategory) (index: int) =
             let id = SettingsPageHelper.fieldId category index
@@ -850,7 +885,14 @@ type SettingsPage =
                 Html.div [
                     prop.className "swt:flex swt:flex-col swt:@3xl/settings:flex-row swt:@3xl/settings:items-start"
                     prop.children [
-                        SettingsPage.Navigation(categories, shownCategory, expanded, selectCategory, selectField)
+                        SettingsPage.Navigation(
+                            categories,
+                            shownCategory,
+                            expanded,
+                            openPage,
+                            toggleCategory,
+                            selectField
+                        )
                         Html.div [
                             prop.className "swt:min-w-0 swt:flex-1"
                             prop.children [

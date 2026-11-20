@@ -413,18 +413,19 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "the shown category collapses and expands again and stays shown",
+            "the arrow expands and collapses a category without opening its page",
             fun () ->
                 renderCategories None |> ignore
-                Vitest.expect(isExpanded "settings-general").toBe true
                 Vitest.expect(isExpanded "settings-git").toBe false
 
-                RTL.fireEvent.click (RTL.screen.getByTestId "SettingsNavigation-settings-general")
+                RTL.fireEvent.click (RTL.screen.getByTestId "SettingsNavigationToggle-settings-git")
+                Vitest.expect(isExpanded "settings-git").toBe true
+                Vitest.expect(present "settings-general").toBe true
+                Vitest.expect(present "settings-git").toBe false
+
+                RTL.fireEvent.click (RTL.screen.getByTestId "SettingsNavigationToggle-settings-general")
                 Vitest.expect(isExpanded "settings-general").toBe false
                 Vitest.expect(present "settings-general").toBe true
-
-                RTL.fireEvent.click (RTL.screen.getByTestId "SettingsNavigation-settings-general")
-                Vitest.expect(isExpanded "settings-general").toBe true
         )
 
         Vitest.test (
