@@ -34,16 +34,10 @@ type TermSearchConfigSetter =
         ]
 
 
-    [<ReactComponentAttribute(true)>]
-    static member TermSearchConfigSetter
-        (renderer:
-            {|
-                title: string
-                settingElement: ReactElement
-                description: ReactElement
-            |}
-                -> ReactElement)
-        =
+    /// The term search settings, each with its title, control and description, and the state they show.
+    /// Needs the term search contexts.
+    [<Hook>]
+    static member useSettings() =
         let activeKeysCtx = useTermSearchActiveKeysCtx ()
         let allKeysCtx = useTermSearchAllKeysCtx ()
 
@@ -77,19 +71,8 @@ type TermSearchConfigSetter =
 
         let TriggerRender = fun _ -> TermSearchConfigSetter.TriggerRender(activeKeys)
 
-        React.Fragment [
-
-            //Debugging component, storing data for storybook tests
-            Html.div [
-                prop.className "swt:hidden"
-                prop.ariaHidden true
-                prop.testId "term-search-config-setter"
-                prop.custom ("data-activekeyscount", activeKeys.Length)
-                prop.custom ("data-defaultdisables", activeKeysState.disableDefault)
-                prop.custom ("data-activekeys", activeKeys |> Array.sort |> String.concat "; ")
-            ]
-
-            renderer {|
+        let settings = [|
+            {|
                 title = "Enable ARCitISA default search"
                 settingElement =
                     Html.input [
@@ -109,8 +92,7 @@ type TermSearchConfigSetter =
                     ]
                 description = Html.p "When you deactivate this, the default search will not be used."
             |}
-
-            renderer {|
+            {|
                 title = "Configure TIB search"
                 settingElement =
                     MultiSelect.MultiSelect<string>(
@@ -134,6 +116,40 @@ type TermSearchConfigSetter =
                         ]
                     ]
             |}
+        |]
+
+        {|
+            settings = settings
+            activeKeys = activeKeys
+            disableDefault = activeKeysState.disableDefault
+        |}
+
+    [<ReactComponentAttribute(true)>]
+    static member TermSearchConfigSetter
+        (renderer:
+            {|
+                title: string
+                settingElement: ReactElement
+                description: ReactElement
+            |}
+                -> ReactElement)
+        =
+        let termSearch = TermSearchConfigSetter.useSettings ()
+
+        React.Fragment [
+
+            //Debugging component, storing data for storybook tests
+            Html.div [
+                prop.className "swt:hidden"
+                prop.ariaHidden true
+                prop.testId "term-search-config-setter"
+                prop.custom ("data-activekeyscount", termSearch.activeKeys.Length)
+                prop.custom ("data-defaultdisables", termSearch.disableDefault)
+                prop.custom ("data-activekeys", termSearch.activeKeys |> Array.sort |> String.concat "; ")
+            ]
+
+            for setting in termSearch.settings do
+                renderer setting
         ]
 
     [<ReactComponent>]

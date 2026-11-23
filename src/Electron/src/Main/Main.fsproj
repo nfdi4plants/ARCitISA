@@ -85,11 +85,11 @@
     <Compile Include="IPC\TextFileSave.fs" />
     <Compile Include="IPC\IArcVaultsApi.fs" />
     <Compile Include="IPC\IMarkdownResolverApi.fs" />
+    <Compile Include="IPC\IUserDefaultsApi.fs" />
     <Compile Include="IPC\IAuthApi.fs" />
     <Compile Include="IPC\ITemplateApi.fs" />
     <Compile Include="IPC\IValidationPackageApi.fs" />
     <Compile Include="IPC\IUiSettingsApi.fs" />
-    <Compile Include="IPC\IUserDefaultsApi.fs" />
     <Compile Include="IPC\IAppVersionApi.fs" />
     <Compile Include="Workers\TextDiffWorkerEntry.fs" />
     <Compile Include="AppMenu\HelpMenu.fs" />

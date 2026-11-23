@@ -26,6 +26,10 @@ module Dom =
         member _.observe(target: Element) : unit = jsNative
         member _.disconnect() : unit = jsNative
 
+    /// Scrolls the scrolling ancestors so the top of the element is at the top of their view.
+    [<Emit("$0.scrollIntoView({ block: 'start', behavior: $1 ? 'smooth' : 'auto' })")>]
+    let scrollIntoView (element: Element) (smooth: bool) : unit = jsNative
+
     [<AllowNullLiteral>]
     type private TextMetrics =
         abstract width: float

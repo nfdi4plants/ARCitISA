@@ -116,3 +116,9 @@ type AuthStateDto = {
 
     member this.UsableActiveUser() =
         this.UsableActiveAccount() |> Option.map _.User
+
+/// Removes stored accounts. With DeleteTokensOnDataHub their tokens are also deleted on their DataHUBs.
+type RemoveAccountsRequest = {
+    LocalSwateAccountIds: string[]
+    DeleteTokensOnDataHub: bool
+}

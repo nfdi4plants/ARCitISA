@@ -105,6 +105,24 @@ module private Authentication =
         let isLoading, setIsLoading = React.useState false
         let authStateCtx = Renderer.Context.AuthStateContext.useAuthStateCtx ()
         let errorModalCtx = useErrorModalCtx ()
+        let pageStateCtx = Renderer.Context.PageStateContext.usePageStateCtx ()
+
+        let dataHubUrls =
+            Renderer.MainSyncedState.useMainSyncedState {
+                initial = Swate.Components.Composite.Authentication.Helper.Default_DataHub_Urls
+                load =
+                    fun () -> promise {
+                        let! defaults = Api.ipcUserDefaultsApi.getUserDefaults ()
+                        return defaults.Effective.DataHubUrls
+                    }
+                subscribe =
+                    fun update ->
+                        Renderer.IpcReceiver.subscribeProxyReceiver<IUserDefaultsRendererApi> {
+                            userDefaultsChanged = fun defaults -> update defaults.Effective.DataHubUrls
+                        }
+                onError = fun ex -> console.warn ("Could not load the DataHUB addresses.", ex.Message)
+                dependencies = [||]
+            }
 
         let onSignIn (signInInfo: SignInInformation) =
             promise {
@@ -128,14 +146,6 @@ module private Authentication =
             }
             |> Promise.start
 
-        let onLogout () =
-            promise {
-                match! Api.ipcAuthApi.signOut () with
-                | Ok _ -> ()
-                | Error ex -> errorModalCtx.enqueue (ErrorModalRequest.create (ex.Message, title = "Sign Out Error"))
-            }
-            |> Promise.start
-
         let onSwitchAccount (localSwateAccountId: string) =
             promise {
                 match! Api.ipcAuthApi.setActiveAccount localSwateAccountId with
@@ -151,12 +161,20 @@ module private Authentication =
             }
             |> Promise.start
 
-        let onRemoveAccount (localSwateAccountId: string) =
+        let onRemoveAccounts (request: RemoveAccountsRequest) =
             promise {
-                match! Api.ipcAuthApi.removeAccount localSwateAccountId with
+                match! Api.ipcAuthApi.removeAccounts request with
+                | Ok(TokenDeletionOutcome.Failed reason) ->
+                    let title =
+                        if request.LocalSwateAccountIds.Length = 1 then
+                            "Could not delete the token"
+                        else
+                            "Could not delete all tokens"
+
+                    errorModalCtx.enqueue (ErrorModalRequest.create (reason, title = title))
                 | Ok _ -> ()
                 | Error ex ->
-                    errorModalCtx.enqueue (ErrorModalRequest.create (ex.Message, title = "Error removing account"))
+                    errorModalCtx.enqueue (ErrorModalRequest.create (ex.Message, title = "Error removing accounts"))
             }
             |> Promise.start
 
@@ -172,12 +190,23 @@ module private Authentication =
         Swate.Components.Composite.Authentication.Authentication.UserAvatar(
             authStateCtx,
             onSignIn,
-            onLogout,
             isLoading = isLoading,
             dropdownClassName = "swt:dropdown-bottom swt:dropdown-end swt:h-8",
             onRotateToken = onRotateToken,
             onSwitchAccount = onSwitchAccount,
-            onRemoveAccount = onRemoveAccount
+            onRemoveAccounts = onRemoveAccounts,
+            dataHubUrls = dataHubUrls.state,
+            onManageDataHubs =
+                (fun () ->
+                    pageStateCtx.setState (
+                        Some(
+                            PageState.SettingsPage(
+                                Some Swate.Components.PageComponents.SettingsPage.Types.SettingsCategory.DataHub,
+                                System.Guid.NewGuid().ToString()
+                            )
+                        )
+                    )
+                )
         )
 
 /// What the save button of the navbar shows.
@@ -298,14 +327,14 @@ type Navbar =
 
         let isActive =
             match pageStateCtx.state with
-            | Some PageState.SettingsPage -> true
+            | Some(PageState.SettingsPage _) -> true
             | _ -> false
 
         let onToggleSettings _ =
             if isActive then
                 pageStateCtx.setState None
             else
-                pageStateCtx.setState (Some PageState.SettingsPage)
+                pageStateCtx.setState (Some(PageState.SettingsPage(None, System.Guid.NewGuid().ToString())))
 
         Html.button [
             prop.type'.button

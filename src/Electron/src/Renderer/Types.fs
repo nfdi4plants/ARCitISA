@@ -245,7 +245,10 @@ type PageState =
     | DataHubBrowser
     | ValidationPackageBrowser
     | Changelog of version: string * requestId: string
-    | SettingsPage
+    /// With a category the page opens at it. A new requestId opens it again, also when it is open already.
+    | SettingsPage of
+        category: Swate.Components.PageComponents.SettingsPage.Types.SettingsCategory option *
+        requestId: string
 
     /// text is the text metadata of the read, None when the caller only has the DTO.
     static member fromFileContentDTO(dto: FileContentDTO, revision: int, text: TextDocumentInfo option) : PageState =

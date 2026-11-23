@@ -16,7 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## 3.4.0-nightly.01 - 2026-11-20
+## 3.4.0-rc.01 - 2026-11-23
 
 ### ✨ Added
 
@@ -33,6 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The Markdown preview shows raw HTML, such as `<img width="80">` or `<details>`, without scripts and event handlers. Code blocks in the preview are syntax highlighted. (by @Freymaurer)
 - "New File" and "New Folder" accept a path such as `docs/guide.md` and create the folders that lead to it. (by @Freymaurer)
 - GitHub alerts such as `> [!NOTE]` or `> [!WARNING]` show in the Markdown preview with a colored border, an icon and a title. Headings in the preview show a link to themselves while you point at them. (by @Freymaurer)
+- The sign-in remembers DataHUB addresses you signed in to and offers them next to the official PLANTdataHUB. All DataHUBs other than the official one, including the preset ones, can be added or removed in the DataHUB settings, which the sign-in links to. (by @caroott)
 
 ### 🔄 Changed
 
@@ -42,12 +43,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dialogs put the focus on their first field or button when they open, instead of on the close button. (by @Freymaurer)
 - The Markdown field of the swate-components library, also used by the `Notes` editor, uses the same editor and toolbar as Markdown files in the text editor, with keyboard shortcuts, Undo and Redo and "Ontology reference". Its export is renamed from `MarkdownTextInput` to `MarkdownTextEditor`. The "Add Step" and "Add Image" buttons and the `plugins` and `filePickerAdapter` options are removed. The toolbar's list and image buttons replace them. (by @Freymaurer)
 - The Markdown preview uses the typography and colors of the app's theme instead of a copy of GitHub's stylesheet. (by @Freymaurer)
+- Removing an account or regenerating its token asks whether to delete the token on the DataHUB as well. The Logout button is now "Remove all logins": it removes every account and asks once whether to delete their tokens too. (by @caroott)
+- The settings are split into the pages General, DataHUB, Git, Large files and Term search. A navigation beside the settings, or above them in a narrow window, opens each page and lists its settings. Git switches apply right away and the MB limits apply with their Update button, so the Git defaults no longer need Save. (by @caroott)
 
 ### 🐛 Fixed
 
 - Mermaid diagrams in the Markdown preview no longer make the page jump while they render. (by @Freymaurer)
 - A footnote no longer breaks the Markdown preview, and a click on a footnote reference scrolls to its note. (by @Freymaurer)
 - After "Save and Close" failed, closing the window works again. Before, the next close was ignored. (by @Freymaurer)
+- Regular expressions in "Update Rows" now respect anchors such as `^` and `$` and replace only their actual matches. #943 (by @Gitarackur)
 
 ### 🔒 Security
 

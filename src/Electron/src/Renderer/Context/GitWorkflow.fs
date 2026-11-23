@@ -28,6 +28,7 @@ let builtInUserDefaults: UserDefaultValuesDto = {
     UploadRightAway = true
     AutoCreateNotesFolder = true
     GitExecutablePath = None
+    DataHubUrls = Swate.Components.Composite.Authentication.Helper.Default_DataHub_Urls
 }
 
 [<RequireQualifiedAccess>]

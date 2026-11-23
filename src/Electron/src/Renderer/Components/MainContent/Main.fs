@@ -61,8 +61,8 @@ module private LazyComponents =
         ]
 
     [<ReactLazyComponent>]
-    let LazySettingPage () =
-        Renderer.Components.MainContent.SettingsPageTarget.SettingsPage()
+    let LazySettingPage (category: Swate.Components.PageComponents.SettingsPage.Types.SettingsCategory option) =
+        Renderer.Components.MainContent.SettingsPageTarget.SettingsPage(category)
 
     [<ReactLazyComponent>]
     let LazyChangelogTarget (version: string) =
@@ -106,10 +106,15 @@ let Main (appRootPath: ArcRootPath, pageState: PageState option) =
                                     )
                                 ]
                             ]
-                        | _, Some PageState.SettingsPage ->
-                            React.Suspense(
-                                [ LazyComponents.LazySettingPage() ],
-                                fallback = LazyComponents.FullPageLoadingSpinner("Loading settings...")
+                        | _, Some(PageState.SettingsPage(category, requestId)) ->
+                            React.KeyedFragment(
+                                requestId,
+                                [
+                                    React.Suspense(
+                                        [ LazyComponents.LazySettingPage(category) ],
+                                        fallback = LazyComponents.FullPageLoadingSpinner("Loading settings...")
+                                    )
+                                ]
                             )
                         | None, _ ->
                             Html.div [

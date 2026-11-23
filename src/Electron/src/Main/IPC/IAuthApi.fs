@@ -5,6 +5,7 @@ open Main
 open Swate.Electron.Shared.IPCTypes
 open Swate.Electron.Shared.IPCTypes.MainToRendererIpc
 open Swate.Electron.Shared.AuthTypes
+open Swate.Components.Composite.Authentication.Types
 open Main.Auth
 
 let private broadcastAccountsUpdate () =
@@ -24,6 +25,7 @@ let api: IAuthApi = {
 
                 if result.Success then
                     broadcastAccountsUpdate ()
+                    UserDefaultsApi.rememberDataHub UserDefaults.production request.GitLabBaseUrl
 
                 return Ok result
             with _ ->
@@ -35,15 +37,6 @@ let api: IAuthApi = {
                 return Ok(AuthService.getState ())
             with _ ->
                 return Error(exn "Failed to retrieve auth state.")
-        }
-    signOut =
-        fun () -> promise {
-            try
-                AuthService.signOut ()
-                broadcastAccountsUpdate ()
-                return Ok()
-            with _ ->
-                return Error(exn "Sign-out failed due to an unexpected error.")
         }
     revalidate =
         fun () -> promise {
@@ -87,13 +80,19 @@ let api: IAuthApi = {
             with _ ->
                 return Error(exn "Failed to switch active account.")
         }
-    removeAccount =
-        fun (localSwateAccountId: string) -> promise {
+    removeAccounts =
+        fun (request: RemoveAccountsRequest) -> promise {
             try
-                AuthService.removeAccount localSwateAccountId
+                // The accounts go at once. Deleting the tokens waits for the DataHUBs.
+                let removed = AuthService.removeAccounts request.LocalSwateAccountIds
                 broadcastAccountsUpdate ()
-                return Ok()
+
+                if request.DeleteTokensOnDataHub then
+                    let! outcome = AuthService.deleteTokens removed
+                    return Ok outcome
+                else
+                    return Ok TokenDeletionOutcome.Kept
             with _ ->
-                return Error(exn "Failed to remove account.")
+                return Error(exn "Failed to remove accounts.")
         }
 }
