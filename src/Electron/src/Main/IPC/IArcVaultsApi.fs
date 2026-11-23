@@ -488,6 +488,34 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
             with e ->
                 return Error e
         }
+    resolveArcPaths =
+        fun absolutePaths -> promise {
+            try
+                let windowId = windowIdFromIpcEvent event
+
+                match ARC_VAULTS.TryGetVault(windowId) with
+                | None -> return Error(exn $"The ARC for window id {windowId} should exist")
+                | Some vault ->
+                    match vault.path with
+                    | None -> return Error(arcNotOpenError ())
+                    | Some arcPath ->
+                        let relativePaths = absolutePaths |> Array.map (tryGetArcRelativePath arcPath)
+
+                        match relativePaths |> Array.tryFind Result.isError with
+                        | Some(Error pathError) -> return Error pathError
+                        | _ ->
+                            return
+                                relativePaths
+                                |> Array.choose (
+                                    function
+                                    | Ok path when String.IsNullOrWhiteSpace path -> None
+                                    | Ok path -> Some path
+                                    | Error _ -> None
+                                )
+                                |> Ok
+            with e ->
+                return Error e
+        }
     pickDirectory =
         fun () -> promise {
             try

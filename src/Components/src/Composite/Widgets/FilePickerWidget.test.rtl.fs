@@ -56,7 +56,7 @@ let private checkDeselection arcFile activeTableIndex table clearSelection = pro
     )
     |> ignore
 
-    RTL.fireEvent.click (RTL.screen.getByRole ("button", ByRoleOptions(name = Text "Pick Files")))
+    RTL.fireEvent.click (RTL.screen.getByRole ("button", ByRoleOptions(name = Text "Pick files")))
     let! _ = RTL.screen.findByTestId "sortable-list-row-file.csv"
 
     let insertButton () =
@@ -151,7 +151,7 @@ Vitest.test (
         )
         |> ignore
 
-        RTL.fireEvent.click (RTL.screen.getByRole ("button", ByRoleOptions(name = Text "Pick Files")))
+        RTL.fireEvent.click (RTL.screen.getByRole ("button", ByRoleOptions(name = Text "Pick files")))
         let! beta = RTL.screen.findByTestId "sortable-list-row-beta.txt"
         RTL.fireEvent.click beta
         Vitest.expect(beta.classList.contains "swt:bg-base-300").toBe true
@@ -172,10 +172,12 @@ Vitest.test (
         Vitest.expect(RTL.screen.queryByTestId("sortable-list-row-gamma.txt").IsNone).toBe true
         RTL.screen.getByTestId "sortable-list-row-alpha.txt" |> ignore
 
-        RTL.screen.getByRole ("button", ByRoleOptions(name = Text "Pick more files"))
+        RTL.fireEvent.click (RTL.screen.getByRole ("button", ByRoleOptions(name = Text "Add paths")))
+
+        RTL.screen.getByRole ("button", ByRoleOptions(name = Text "Pick files"))
         |> ignore
 
-        RTL.screen.getByRole ("button", ByRoleOptions(name = Text "Pick more folders"))
+        RTL.screen.getByRole ("button", ByRoleOptions(name = Text "Pick folders"))
         |> ignore
 
         RTL.screen.getByRole ("button", ByRoleOptions(name = Text "Insert file names"))
@@ -196,7 +198,7 @@ Vitest.test (
         )
         |> ignore
 
-        RTL.fireEvent.click (RTL.screen.getByRole ("button", ByRoleOptions(name = Text "Pick Files")))
+        RTL.fireEvent.click (RTL.screen.getByRole ("button", ByRoleOptions(name = Text "Pick files")))
         let! _ = RTL.screen.findByTestId "sortable-list-row-alpha.txt"
 
         RTL.fireEvent.click (RTL.screen.getByTestId "sortable-list-row-alpha.txt")
@@ -230,13 +232,51 @@ Vitest.test (
         )
         |> ignore
 
-        RTL.fireEvent.click (RTL.screen.getByRole ("button", ByRoleOptions(name = Text "Pick Folders")))
+        RTL.fireEvent.click (RTL.screen.getByRole ("button", ByRoleOptions(name = Text "Pick folders")))
         let! _ = RTL.screen.findByTestId "sortable-list-row-data/images"
 
-        RTL.fireEvent.click (RTL.screen.getByRole ("button", ByRoleOptions(name = Text "Pick more files")))
+        RTL.fireEvent.click (RTL.screen.getByRole ("button", ByRoleOptions(name = Text "Add paths")))
+        RTL.fireEvent.click (RTL.screen.getByRole ("button", ByRoleOptions(name = Text "Pick files")))
         let! _ = RTL.screen.findByTestId "sortable-list-row-data/file.csv"
 
         Vitest.expect(requestedKinds.ToArray()).toEqual [| PathPickerKind.Folder; PathPickerKind.File |]
         RTL.screen.getByTestId "sortable-list-row-data/images" |> ignore
+    }
+)
+
+Vitest.test (
+    "file picker resolves dropped files into paths",
+    fun () -> promise {
+        let droppedFiles = ResizeArray<File[]>()
+
+        let file: File =
+            Fable.Core.JsInterop.emitJsExpr () "new File(['data'], 'result.csv')"
+
+        RTL.render (
+            FilePickerWidget.Main(
+                ArcFiles.Assay(ArcAssay.init "drop-file-picker"),
+                None,
+                ignore,
+                (fun _ -> promise { return [||] }),
+                onDropFiles =
+                    (fun files -> promise {
+                        droppedFiles.Add files
+                        return [| "data/result.csv" |]
+                    })
+            )
+        )
+        |> ignore
+
+        RTL.fireEvent.custom (
+            "drop",
+            RTL.screen.getByTestId "file-picker-dropzone",
+            {|
+                dataTransfer = {| files = [| file |] |}
+            |}
+        )
+
+        let! _ = RTL.screen.findByTestId "sortable-list-row-data/result.csv"
+        Vitest.expect(droppedFiles.Count).toBe 1
+        Vitest.expect(droppedFiles.[0] |> Array.map _.name).toEqual [| "result.csv" |]
     }
 )

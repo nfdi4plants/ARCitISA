@@ -5870,6 +5870,39 @@ Vitest.describe (
                             return raise error
                     })
         )
+
+        Vitest.test (
+            "resolves dropped absolute paths relative to the active ARC",
+            fun () ->
+                withTempArc
+                    ignore
+                    (fun arcPath -> promise {
+                        let windowId = 8998
+                        let window = (createTestWindow (testWindowOptions windowId)).Window
+                        let vault = ArcVault(window)
+
+                        vault.path <- Some arcPath
+                        ARC_VAULTS.Vaults.Add(windowId, vault)
+                        setBrowserWindowFromWebContents (fun _ -> window :> obj)
+
+                        try
+                            let api = Main.IPC.ArcVaultsApi.api (ipcEventWithSenderId windowId)
+
+                            match!
+                                api.resolveArcPaths [|
+                                    join [| arcPath; "data"; "file.csv" |]
+                                    join [| arcPath; "data"; "images" |]
+                                |]
+                            with
+                            | Ok paths -> Vitest.expect(paths).toEqual [| "data/file.csv"; "data/images" |]
+                            | Error error -> return failwithf "Expected resolved paths, received %s." error.Message
+
+                            ARC_VAULTS.Vaults.Remove(windowId) |> ignore
+                        with error ->
+                            ARC_VAULTS.Vaults.Remove(windowId) |> ignore
+                            return raise error
+                    })
+        )
 )
 
 /// Registers a loaded vault whose window records its messages, with the source folder Run1 next to the ARC.

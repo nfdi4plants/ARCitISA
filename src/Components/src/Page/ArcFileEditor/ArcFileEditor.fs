@@ -1,6 +1,7 @@
 namespace Swate.Components.Page.ArcFileEditor
 
 open ARCtrl
+open Browser.Types
 open Fable.Core
 open Fable.Core.JsInterop
 open Feliz
@@ -48,13 +49,15 @@ type private LazyComponents =
             arcFile: ArcFiles,
             activeTableIndex: int option,
             setArcFile: ArcFiles -> unit,
-            onPickPaths: Composite.Widgets.Types.PathPickerKind -> Fable.Core.JS.Promise<string[]>
+            onPickPaths: Composite.Widgets.Types.PathPickerKind -> Fable.Core.JS.Promise<string[]>,
+            onDropFiles: (File[] -> Fable.Core.JS.Promise<string[]>) option
         ) =
         Swate.Components.Composite.Widgets.FilePickerWidget.Main(
             arcFile = arcFile,
             activeTableIndex = activeTableIndex,
             setArcFile = setArcFile,
-            onPickPaths = onPickPaths
+            onPickPaths = onPickPaths,
+            ?onDropFiles = onDropFiles
         )
 
     [<ReactLazyComponent>]
@@ -326,6 +329,7 @@ type Main =
             arcFile: ArcFiles,
             setArcFile: ArcFiles -> unit,
             pickPaths: Composite.Widgets.Types.PathPickerKind -> Fable.Core.JS.Promise<string[]>,
+            ?dropFiles: File[] -> Fable.Core.JS.Promise<string[]>,
             ?onAddDataMap: unit -> unit,
             ?onDeleteDataMap: unit -> unit,
             ?trailingNavbarElements: ArcFileEditorHeaderProps -> ReactElement,
@@ -404,7 +408,7 @@ type Main =
                 )
             filePicker =
                 Main.LazyLoaderWithMessage(
-                    LazyComponents.LazyFilePickerWidget(arcFile, activeTableIndex, setArcFile, pickPaths),
+                    LazyComponents.LazyFilePickerWidget(arcFile, activeTableIndex, setArcFile, pickPaths, dropFiles),
                     "Loading File Picker Widget..."
                 )
             dataAnnotator =

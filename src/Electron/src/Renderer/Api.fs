@@ -1,5 +1,6 @@
 module Api
 
+open Browser.Types
 open Swate.Components.Shared
 open Swate.Electron.Shared.IPCTypes
 
@@ -7,6 +8,12 @@ open Fable.Core
 open Fable.Core.JsInterop
 open Fable.Remoting.Client
 open Fable.Electron.Remoting.Renderer
+
+type IFilePathApi =
+    abstract getPathForFile: File -> string
+
+[<Emit("window.ARCITISA_FILE_PATHS")>]
+let filePathApi: IFilePathApi = jsNative
 
 let ipcGitLabApi = Remoting.createIpc () |> Remoting.buildProxySender<IGitLabApi>
 

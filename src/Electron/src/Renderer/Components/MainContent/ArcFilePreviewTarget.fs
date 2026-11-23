@@ -165,6 +165,20 @@ let ArcFilePreviewTarget (arcFile: ArcFiles, requestedView: ActiveView option, r
 
         )
 
+    let dropFilePaths =
+        React.useCallback (
+            (fun files -> promise {
+                let absolutePaths = files |> Array.map Api.filePathApi.getPathForFile
+
+                match! Api.ipcArcVaultApi.resolveArcPaths absolutePaths with
+                | Ok paths -> return paths
+                | Error exn ->
+                    errorModal.enqueue (ErrorModalRequest.create (exn.Message, title = "Could not add dropped paths"))
+                    return [||]
+            }),
+            [| errorModal |]
+        )
+
     let importJson =
         React.useCallback (
             (fun (request: JsonImportRequest) -> promise {
@@ -197,8 +211,9 @@ let ArcFilePreviewTarget (arcFile: ArcFiles, requestedView: ActiveView option, r
                 arcFile,
                 setArcFile,
                 pickFilePaths,
-                addDataMap,
-                deleteDataMap,
+                dropFiles = dropFilePaths,
+                onAddDataMap = addDataMap,
+                onDeleteDataMap = deleteDataMap,
                 startingActiveView = (requestedView |> Option.defaultValue ActiveView.Metadata),
                 onImportJson = importJson,
                 onJsonImportError = (fun error -> errorModal.enqueue (jsonImportErrorModalRequest error)),

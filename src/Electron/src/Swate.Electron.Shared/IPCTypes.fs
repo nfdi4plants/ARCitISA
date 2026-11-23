@@ -185,6 +185,7 @@ type IArcVaultsApi = {
     removeRecentARC: ARCPointer -> JS.Promise<Result<unit, exn>>
 
     pickArcPaths: FileSystemItemKind -> JS.Promise<Result<string[], exn>>
+    resolveArcPaths: string[] -> JS.Promise<Result<string[], exn>>
     pickDirectory: unit -> JS.Promise<Result<string, exn>>
     /// Opens a native file picker for one executable. Cancelling answers with the same "Cancelled" error as pickDirectory.
     pickExecutable: unit -> JS.Promise<Result<string, exn>>
