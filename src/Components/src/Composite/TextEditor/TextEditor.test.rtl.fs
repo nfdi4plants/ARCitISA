@@ -149,13 +149,18 @@ Vitest.test (
         let content () =
             result.container.querySelector ".cm-content"
 
-        Vitest.expect(content().getAttribute "aria-label").toBe "Text editor for first.md"
+        let label () = content().getAttribute "aria-label"
+
+        Vitest.expect(label ()).toContain "first.md"
 
         result.rerender (editor "second.md")
-        Vitest.expect(content().getAttribute "aria-label").toBe "Text editor for second.md"
+        Vitest.expect(label ()).toContain "second.md"
+        Vitest.expect(label ()).not.toContain "first.md"
 
+        // replaceContent builds a new editor state, which must not fall back to the file name of the first render.
         handle.Value.Value.replaceContent "reloaded"
-        Vitest.expect(content().getAttribute "aria-label").toBe "Text editor for second.md"
+        Vitest.expect(label ()).toContain "second.md"
+        Vitest.expect(label ()).not.toContain "first.md"
     }
 )
 

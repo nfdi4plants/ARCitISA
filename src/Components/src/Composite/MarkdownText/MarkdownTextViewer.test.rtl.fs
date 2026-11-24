@@ -43,6 +43,12 @@ let private first (container: HTMLElement) (selector: string) =
 let private link (name: string) =
     RTL.screen.getByRole ("link", ByRoleOptions(name = Text name))
 
+/// The text of a link the viewer cannot follow stays, outside an anchor, with a tooltip that gives the reason.
+let private expectDeadLink (text: string) =
+    let element = RTL.screen.getByText text
+    Vitest.expect(element.tagName).not.toBe "A"
+    Vitest.expect(System.String.IsNullOrWhiteSpace(element.getAttribute "title")).toBe false
+
 Vitest.afterEach (fun () ->
     RTL.cleanup ()
     restoreScrollIntoView ()
@@ -76,7 +82,7 @@ Vitest.describe (
                 let context = FakeContext()
                 render (Some context) "[x](../../x.md)" |> ignore
                 Vitest.expect(RTL.screen.queryAllByRole("link").Count).toBe 0
-                Vitest.expect(RTL.screen.getByTitle "This link points outside the ARC.").toBeTruthy ()
+                expectDeadLink "x"
         )
 
         Vitest.test (
@@ -215,8 +221,9 @@ Vitest.describe (
         Vitest.test (
             "shows a notice for an image whose source the sanitizer removed",
             fun () ->
-                render None "<img src=\"arc-asset://author/x\">" |> ignore
-                Vitest.expect(RTL.screen.getByText "This image has no source that can be shown.").toBeTruthy ()
+                let rendered = render None "<img src=\"arc-asset://author/x\">"
+                Vitest.expect(isNull (rendered.container.querySelector "img")).toBe true
+                Vitest.expect(RTL.screen.getByRole "img").toBeTruthy ()
         )
 )
 
@@ -228,20 +235,15 @@ Vitest.describe (
             fun () ->
                 render None "[x](a.md)" |> ignore
                 Vitest.expect(RTL.screen.queryAllByRole("link").Count).toBe 0
-
-                Vitest
-                    .expect(RTL.screen.getByTitle ("Links to files work only in a file of an open ARC."))
-                    .toBeTruthy ()
+                expectDeadLink "x"
         )
 
         Vitest.test (
             "an ARC image becomes a notice",
             fun () ->
-                render None "![a](a.png)" |> ignore
-
-                Vitest
-                    .expect(RTL.screen.getByText "Images of the ARC are shown only for a file of an open ARC.")
-                    .toBeTruthy ()
+                let rendered = render None "![a](a.png)"
+                Vitest.expect(isNull (rendered.container.querySelector "img")).toBe true
+                Vitest.expect(RTL.screen.getByRole ("img", ByRoleOptions(name = Text "a"))).toBeTruthy ()
         )
 
         Vitest.test (

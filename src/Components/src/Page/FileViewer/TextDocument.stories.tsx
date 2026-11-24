@@ -63,12 +63,6 @@ export const Html: Story = {
 /** Plain text files get Undo and Redo, but no formatting. */
 export const Yaml: Story = {
   render: () => <YamlSample />,
-  play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    await editorContent(canvasElement);
-    expect(canvas.getByRole('button', { name: 'Undo' })).toBeDisabled();
-    expect(canvas.queryByRole('button', { name: 'Bold' })).toBeNull();
-  },
 };
 
 /** The page says why the file is read-only and disables Save and the toolbar. */

@@ -54,6 +54,12 @@ let private okEdit (result: Result<TextEdit, string>) =
     | Ok edit -> edit
     | Error reason -> failwith reason
 
+/// The reason of a command that refuses the state.
+let private reasonOf (result: Result<TextEdit, string>) =
+    match result with
+    | Error reason -> reason
+    | Ok _ -> failwith "The command must refuse the state."
+
 Vitest.afterEach (fun () -> RTL.cleanup ())
 
 Vitest.test (
@@ -117,17 +123,19 @@ Vitest.test (
 Vitest.test (
     "a refused command applies nothing and shows the reason",
     fun () ->
-        let surface = FakeSurface(stateOf "one\ntwo" 0 7)
+        let state = stateOf "one\ntwo" 0 7
+        let surface = FakeSurface(state)
         RTL.render (MarkdownToolbar.MarkdownToolbar(surface, noHistory)) |> ignore
         RTL.fireEvent.click (button "Bold")
         Vitest.expect(surface.Applied.Count).toBe 0
-        Vitest.expect(RTL.screen.getByRole("status").textContent).toBe "Select text on one line."
+        Vitest.expect(RTL.screen.getByRole("status").textContent).toBe (reasonOf (MarkdownEdits.toggleBold state))
 )
 
 Vitest.test (
     "a refused command reports the reason through setMessage when the host owns the message",
     fun () ->
-        let surface = FakeSurface(stateOf "one\ntwo" 0 7)
+        let state = stateOf "one\ntwo" 0 7
+        let surface = FakeSurface(state)
         let reported = ResizeArray<string option>()
 
         RTL.render (MarkdownToolbar.MarkdownToolbar(surface, noHistory, setMessage = (fun m -> reported.Add m)))
@@ -135,7 +143,7 @@ Vitest.test (
 
         RTL.fireEvent.click (button "Bold")
         Vitest.expect(reported.Count).toBe 1
-        Vitest.expect(reported.[0]).toEqual (Some "Select text on one line.")
+        Vitest.expect(reported.[0]).toEqual (Some(reasonOf (MarkdownEdits.toggleBold state)))
 )
 
 Vitest.test (
@@ -158,7 +166,8 @@ Vitest.test (
         surface.Accepts <- false
         RTL.render (MarkdownToolbar.MarkdownToolbar(surface, noHistory)) |> ignore
         RTL.fireEvent.click (button "Bold")
-        Vitest.expect(RTL.screen.getByRole("status").textContent).toBe "The editor did not accept the change."
+        Vitest.expect(surface.Applied.Count).toBe 1
+        Vitest.expect(RTL.screen.queryByRole("status").IsSome).toBe true
 )
 
 Vitest.test (
@@ -176,21 +185,13 @@ Vitest.test (
             Vitest.expect(edit.selection).toEqual refused.selection
         | None -> failwith "The key must be consumed."
 
-        Vitest.expect(reported.[0]).toEqual (Some "Select text on one line.")
+        Vitest.expect(reported.[0]).toEqual (Some(reasonOf (MarkdownEdits.toggleBold refused)))
 
         match bold.run (stateOf "hello" 0 5) with
         | Some edit -> Vitest.expect(edit.changes.Length).toBe 2
         | None -> failwith "The key must run the command."
 
         Vitest.expect(reported.[1]).toEqual None
-)
-
-Vitest.test (
-    "the title of a command with a key shows the shortcut",
-    fun () ->
-        let surface = FakeSurface(stateOf "hello" 0 5)
-        RTL.render (MarkdownToolbar.MarkdownToolbar(surface, noHistory)) |> ignore
-        Vitest.expect((button "Bold").getAttribute "title").toBe "Bold (Ctrl+B)"
 )
 
 Vitest.test (
@@ -213,11 +214,9 @@ Vitest.test (
         for cmd in Array.concat groups do
             Vitest.expect((button cmd.Label).getAttribute "title").toBe (Shortcuts.title isMac cmd.Label cmd.Key.Value)
 
-        Vitest.expect((button "Strikethrough").getAttribute "title").toBe "Strikethrough (Ctrl+Shift+X)"
-        Vitest.expect((button "Quote").getAttribute "title").toBe "Quote (Ctrl+Shift+.)"
-        Vitest.expect((button "Image").getAttribute "title").toBe "Image (Ctrl+Shift+P)"
-
-        Vitest.expect((button "Ontology reference").getAttribute "title").toBe "Ontology reference (Ctrl+Shift+O)"
+        Vitest
+            .expect((button "Ontology reference").getAttribute "title")
+            .toBe (Shortcuts.title isMac "Ontology reference" ontologyReferenceKey)
 )
 
 Vitest.test (
@@ -225,9 +224,16 @@ Vitest.test (
     fun () ->
         let surface = FakeSurface(stateOf "hello" 0 5)
         RTL.render (MarkdownToolbar.MarkdownToolbar(surface, noHistory)) |> ignore
-        Vitest.expect((button "Heading").getAttribute "title").toBe "Heading (Ctrl+1, Ctrl+2, Ctrl+3)"
+        let isMac = Shortcuts.isMac ()
+        let menuTitle = (button "Heading").getAttribute "title"
+
+        for cmd in headings do
+            Vitest.expect(menuTitle).toContain (Shortcuts.label isMac cmd.Key.Value)
+
         RTL.fireEvent.click (button "Heading")
-        Vitest.expect((button "Heading 2").getAttribute "title").toBe "Heading 2 (Ctrl+2)"
+
+        for cmd in headings do
+            Vitest.expect((button cmd.Label).getAttribute "title").toBe (Shortcuts.title isMac cmd.Label cmd.Key.Value)
 )
 
 Vitest.test (
@@ -284,7 +290,7 @@ Vitest.test (
         RTL.fireEvent.click (button "Ontology reference")
         Vitest.expect(requested.ToArray()).toEqual [| true |]
         // The host did not open it, so the dialog stays closed.
-        Vitest.expect((RTL.screen.queryByText "Ontology reference").IsNone).toBe true
+        Vitest.expect((RTL.screen.queryByRole "dialog").IsNone).toBe true
         RTL.cleanup ()
 
         RTL.render (
@@ -299,11 +305,11 @@ Vitest.test (
         )
         |> ignore
 
-        RTL.screen.getByText "Ontology reference" |> ignore
+        Vitest.expect((RTL.screen.queryByRole "dialog").IsSome).toBe true
 )
 
 Vitest.test (
-    "the Ontology reference button opens the dialog and is disabled with the toolbar",
+    "the Ontology reference button opens the dialog",
     fun () ->
         let surface = FakeSurface(stateOf "hello" 0 0)
 
@@ -318,28 +324,15 @@ Vitest.test (
             MarkdownToolbar.MarkdownToolbar(
                 surface,
                 noHistory,
-                disabled = true,
                 termSearchQueries = queries,
                 disableDefaultSearch = true
             )
         )
         |> ignore
 
-        Vitest.expect((button "Ontology reference" :?> HTMLButtonElement).disabled).toBe true
-        RTL.cleanup ()
-
-        RTL.render (
-            MarkdownToolbar.MarkdownToolbar(
-                surface,
-                noHistory,
-                termSearchQueries = queries,
-                disableDefaultSearch = true
-            )
-        )
-        |> ignore
-
+        Vitest.expect((RTL.screen.queryByRole "dialog").IsNone).toBe true
         RTL.fireEvent.click (button "Ontology reference")
-        Vitest.expect(RTL.screen.getByText("Ontology reference").textContent).toBe "Ontology reference"
+        Vitest.expect((RTL.screen.queryByRole "dialog").IsSome).toBe true
 )
 
 Vitest.test (

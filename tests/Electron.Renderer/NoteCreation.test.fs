@@ -72,11 +72,8 @@ Vitest.describe (
             "validateTitle trims the title and refuses one without a letter or digit",
             fun () ->
                 Vitest.expect(validateTitle "  My first note!  ").toEqual (Ok "My first note!")
-                Vitest.expect(validateTitle "   ").toEqual (Error "A title is required.")
-
-                Vitest
-                    .expect(validateTitle "!!!")
-                    .toEqual (Error "The title needs a letter or a digit, because the file name is made from it.")
+                Vitest.expect(Result.isError (validateTitle "   ")).toBe true
+                Vitest.expect(Result.isError (validateTitle "!!!")).toBe true
         )
 
         Vitest.test (
@@ -125,9 +122,7 @@ Vitest.describe (
                 let! result = create fake.Api NoteLocation.NotesFolder date "Lab day"
 
                 match result with
-                | Error error ->
-                    Vitest.expect(error.Message).toContain
-                        "A note already exists at 'notes/2026-11-19/Lab_day/Lab_day.md'"
+                | Error error -> Vitest.expect(error.Message).toContain "notes/2026-11-19/Lab_day/Lab_day.md"
                 | Ok path -> failwith $"Expected a refusal, got {path}."
 
                 Vitest.expect(fake.Written.Count).toBe 0
@@ -141,7 +136,7 @@ Vitest.describe (
                 let! result = create fake.Api NoteLocation.NotesFolder date "Lab day"
 
                 match result with
-                | Error error -> Vitest.expect(error.Message).toBe "The note could not be written: disk full"
+                | Error error -> Vitest.expect(error.Message).toContain "disk full"
                 | Ok path -> failwith $"Expected a failure, got {path}."
             }
         )

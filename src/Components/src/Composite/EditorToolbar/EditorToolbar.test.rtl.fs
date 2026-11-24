@@ -20,15 +20,18 @@ let private isMac = Shortcuts.isMac ()
 Vitest.afterEach (fun () -> RTL.cleanup ())
 
 Vitest.test (
-    "Undo and Redo are disabled while the history has nothing to undo or redo",
+    "Undo and Redo are disabled while the history has nothing to undo or redo, and keep their key as tooltip",
     fun () ->
-        RTL.render (EditorToolbar.HistoryButtons(history true false, ignore, ignore))
+        RTL.render (
+            EditorToolbar.HistoryButtons(history true false, ignore, ignore, disabled = false, disabledReason = "x")
+        )
         |> ignore
 
         Vitest.expect((button "Undo").disabled).toBe false
         Vitest.expect((button "Redo").disabled).toBe true
-        // The disabled one still names itself and its key, because only the history keeps it disabled.
-        Vitest.expect((button "Redo").title).toBe (Shortcuts.title isMac "Redo" (Shortcuts.redoKey isMac))
+        // Only the history keeps Redo disabled, so its tooltip names its key and not the reason.
+        Vitest.expect((button "Redo").title).not.toBe "x"
+        Vitest.expect((button "Redo").title).toContain (Shortcuts.label isMac (Shortcuts.redoKey isMac))
 )
 
 Vitest.test (
@@ -118,16 +121,8 @@ Vitest.test (
 
         let heading = button "Heading"
 
-        Vitest
-            .expect(heading.title)
-            .toBe (
-                "Heading ("
-                + Shortcuts.label isMac "Mod-1"
-                + ", "
-                + Shortcuts.label isMac "Mod-2"
-                + ")"
-            )
-
+        Vitest.expect(heading.title).toContain (Shortcuts.label isMac "Mod-1")
+        Vitest.expect(heading.title).toContain (Shortcuts.label isMac "Mod-2")
         Vitest.expect(heading.getAttribute "aria-expanded").toBe "false"
         RTL.fireEvent.click heading
         Vitest.expect(clicks).toBe 1

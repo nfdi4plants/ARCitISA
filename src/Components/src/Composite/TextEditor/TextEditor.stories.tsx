@@ -138,9 +138,10 @@ export const SchemaPlayground: Story = {
     await waitFor(() => expect(canvas.getByTestId('diagnostic-count')).toHaveTextContent('6 diagnostics'), {
       timeout: 30_000,
     });
+    // The suggested values of the misspelled status and key.
     const list = canvas.getByTestId('diagnostic-list');
-    expect(list).toHaveTextContent('Did you mean "running"?');
-    expect(list).toHaveTextContent('Did you mean "familyName"?');
+    expect(list).toHaveTextContent('"running"');
+    expect(list).toHaveTextContent('"familyName"');
   },
 };
 
@@ -158,7 +159,7 @@ export const SchemaChanges: Story = {
     // Without the person schema, the $ref of the study schema no longer resolves.
     await userEvent.click(canvas.getByRole('tab', { name: 'person.schema.json' }));
     await userEvent.click(canvas.getByRole('button', { name: 'Remove schema' }));
-    await waitFor(() => expect(canvas.getByTestId('schema-status')).toHaveTextContent("can't resolve reference"));
+    await waitFor(() => expect(canvas.getByTestId('schema-status')).toHaveTextContent('person.schema.json'));
     await waitFor(() => expect(count()).toHaveTextContent('0 diagnostics'), { timeout: 30_000 });
   },
 };

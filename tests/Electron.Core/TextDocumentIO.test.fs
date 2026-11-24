@@ -338,10 +338,17 @@ Vitest.describe (
         )
 )
 
-let private expectError (message: string) (result: Result<SaveTextFileOutcome * string, exn>) =
+/// The save was refused. The message is only shown to the user, so it is not checked.
+let private expectRefused (result: Result<SaveTextFileOutcome * string, exn>) =
     match result with
-    | Error error -> Vitest.expect(error.Message).toBe message
+    | Error _ -> ()
     | Ok _ -> failwith "Expected an error"
+
+/// The save was refused for the reason the editor would open the file read-only with.
+let private expectRefusedWith (reason: TextReadOnlyReason) (result: Result<SaveTextFileOutcome * string, exn>) =
+    match result with
+    | Error error -> Vitest.expect(error.Message).toBe (readOnlyErrorMessage reason)
+    | Ok _ -> failwith $"Expected an error for {reason}"
 
 Vitest.describe (
     "saveTextFileAsync without an expected hash",
@@ -429,12 +436,20 @@ Vitest.describe (
             "refuses paths that are not part of the ARC inventory",
             fun () ->
                 withDirectory (fun dir -> promise {
+                    // Both folders exist, so only the inventory rule can refuse these saves.
+                    let! _ = mkdirAsync (join [| dir; ".git" |]) (MkdirOptions(recursive = true))
+                    let! _ = mkdirAsync (join [| dir; "sub" |]) (MkdirOptions(recursive = true))
+
                     let! git = saveTextFileAsync dir (saveRequest ".git/config" "x" TextFileEncoding.Utf8 None true)
-                    expectError "This path cannot be saved." git
+                    expectRefused git
+                    let! gitWritten = TestHelpers.pathExistsAsync (join [| dir; ".git"; "config" |])
+                    Vitest.expect(gitWritten).toBe false
 
                     let tempName = "sub/.swate-save-0123456789abcdef0123456789abcdef.tmp"
                     let! temp = saveTextFileAsync dir (saveRequest tempName "x" TextFileEncoding.Utf8 None true)
-                    expectError "This path cannot be saved." temp
+                    expectRefused temp
+                    let! tempWritten = TestHelpers.pathExistsAsync (join [| dir; tempName |])
+                    Vitest.expect(tempWritten).toBe false
                 })
         )
 
@@ -451,7 +466,10 @@ Vitest.describe (
                         let! result =
                             saveTextFileAsync dir (saveRequest "link.txt" "x" TextFileEncoding.Utf8 None true)
 
-                        expectError "Only regular files can be saved." result
+                        // The save path has its own text for this case, so only the refusal and the untouched target are checked.
+                        expectRefused result
+                        let! onDisk = readBytesAsync (join [| dir; "real.txt" |])
+                        Vitest.expect(sha256Hex onDisk).toBe (sha256Hex (utf8 "real"))
 
                         match! Main.Helper.ArcPathContainment.checkTargetAsync dir (join [| dir; "link.txt" |]) with
                         | Ok Main.Helper.ArcPathContainment.SymbolicLink -> ()
@@ -469,7 +487,7 @@ Vitest.describe (
                         let! result =
                             saveTextFileAsync dir (saveRequest "linked/a.txt" "x" TextFileEncoding.Utf8 None true)
 
-                        expectError "The file is outside the open ARC." result
+                        expectRefusedWith TextReadOnlyReason.OutsideArc result
 
                         match!
                             Main.Helper.ArcPathContainment.checkTargetAsync dir (join [| dir; "linked"; "a.txt" |])
@@ -490,7 +508,7 @@ Vitest.describe (
                     let! result = saveTextFileAsync dir (saveRequest "a.txt" "x" TextFileEncoding.Utf8 None true)
                     let! state = Main.Helper.ArcPathContainment.checkTargetAsync dir path
                     do! TestHelpers.chmodAsync (path, 0o644)
-                    expectError "This file is write-protected." result
+                    expectRefusedWith TextReadOnlyReason.WriteProtected result
 
                     match state with
                     | Ok(Main.Helper.ArcPathContainment.RegularFile(stats, _)) ->
@@ -504,12 +522,16 @@ Vitest.describe (
             fun () ->
                 withDirectory (fun dir -> promise {
                     let! keep = saveTextFileAsync dir (saveRequest "gone/a.txt" "x" TextFileEncoding.Utf8 None false)
-                    expectError "The folder of this file no longer exists." keep
+                    expectRefused keep
+                    let! createdByKeep = TestHelpers.pathExistsAsync (join [| dir; "gone" |])
+                    Vitest.expect(createdByKeep).toBe false
 
                     let! over =
                         saveTextFileAsync dir (saveRequest "gone/a.txt" "x" TextFileEncoding.Utf8 (Some "h") true)
 
-                    expectError "The folder of this file no longer exists." over
+                    expectRefused over
+                    let! createdByOverwrite = TestHelpers.pathExistsAsync (join [| dir; "gone" |])
+                    Vitest.expect(createdByOverwrite).toBe false
                 })
         )
 
@@ -542,25 +564,22 @@ Vitest.describe (
         let lowSurrogateFile = [| 0xFFuy; 0xFEuy; 0x61uy; 0uy; 0uy; 0xD8uy; 0x62uy; 0uy |]
 
         // Each file opens read-only or not at all. The request claims the encoding and hash of an editable file,
-        // as a renderer with stale state would send them.
-        for name, bytes, encoding, message in
+        // as a renderer with stale state would send them. The reason is None for a file that does not open.
+        for name, bytes, encoding, reason in
             [
                 "a file that is not valid UTF-8",
                 [| 0x63uy; 0x61uy; 0x66uy; 0xE9uy |],
                 TextFileEncoding.Utf8,
-                "This file is read-only because it is not valid UTF-8."
+                Some TextReadOnlyReason.NotUtf8
                 "a UTF-16 file with a lone surrogate",
                 lowSurrogateFile,
                 TextFileEncoding.Utf16LE,
-                "This file is read-only because it is not valid UTF-16."
+                Some TextReadOnlyReason.InvalidUtf16
                 "a file larger than 5 MB",
                 utf8 (String.replicate (6 * 1024 * 1024) "a"),
                 TextFileEncoding.Utf8,
-                "This file is larger than 5 MB and is read-only."
-                "a file with binary content",
-                [| 0x61uy; 0uy; 0x62uy |],
-                TextFileEncoding.Utf8,
-                "This file holds binary data and cannot be saved as text."
+                Some TextReadOnlyReason.TooLargeToEdit
+                "a file with binary content", [| 0x61uy; 0uy; 0x62uy |], TextFileEncoding.Utf8, None
             ] do
             for overwrite in [ false; true ] do
                 Vitest.test (
@@ -575,7 +594,10 @@ Vitest.describe (
                                     dir
                                     (saveRequest "a.txt" "mine" encoding (Some(sha256Hex bytes)) overwrite)
 
-                            expectError message result
+                            match reason with
+                            | Some reason -> expectRefusedWith reason result
+                            | None -> expectRefused result
+
                             let! onDisk = readBytesAsync path
                             Vitest.expect(sha256Hex onDisk).toBe (sha256Hex bytes)
                         })
@@ -596,11 +618,7 @@ Vitest.describe (
                         saveRequest "a.txt" "mine" TextFileEncoding.Utf8 (Some(sha256Hex original))
 
                     let! refused = saveTextFileAsync dir (request false)
-
-                    expectError
-                        "The file's encoding changed since it was opened. Reload the file before saving."
-                        refused
-
+                    expectRefused refused
                     let! unchanged = readBytesAsync path
                     Vitest.expect(sha256Hex unchanged).toBe (sha256Hex original)
 

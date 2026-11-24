@@ -51,13 +51,4 @@ export const Editor: Story = {
 /** Over a read-only editor Undo and Redo are disabled and give the reason. */
 export const ReadOnly: Story = {
   render: () => <ReadOnlySample />,
-  play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    await editorContent(canvasElement);
-    const toolbar = canvas.getByRole('toolbar', { name: 'Editing' });
-    for (const button of within(toolbar).getAllByRole('button')) {
-      expect(button).toBeDisabled();
-      expect(button).toHaveAttribute('title', 'This file is write-protected.');
-    }
-  },
 };

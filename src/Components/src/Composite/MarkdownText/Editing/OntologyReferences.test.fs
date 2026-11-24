@@ -24,11 +24,20 @@ let private selecting (text: string) (anchor: int) (head: int) : TextEditState =
     selection = {| anchor = anchor; head = head |}
 |}
 
-/// The resulting text, or the error prefixed with "Error: ".
+/// What outcome gives when insert refuses. The reason is text for the user, so the tests leave it alone.
+let private refused = "<refused>"
+
+/// The resulting text, or refused.
 let private outcome (reference: OntologyReference) (state: TextEditState) =
     match insert reference state with
     | Ok edit -> applyToText edit state.text
-    | Error message -> "Error: " + message
+    | Error _ -> refused
+
+/// The error of a result. The test fails when the result is Ok.
+let private messageOf (result: Result<'a, string>) =
+    match result with
+    | Ok value -> failwith (sprintf "Expected an error, got %A" value)
+    | Error message -> message
 
 let private cursorOf (reference: OntologyReference) (state: TextEditState) =
     match insert reference state with
@@ -114,9 +123,9 @@ Vitest.describe (
             "refuses a definition with another URL",
             fun () ->
                 let text = "See \n\n[MS:1000031]: http://e.org/other\n"
-
-                Vitest.expect(outcome instrumentModel (cursorAt text 4)).toBe
-                    "Error: [MS:1000031] already links to http://e.org/other."
+                let message = messageOf (insert instrumentModel (cursorAt text 4))
+                Vitest.expect(message).toContain "MS:1000031"
+                Vitest.expect(message).toContain "http://e.org/other"
         )
 
         Vitest.test (
@@ -124,8 +133,7 @@ Vitest.describe (
             fun () ->
                 let text = "See \n\n- [MS:1000031]: http://e.org/other\n"
 
-                Vitest.expect(outcome instrumentModel (cursorAt text 4)).toBe
-                    "Error: [MS:1000031] already links to http://e.org/other."
+                Vitest.expect(messageOf (insert instrumentModel (cursorAt text 4))).toContain "http://e.org/other"
         )
 
         Vitest.test (
@@ -166,7 +174,7 @@ Vitest.describe (
                         iri = "urn:x:1"
                 |}
 
-                Vitest.expect(outcome reference (cursorAt "" 0)).toBe "Error: The IRI urn:x:1 is not a web address."
+                Vitest.expect(messageOf (insert reference (cursorAt "" 0))).toContain "urn:x:1"
         )
 
         Vitest.test (
@@ -188,7 +196,7 @@ Vitest.describe (
             fun () ->
                 let text = "```\ncode\n```\n"
 
-                Vitest.expect(outcome instrumentModel (cursorAt text 5)).toBe "Error: A link cannot be inserted here."
+                Vitest.expect(outcome instrumentModel (cursorAt text 5)).toBe refused
         )
 
         Vitest.test (
@@ -196,9 +204,7 @@ Vitest.describe (
             fun () ->
                 let text = "Intro\n\n```\ncode\n"
 
-                Vitest
-                    .expect(outcome instrumentModel (cursorAt text 5))
-                    .toBe ("Error: The link definition for [MS:1000031] would not take effect at the end of this file.")
+                Vitest.expect(messageOf (insert instrumentModel (cursorAt text 5))).toContain "MS:1000031"
         )
 )
 
@@ -208,21 +214,12 @@ Vitest.describe (
         Vitest.test (
             "refuses a cursor right after a defined shortcut reference",
             fun () ->
-                Vitest
-                    .expect(outcome instrumentModel (cursorAt "See [x] now\n\n[x]: http://e.org/x\n" 7))
-                    .toBe (
-                        "Error: Inserting here would break a link, image, footnote or link definition next to the cursor."
-                    )
+                Vitest.expect(outcome instrumentModel (cursorAt "See [x] now\n\n[x]: http://e.org/x\n" 7)).toBe refused
         )
 
         Vitest.test (
             "refuses a cursor inside the text of a link",
-            fun () ->
-                Vitest
-                    .expect(outcome instrumentModel (cursorAt "[foo](http://x) z" 4))
-                    .toBe (
-                        "Error: Inserting here would break a link, image, footnote or link definition next to the cursor."
-                    )
+            fun () -> Vitest.expect(outcome instrumentModel (cursorAt "[foo](http://x) z" 4)).toBe refused
         )
 
         Vitest.test (
@@ -230,59 +227,40 @@ Vitest.describe (
             fun () ->
                 Vitest
                     .expect(outcome instrumentModel (cursorAt "Text [a][MS:1].\n\n[MS:1]: http://e.org/a \"a\"\n" 16))
-                    .toBe ("Error: Put the cursor on a line with text.")
+                    .toBe
+                    refused
         )
 
         Vitest.test (
             "refuses a blank line above a thematic break",
-            fun () ->
-                Vitest
-                    .expect(outcome instrumentModel (cursorAt "Intro\n\n---\n\nEnd\n" 6))
-                    .toBe ("Error: Put the cursor on a line with text.")
+            fun () -> Vitest.expect(outcome instrumentModel (cursorAt "Intro\n\n---\n\nEnd\n" 6)).toBe refused
         )
 
         Vitest.test (
             "refuses a text with a byte order mark",
-            fun () ->
-                Vitest
-                    .expect(outcome instrumentModel (cursorAt "\uFEFFHello " 7))
-                    .toBe ("Error: The file starts with a byte order mark (U+FEFF). Remove it to insert a link.")
+            fun () -> Vitest.expect(outcome instrumentModel (cursorAt "\uFEFFHello " 7)).toBe refused
         )
 
         Vitest.test (
             "refuses a selection over several lines",
-            fun () ->
-                Vitest
-                    .expect(outcome instrumentModel (selecting "One\n\nTwo" 0 8))
-                    .toBe ("Error: Select text on one line.")
+            fun () -> Vitest.expect(outcome instrumentModel (selecting "One\n\nTwo" 0 8)).toBe refused
         )
 
         Vitest.test (
             "refuses a selection that ends after a line break",
-            fun () ->
-                Vitest
-                    .expect(outcome instrumentModel (selecting "One\nTwo" 0 4))
-                    .toBe ("Error: Select text on one line.")
+            fun () -> Vitest.expect(outcome instrumentModel (selecting "One\nTwo" 0 4)).toBe refused
         )
 
         Vitest.test (
             "refuses a cursor next to a footnote reference",
-            fun () ->
-                Vitest
-                    .expect(outcome instrumentModel (cursorAt "a[^1] b\n\n[^1]: note\n" 3))
-                    .toBe (
-                        "Error: Inserting here would break a link, image, footnote or link definition next to the cursor."
-                    )
+            fun () -> Vitest.expect(outcome instrumentModel (cursorAt "a[^1] b\n\n[^1]: note\n" 3)).toBe refused
         )
 
         Vitest.test (
             "refuses a cursor inside an unused definition that is not at the end",
             fun () ->
-                Vitest
-                    .expect(outcome instrumentModel (cursorAt "Some text\n\n[x]: ./a.csv\n\nMore text\n" 13))
-                    .toBe (
-                        "Error: Inserting here would break a link, image, footnote or link definition next to the cursor."
-                    )
+                Vitest.expect(outcome instrumentModel (cursorAt "Some text\n\n[x]: ./a.csv\n\nMore text\n" 13)).toBe
+                    refused
         )
 
         Vitest.test (
@@ -290,11 +268,7 @@ Vitest.describe (
             fun () ->
                 let text = "Earlier [MS:1000031] mention.\nNow "
 
-                Vitest
-                    .expect(outcome instrumentModel (cursorAt text text.Length))
-                    .toBe (
-                        "Error: [MS:1000031] already appears as text in the file and would become a link or image too."
-                    )
+                Vitest.expect(messageOf (insert instrumentModel (cursorAt text text.Length))).toContain "MS:1000031"
         )
 
         Vitest.test (
@@ -302,21 +276,12 @@ Vitest.describe (
             fun () ->
                 let text = "Earlier ![x][MS:1000031] mention.\nNow "
 
-                Vitest
-                    .expect(outcome instrumentModel (cursorAt text text.Length))
-                    .toBe (
-                        "Error: [MS:1000031] already appears as text in the file and would become a link or image too."
-                    )
+                Vitest.expect(messageOf (insert instrumentModel (cursorAt text text.Length))).toContain "MS:1000031"
         )
 
         Vitest.test (
             "refuses a cursor right after an exclamation mark",
-            fun () ->
-                Vitest
-                    .expect(outcome instrumentModel (cursorAt "Wow!" 4))
-                    .toBe (
-                        "Error: A \"!\" right before the cursor would turn the link into an image. Add a space first."
-                    )
+            fun () -> Vitest.expect(outcome instrumentModel (cursorAt "Wow!" 4)).toBe refused
         )
 
         Vitest.test (
@@ -324,9 +289,7 @@ Vitest.describe (
             fun () ->
                 let text = "Intro\n\n[x]: http://e.org/x\n"
 
-                Vitest
-                    .expect(outcome instrumentModel (cursorAt text 7))
-                    .toBe ("Error: Move the cursor out of the link definitions at the end of the file.")
+                Vitest.expect(outcome instrumentModel (cursorAt text 7)).toBe refused
         )
 
         Vitest.test (
@@ -334,9 +297,7 @@ Vitest.describe (
             fun () ->
                 let text = "Intro\n\n[x]: http://e.org/x\n"
 
-                Vitest
-                    .expect(outcome instrumentModel (cursorAt text text.Length))
-                    .toBe ("Error: Move the cursor out of the link definitions at the end of the file.")
+                Vitest.expect(outcome instrumentModel (cursorAt text text.Length)).toBe refused
         )
 
         Vitest.test (
@@ -352,7 +313,7 @@ Vitest.describe (
                         curie = String.replicate 1000 "a"
                 |}
 
-                Vitest.expect(outcome reference (cursorAt "" 0)).toBe "Error: The link label is too long."
+                Vitest.expect(outcome reference (cursorAt "" 0)).toBe refused
         )
 
         Vitest.test (
@@ -391,12 +352,15 @@ Vitest.describe (
             fun () ->
                 Vitest
                     .expect(
-                        check {|
-                            instrumentModel with
-                                iri = "urn:x:1"
-                        |}
+                        messageOf (
+                            check {|
+                                instrumentModel with
+                                    iri = "urn:x:1"
+                            |}
+                        )
                     )
-                    .toEqual (Error "The IRI urn:x:1 is not a web address.")
+                    .toContain
+                    "urn:x:1"
         )
 
         Vitest.test (
@@ -404,12 +368,15 @@ Vitest.describe (
             fun () ->
                 Vitest
                     .expect(
-                        check {|
-                            instrumentModel with
-                                iri = "http://e.org/a\u007fb"
-                        |}
+                        messageOf (
+                            check {|
+                                instrumentModel with
+                                    iri = "http://e.org/a\u007fb"
+                            |}
+                        )
                     )
-                    .toEqual (Error "The IRI http://e.org/a\u007fb cannot be written as a Markdown link.")
+                    .toContain
+                    "http://e.org/a\u007fb"
         )
 
         Vitest.test ("accepts a usable term", fun () -> Vitest.expect(check instrumentModel).toEqual (Ok()))
@@ -425,10 +392,7 @@ Vitest.describe (
 
         Vitest.test (
             "fails when the IRI ends in a slash",
-            fun () ->
-                Vitest
-                    .expect(labelOf " " "http://e.org/x/")
-                    .toEqual (Error "No link label can be made from http://e.org/x/.")
+            fun () -> Vitest.expect(messageOf (labelOf " " "http://e.org/x/")).toContain "http://e.org/x/"
         )
 )
 
@@ -536,7 +500,7 @@ Vitest.describe (
             "reports an empty lookup result",
             fun () -> promise {
                 let! result = resolveIri (lookupFrom (Promise.lift None) (ref 0)) (Term(id = "MS:1000031"))
-                Vitest.expect(result).toEqual (Error "No IRI found for MS:1000031.")
+                Vitest.expect(messageOf result).toContain "MS:1000031"
             }
         )
 
@@ -544,15 +508,19 @@ Vitest.describe (
             "reports a rejected lookup",
             fun () -> promise {
                 let! result = resolveIri (lookupFrom (Promise.reject (exn "boom")) (ref 0)) (Term(id = "MS:1000031"))
-                Vitest.expect(result).toEqual (Error "Looking up the IRI for MS:1000031 failed: boom")
+                let message = messageOf result
+                Vitest.expect(message).toContain "MS:1000031"
+                Vitest.expect(message).toContain "boom"
             }
         )
 
         Vitest.test (
             "fails without an href and a CURIE",
             fun () -> promise {
-                let! result = resolveIri (lookupFrom (Promise.lift None) (ref 0)) (Term(name = "x"))
-                Vitest.expect(result).toEqual (Error "The term has neither an IRI nor a CURIE.")
+                let calls = ref 0
+                let! result = resolveIri (lookupFrom (Promise.lift None) calls) (Term(name = "x"))
+                Vitest.expect(Result.isError result).toBe true
+                Vitest.expect(calls.Value).toBe 0
             }
         )
 )

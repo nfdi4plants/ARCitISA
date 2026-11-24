@@ -98,19 +98,47 @@ Vitest.describe (
 
                 Vitest.expect((saveConflicted true running).Notice).toEqual (Some SaveConflict)
                 Vitest.expect((saveConflicted false running).Notice).toEqual (Some SaveConflictMissing)
-                Vitest.expect((saveFailed "disk full" running).Error).toEqual (Some "Saving failed: disk full")
+                Vitest.expect((saveFailed "disk full" running).Error |> Option.defaultValue "").toContain "disk full"
                 Vitest.expect((saveFailed "disk full" running).SavesRunning).toBe 0
         )
 
         Vitest.test (
-            "the status puts read-only first, then a running save, an error and unsaved edits",
+            "the status puts read-only first, then a running save, an error and unsaved edits, and flags only the error",
             fun () ->
                 let editable = init "x" (Some(utf8 "a"))
+                let readOnly = init "x" None
+                let saving = saveStarted editable
+                let failed = editable |> saveStarted |> saveFailed "boom"
+                let dirty = dirtyChanged true editable
 
-                Vitest.expect(status (init "x" None)).toEqual ("Read-only", false)
-                Vitest.expect(status (saveStarted editable)).toEqual ("Saving...", false)
-                Vitest.expect(status (saveFailed "boom" (saveStarted editable))).toEqual ("Saving failed: boom", true)
-                Vitest.expect(status (dirtyChanged true editable)).toEqual ("Unsaved changes", false)
-                Vitest.expect(status editable).toEqual ("Saved", false)
+                // A save still runs after an earlier one failed, and the text has unsaved edits.
+                let withRunningSaveErrorAndEdits state =
+                    state |> saveStarted |> saveStarted |> saveFailed "boom" |> dirtyChanged true
+
+                // Each state has a status of its own, so the comparisons below tell them apart.
+                Vitest
+                    .expect(
+                        [
+                            status readOnly
+                            status saving
+                            status failed
+                            status dirty
+                            status editable
+                        ]
+                        |> List.distinct
+                        |> List.length
+                    )
+                    .toBe
+                    5
+
+                Vitest.expect(status (withRunningSaveErrorAndEdits readOnly)).toEqual (status readOnly)
+                Vitest.expect(status (withRunningSaveErrorAndEdits editable)).toEqual (status saving)
+                Vitest.expect(status (dirtyChanged true failed)).toEqual (status failed)
+
+                Vitest.expect(fst (status failed)).toContain "boom"
+                Vitest.expect(snd (status failed)).toBe true
+
+                for state in [ readOnly; saving; dirty; editable ] do
+                    Vitest.expect(snd (status state)).toBe false
         )
 )

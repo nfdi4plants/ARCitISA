@@ -22,7 +22,8 @@ Vitest.describe (
             fun () -> Vitest.expect(nameOf "PYTHON").toBe "Python"
         )
 
-        Vitest.test ("finds a language by an alias", fun () -> Vitest.expect(nameOf "sh").toBe "Shell")
+        // zsh is only an alias. sh is also an extension of Shell, so it would pass without the alias lookup.
+        Vitest.test ("finds a language by an alias", fun () -> Vitest.expect(nameOf "zsh").toBe "Shell")
         Vitest.test ("finds a language by a file extension", fun () -> Vitest.expect(nameOf "py").toBe "Python")
         Vitest.test ("finds nothing for an unknown name", fun () -> Vitest.expect(nameOf "no-such-language").toBe "")
         Vitest.test ("finds nothing for an empty name", fun () -> Vitest.expect(nameOf " ").toBe "")

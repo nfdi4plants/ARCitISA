@@ -29,7 +29,7 @@ Vitest.describe (
                 let! found = LinkDiagnostics.lint "docs" check "see [a](gone.md)"
                 Vitest.expect(found.Length).toBe 1
                 Vitest.expect(found.[0].severity).toBe "error"
-                Vitest.expect(found.[0].message).toBe "Not found: docs/gone.md"
+                Vitest.expect(found.[0].message).toContain "docs/gone.md"
                 Vitest.expect(found.[0].from).toBe 4
                 Vitest.expect(found.[0].``to``).toBe 16
                 Vitest.expect(found.[0].source).toBe "links"
@@ -65,7 +65,9 @@ Vitest.describe (
                 let _, check = fakeHost (fun _ -> LinkTargetState.Exists)
                 let! found = LinkDiagnostics.lint "docs" check "[x](../../x.md)"
                 Vitest.expect(found.Length).toBe 1
-                Vitest.expect(found.[0].message).toBe "This link points outside the ARC."
+                Vitest.expect(found.[0].severity).toBe "error"
+                Vitest.expect(found.[0].from).toBe 0
+                Vitest.expect(found.[0].``to``).toBe 15
             }
         )
 
@@ -101,7 +103,7 @@ Vitest.describe (
                 let warning = found |> Array.find (fun d -> d.severity = "warning")
                 Vitest.expect(warning.from).toBe 0
                 Vitest.expect(warning.``to``).toBe 0
-                Vitest.expect(warning.message).toContain "could not be checked"
+                Vitest.expect(warning.message).toContain "host offline"
             }
         )
 

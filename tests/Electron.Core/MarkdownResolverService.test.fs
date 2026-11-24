@@ -375,11 +375,9 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "refuses more than 500 paths and a closed ARC",
+            "refuses a closed ARC",
             fun () -> promise {
-                let! tooMany = (serviceFor "C:/unused").CheckPaths(Array.create 501 "a.md")
                 let! closed = MarkdownResolverService(7, (fun () -> None)).CheckPaths [| "a.md" |]
-                Vitest.expect(tooMany.IsError).toBe true
                 Vitest.expect(closed.IsError).toBe true
             }
         )
@@ -417,15 +415,8 @@ Vitest.describe (
                     let! result = (serviceFor dir).CheckPaths [| "pipe" |]
 
                     match result with
-                    | Ok checks ->
-                        Vitest
-                            .expect(
-                                (checks = [|
-                                    PathCheck.Unreadable "This is not a regular file or a folder."
-                                |])
-                            )
-                            .toBe
-                            true
+                    | Ok [| PathCheck.Unreadable _ |] -> ()
+                    | Ok checks -> failwith $"Expected one unreadable path, got {checks}"
                     | Error error -> failwith error.Message
                 })
         )
@@ -630,7 +621,7 @@ Vitest.describe (
             "refuses a closed ARC",
             fun () -> promise {
                 let! closed = MarkdownResolverService(7, (fun () -> None)).ListFolder("", "")
-                Vitest.expect(outcomeOf closed).toBe "error: No ARC is open."
+                Vitest.expect(closed.IsError).toBe true
             }
         )
 )

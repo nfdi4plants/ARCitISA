@@ -270,16 +270,10 @@ export const NavigationAbovePageWhenNarrow: PropsStory = {
   play: navigationPlay(600),
 };
 
+// SettingsPage.test.rtl.fs checks that the page opens at the given category.
 export const OpensAtCategory: PropsStory = {
   render: renderWithProps,
   args: { ...allCategoriesArgs(), category: 'largeFiles' } as any,
-  play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-
-    await expect(await canvas.findByTestId('settings-largeFiles')).toBeVisible();
-    await expect(canvas.queryByTestId('settings-general')).toBeNull();
-    await expectMarked(canvas, 'settings-largeFiles');
-  },
 };
 
 export const GitExecutableAutomatic: PropsStory = {

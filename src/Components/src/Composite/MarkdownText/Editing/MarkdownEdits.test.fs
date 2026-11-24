@@ -22,10 +22,9 @@ let private runInline (cmd: TextEditState -> Result<TextEdit, string>) (text: st
     | Ok edit -> result text edit
     | Error message -> failwith message
 
-let private errorOf (cmd: TextEditState -> Result<TextEdit, string>) (text: string) (anchor: int) (head: int) =
-    match cmd (state text anchor head) with
-    | Ok _ -> ""
-    | Error message -> message
+/// True when the command refuses. The reason is text for the user, so the tests leave it alone.
+let private refuses (cmd: TextEditState -> Result<TextEdit, string>) (text: string) (anchor: int) (head: int) =
+    Result.isError (cmd (state text anchor head))
 
 Vitest.describe (
     "applyToText",
@@ -79,7 +78,7 @@ Vitest.describe (
 
         Vitest.test (
             "refuses a selection of blank lines",
-            fun () -> Vitest.expect(errorOf (setHeading 2) "a\n\n\nb" 2 4).toBe "Select a line with text."
+            fun () -> Vitest.expect(refuses (setHeading 2) "a\n\n\nb" 2 4).toBe true
         )
 )
 
@@ -210,7 +209,7 @@ Vitest.describe (
 
         Vitest.test (
             "refuses a selection over several lines",
-            fun () -> Vitest.expect(errorOf insertLink "a\nb" 0 3).toBe "Select text on one line."
+            fun () -> Vitest.expect(refuses insertLink "a\nb" 0 3).toBe true
         )
 )
 
@@ -239,7 +238,7 @@ Vitest.describe (
 
         Vitest.test (
             "refuses a selection over several lines",
-            fun () -> Vitest.expect(errorOf insertImage "a\nb" 0 3).toBe "Select text on one line."
+            fun () -> Vitest.expect(refuses insertImage "a\nb" 0 3).toBe true
         )
 )
 
@@ -295,14 +294,12 @@ Vitest.describe (
 
         Vitest.test (
             "fails on a selection over several formatted parts",
-            fun () ->
-                Vitest.expect(errorOf toggleBold "**a** and **b**" 0 15).toBe
-                    "The selection covers more than one formatted part."
+            fun () -> Vitest.expect(refuses toggleBold "**a** and **b**" 0 15).toBe true
         )
 
         Vitest.test (
             "fails on a selection over several lines",
-            fun () -> Vitest.expect(errorOf toggleBold "a\nb" 0 3).toBe "Select text on one line."
+            fun () -> Vitest.expect(refuses toggleBold "a\nb" 0 3).toBe true
         )
 )
 
@@ -332,8 +329,7 @@ Vitest.describe (
 
         Vitest.test (
             "fails when only one side has stars",
-            fun () ->
-                Vitest.expect(errorOf toggleItalic "**bold**" 8 8).toBe "The stars around the selection do not match."
+            fun () -> Vitest.expect(refuses toggleItalic "**bold**" 8 8).toBe true
         )
 )
 
@@ -364,16 +360,12 @@ Vitest.describe (
 
         Vitest.test (
             "fails when only one side has tildes",
-            fun () ->
-                Vitest.expect(errorOf toggleStrikethrough "~~a~~" 3 3).toBe
-                    "The tildes around the selection do not match."
+            fun () -> Vitest.expect(refuses toggleStrikethrough "~~a~~" 3 3).toBe true
         )
 
         Vitest.test (
             "fails on a selection over several formatted parts",
-            fun () ->
-                Vitest.expect(errorOf toggleStrikethrough "~~a~~ and ~~b~~" 0 15).toBe
-                    "The selection covers more than one formatted part."
+            fun () -> Vitest.expect(refuses toggleStrikethrough "~~a~~ and ~~b~~" 0 15).toBe true
         )
 )
 
@@ -423,15 +415,12 @@ Vitest.describe (
         Vitest.test (
             "fails when only one side has a backtick",
             fun () ->
-                Vitest.expect(errorOf toggleInlineCode "`code`" 5 5).toBe
-                    "The backticks around the selection do not match."
-
-                Vitest.expect(errorOf toggleInlineCode "x `code` y" 7 7).toBe
-                    "The backticks around the selection do not match."
+                Vitest.expect(refuses toggleInlineCode "`code`" 5 5).toBe true
+                Vitest.expect(refuses toggleInlineCode "x `code` y" 7 7).toBe true
         )
 
         Vitest.test (
             "fails on a selection over several lines",
-            fun () -> Vitest.expect(errorOf toggleInlineCode "a\nb" 0 3).toBe "Select text on one line."
+            fun () -> Vitest.expect(refuses toggleInlineCode "a\nb" 0 3).toBe true
         )
 )

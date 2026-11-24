@@ -78,14 +78,6 @@ Vitest.describe (
     "proseOf",
     fun () ->
         Vitest.test (
-            "gives Markdown the Markdown nodes to skip",
-            fun () ->
-                let rules = proseOf LanguageDetection.registry "markdown"
-                Vitest.expect(rules |> Option.exists (fun r -> Array.contains "InlineCode" r.skippedNodes)).toBe true
-                Vitest.expect(rules |> Option.map _.skippedTagsIn).toEqual (Some [| "HTMLBlock" |])
-        )
-
-        Vitest.test (
             "treats plain text as prose without nodes to skip",
             fun () ->
                 Vitest

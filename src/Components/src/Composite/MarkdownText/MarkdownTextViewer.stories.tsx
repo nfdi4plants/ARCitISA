@@ -26,7 +26,7 @@ export const WithContext: Story = {
     await waitFor(() =>
       expect(canvas.getByText('The file docs/lfs.png is stored in Git LFS and is not downloaded.')).toBeInTheDocument(),
     );
-    expect(canvas.getByText('This image lies outside the ARC.')).toBeInTheDocument();
+    expect(canvas.getByRole('img', { name: 'outside' }).tagName).not.toBe('IMG');
     expect(canvasElement.querySelector('img[src^="data:image/svg+xml"]')).not.toBeNull();
   },
 };
@@ -36,9 +36,10 @@ export const WithoutContext: Story = {
   render: () => <WithoutContextSample />,
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await waitFor(() =>
-      expect(canvas.getAllByText('Images of the ARC are shown only for a file of an open ARC.').length).toBeGreaterThan(0),
-    );
+    await waitFor(() => expect(canvas.getByRole('img', { name: 'ok' }).tagName).not.toBe('IMG'));
+    expect(canvasElement.querySelector('img')).toBeNull();
+    expect(canvas.getByText('a file')).toBeInTheDocument();
+    expect(canvas.queryByRole('link', { name: 'a file' })).toBeNull();
     expect(canvas.getByRole('link', { name: 'external' })).toBeInTheDocument();
   },
 };

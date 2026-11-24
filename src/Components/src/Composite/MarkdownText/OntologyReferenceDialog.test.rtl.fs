@@ -194,7 +194,8 @@ Vitest.test (
         let surface = FakeSurface(state)
         let openStates = ResizeArray<bool>()
         do! renderAndChoose surface openStates "plant part"
-        do! eventually (fun () -> RTL.screen.getByText "No IRI found for NFDI4PSO:0000064." |> ignore)
+        do! eventually (fun () -> button "Insert as plain text" |> ignore)
+        Vitest.expect((RTL.screen.getByRole "status").textContent).toContain "NFDI4PSO:0000064"
         Vitest.expect(isDisabled "Insert").toBe true
         RTL.fireEvent.click (button "Insert as plain text")
         Vitest.expect(surface.Applied.Count).toBe 1
@@ -212,8 +213,9 @@ Vitest.test (
         do! eventually (fun () -> Vitest.expect(isDisabled "Insert").toBe false)
         RTL.fireEvent.click (button "Insert")
 
-        Vitest.expect(RTL.screen.getByRole("alert").textContent).toBe
-            "[MS:1000031] already links to http://e.org/other."
+        let alert = (RTL.screen.getByRole "alert").textContent
+        Vitest.expect(alert).toContain "MS:1000031"
+        Vitest.expect(alert).toContain "http://e.org/other"
 
         Vitest.expect(surface.Applied.Count).toBe 0
         Vitest.expect(openStates.Count).toBe 0
@@ -294,12 +296,10 @@ Vitest.test (
         |> ignore
 
         do! submitSourceLinkThroughF2 "urn:x:1"
-        do! eventually (fun () -> RTL.screen.getByText "The IRI urn:x:1 is not a web address." |> ignore)
+        do! eventually (fun () -> button "Insert as plain text" |> ignore)
         RTL.fireEvent.click (button "Insert as plain text")
         Vitest.expect(surface.Applied.Count).toBe 0
-
-        Vitest.expect(RTL.screen.getByRole("alert").textContent).toBe
-            "This term has neither a name nor a CURIE to insert as text."
+        Vitest.expect((RTL.screen.queryByRole "alert").IsSome).toBe true
     }
 )
 
@@ -336,7 +336,7 @@ Vitest.test (
         do! renderAndChoose surface openStates "instrument model"
         do! eventually (fun () -> Vitest.expect(isDisabled "Insert").toBe false)
         RTL.fireEvent.click (button "Insert")
-        Vitest.expect(RTL.screen.getByRole("alert").textContent).toBe "The editor did not accept the change."
+        Vitest.expect((RTL.screen.queryByRole "alert").IsSome).toBe true
         Vitest.expect(openStates.Count).toBe 0
     }
 )
@@ -348,9 +348,9 @@ Vitest.test (
         surface.Accepts <- false
         let openStates = ResizeArray<bool>()
         do! renderAndChoose surface openStates "plant part"
-        do! eventually (fun () -> RTL.screen.getByText "No IRI found for NFDI4PSO:0000064." |> ignore)
+        do! eventually (fun () -> button "Insert as plain text" |> ignore)
         RTL.fireEvent.click (button "Insert as plain text")
-        Vitest.expect(RTL.screen.getByRole("alert").textContent).toBe "The editor did not accept the change."
+        Vitest.expect((RTL.screen.queryByRole "alert").IsSome).toBe true
         Vitest.expect(openStates.Count).toBe 0
     }
 )
@@ -397,9 +397,9 @@ Vitest.test (
         RTL.fireEvent.change (RTL.screen.getByTestId "term-search-input", {| target = {| value = "x" |} |})
         do! eventually (fun () -> RTL.screen.getByText "data" |> ignore)
         RTL.fireEvent.click (RTL.screen.getByText "data")
-        do! eventually (fun () -> RTL.screen.getByText "The IRI urn:x:1 is not a web address." |> ignore)
+        do! eventually (fun () -> button "Insert as plain text" |> ignore)
+        Vitest.expect((RTL.screen.getByRole "status").textContent).toContain "urn:x:1"
         Vitest.expect(isDisabled "Insert").toBe true
-        button "Insert as plain text" |> ignore
     }
 )
 
@@ -445,9 +445,11 @@ Vitest.test (
     fun () -> promise {
         let surface = FakeSurface(stateOf "" 0 0)
         do! renderAndChoose surface (ResizeArray<bool>()) "instrument model"
-        do! eventually (fun () -> RTL.screen.getByText "CURIE" |> ignore)
+        // Only the details show the IRI. The hits show the CURIE.
+        let iri = "http://purl.obolibrary.org/obo/MS_1000031"
+        do! eventually (fun () -> RTL.screen.getByText iri |> ignore)
         RTL.fireEvent.change (RTL.screen.getByTestId "term-search-input", {| target = {| value = "abc" |} |})
-        do! eventually (fun () -> Vitest.expect((RTL.screen.queryByText "CURIE").IsNone).toBe true)
+        do! eventually (fun () -> Vitest.expect((RTL.screen.queryByText iri).IsNone).toBe true)
 
         let insert =
             RTL.screen.getByRole ("button", ByRoleOptions(name = Text "Insert", hidden = true))
@@ -501,7 +503,9 @@ Vitest.test (
         RTL.fireEvent.change (RTL.screen.getByTestId "term-search-input", {| target = {| value = "x" |} |})
         do! eventually (fun () -> RTL.screen.getByText "data" |> ignore)
         RTL.fireEvent.click (RTL.screen.getByText "data")
-        do! eventually (fun () -> RTL.screen.getByText "Looking up the IRI..." |> ignore)
+        // The details show the choice while the lookup of its IRI never ends.
+        do! eventually (fun () -> RTL.screen.getByText "EDAM:0006" |> ignore)
+        Vitest.expect(isDisabled "Insert").toBe true
         pressInSearch "Enter"
         Vitest.expect(surface.Applied.Count).toBe 0
     }

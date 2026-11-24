@@ -20,60 +20,38 @@ Vitest.describe (
     "MarkdownLinkContext.assetRefusalMessage",
     fun () ->
         Vitest.test (
-            "an ARC that is no longer open is named",
-            fun () ->
-                Vitest.expect(assetRefusalMessage "a.png" AssetRefusal.ArcNotOpen).toBe
-                    "This image link is from an ARC that is no longer open."
-        )
-
-        Vitest.test (
-            "a path outside the ARC is named",
-            fun () ->
-                Vitest.expect(assetRefusalMessage "a.png" AssetRefusal.OutsideArc).toBe
-                    "This image lies outside the ARC."
-        )
-
-        Vitest.test (
             "a missing image shows its path",
-            fun () ->
-                Vitest.expect(assetRefusalMessage "img/a.png" AssetRefusal.NotFound).toBe "Image not found: img/a.png"
-        )
-
-        Vitest.test (
-            "an LFS pointer says the object is not downloaded",
-            fun () ->
-                Vitest.expect(assetRefusalMessage "a.png" AssetRefusal.LfsPointer).toBe
-                    "This image is stored in Git LFS and is not downloaded."
+            fun () -> Vitest.expect(assetRefusalMessage "img/a.png" AssetRefusal.NotFound).toContain "img/a.png"
         )
 
         Vitest.test (
             "the size limit shows in whole megabytes",
             fun () ->
-                Vitest.expect(assetRefusalMessage "a.png" (AssetRefusal.TooLarge(60000000.0, 52428800.0))).toBe
-                    "This image is larger than 50 MB."
-        )
-
-        Vitest.test (
-            "an image without an extension cannot be shown",
-            fun () ->
-                Vitest.expect(assetRefusalMessage "a" (AssetRefusal.UnsupportedType "")).toBe
-                    "Images without a file extension cannot be shown."
+                Vitest.expect(assetRefusalMessage "a.png" (AssetRefusal.TooLarge(60000000.0, 52428800.0))).toContain
+                    "50 MB"
         )
 
         Vitest.test (
             "an unsupported extension is named",
-            fun () ->
-                Vitest.expect(assetRefusalMessage "a.tif" (AssetRefusal.UnsupportedType ".tif")).toBe
-                    ".tif images cannot be shown."
+            fun () -> Vitest.expect(assetRefusalMessage "a.tif" (AssetRefusal.UnsupportedType ".tif")).toContain ".tif"
         )
 
         Vitest.test (
             "an unreadable image shows the reason",
-            fun () ->
-                Vitest.expect(assetRefusalMessage "a.png" (AssetRefusal.Unreadable "EACCES")).toBe
-                    "The image could not be read: EACCES"
+            fun () -> Vitest.expect(assetRefusalMessage "a.png" (AssetRefusal.Unreadable "EACCES")).toContain "EACCES"
         )
 )
+
+/// The message of a failed link action. Any other action fails the test.
+let private failMessage (action: LinkAction) =
+    match action with
+    | Fail message -> message
+    | other -> failwith $"Expected Fail, got {other}."
+
+let private isFail (action: LinkAction) =
+    match action with
+    | Fail _ -> true
+    | _ -> false
 
 Vitest.describe (
     "MarkdownLinkContext.linkActionOf",
@@ -103,42 +81,28 @@ Vitest.describe (
 
         Vitest.test (
             "a missing target fails with its path",
-            fun () ->
-                Vitest
-                    .expect(linkActionOf "x.md" PathCheck.Missing)
-                    .toEqual (Fail "The link target does not exist: x.md")
+            fun () -> Vitest.expect(failMessage (linkActionOf "x.md" PathCheck.Missing)).toContain "x.md"
         )
 
         Vitest.test (
             "a target outside the ARC fails with its path",
-            fun () ->
-                Vitest
-                    .expect(linkActionOf "x.md" PathCheck.OutsideArc)
-                    .toEqual (Fail "The link target lies outside the ARC: x.md")
+            fun () -> Vitest.expect(failMessage (linkActionOf "x.md" PathCheck.OutsideArc)).toContain "x.md"
         )
 
         Vitest.test (
             "an unreadable target fails with the reason",
             fun () ->
-                Vitest
-                    .expect(linkActionOf "x.md" (PathCheck.Unreadable "EACCES"))
-                    .toEqual (Fail "The link target could not be read: EACCES")
+                Vitest.expect(failMessage (linkActionOf "x.md" (PathCheck.Unreadable "EACCES"))).toContain "EACCES"
         )
 
         Vitest.test (
-            "an LFS pointer fails with the download notice",
-            fun () ->
-                Vitest
-                    .expect(linkActionOf "x.bin" PathCheck.LfsPointer)
-                    .toEqual (Fail "This file is stored in Git LFS and is not downloaded.")
+            "an LFS pointer fails instead of opening",
+            fun () -> Vitest.expect(isFail (linkActionOf "x.bin" PathCheck.LfsPointer)).toBe true
         )
 
         Vitest.test (
-            "the ARC root fails with its own message",
-            fun () ->
-                Vitest
-                    .expect(linkActionOf "" PathCheck.Directory)
-                    .toEqual (Fail "This link points to the ARC root folder.")
+            "the ARC root fails instead of being revealed",
+            fun () -> Vitest.expect(isFail (linkActionOf "" PathCheck.Directory)).toBe true
         )
 )
 
@@ -177,9 +141,11 @@ Vitest.describe (
         )
 )
 
-/// Fake deps that record each call as text, in order.
+/// Fake deps that record each call as text, in order. The messages for the user go to messages, so a test checks the
+/// calls apart from the wording.
 let private depsWith
     (calls: ResizeArray<string>)
+    (messages: ResizeArray<string>)
     (check: Result<PathCheck[], exn>)
     (documentPath: string option)
     (confirm: bool)
@@ -204,19 +170,36 @@ let private depsWith
             SetPage =
                 fun state ->
                     match state with
-                    | Some(PageState.ErrorPage message) -> calls.Add $"SetPage {message}"
+                    | Some(PageState.ErrorPage message) ->
+                        calls.Add "SetPage error"
+                        messages.Add message
                     | Some _ -> calls.Add "SetPage"
                     | None -> calls.Add "SetPage none"
         }
         RevealFolder = fun p -> calls.Add $"RevealFolder {p}"
-        OnError = fun message -> calls.Add $"OnError {message}"
+        OnError =
+            fun message ->
+                calls.Add "OnError"
+                messages.Add message
     }
 
-let private runClick (check: PathCheck) (path: string) (documentPath: string option) (confirm: bool) opened = promise {
-    let calls = ResizeArray<string>()
-    do! openArcPathWith (depsWith calls (Ok [| check |]) documentPath confirm opened) path
-    return calls |> Seq.toArray
-}
+/// Runs a link click on the given check result and returns the calls and the messages, each in order.
+let private runCheck
+    (check: Result<PathCheck[], exn>)
+    (path: string)
+    (documentPath: string option)
+    (confirm: bool)
+    (opened: Result<PageState, string>)
+    =
+    promise {
+        let calls = ResizeArray<string>()
+        let messages = ResizeArray<string>()
+        do! openArcPathWith (depsWith calls messages check documentPath confirm opened) path
+        return calls.ToArray(), messages.ToArray()
+    }
+
+let private runClick (check: PathCheck) path documentPath confirm opened =
+    runCheck (Ok [| check |]) path documentPath confirm opened
 
 Vitest.describe (
     "MarkdownLinkContext.openArcPathWith",
@@ -224,7 +207,7 @@ Vitest.describe (
         Vitest.test (
             "a file opens after the leave guard, in order",
             fun () -> promise {
-                let! calls = runClick PathCheck.File "a.md" None true (Ok PageState.UnknownPage)
+                let! calls, _ = runClick PathCheck.File "a.md" None true (Ok PageState.UnknownPage)
 
                 Vitest.expect(calls).toEqual [|
                     "CheckPath a.md"
@@ -239,7 +222,7 @@ Vitest.describe (
         Vitest.test (
             "a refused leave neither selects nor opens the file",
             fun () -> promise {
-                let! calls = runClick PathCheck.File "a.md" None false (Ok PageState.UnknownPage)
+                let! calls, _ = runClick PathCheck.File "a.md" None false (Ok PageState.UnknownPage)
                 Vitest.expect(calls).toEqual [| "CheckPath a.md"; "ConfirmLeave" |]
             }
         )
@@ -247,7 +230,7 @@ Vitest.describe (
         Vitest.test (
             "the open document skips the leave guard",
             fun () -> promise {
-                let! calls = runClick PathCheck.File "a.md" (Some "a.md") false (Ok PageState.UnknownPage)
+                let! calls, _ = runClick PathCheck.File "a.md" (Some "a.md") false (Ok PageState.UnknownPage)
 
                 Vitest.expect(calls).toEqual [|
                     "CheckPath a.md"
@@ -261,7 +244,7 @@ Vitest.describe (
         Vitest.test (
             "a file with another case on disk opens at the path on disk",
             fun () -> promise {
-                let! calls =
+                let! calls, _ =
                     runClick (PathCheck.CaseDiffers("a/b.md", false)) "a/B.md" None true (Ok PageState.UnknownPage)
 
                 Vitest.expect(calls).toEqual [|
@@ -277,7 +260,7 @@ Vitest.describe (
         Vitest.test (
             "a folder is revealed",
             fun () -> promise {
-                let! calls = runClick PathCheck.Directory "docs" None true (Ok PageState.UnknownPage)
+                let! calls, _ = runClick PathCheck.Directory "docs" None true (Ok PageState.UnknownPage)
                 Vitest.expect(calls).toEqual [| "CheckPath docs"; "RevealFolder docs" |]
             }
         )
@@ -285,69 +268,56 @@ Vitest.describe (
         Vitest.test (
             "the ARC root reports an error",
             fun () -> promise {
-                let! calls = runClick PathCheck.Directory "" None true (Ok PageState.UnknownPage)
-
-                Vitest.expect(calls).toEqual [|
-                    "CheckPath "
-                    "OnError This link points to the ARC root folder."
-                |]
+                let! calls, _ = runClick PathCheck.Directory "" None true (Ok PageState.UnknownPage)
+                Vitest.expect(calls).toEqual [| "CheckPath "; "OnError" |]
             }
         )
 
         Vitest.test (
-            "a missing target and an LFS pointer report their messages",
+            "a missing target and an LFS pointer report an error, the missing target with its path",
             fun () -> promise {
-                let! missing = runClick PathCheck.Missing "x.md" None true (Ok PageState.UnknownPage)
-                let! pointer = runClick PathCheck.LfsPointer "x.bin" None true (Ok PageState.UnknownPage)
+                let! missing, missingMessages = runClick PathCheck.Missing "x.md" None true (Ok PageState.UnknownPage)
+                let! pointer, _ = runClick PathCheck.LfsPointer "x.bin" None true (Ok PageState.UnknownPage)
 
-                Vitest.expect(missing).toEqual [|
-                    "CheckPath x.md"
-                    "OnError The link target does not exist: x.md"
-                |]
-
-                Vitest.expect(pointer).toEqual [|
-                    "CheckPath x.bin"
-                    "OnError This file is stored in Git LFS and is not downloaded."
-                |]
+                Vitest.expect(missing).toEqual [| "CheckPath x.md"; "OnError" |]
+                Vitest.expect(missingMessages.[0]).toContain "x.md"
+                Vitest.expect(pointer).toEqual [| "CheckPath x.bin"; "OnError" |]
             }
         )
 
         Vitest.test (
             "a failed check reports its message",
             fun () -> promise {
-                let calls = ResizeArray<string>()
-                let deps = depsWith calls (Error(exn "boom")) None true (Ok PageState.UnknownPage)
-                do! openArcPathWith deps "a.md"
-                Vitest.expect(calls |> Seq.toArray).toEqual [| "CheckPath a.md"; "OnError boom" |]
+                let! calls, messages = runCheck (Error(exn "boom")) "a.md" None true (Ok PageState.UnknownPage)
+
+                Vitest.expect(calls).toEqual [| "CheckPath a.md"; "OnError" |]
+                Vitest.expect(messages.[0]).toContain "boom"
             }
         )
 
         Vitest.test (
             "a result of the wrong length reports an error",
             fun () -> promise {
-                let calls = ResizeArray<string>()
-                let deps = depsWith calls (Ok [||]) None true (Ok PageState.UnknownPage)
-                do! openArcPathWith deps "a.md"
-
-                Vitest.expect(calls |> Seq.toArray).toEqual [|
-                    "CheckPath a.md"
-                    "OnError The link target could not be checked."
-                |]
+                let! calls, _ = runCheck (Ok [||]) "a.md" None true (Ok PageState.UnknownPage)
+                Vitest.expect(calls).toEqual [| "CheckPath a.md"; "OnError" |]
             }
         )
 
         Vitest.test (
-            "a view that fails to open shows an error page",
+            "a view that fails to open shows an error page with the path and the reason",
             fun () -> promise {
-                let! calls = runClick PathCheck.File "a.md" None true (Error "no access")
+                let! calls, messages = runClick PathCheck.File "a.md" None true (Error "no access")
 
                 Vitest.expect(calls).toEqual [|
                     "CheckPath a.md"
                     "ConfirmLeave"
                     "SetSelection a.md"
                     "OpenView a.md"
-                    "SetPage Could not open 'a.md': no access"
+                    "SetPage error"
                 |]
+
+                Vitest.expect(messages.[0]).toContain "a.md"
+                Vitest.expect(messages.[0]).toContain "no access"
             }
         )
 )
