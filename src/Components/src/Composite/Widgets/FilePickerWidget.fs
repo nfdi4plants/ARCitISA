@@ -240,21 +240,33 @@ type FilePickerWidget =
                                     Html.li [
                                         Html.button [
                                             prop.type'.button
-                                            prop.text "Pick files"
                                             prop.onClick (fun _ ->
                                                 setIsPickMenuOpen false
                                                 pickPaths PathPickerKind.File
                                             )
+                                            prop.children [
+                                                Html.i [
+                                                    prop.className
+                                                        "swt:iconify swt:fluent--document-24-regular swt:size-4"
+                                                ]
+                                                Html.span "Pick files"
+                                            ]
                                         ]
                                     ]
                                     Html.li [
                                         Html.button [
                                             prop.type'.button
-                                            prop.text "Pick folders"
                                             prop.onClick (fun _ ->
                                                 setIsPickMenuOpen false
                                                 pickPaths PathPickerKind.Folder
                                             )
+                                            prop.children [
+                                                Html.i [
+                                                    prop.className
+                                                        "swt:iconify swt:fluent--folder-24-regular swt:size-4"
+                                                ]
+                                                Html.span "Pick folders"
+                                            ]
                                         ]
                                     ]
                                 ]
@@ -318,20 +330,32 @@ type FilePickerWidget =
                             prop.className "swt:text-sm swt:opacity-70"
                             prop.text "Their ARC-relative paths will be added to the list."
                         ]
-                    ]
-                ]
-                Html.div [
-                    prop.className "swt:flex swt:w-full swt:gap-2"
-                    prop.children [
-                        Html.button [
-                            prop.className "swt:btn swt:btn-sm swt:btn-primary swt:flex-1"
-                            prop.text "Pick files"
-                            prop.onClick (fun _ -> onPickPaths PathPickerKind.File)
-                        ]
-                        Html.button [
-                            prop.className "swt:btn swt:btn-sm swt:btn-primary swt:flex-1"
-                            prop.text "Pick folders"
-                            prop.onClick (fun _ -> onPickPaths PathPickerKind.Folder)
+                        Html.div [
+                            prop.className "swt:flex swt:w-full swt:max-w-sm swt:gap-2 swt:pt-2"
+                            prop.children [
+                                Html.button [
+                                    prop.type'.button
+                                    prop.className "swt:btn swt:btn-sm swt:btn-primary swt:flex-1"
+                                    prop.onClick (fun _ -> onPickPaths PathPickerKind.File)
+                                    prop.children [
+                                        Html.i [
+                                            prop.className "swt:iconify swt:fluent--document-24-regular swt:size-4"
+                                        ]
+                                        Html.span "Pick files"
+                                    ]
+                                ]
+                                Html.button [
+                                    prop.type'.button
+                                    prop.className "swt:btn swt:btn-sm swt:btn-primary swt:flex-1"
+                                    prop.onClick (fun _ -> onPickPaths PathPickerKind.Folder)
+                                    prop.children [
+                                        Html.i [
+                                            prop.className "swt:iconify swt:fluent--folder-24-regular swt:size-4"
+                                        ]
+                                        Html.span "Pick folders"
+                                    ]
+                                ]
+                            ]
                         ]
                     ]
                 ]
