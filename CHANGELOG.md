@@ -20,44 +20,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### ✨ Added
 
-- Text files of the ARC, such as Markdown, JSON, YAML, CWL and plain text files, open in a text editor with syntax highlighting, Undo and Redo, and Save (Ctrl+S). Before, only Markdown files could be edited, and other text files were shown read-only. Markdown and plain text wrap their lines and get the spellcheck, except on code and link addresses. (by @Freymaurer)
-- The text editor marks syntax errors in JSON and YAML files as you type. It also checks `.arc/validation_packages.yml` against the ISA-ARC specification, and a misspelled key gets a "Did you mean" hint. (by @Freymaurer)
-- A save never replaces changes that another program made in the meantime. When the open text file changes on disk, the page says so and offers "Overwrite" or "Reload from disk". Files that a save would change byte by byte open read-only and say why, for example files that are not UTF-8, larger than 5 MB, symbolic links or write-protected. A file with mixed line endings shows which ending a save writes. (by @Freymaurer)
-- HTML and SVG files open in the text page as well. They show as they look, and "Edit" switches to their source. Markdown files switch between "Edit" and "Preview". (by @Freymaurer)
-- Markdown files get a formatting toolbar with headings, bold, italic, strikethrough, inline code, code block, link, image, quote, bulleted, numbered and task lists, and table. Each button's tooltip names its keyboard shortcut, such as Ctrl+B for bold. (by @Freymaurer)
-- "Ontology reference" in the Markdown toolbar (Ctrl+Shift+O) searches for an ontology term and inserts it as a reference link, with its link definition at the end of the file. The link points to the IRI of the term. If no IRI can be found, the dialog says so and offers to insert the term name and accession as plain text. (by @Freymaurer)
-- Links in Markdown can point to other files and folders of the ARC. `/path` starts at the ARC root, and `./path`, `../path` or a bare `path` start at the folder of the Markdown file. In the preview, a click on a file link opens the file, a click on a folder link shows that folder in the File Explorer, and `#heading` scrolls to the heading. (by @Freymaurer)
-- Images stored in the ARC show in the Markdown preview. An image that can't be shown says why, for example when it is missing, stored in Git LFS and not downloaded, larger than 50 MB or of an unsupported type. (by @Freymaurer)
-- The Markdown editor underlines links to files that don't exist, links that point outside the ARC and links that use `\` to separate folders. A link whose upper and lower case differ from the file on disk gets a warning, because it breaks on DataHUB. (by @Freymaurer)
-- The Markdown editor completes paths while you type a link, image, link definition or the `src` and `href` of raw HTML. A path that starts with `/` lists the ARC root, `./` the folder of the Markdown file and `../` the folder above. Choosing a folder lists its contents next. Images list only folders and image files, and names that start with `.` show only once you type the `.`. (by @Freymaurer)
-- The Markdown preview shows raw HTML, such as `<img width="80">` or `<details>`, without scripts and event handlers. Code blocks in the preview are syntax highlighted. (by @Freymaurer)
-- "New File" and "New Folder" accept a path such as `docs/guide.md` and create the folders that lead to it. (by @Freymaurer)
-- GitHub alerts such as `> [!NOTE]` or `> [!WARNING]` show in the Markdown preview with a colored border, an icon and a title. Headings in the preview show a link to themselves while you point at them. (by @Freymaurer)
+- Added new plain text editor with the following features 🚀 (by @Freymaurer):
+    - Syntax highlighting for various text file types.
+    - For markdown toolbar with common text formatting options, with keyboard shortcut support, including ontology search.
+    - Link/Image support for files located in arcs with path auto-completion.
+    - Undo and Redo functionality.
+    - yaml schema validation for `.arc/validation_packages.yml` against the ISA-ARC specification.
+    - leave file guard to prevent loosing unsaved changes.
 - The sign-in remembers DataHUB addresses you signed in to and offers them next to the official PLANTdataHUB. All DataHUBs other than the official one, including the preset ones, can be added or removed in the DataHUB settings, which the sign-in links to. (by @caroott)
 
 ### 🔄 Changed
 
+- "New File" and "New Folder" accept a path such as `docs/guide.md` and create the folders that lead to it. (by @Freymaurer)
 - "Add Note" asks only for a title. It creates the note as a Markdown file and opens it in the text editor. A note added on a study or assay goes into its protocols folder, every other note into `notes/<date>/`. (by @Freymaurer)
-- When the text editor has unsaved changes, opening another file, closing the file, renaming or deleting the file or one of its folders, and closing or reloading the window ask first. You can save, discard or cancel. (by @Freymaurer)
-- The ISA file editor uses the same toolbar as the text editor, with a "Close file" button at its end. (by @Freymaurer)
-- Dialogs put the focus on their first field or button when they open, instead of on the close button. (by @Freymaurer)
-- The Markdown field of the swate-components library, also used by the `Notes` editor, uses the same editor and toolbar as Markdown files in the text editor, with keyboard shortcuts, Undo and Redo and "Ontology reference". Its export is renamed from `MarkdownTextInput` to `MarkdownTextEditor`. The "Add Step" and "Add Image" buttons and the `plugins` and `filePickerAdapter` options are removed. The toolbar's list and image buttons replace them. (by @Freymaurer)
-- The Markdown preview uses the typography and colors of the app's theme instead of a copy of GitHub's stylesheet. (by @Freymaurer)
 - Removing an account or regenerating its token asks whether to delete the token on the DataHUB as well. The Logout button is now "Remove all logins": it removes every account and asks once whether to delete their tokens too. (by @caroott)
 - The settings are split into the pages General, DataHUB, Git, Large files and Term search. A navigation beside the settings, or above them in a narrow window, opens each page and lists its settings. Git switches apply right away and the MB limits apply with their Update button, so the Git defaults no longer need Save. (by @caroott)
 
 ### 🐛 Fixed
 
-- Mermaid diagrams in the Markdown preview no longer make the page jump while they render. (by @Freymaurer)
-- A footnote no longer breaks the Markdown preview, and a click on a footnote reference scrolls to its note. (by @Freymaurer)
-- After "Save and Close" failed, closing the window works again. Before, the next close was ignored. (by @Freymaurer)
+- Dialogs put the focus on their first field or button when they open, instead of on the close button. (by @Freymaurer)
 - Regular expressions in "Update Rows" now respect anchors such as `^` and `$` and replace only their actual matches. #943 (by @Gitarackur)
-
-### 🔒 Security
-
-- HTML files open in a sandbox. Their scripts still run, but they can't reach ARCitISA or the files of the ARC. (by @Freymaurer)
-- Only links that start with http, https or mailto open in the system browser. Other links, such as a relative Markdown link, are no longer passed on to the system. (by @Freymaurer)
-- The Markdown preview loads images only from the open ARC. Before, a relative image path could show a file from elsewhere on the computer. (by @Freymaurer)
 
 ## 3.3.0 - 2026-11-19
 
