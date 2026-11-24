@@ -96,6 +96,7 @@
     <Compile Include="Util\WebWorker.sample.fs" />
     <Compile Include="Util\WebWorker.test.rtl.fs" />
     <Compile Include="Util\UserOS.fs" />
+    <Compile Include="Util\Shortcuts.fs" />
     <Compile Include="ARCtrl\TermCollection.fs" />
     <Compile Include="ARCtrl\Helper.fs" />
     <Compile Include="ARCtrl\ArcIO.fs" />
@@ -237,18 +238,71 @@
     <Compile Include="Composite\Authentication\Authentication.fs" />
     <Compile Include="Composite\ArcSelector\ArcSelector.fs" />
     <Compile Include="Composite\ArcVaultActions\ArcVaultActions.fs" />
+    <Compile Include="Composite\TextEditor\JsBindings\CodeMirror.fs" />
+    <Compile Include="Composite\TextEditor\JsBindings\Lezer.fs" />
+    <Compile Include="Composite\TextEditor\JsBindings\Autocomplete.fs" />
+    <Compile Include="Composite\TextEditor\JsBindings\Yaml.fs" />
+    <Compile Include="Composite\TextEditor\JsBindings\Ajv.fs" />
+    <Compile Include="Composite\TextEditor\Types.fs" />
+    <Compile Include="Composite\TextEditor\LanguageDetection.fs" />
+    <Compile Include="Composite\TextEditor\SchemaValidation\Types.fs" />
+    <Compile Include="Composite\TextEditor\SchemaValidation\SchemaIndex.fs" />
+    <Compile Include="Composite\TextEditor\SchemaValidation\Validator.fs" />
+    <Compile Include="Composite\TextEditor\SchemaValidation\JsonLocator.fs" />
+    <Compile Include="Composite\TextEditor\SchemaValidation\YamlLocator.fs" />
+    <Compile Include="Composite\TextEditor\SchemaValidation\Diagnostics.fs" />
+    <Compile Include="Composite\TextEditor\SchemaValidation\Lint.fs" />
+    <Compile Include="Composite\TextEditor\SchemaValidation\Lint.test.fs" />
+    <Compile Include="Composite\TextEditor\TextCompletion.fs" />
+    <Compile Include="Composite\TextEditor\Theme.fs" />
+    <Compile Include="Composite\TextEditor\CodeHighlight.fs" />
+    <Compile Include="Composite\TextEditor\ProseSpellcheck.fs" />
+    <Compile Include="Composite\TextEditor\CodeMirrorEditor.fs" />
+    <Compile Include="Composite\TextEditor\TextEditor.fs" />
+    <Compile Include="Composite\TextEditor\TextEditor.test.rtl.fs" />
+    <Compile Include="Composite\TextEditor\TextEditor.sample.fs" />
+    <Compile Include="Composite\TextEditor\LanguageDetection.test.fs" />
+    <Compile Include="Composite\TextEditor\CodeHighlight.test.fs" />
+    <Compile Include="Composite\TextEditor\TextEditor.test.fs" />
+    <Compile Include="Composite\TextEditor\TextCompletion.test.fs" />
+    <Compile Include="Composite\TextEditor\ProseSpellcheck.test.fs" />
+    <Compile Include="Composite\EditorToolbar\EditorToolbar.fs" />
+    <Compile Include="Composite\EditorToolbar\EditorToolbar.sample.fs" />
+    <Compile Include="Composite\EditorToolbar\EditorToolbar.test.rtl.fs" />
     <Compile Include="Composite\MarkdownText\JsBindings\Mermaid.fs" />
-    <Compile Include="Composite\MarkdownText\JsBindings\ReactMDEditor.fs" />
-    <Compile Include="Composite\MarkdownText\Plugins\PluginTypes.fs" />
-    <Compile Include="Composite\MarkdownText\Plugins\PluginTextInputHelpers.fs" />
-    <Compile Include="Composite\MarkdownText\Plugins\AddImage.fs" />
-    <Compile Include="Composite\MarkdownText\Plugins\AddOntologyReference.fs" />
-    <Compile Include="Composite\MarkdownText\Plugins\AddStep.fs" />
-    <Compile Include="Composite\MarkdownText\Plugins\MarkdownPluginPromptModal.fs" />
-    <Compile Include="Composite\MarkdownText\Plugins\PluginRegistry.fs" />
+    <Compile Include="Composite\MarkdownText\JsBindings\ReactMarkdown.fs" />
+    <Compile Include="Composite\MarkdownText\JsBindings\Mdast.fs" />
+    <Compile Include="Composite\MarkdownText\JsBindings\HastFromHtml.fs" />
+    <Compile Include="Composite\MarkdownText\Editing\Types.fs" />
+    <Compile Include="Composite\MarkdownText\Editing\MarkdownEdits.fs" />
+    <Compile Include="Composite\MarkdownText\Editing\MarkdownEdits.test.fs" />
+    <Compile Include="Composite\MarkdownText\Editing\OntologyReferences.fs" />
+    <Compile Include="Composite\MarkdownText\Editing\OntologyReferences.test.fs" />
+    <Compile Include="Composite\MarkdownText\Editing\MarkdownCommands.fs" />
     <Compile Include="Composite\MarkdownText\Types.fs" />
-    <Compile Include="Composite\MarkdownText\Preview.fs" />
-    <Compile Include="Composite\MarkdownText\TextInputWithMarkdown.fs" />
+    <Compile Include="Composite\MarkdownText\Links\Types.fs" />
+    <Compile Include="Composite\MarkdownText\Links\ImageTypes.fs" />
+    <Compile Include="Composite\MarkdownText\Links\LinkResolution.fs" />
+    <Compile Include="Composite\MarkdownText\Links\LinkResolution.test.fs" />
+    <Compile Include="Composite\MarkdownText\Links\PathCompletion.fs" />
+    <Compile Include="Composite\MarkdownText\Links\PathCompletion.test.fs" />
+    <Compile Include="Composite\MarkdownText\Links\LinkCollection.fs" />
+    <Compile Include="Composite\MarkdownText\Links\LinkDiagnostics.fs" />
+    <Compile Include="Composite\MarkdownText\Links\LinkCollection.test.fs" />
+    <Compile Include="Composite\MarkdownText\Links\LinkDiagnostics.test.fs" />
+    <Compile Include="Composite\MarkdownText\LinkContext.fs" />
+    <Compile Include="Composite\MarkdownText\Helper\ViewerRendering.fs" />
+    <Compile Include="Composite\MarkdownText\MarkdownTextViewer.fs" />
+    <Compile Include="Composite\MarkdownText\MarkdownTextViewer.sample.fs" />
+    <Compile Include="Composite\MarkdownText\MarkdownTextViewer.test.rtl.fs" />
+    <Compile Include="Composite\MarkdownText\OntologyReferenceDialog.fs" />
+    <Compile Include="Composite\MarkdownText\MarkdownToolbar.fs" />
+    <Compile Include="Composite\MarkdownText\MarkdownTextEditor.fs" />
+    <Compile Include="Composite\MarkdownText\MarkdownTextEditor.sample.fs" />
+    <Compile Include="Composite\MarkdownText\MarkdownTextEditor.test.rtl.fs" />
+    <Compile Include="Composite\MarkdownText\MarkdownToolbar.sample.fs" />
+    <Compile Include="Composite\MarkdownText\MarkdownToolbar.test.rtl.fs" />
+    <Compile Include="Composite\MarkdownText\OntologyReferenceDialog.test.rtl.fs" />
     <Compile Include="Composite\Notes\Types.fs" />
     <Compile Include="Composite\Notes\Editor\Types.fs" />
     <Compile Include="Composite\Notes\Editor\State.fs" />
@@ -431,9 +485,16 @@
     <Compile Include="Page\FileExplorer\FileExplorerItem.fs" />
     <Compile Include="Page\FileExplorer\FileExplorer.fs" />
     <Compile Include="Page\FileExplorer\FileExplorer.test.rtl.fs" />
+    <Compile Include="Page\FileViewer\Types.fs" />
+    <Compile Include="Page\FileViewer\Helper\LineEndings.fs" />
+    <Compile Include="Page\FileViewer\Helper\LineEndings.test.fs" />
     <Compile Include="Page\FileViewer\HtmlViewer.fs" />
     <Compile Include="Page\FileViewer\ImageViewer.fs" />
     <Compile Include="Page\FileViewer\PDFViewer.fs" />
+    <Compile Include="Page\FileViewer\RenderedText.fs" />
+    <Compile Include="Page\FileViewer\TextDocument.fs" />
+    <Compile Include="Page\FileViewer\TextDocument.sample.fs" />
+    <Compile Include="Page\FileViewer\TextDocument.test.rtl.fs" />
     <Compile Include="Page\DataHubBrowser\Types.fs" />
     <Compile Include="Page\DataHubBrowser\MockData.fs" />
     <Compile Include="Page\DataHubBrowser\Model.fs" />
@@ -476,13 +537,15 @@
       <NpmPackage Name="@dnd-kit/core" Version="gte 6.3.0 lt 7.0.0" ResolutionStrategy="Max" />
       <NpmPackage Name="@dnd-kit/sortable" Version="gte 10.0.0 lt 11.0.0" ResolutionStrategy="Max" />
       <NpmPackage Name="@dnd-kit/utilities" Version="gte 3.2.0 lt 4.0.0" ResolutionStrategy="Max" />
-      <NpmPackage Name="@uiw/react-md-editor" Version="gte 4.0.0 lt 5.0.0" ResolutionStrategy="Max" />
-      <NpmPackage Name="@uiw/react-markdown-preview" Version="gte 5.0.0 lt 6.0.0"
-        ResolutionStrategy="Max" />
       <NpmPackage Name="elkjs" Version="gte 0.9.3 lt 0.10.0" ResolutionStrategy="Max" />
       <NpmPackage Name="mermaid" Version="gte 11.0.0 lt 12.0.0" ResolutionStrategy="Max" />
-      <NpmPackage Name="rehype-rewrite" Version="gte 4.0.0 lt 5.0.0" ResolutionStrategy="Max" />
+      <NpmPackage Name="react-markdown" Version="gte 10.1.0 lt 11.0.0" ResolutionStrategy="Max" />
+      <NpmPackage Name="remark-gfm" Version="gte 4.0.0 lt 5.0.0" ResolutionStrategy="Max" />
+      <NpmPackage Name="remark-github-blockquote-alert" Version="gte 1.3.0 lt 2.0.0" ResolutionStrategy="Max" />
+      <NpmPackage Name="rehype-autolink-headings" Version="gte 7.1.0 lt 8.0.0" ResolutionStrategy="Max" />
+      <NpmPackage Name="rehype-raw" Version="gte 7.0.0 lt 8.0.0" ResolutionStrategy="Max" />
       <NpmPackage Name="rehype-sanitize" Version="gte 6.0.0 lt 7.0.0" ResolutionStrategy="Max" />
+      <NpmPackage Name="rehype-slug" Version="gte 6.0.0 lt 7.0.0" ResolutionStrategy="Max" />
       <NpmPackage Name="@tanstack/react-virtual" Version="gte 3.0.0 lt 4.0.0"
         ResolutionStrategy="Max" />
       <NpmPackage Name="@uidotdev/usehooks" Version="gte 2.0.0 lt 3.0.0" ResolutionStrategy="Max" />

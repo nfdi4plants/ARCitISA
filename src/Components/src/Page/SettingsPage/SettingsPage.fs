@@ -296,10 +296,7 @@ type SettingsPage =
     [<ReactComponent>]
     static member private UIScalingDescription() =
         let modifierKey =
-            match getUserOS () with
-            | MacOS
-            | IOS -> "⌘"
-            | _ -> "Ctrl"
+            Swate.Components.Util.Shortcuts.modLabel (Swate.Components.Util.Shortcuts.isMac ())
 
         Html.div [
             SettingsPageHelper.description

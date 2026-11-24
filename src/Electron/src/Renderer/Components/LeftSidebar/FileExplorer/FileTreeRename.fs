@@ -22,11 +22,15 @@ module FileTreeRenameWorkflow =
         setSelection: ArcSelection -> unit
         refreshGitStatus: unit -> unit
         reloadPreviewByPath: string -> JS.Promise<Result<unit, string>>
+        /// Resolves false when the user keeps the open text document, which cancels the rename.
+        confirmLeaveFor: string -> JS.Promise<bool>
         renamePath: RenamePathRequest -> JS.Promise<Result<unit, exn>>
         enqueueError: ErrorModalRequest -> unit
     }
 
-    let private tryRemapActiveArcFilePath
+    /// The new path of the open page when the rename moves its file. An open text page reloads there, so a
+    /// later save does not recreate the old file.
+    let private tryRemapActivePagePath
         (sourcePath: string)
         (targetPath: string)
         (pageState: Renderer.Types.PageState option)
@@ -35,6 +39,8 @@ module FileTreeRenameWorkflow =
         | Some(Renderer.Types.PageState.ArcFilePage(arcFile, _, _)) ->
             arcFile.TryGetRelativePath()
             |> Option.bind (PathHelpers.tryRemapPathPrefix sourcePath targetPath)
+        | Some(Renderer.Types.PageState.TextDocumentPage data) ->
+            PathHelpers.tryRemapPathPrefix sourcePath targetPath data.Path
         | _ -> None
 
     let requestRenameItem
@@ -62,37 +68,47 @@ module FileTreeRenameWorkflow =
                 if PathHelpers.pathsEqual targetPath renameDraft.SourcePath then
                     config.closeRenameModal ()
                 else
+                    let renameAndReload () = promise {
+                        let! renameResult =
+                            config.renamePath {
+                                relativePath = renameDraft.SourcePath
+                                newName = normalizedNewName
+                            }
+
+                        match renameResult with
+                        | Error renameError -> return Error renameError.Message
+                        | Ok() ->
+                            config.selectedTreePath
+                            |> Option.bind (PathHelpers.tryRemapPathPrefix renameDraft.SourcePath targetPath)
+                            |> Option.iter (fun remappedSelectionPath ->
+                                config.setSelection (ArcSelection.forTreePath (Some remappedSelectionPath))
+                            )
+
+                            match tryRemapActivePagePath renameDraft.SourcePath targetPath config.pageState with
+                            | Some remappedPagePath ->
+                                let! reloadResult = config.reloadPreviewByPath remappedPagePath
+
+                                match reloadResult with
+                                | Ok() -> ()
+                                | Error reloadError ->
+                                    applyError $"Renamed item, but could not refresh the open file: {reloadError}"
+                            | None -> ()
+
+                            config.refreshGitStatus ()
+                            config.closeRenameModal ()
+                            return Ok()
+                    }
+
                     run
                         config.setIsRenaming
                         applyError
                         (fun () -> promise {
-                            let! renameResult =
-                                config.renamePath {
-                                    relativePath = renameDraft.SourcePath
-                                    newName = normalizedNewName
-                                }
+                            // Cancel in the leave dialog cancels the rename before anything changes on disk.
+                            let! canLeave = config.confirmLeaveFor renameDraft.SourcePath
 
-                            match renameResult with
-                            | Error renameError -> return Error renameError.Message
-                            | Ok() ->
-                                config.selectedTreePath
-                                |> Option.bind (PathHelpers.tryRemapPathPrefix renameDraft.SourcePath targetPath)
-                                |> Option.iter (fun remappedSelectionPath ->
-                                    config.setSelection (ArcSelection.forTreePath (Some remappedSelectionPath))
-                                )
-
-                                match tryRemapActiveArcFilePath renameDraft.SourcePath targetPath config.pageState with
-                                | Some remappedArcFilePath ->
-                                    let! reloadResult = config.reloadPreviewByPath remappedArcFilePath
-
-                                    match reloadResult with
-                                    | Ok() -> ()
-                                    | Error reloadError ->
-                                        applyError
-                                            $"Renamed item, but could not refresh the open ARC file preview: {reloadError}"
-                                | None -> ()
-
-                                config.refreshGitStatus ()
+                            if canLeave then
+                                return! renameAndReload ()
+                            else
                                 config.closeRenameModal ()
                                 return Ok()
                         })

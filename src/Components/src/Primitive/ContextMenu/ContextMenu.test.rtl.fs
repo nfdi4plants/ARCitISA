@@ -110,3 +110,73 @@ Vitest.test (
         do! RTL.waitFor (fun () -> Vitest.expect(RTL.screen.queryByRole("menu").IsNone).toBe true)
     }
 )
+
+[<Erase; Mangle(false)>]
+type private DialogHarness =
+
+    /// A row that opens a rename dialog from its context menu, like a row of the file tree.
+    [<ReactComponent>]
+    static member RowWithRename() =
+        let owner = React.useElementRef ()
+        let isOpen, setIsOpen = React.useState false
+
+        Html.div [
+            prop.ref owner
+            prop.children [
+                Html.button [ prop.testId "row"; prop.text "notes.md" ]
+                ContextMenu.ContextMenu(
+                    (fun _ -> [
+                        ContextMenuItem(
+                            text = Html.span "Rename",
+                            label = "Rename",
+                            onClick = (fun _ -> setIsOpen true)
+                        )
+                    ]),
+                    owner
+                )
+                Swate.Components.Primitive.Dialog.Dialog.StringSubmissionDialog(
+                    isOpen = isOpen,
+                    title = "Rename",
+                    description = "Rename the item.",
+                    fieldLabel = "Name",
+                    initialValue = "notes.md",
+                    close = (fun () -> setIsOpen false),
+                    submit = ignore,
+                    validate = Ok,
+                    submitLabel = "Rename"
+                )
+            ]
+        ]
+
+Vitest.test (
+    "a dialog that a menu item opens keeps the focus after the menu closes",
+    fun () -> promise {
+        RTL.render (DialogHarness.RowWithRename()) |> ignore
+        let row = RTL.screen.getByTestId "row"
+        row.focus ()
+
+        RTL.fireEvent.custom (
+            "contextMenu",
+            row,
+            {|
+                clientX = 40
+                clientY = 40
+                bubbles = true
+            |}
+        )
+
+        let! rename = RTL.screen.findByRole ("button", ByRoleOptions(name = Text "Rename"))
+        RTL.fireEvent.click rename
+
+        let input = RTL.screen.getByRole "textbox"
+        do! RTL.waitFor (fun () -> Vitest.expect(document.activeElement).toBe input)
+
+        // The closed menu returns the focus to the row in a microtask. The dialog must still hold it afterwards.
+        do!
+            Fable.Core.JS.Constructors.Promise.Create(fun resolve _ ->
+                Fable.Core.JS.setTimeout (fun () -> resolve ()) 50 |> ignore
+            )
+
+        Vitest.expect(document.activeElement).toBe input
+    }
+)

@@ -6,6 +6,66 @@ open Swate.Components
 open Swate.Components.Primitive
 open Swate.Components.Primitive.BaseModal.Context
 
+module private BaseModalHelper =
+
+    let private tabbableSelector =
+        String.concat ", " [
+            "input:not([disabled]):not([type=hidden])"
+            "select:not([disabled])"
+            "textarea:not([disabled])"
+            "button:not([disabled])"
+            "a[href]"
+            "[tabindex]:not([tabindex='-1'])"
+            "[contenteditable='true']"
+        ]
+
+    /// display:none on the element or on a parent up to the modal box. The hidden attribute counts too.
+    let rec private isNotDisplayed (modalBox: Browser.Types.HTMLElement) (element: Browser.Types.HTMLElement) =
+        if obj.ReferenceEquals(element, modalBox) then
+            false
+        elif
+            element.hasAttribute "hidden"
+            || (JsBindings.Dom.computedStyle element).getPropertyValue "display" = "none"
+        then
+            true
+        else
+            match element.parentElement with
+            | null -> false
+            | parent -> isNotDisplayed modalBox parent
+
+    /// The selector also matches controls that the user cannot reach: ones that are not shown, such as a hidden
+    /// file input, ones with a negative tabindex and ones inside an inert subtree. focus() does nothing on most of
+    /// them, which would leave the focus behind the dialog.
+    let private canTakeFocus (modalBox: Browser.Types.HTMLElement) (element: Browser.Types.HTMLElement) =
+        not (element.hasAttribute "tabindex" && element.tabIndex < 0)
+        && (element.closest "[inert]").IsNone
+        && (JsBindings.Dom.computedStyle element).getPropertyValue "visibility" <> "hidden"
+        && not (isNotDisplayed modalBox element)
+
+    /// The element a dialog focuses when it opens: one marked data-autofocus, else the first control below the
+    /// header. The close button of the header gets the focus only in a dialog without another control.
+    let initialTarget (modalBox: Browser.Types.HTMLElement) : Browser.Types.HTMLElement option =
+        let controls =
+            let found = modalBox.querySelectorAll tabbableSelector
+
+            [
+                for i in 0 .. int found.length - 1 do
+                    let element = found.item i :?> Browser.Types.HTMLElement
+
+                    if canTakeFocus modalBox element then
+                        element
+            ]
+
+        let isInHeader (element: Browser.Types.HTMLElement) =
+            (element.closest "[data-modal-header]").IsSome
+
+        controls
+        |> List.tryFind (fun element -> element.hasAttribute "data-autofocus")
+        |> Option.orElse (controls |> List.tryFind (isInHeader >> not))
+        |> Option.orElse (List.tryHead controls)
+
+open BaseModalHelper
+
 [<Mangle(false); Erase>]
 type BaseModal =
 
@@ -16,6 +76,7 @@ type BaseModal =
 
         Html.div [
             prop.className "swt:card-title"
+            prop.custom ("data-modal-header", "")
             if ctx.IsSome then
                 prop.id ctx.Value.headerId
             prop.children [
@@ -103,6 +164,24 @@ type BaseModal =
         let headerId = FloatingUI.useId ()
         let descId = FloatingUI.useId ()
 
+        // The default focus target is a plain ref. React sets the box ref after the content of the box is in the
+        // DOM, so the target is looked up then and the ref holds it before the focus manager reads it.
+        let defaultInitialFocus = React.useRef<Browser.Types.HTMLElement option> None
+
+        let setModalBox =
+            React.useCallback (
+                (fun (element: Browser.Types.Element) ->
+                    defaultInitialFocus.current <-
+                        if isNull element then
+                            None
+                        else
+                            initialTarget (element :?> Browser.Types.HTMLElement)
+
+                    flui.refs.setFloating element
+                ),
+                [| box flui.refs.setFloating |]
+            )
+
         let ctx: BaseModalContext = {
             isOpen = isOpen
             setIsOpen = setIsOpen
@@ -133,13 +212,16 @@ type BaseModal =
                                                 if className.IsSome then
                                                     className.Value
                                             ]
-                                            prop.ref flui.refs.setFloating
+                                            prop.ref setModalBox
                                             yield! prop.spread (useInteractions.getFloatingProps (null))
                                             prop.children children
                                         ]
                                     ),
                                 ?returnFocus = unbox returnFocusRef,
-                                ?initialFocus = unbox initialFocusRef,
+                                initialFocus =
+                                    (match initialFocusRef with
+                                     | Some target -> box target
+                                     | None -> box defaultInitialFocus),
                                 visuallyHiddenDismiss = dismissible
                             )
                     )

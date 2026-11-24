@@ -97,6 +97,12 @@ type FileTreeExpansionController = {
     /// Opens the folders down to created or imported paths once the tree contains all of them, without selecting
     /// them. Folder targets open too.
     revealPaths: string list -> unit
+    /// Reveals one path like revealPaths and asks the tree to scroll to its row and focus it. The selection stays.
+    revealAndFocus: string -> unit
+    /// The open request of revealAndFocus, for the file explorer.
+    focusRequest: Swate.Components.Page.FileExplorer.Types.FileExplorerRevealRequest option
+    /// The file explorer focused the row of the request, which drops it. A newer request stays.
+    completeFocusRequest: Swate.Components.Page.FileExplorer.Types.FileExplorerRevealRequest -> unit
 }
 
 let FileTreeExpansionCtx =
@@ -111,6 +117,9 @@ let FileTreeExpansionCtx =
             refreshContentStamp = ignore
             recordOwnWrite = ignore
             revealPaths = ignore
+            revealAndFocus = ignore
+            focusRequest = None
+            completeFocusRequest = ignore
         }
     )
 
@@ -183,6 +192,9 @@ let FileTreeExpansionCtxProvider (api: FileTreeExpansionApi, children: ReactElem
 
     let contentStamp, setContentStamp = React.useState (None: FileContentStamp option)
 
+    let focusRequest, setFocusRequest =
+        React.useStateWithUpdater<Swate.Components.Page.FileExplorer.Types.FileExplorerRevealRequest option> None
+
     // The handlers below run outside renders and read the latest values through refs.
     let expandedRef = React.useRef expandedIds
     expandedRef.current <- expandedIds
@@ -205,6 +217,9 @@ let FileTreeExpansionCtxProvider (api: FileTreeExpansionApi, children: ReactElem
     // They are kept apart so a new selection does not drop a create or import that waits for the tree push.
     let selectionTarget = React.useRef (None: RevealTarget option)
     let nextRevealId = React.useRef 0
+    // Only grows, so every focus request has a token the explorer has not handled, also after the last one was
+    // completed or an ARC switch dropped it.
+    let nextFocusToken = React.useRef 0
     let isRevealing = React.useRef false
     // Set by a reveal request or a store change (including the answers of this pass's own loads) that arrives while
     // a pass runs. The pass then runs again when it ends, because a snapshot that arrived meanwhile can replace
@@ -238,6 +253,18 @@ let FileTreeExpansionCtxProvider (api: FileTreeExpansionApi, children: ReactElem
 
         if collapse then
             setExpandedIds (fun current -> current.Remove path)
+
+        // A row below a folder that failed to load cannot appear, so its focus request ends here. Kept, it would
+        // take the focus whenever the user later opens the folder by hand.
+        setFocusRequest (fun current ->
+            match current with
+            | Some request when
+                Swate.Electron.Shared.TextDocumentHelper.isPathOrAncestor path request.ItemId
+                && not (Swate.Electron.Shared.TextDocumentHelper.isSameDocumentPath path request.ItemId)
+                ->
+                None
+            | other -> other
+        )
 
         Browser.Dom.console.error ($"Failed to load directory '{path}'.", message)
 
@@ -489,6 +516,7 @@ let FileTreeExpansionCtxProvider (api: FileTreeExpansionApi, children: ReactElem
                 pending.current <- Set.empty
 
                 explicitTarget.current <- None
+                setFocusRequest (fun _ -> None)
 
                 // A rename keeps the expanded folders. Another ARC and a closed one start collapsed.
                 if scope.IsNone || not fileCtx.rootChangeIsRename then
@@ -581,10 +609,11 @@ let FileTreeExpansionCtxProvider (api: FileTreeExpansionApi, children: ReactElem
         loadDirectory path false |> Promise.start
 
     // Selecting a path, for example a note from the note search, loads the folders above it one after another and
-    // expands them.
+    // expands them. A focus request that still waits for its row ends, because the user has moved on.
     React.useEffect (
         (fun () ->
             selectionTarget.current <- selectionPath |> Option.map (fun p -> newTarget [ p ] false)
+            setFocusRequest (fun _ -> None)
             revealRef.current ()
         ),
         [| box selectionPath |]
@@ -600,6 +629,28 @@ let FileTreeExpansionCtxProvider (api: FileTreeExpansionApi, children: ReactElem
                     revealRef.current ()
             ),
             [| box scope |]
+        )
+
+    let revealAndFocus =
+        React.useCallback (
+            (fun (path: string) ->
+                if isMounted.current && scopeRef.current = scope then
+                    let normalized = PathHelpers.normalizePath path
+                    revealPaths [ normalized ]
+                    nextFocusToken.current <- nextFocusToken.current + 1
+                    let token = nextFocusToken.current
+
+                    setFocusRequest (fun _ -> Some { ItemId = normalized; Token = token })
+            ),
+            [| box scope; box revealPaths |]
+        )
+
+    let completeFocusRequest =
+        React.useCallback (
+            (fun (request: Swate.Components.Page.FileExplorer.Types.FileExplorerRevealRequest) ->
+                setFocusRequest (fun current -> if current = Some request then None else current)
+            ),
+            [||]
         )
 
     // A window focus revalidates the root and the most recently loaded folders, and stats the selection.
@@ -660,6 +711,9 @@ let FileTreeExpansionCtxProvider (api: FileTreeExpansionApi, children: ReactElem
                 refreshContentStamp = refreshContentStamp
                 recordOwnWrite = recordOwnWrite
                 revealPaths = revealPaths
+                revealAndFocus = revealAndFocus
+                focusRequest = focusRequest
+                completeFocusRequest = completeFocusRequest
             }),
             [|
                 box expandedIds
@@ -668,6 +722,8 @@ let FileTreeExpansionCtxProvider (api: FileTreeExpansionApi, children: ReactElem
                 box refreshContentStamp
                 box recordOwnWrite
                 box revealPaths
+                box revealAndFocus
+                box focusRequest
             |]
         )
 

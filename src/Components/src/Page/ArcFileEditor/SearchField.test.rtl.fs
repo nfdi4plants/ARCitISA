@@ -94,7 +94,11 @@ for platform, modifier, ctrl, meta in
         fun () ->
             mockPlatform Vitest.vi platform
             renderEditor () |> ignore
-            Vitest.expect((RTL.screen.getByText $"{modifier} + F").tagName).toBe "KBD"
+            // The hint names the key like every other toolbar title, through Shortcuts.label. Mod is the command key
+            // where the shortcut takes meta.
+            let hint = RTL.screen.getByText (Swate.Components.Util.Shortcuts.label meta "Mod-f")
+
+            Vitest.expect(hint.tagName).toBe "KBD"
             search "alpha"
             let input = searchInput ()
             let event = findEvent ctrl meta false false

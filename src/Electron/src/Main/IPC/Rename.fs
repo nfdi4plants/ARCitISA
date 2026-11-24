@@ -12,6 +12,7 @@ open Main.ArcMerge
 open Main.ArcVaultHelper
 open Main.IPC.Delete
 open Main.IPC.FileSystemIO
+open Main.Helper.ArcPathContainment
 open Swate.Components.Shared
 open Swate.Electron.Shared.FileIOTypes
 open Swate.Electron.Shared.RenamePathRules

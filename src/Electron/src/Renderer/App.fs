@@ -260,6 +260,26 @@ let private LeftActionButtons (leftSidebarTarget: LeftSidebarPage) setLeftSideba
             )
     ]
 
+/// Lets the page bring a sidebar page to the front. It renders inside the layout, which holds whether the sidebar is
+/// open.
+[<ReactComponent>]
+let private LeftSidebarNavigationProvider (setLeftSidebarTarget: LeftSidebarPage -> unit, children: ReactElement) =
+    let leftSidebarCtx =
+        Swate.Components.Composite.Layout.LeftSidebarContext.useLeftSidebarCtx ()
+
+    let navigation: Renderer.Context.LeftSidebarNavigationContext.LeftSidebarNavigation =
+        React.useMemo (
+            (fun () -> {
+                showPage =
+                    fun page ->
+                        leftSidebarCtx.setState true
+                        setLeftSidebarTarget page
+            }),
+            [| box leftSidebarCtx.setState; box setLeftSidebarTarget |]
+        )
+
+    Renderer.Context.LeftSidebarNavigationContext.LeftSidebarNavigationCtx.Provider(navigation, children)
+
 /// The window's layout with the app's banners. It renders inside the context providers, so the banner
 /// hooks read their contexts. Each banner source adds its entry to the list.
 [<ReactComponent>]
@@ -282,8 +302,26 @@ let Main () =
 
     React.useEffect ((fun () -> Helper.ArcVaultHelper.migrateLegacyAutoCreateNotesFolder () |> Promise.start), [||])
 
-    let setPageState (pageState: PageState option) = dispatch (PageStateChanged pageState)
+    let leaveGuard, leaveGuardDialog = Renderer.Components.LeaveGuard.useLeaveGuard ()
 
+    // Every page change asks the leave guard first, except a reload of the open text document itself.
+    let setPageState (pageState: PageState option) =
+        let reopensOpenDocument =
+            match pageState, leaveGuard.documentPath () with
+            | Some(PageState.TextDocumentPage data), Some openPath ->
+                Swate.Electron.Shared.TextDocumentHelper.isSameDocumentPath data.Path openPath
+            | _ -> false
+
+        if reopensOpenDocument || not (leaveGuard.isDirty ()) then
+            dispatch (PageStateChanged pageState)
+        else
+            leaveGuard.confirmLeave ()
+            |> Promise.iter (fun canLeave ->
+                if canLeave then
+                    dispatch (PageStateChanged pageState)
+            )
+
+    // Not guarded: its only user replaces a Git diff page, never a text page.
     let updatePageState =
         React.useCallback (
             (fun (update: PageState option -> PageState option) -> dispatch (PageStateUpdated update)),
@@ -344,50 +382,64 @@ let Main () =
                             runImport = Api.ipcArcVaultApi.tryImportExternalFiles
                             cancelImport = Api.ipcArcVaultApi.cancelImportExternalFiles
                         },
-                        Renderer.Context.PageStateContext.PageStateCtx.Provider(
-                            pageCtx,
-                            Renderer.Context.PageStateContext.PageStateUpdateCtx.Provider(
-                                updatePageState,
-                                ErrorModalProvider.ErrorModalProvider(
-                                    Renderer.Context.AuthStateContext.Provider(
-                                        Renderer.Context.LargeObjectStore.LargeObjectStoreProviderWith(
-                                            model.ArcRootPath,
-                                            model.ArcRootIsRename,
-                                            (fun () -> Api.ipcArcVaultApi.getLargeObjectIndex ()),
-                                            Renderer.Context.LfsActivityContext.LfsActivityCtxProvider(
-                                                Renderer.Context.FileTreeExpansionContext.FileTreeExpansionCtxProvider(
-                                                    {
-                                                        loadDirectory = Api.ipcArcVaultApi.loadDirectory
-                                                        revalidateDirectories = Api.ipcArcVaultApi.revalidateDirectories
-                                                        statFile = Api.ipcArcVaultApi.statFile
-                                                    },
-                                                    Renderer.Context.GitStateContext.GitStateCtxProvider(
-                                                        Swate
-                                                            .Components
-                                                            .Composite
-                                                            .AnnotationTable
-                                                            .AnnotationTableContextProvider
-                                                            .AnnotationTableContextProvider(
-                                                                Renderer
-                                                                    .Context
-                                                                    .VersionControlDependencyContext
-                                                                    .Provider(
-                                                                        WindowLayout
-                                                                            (React.Fragment [|
-                                                                                children
-                                                                                CloseWindowController
-                                                                                    .CloseWindowController()
-                                                                            |])
-                                                                            leftSidebar
-                                                                            leftActions
+                        Renderer.Context.LeaveGuardContext.LeaveGuardCtx.Provider(
+                            leaveGuard,
+                            Renderer.Context.PageStateContext.PageStateCtx.Provider(
+                                pageCtx,
+                                Renderer.Context.PageStateContext.PageStateUpdateCtx.Provider(
+                                    updatePageState,
+                                    ErrorModalProvider.ErrorModalProvider(
+                                        Renderer.Context.AuthStateContext.Provider(
+                                            Renderer.Context.LargeObjectStore.LargeObjectStoreProviderWith(
+                                                model.ArcRootPath,
+                                                model.ArcRootIsRename,
+                                                (fun () -> Api.ipcArcVaultApi.getLargeObjectIndex ()),
+                                                Renderer.Context.LfsActivityContext.LfsActivityCtxProvider(
+                                                    Renderer
+                                                        .Context
+                                                        .FileTreeExpansionContext
+                                                        .FileTreeExpansionCtxProvider(
+                                                            {
+                                                                loadDirectory = Api.ipcArcVaultApi.loadDirectory
+                                                                revalidateDirectories =
+                                                                    Api.ipcArcVaultApi.revalidateDirectories
+                                                                statFile = Api.ipcArcVaultApi.statFile
+                                                            },
+                                                            Renderer.Context.GitStateContext.GitStateCtxProvider(
+                                                                Swate
+                                                                    .Components
+                                                                    .Composite
+                                                                    .AnnotationTable
+                                                                    .AnnotationTableContextProvider
+                                                                    .AnnotationTableContextProvider(
+                                                                        Renderer
+                                                                            .Context
+                                                                            .VersionControlDependencyContext
+                                                                            .Provider(
+                                                                                WindowLayout
+                                                                                    (LeftSidebarNavigationProvider(
+                                                                                        setLeftSidebarTarget,
+                                                                                        React.Fragment [|
+                                                                                            children
+                                                                                            CloseWindowController
+                                                                                                .CloseWindowController(
+                                                                                                    onConfirmSave =
+                                                                                                        leaveGuard.saveForClose
+                                                                                                )
+                                                                                            leaveGuardDialog
+                                                                                        |]
+                                                                                    ))
+                                                                                    leftSidebar
+                                                                                    leftActions
+                                                                            )
                                                                     )
                                                             )
-                                                    )
+                                                        )
                                                 )
                                             )
-                                        )
-                                    ),
-                                    ?scopeId = currentArcScopeId
+                                        ),
+                                        ?scopeId = currentArcScopeId
+                                    )
                                 )
                             )
                         )

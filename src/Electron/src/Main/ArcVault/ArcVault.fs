@@ -215,6 +215,7 @@ module ArcVaultExtensions =
             let hadUnsavedArcChanges = this.hasUnsavedArcChanges
 
             this.isInitializingArc <- false
+            this.MarkdownResolver.Renew()
             this.path <- None
             this.KnownDisk <- None
             this.LastSyncFailed <- false
@@ -328,6 +329,7 @@ module ArcVaultExtensions =
 
                 swatelogfn this.window.id "path: %s" normalizedPath
                 this.isInitializingArc <- true
+                this.MarkdownResolver.Renew()
                 this.path <- Some normalizedPath
 
                 try
@@ -347,6 +349,7 @@ module ArcVaultExtensions =
                 try
                     this.isInitializingArc <- true
                     let arc = ARC(identifier)
+                    this.MarkdownResolver.Renew()
                     this.path <- Some normalizedPath
                     this.SetArc(arc)
                     this.RefreshHasUnsavedArcChangesFlag()
@@ -730,7 +733,7 @@ type ArcVaults() =
                                     )
                         }
                         |> Promise.start
-                elif vault.isInitializingArc then
+                elif vault.isInitializingArc && not vault.hasUnsavedTextChanges then
                     swatelogfn id "Closing window directly because ARC initialization is still in progress."
                 elif
                     host
@@ -815,7 +818,7 @@ type ArcVaults() =
                                     closeError.Message
                         }
                         |> Promise.start
-                elif vault.hasUnsavedArcChanges then
+                elif vault.hasUnsavedArcChanges || vault.hasUnsavedTextChanges then
                     closeEvent.preventDefault ()
 
                     if not vault.isCloseRequestPending then
@@ -843,6 +846,37 @@ type ArcVaults() =
                 this.DisposeVault(id)
         )
 
+    /// The renderer refuses to unload while its text editor has unsaved edits (a beforeunload handler).
+    /// A close the user approved passes. A reload or navigation asks here, because it skips the close flow.
+    member this.OnRendererUnload(window: BrowserWindow, vault: ArcVault) =
+        window.webContents.onWillPreventUnload (fun unloadEvent ->
+            if vault.isCloseApproved then
+                unloadEvent.preventDefault ()
+            elif not vault.isCloseRequestPending then
+                let choice =
+                    dialog.showMessageBoxSync (
+                        unbox<BaseWindow> window,
+                        Dialog.ShowMessageBoxSync.Options(
+                            "You have unsaved changes.",
+                            ``type`` = Enums.Dialog.ShowMessageBoxSync.Options.Type.Warning,
+                            // A reload asks here, and so does a close that Main let through because the renderer's
+                            // unsaved flag did not arrive, so the words fit both.
+                            buttons = [| "Stay"; "Discard changes" |],
+                            defaultId = 0,
+                            cancelId = 0,
+                            detail = "Leaving discards the unsaved changes in the text editor.",
+                            noLink = true
+                        )
+                    )
+
+                if choice = 1 then
+                    vault.hasUnsavedTextChanges <- false
+                    unloadEvent.preventDefault ()
+        )
+
+        // A finished reload starts a renderer without editor state.
+        window.webContents.onDidNavigate (fun _ _ _ _ -> vault.hasUnsavedTextChanges <- false)
+
     member private this.CleanupFailedRegistration(window: BrowserWindow, vault: ArcVault, id: int) = promise {
         vault.DisposeLargeObjectIndex()
         do! vault.StopFileWatcher()
@@ -861,6 +895,7 @@ type ArcVaults() =
             let vault = ArcVault(window)
             this.Vaults.Add(id, vault)
             this.OnCloseWindow(window, vault, id)
+            this.OnRendererUnload(window, vault)
 
             try
                 do! loadWindow window

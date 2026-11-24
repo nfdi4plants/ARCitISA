@@ -41,6 +41,7 @@ let private createConfig (item: FileItem) (probe: DeleteWorkflowProbe) : FileTre
     setIsDeleting = ignore
     enqueueError = fun request -> probe.Errors <- probe.Errors @ [ request ]
     getLfsActivePaths = fun () -> Renderer.Context.LfsActivityContext.LfsActivePathIndex.create probe.ActivePaths
+    confirmLeaveFor = fun _ -> Promise.lift true
     deletePath =
         fun path -> promise {
             probe.DeletedPaths <- probe.DeletedPaths @ [ path ]
@@ -79,6 +80,30 @@ Vitest.describe (
                 do! waitUntil ((fun () -> probe.Closed), 50)
 
                 Vitest.expect(List.toArray probe.DeletedPaths).toEqual ([| "assays/A/isa.assay.xlsx" |])
+                Vitest.expect(probe.Errors.Length).toBe (0)
+            }
+        )
+
+        Vitest.test (
+            "confirmDeleteItem keeps the item when the user keeps the open text document",
+            fun () -> promise {
+                let readme = createFileItem "README.md" "assays/A/README.md"
+                let probe = createProbe ()
+                let askedPaths = ResizeArray<string>()
+
+                let config = {
+                    createConfig readme probe with
+                        confirmLeaveFor =
+                            fun path ->
+                                askedPaths.Add path
+                                Promise.lift false
+                }
+
+                FileTreeDeleteWorkflow.confirmDeleteItem config
+                do! waitUntil ((fun () -> probe.Closed), 50)
+
+                Vitest.expect(askedPaths.ToArray()).toEqual ([| "assays/A/README.md" |])
+                Vitest.expect(probe.DeletedPaths.Length).toBe (0)
                 Vitest.expect(probe.Errors.Length).toBe (0)
             }
         )

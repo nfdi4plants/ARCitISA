@@ -29,6 +29,21 @@ let createFolderLinkAsync (target: string) (linkPath: string) = symlink target l
 [<Emit("process.platform")>]
 let nodePlatform () : string = jsNative
 
+type private ISpawnSyncResult =
+    abstract error: exn option
+    abstract status: int
+
+[<Import("spawnSync", "node:child_process")>]
+let private spawnSync (command: string, args: string[]) : ISpawnSyncResult = jsNative
+
+/// True when the mkfifo program runs, so a test can create a named pipe.
+let hasMkfifo () =
+    (spawnSync ("mkfifo", [| "--help" |])).error.IsNone
+
+/// Creates a named pipe and returns the exit status of mkfifo.
+let makeFifo (path: string) =
+    (spawnSync ("mkfifo", [| path |])).status
+
 /// chmod does not stop deletes or writes for root.
 [<Emit("typeof process.getuid === 'function' && process.getuid() === 0")>]
 let runsAsRoot () : bool = jsNative

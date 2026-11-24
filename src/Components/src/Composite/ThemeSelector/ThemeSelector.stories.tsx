@@ -22,14 +22,14 @@ export const Default: Story = {
     const select = within(canvasElement).getByRole("combobox");
     const root = document.documentElement;
 
-    // The markdown preview takes its syntax colors from data-color-mode.
+    // The options are named after the look, the attribute after the daisyUI theme.
     await userEvent.selectOptions(select, "dark");
-    await waitFor(() => expect(root).toHaveAttribute("data-color-mode", "dark"));
+    await waitFor(() => expect(root).toHaveAttribute("data-theme", "finster"));
     await userEvent.selectOptions(select, "light");
-    await waitFor(() => expect(root).toHaveAttribute("data-color-mode", "light"));
+    await waitFor(() => expect(root).toHaveAttribute("data-theme", "sunrise"));
 
     // Auto is the stored default, so later stories start without a leftover theme.
     await userEvent.selectOptions(select, "auto");
-    await waitFor(() => expect(root).not.toHaveAttribute("data-color-mode"));
+    await waitFor(() => expect(root).not.toHaveAttribute("data-theme"));
   },
 };

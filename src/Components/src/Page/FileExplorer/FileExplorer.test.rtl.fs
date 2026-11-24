@@ -635,3 +635,102 @@ Vitest.describe (
             }
         )
 )
+
+[<ReactComponent>]
+let private RevealHarness
+    (
+        request: FileExplorerRevealRequest,
+        expose: (Set<string> -> unit) -> unit,
+        onRevealDone: FileExplorerRevealRequest -> unit
+    ) =
+    let expandedIds, setExpandedIds = React.useState Set.empty<string>
+    expose setExpandedIds
+
+    FileExplorer.FileExplorer(
+        initialItems = tree,
+        expandedIds = expandedIds,
+        onExpandedIdsChange = setExpandedIds,
+        revealRequest = request,
+        onRevealDone = onRevealDone
+    )
+
+/// The button that shows the name of the row.
+let private rowButton (id: string) =
+    RTL.screen.getByRole ("button", ByRoleOptions(name = Text id))
+
+Vitest.describe (
+    "FileExplorer reveal request",
+    fun () ->
+        Vitest.test (
+            "focuses the row of a visible item and reports the request as done",
+            fun () -> promise {
+                let request = { ItemId = "Empty Folder"; Token = 1 }
+                let reported = ResizeArray<FileExplorerRevealRequest>()
+                RTL.render (RevealHarness(request, ignore, reported.Add)) |> ignore
+                do! flushRender ()
+
+                Vitest.expect(Browser.Dom.document.activeElement).toBe (rowButton "Empty Folder")
+                Vitest.expect(reported.ToArray()).toEqual [| request |]
+            }
+        )
+
+        Vitest.test (
+            "waits until the row of the item is drawn, then focuses it",
+            fun () -> promise {
+                let setExpanded = ref (fun (_: Set<string>) -> ())
+                let reported = ResizeArray<FileExplorerRevealRequest>()
+
+                RTL.render (
+                    RevealHarness(
+                        { ItemId = "sub"; Token = 1 },
+                        (fun setter -> setExpanded.Value <- setter),
+                        reported.Add
+                    )
+                )
+                |> ignore
+
+                do! flushRender ()
+                Vitest.expect((RTL.screen.queryByRole ("treeitem", ByRoleOptions(name = Text "sub"))).IsNone).toBe true
+                Vitest.expect(reported.Count).toBe 0
+
+                do! RTL.act (fun () -> promise { setExpanded.Value(set [ "src" ]) })
+
+                Vitest.expect(Browser.Dom.document.activeElement).toBe (rowButton "sub")
+                Vitest.expect(reported.Count).toBe 1
+            }
+        )
+
+        Vitest.test (
+            "focuses the name of a row that has other buttons",
+            fun () -> promise {
+                let request = { ItemId = "Empty Folder"; Token = 1 }
+
+                let rename: ContextMenuItem = {
+                    Label = "Rename"
+                    Icon = "swt:iconify swt:fluent--rename-24-regular"
+                    OnClick = ignore
+                    Disabled = None
+                    ClassName = None
+                    IsDivider = None
+                }
+
+                RTL.render (
+                    FileExplorer.FileExplorer(
+                        initialItems = tree,
+                        getItemActions = (fun _ -> [ rename ]),
+                        revealRequest = request
+                    )
+                )
+                |> ignore
+
+                do! flushRender ()
+
+                let name = rowButton "Empty Folder"
+
+                RTL.screen.getByRole ("button", ByRoleOptions(name = Text "Rename Empty Folder"))
+                |> ignore
+
+                Vitest.expect(Browser.Dom.document.activeElement).toBe name
+            }
+        )
+)

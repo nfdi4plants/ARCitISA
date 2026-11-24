@@ -741,10 +741,7 @@ type AnnotationTableContextMenuUtil =
 type AnnotationTableContextMenu =
 
     static member private ModifierKey =
-        match Swate.Components.Util.UserOS.getUserOS () with
-        | Swate.Components.Util.UserOS.MacOS
-        | Swate.Components.Util.UserOS.IOS -> "⌘"
-        | _ -> "Ctrl"
+        Swate.Components.Util.Shortcuts.modLabel (Swate.Components.Util.Shortcuts.isMac ())
 
     static member private DuplicateRowItem
         (index: CellCoordinate, table: ArcTable, setTable: ArcTable -> unit, selectHandle: SelectHandle)

@@ -17,11 +17,10 @@ let isKnownAbsent (known: KnownState) = known = Absent
 let private resetsWhenSelectionIsRemoved =
     function
     | PageState.ArcFilePage _
-    | PageState.MarkdownPage _
     | PageState.PDFPage _
     | PageState.ImagePage _
     | PageState.HtmlPage _
-    | PageState.TextPage _
+    | PageState.TextDocumentPage _
     | PageState.UnknownPage
     | PageState.LargeFilePage _
     | PageState.ErrorPage _ -> true
@@ -71,11 +70,10 @@ let syncChangedOpenPage (caseInsensitive: bool) (changedPaths: string[]) (pageSt
 
 let private reloadsWhenSelectedFileChanges =
     function
-    | PageState.MarkdownPage _
     | PageState.PDFPage _
     | PageState.ImagePage _
     | PageState.HtmlPage _
-    | PageState.TextPage _
+    | PageState.TextDocumentPage _
     | PageState.UnknownPage
     | PageState.LargeFilePage _
     | PageState.ErrorPage _ -> true

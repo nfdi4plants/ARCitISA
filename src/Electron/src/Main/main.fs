@@ -32,6 +32,9 @@ else
     // The default user data folder follows the product name. Pin it before anything reads it.
     Main.SettingsStore.pinLegacyUserDataPath ()
 
+    // Electron accepts the scheme declaration only before the app is ready.
+    Main.Services.MarkdownResolverService.AssetProtocol.registerScheme ()
+
     app
         .whenReady()
         .``then`` (fun () ->
@@ -61,11 +64,17 @@ else
             with error ->
                 Browser.Dom.console.error ("Version control host initialization failed", error.Message)
 
+            // The handler has to exist before the first window loads, or its first images fail.
+            Main.Services.MarkdownResolverService.AssetProtocol.install (fun windowId ->
+                ARC_VAULTS.TryGetVault windowId |> Option.map _.MarkdownResolver
+            )
+
             registerRequiredWindow "The application window could not be loaded."
 
             Remoting.createIpc () |> Remoting.fromIpcMainEvent IPC.IVersionControlApi.api
             Remoting.createIpc () |> Remoting.fromValue IPC.IGitLabApi.api
             Remoting.createIpc () |> Remoting.fromIpcMainEvent IPC.ArcVaultsApi.api
+            Remoting.createIpc () |> Remoting.fromIpcMainEvent IPC.MarkdownResolverApi.api
             Remoting.createIpc () |> Remoting.fromValue Main.IPC.AuthApi.api
             Remoting.createIpc () |> Remoting.fromValue Main.IPC.TemplateApi.api
             Remoting.createIpc () |> Remoting.fromValue Main.IPC.ValidationPackageApi.api
