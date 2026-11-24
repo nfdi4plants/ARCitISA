@@ -57,8 +57,9 @@ type EditorToolbar =
                 "swt:btn swt:btn-ghost swt:btn-sm swt:border-base-content/20"
                 if menuOpen.IsNone then
                     "swt:btn-square"
+                // DaisyUI drops the end border of a disabled join item, which leaves the last one of a group open.
                 if defaultArg joined false then
-                    "swt:join-item"
+                    "swt:join-item swt:disabled:last:border-e-(length:--border)"
                 if defaultArg pressed false then
                     "swt:btn-active swt:text-primary!"
             ]

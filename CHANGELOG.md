@@ -16,6 +16,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 3.4.0-rc.2 - 2026-11-24
+
+### 🔄 Changed
+
+- In the text editor, the "Close file" button sits next to Save instead of in the toolbar. (by @Freymaurer)
+- Markdown, HTML and SVG files open in Edit or Preview/View mode, whichever you chose last. (by @Freymaurer)
+
+### 🐛 Fixed
+
+- Disabled buttons at the end of a text editor toolbar group, such as Redo, keep their right border. (by @Freymaurer)
+
 ## 3.4.0-rc.1 - 2026-11-23
 
 ### ✨ Added

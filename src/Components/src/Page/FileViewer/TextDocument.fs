@@ -2,6 +2,7 @@ namespace Swate.Components.Page.FileViewer
 
 open Fable.Core
 open Feliz
+open Swate.Components
 open Swate.Components.Util
 open Swate.Components.Composite.TextEditor
 open Swate.Components.Composite.TextEditor.Types
@@ -42,12 +43,14 @@ type TextDocument =
 
     /// One text file in an editor, for a host that owns the file. The host saves through onSave and shows the result
     /// in status, statusIsError, saving and dirty. savedText is the text of the last save or read; a remounted editor
-    /// starts from it. Markdown, HTML and SVG get a rendered side: Markdown opens for writing, HTML and SVG open as they
-    /// look. readOnlyReason makes the editor read-only and says why. notices are the host's warnings, such as a change
-    /// on disk. onModeChange hears a switch between the editor and the rendered side. onClose adds the Close file
-    /// button. For Markdown, linkContext resolves the links and images of the rendered side, checkLinkTargets marks
-    /// broken links in the editor and listFolder completes paths. Pass the same function instances across renders, a
-    /// new instance checks or lists again. handleRef gives the host replaceText, save and isDirty.
+    /// starts from it. Markdown, HTML and SVG get a rendered side. They open on the side chosen last in any text
+    /// document, which localStorage keeps. Before the first choice Markdown opens for writing, HTML and SVG open as
+    /// they look. readOnlyReason makes the editor read-only and says why. notices are the host's warnings, such as a
+    /// change on disk. onModeChange hears a switch between the editor and the rendered side. onClose adds the Close
+    /// file button next to Save. For Markdown, linkContext resolves the links and images of the rendered side,
+    /// checkLinkTargets marks broken links in the editor and listFolder completes paths. Pass the same function
+    /// instances across renders, a new instance checks or lists again. handleRef gives the host replaceText, save and
+    /// isDirty.
     [<ReactComponent>]
     static member TextDocument
         (
@@ -83,14 +86,23 @@ type TextDocument =
         let markdownMessage, setMarkdownMessage = React.useState (None: string option)
         let ontologyReferenceOpen, setOntologyReferenceOpen = React.useState false
 
-        // Markdown opens for writing, HTML and SVG open as they look. The editor mounts on first use and then stays
-        // mounted while the rendered side shows, so cursor and undo history survive the switch.
+        // The side chosen last in any text document. The default None leaves the key unset, because the hook would
+        // write a default into localStorage on mount, and then the first file opened would choose for all others.
+        let rememberedShowRendered, rememberShowRendered =
+            React.useLocalStorage<bool option> (Keys.mkLocalStorageKey "fileViewer" "textDocument" "showRendered", None)
+
+        // Without a remembered side, Markdown opens for writing, HTML and SVG open as they look. This state is read
+        // from localStorage only on mount, so a switch in another document does not move this one. The editor mounts
+        // on first use and then stays mounted while the rendered side shows, so cursor and undo history survive the
+        // switch.
         let showRendered, setShowRendered =
             React.useState (
-                match rendering with
-                | Some TextRendering.Html
-                | Some TextRendering.Svg -> true
-                | _ -> false
+                match rendering, rememberedShowRendered with
+                | None, _ -> false
+                | Some _, Some remembered -> remembered
+                | Some TextRendering.Html, None
+                | Some TextRendering.Svg, None -> true
+                | Some _, None -> false
             )
 
         let editorMounted, setEditorMounted = React.useState (not showRendered)
@@ -203,6 +215,7 @@ type TextDocument =
 
         let showEditor () =
             onModeChange |> Option.iter (fun f -> f ())
+            rememberShowRendered (Some false)
             setEditorMounted true
             setShowRendered false
             focusEditorRef.current <- true
@@ -210,6 +223,7 @@ type TextDocument =
         // The rendered side shows the text in the editor, saved or not.
         let showRenderedView () =
             onModeChange |> Option.iter (fun f -> f ())
+            rememberShowRendered (Some true)
             setMarkdownMessage None
 
             setRenderedText (
@@ -256,6 +270,10 @@ type TextDocument =
                                     prop.text "Save"
                                     prop.onClick (fun _ -> handle.save () |> ignore)
                                 ]
+                                match onClose with
+                                | Some close ->
+                                    EditorToolbar.ToolbarButton("Close file", "swt:fluent--dismiss-24-regular", close)
+                                | None -> Html.none
                             ]
                         ]
                     ]
@@ -264,8 +282,8 @@ type TextDocument =
                 // slot that drops out shifts the index keys of the slots after it, and React then remounts the editor
                 // from the last saved text, which loses the unsaved edits.
                 if showRendered then
-                    // The rendered side has nothing to edit, so its bar only closes the file.
-                    EditorToolbar.EditorToolbar(?onClose = onClose)
+                    // The rendered side has nothing to edit, so it has no toolbar.
+                    Html.none
                 elif isMarkdown then
                     MarkdownToolbar.MarkdownToolbar(
                         surface,
@@ -275,8 +293,7 @@ type TextDocument =
                         ?message = markdownMessage,
                         setMessage = setMarkdownMessage,
                         isOntologyReferenceOpen = ontologyReferenceOpen,
-                        setOntologyReferenceOpen = setOntologyReferenceOpen,
-                        ?onClose = onClose
+                        setOntologyReferenceOpen = setOntologyReferenceOpen
                     )
                 else
                     EditorToolbar.EditorToolbar(
@@ -287,8 +304,7 @@ type TextDocument =
                                 stepHistory (fun editor -> editor.redo ()),
                                 disabled = isReadOnly,
                                 ?disabledReason = readOnlyReason
-                            ),
-                        ?onClose = onClose
+                            )
                     )
                 match readOnlyReason with
                 | Some reason -> TextDocument.Notice("status", "swt:alert-info", reason)

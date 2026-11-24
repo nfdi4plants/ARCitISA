@@ -29,8 +29,14 @@ type private TextDocumentHosts =
     /// Shows "Unsaved changes" while the editor holds edits, like a host does. Saves always succeed.
     [<ReactComponent>]
     static member Tracking
-        (path: string, text: string, ?rendering: TextRendering, ?notices: TextDocumentNotice list, ?handle: HandleBox)
-        =
+        (
+            path: string,
+            text: string,
+            ?rendering: TextRendering,
+            ?notices: TextDocumentNotice list,
+            ?handle: HandleBox,
+            ?onClose: unit -> unit
+        ) =
         let dirty, setDirty = React.useState false
 
         TextDocument.TextDocument(
@@ -43,11 +49,15 @@ type private TextDocumentHosts =
             dirty = dirty,
             ?notices = notices,
             onDirtyChange = setDirty,
-            onClose = ignore,
+            onClose = defaultArg onClose ignore,
             ?handleRef = (handle |> Option.map (fun h -> h :> IRefValue<TextDocumentHandle option>))
         )
 
-Vitest.afterEach (fun () -> RTL.cleanup ())
+Vitest.afterEach (fun () ->
+    RTL.cleanup ()
+    // localStorage keeps the side chosen last, so every test starts without one.
+    Browser.WebStorage.localStorage.clear ()
+)
 
 let private editorView () =
     editorViewLookup.findFromDOM (Browser.Dom.document.querySelector ".cm-content" :?> HTMLElement)
@@ -65,6 +75,14 @@ let private button (name: string) =
 
 let private markdown (text: string) =
     TextDocumentHosts.Tracking("docs/guide.md", text, rendering = TextRendering.Markdown)
+
+let private isChecked (radio: HTMLElement) =
+    (radio :?> HTMLInputElement).``checked``
+
+let private buttonNames () =
+    RTL.screen.getAllByRole "button"
+    |> Seq.map (fun b -> b.getAttribute "aria-label" |> Option.ofObj |> Option.defaultValue b.textContent)
+    |> Seq.toArray
 
 Vitest.test (
     "unsaved edits survive a switch to the preview and back",
@@ -130,7 +148,7 @@ Vitest.test (
 )
 
 Vitest.test (
-    "an HTML file opens as it looks, in the sandboxed frame, with a bar that only closes the file",
+    "an HTML file opens as it looks, in the sandboxed frame, without a toolbar",
     fun () ->
         RTL.render (TextDocumentHosts.Tracking("site/index.html", "<p>Hello</p>", rendering = TextRendering.Html))
         |> ignore
@@ -139,8 +157,80 @@ Vitest.test (
         Vitest.expect(frame.getAttribute "sandbox").toBe "allow-scripts"
         Vitest.expect(frame.getAttribute "srcdoc").toBe """<base href="about:srcdoc"><p>Hello</p>"""
 
-        button "Close file" |> ignore
+        Vitest.expect(RTL.screen.queryByRole("toolbar").IsNone).toBe true
         Vitest.expect(RTL.screen.queryByRole("button", ByRoleOptions(name = Text "Undo")).IsNone).toBe true
+)
+
+Vitest.test (
+    "Close file comes right after Save, outside the formatting toolbar, on both sides, and runs onClose",
+    fun () ->
+        let closed = ref 0
+
+        RTL.render (
+            TextDocumentHosts.Tracking(
+                "docs/guide.md",
+                "# Guide",
+                rendering = TextRendering.Markdown,
+                onClose = (fun () -> closed.Value <- closed.Value + 1)
+            )
+        )
+        |> ignore
+
+        let expectNextToSave () =
+            let names = buttonNames ()
+            Vitest.expect(Array.findIndex ((=) "Close file") names).toBe (Array.findIndex ((=) "Save") names + 1)
+
+        let toolbar =
+            RTL.screen.getByRole ("toolbar", ByRoleOptions(name = Text "Markdown formatting"))
+
+        Vitest.expect(toolbar.contains (button "Close file")).toBe false
+        expectNextToSave ()
+
+        RTL.fireEvent.click (modeRadio "Preview")
+        expectNextToSave ()
+
+        RTL.fireEvent.click (button "Close file")
+        Vitest.expect(closed.Value).toBe 1
+)
+
+Vitest.test (
+    "a document opens on the side chosen last in another document",
+    fun () ->
+        RTL.render (markdown "# Guide") |> ignore
+        RTL.fireEvent.click (modeRadio "Preview")
+        RTL.cleanup ()
+
+        RTL.render (markdown "# Notes") |> ignore
+        Vitest.expect(isChecked (modeRadio "Preview")).toBe true
+        RTL.cleanup ()
+
+        // HTML shares the choice with Markdown, so a choice of Edit there opens the next HTML file for writing.
+        RTL.render (TextDocumentHosts.Tracking("site/index.html", "<p>Hello</p>", rendering = TextRendering.Html))
+        |> ignore
+
+        Vitest.expect(isChecked (modeRadio "View")).toBe true
+        RTL.fireEvent.click (modeRadio "Edit")
+        RTL.cleanup ()
+
+        RTL.render (TextDocumentHosts.Tracking("site/about.html", "<p>About</p>", rendering = TextRendering.Html))
+        |> ignore
+
+        Vitest.expect(isChecked (modeRadio "Edit")).toBe true
+        Vitest.expect(Browser.Dom.document.querySelector ".cm-content").not.toBeNull ()
+)
+
+Vitest.test (
+    "a file without a rendered side ignores the side chosen last and opens for writing",
+    fun () ->
+        RTL.render (markdown "# Guide") |> ignore
+        RTL.fireEvent.click (modeRadio "Preview")
+        RTL.cleanup ()
+
+        RTL.render (TextDocumentHosts.Tracking("workflows/config.yml", "title: Guide"))
+        |> ignore
+
+        Vitest.expect(Browser.Dom.document.querySelector ".cm-content").not.toBeNull ()
+        Vitest.expect(RTL.screen.queryByRole("radiogroup").IsNone).toBe true
 )
 
 Vitest.test (
