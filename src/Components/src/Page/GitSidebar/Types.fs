@@ -1,6 +1,5 @@
 namespace Arcitisa.Components.Page.GitSidebarTypes
 
-open System
 open Fable.Core
 
 [<StringEnum(CaseRules.None)>]
@@ -17,12 +16,18 @@ type GitSidebarStatus = {
     IsMergeInProgress: bool
 }
 
+[<StringEnum(CaseRules.None)>]
+type GitSidebarChangeKind =
+    | Added
+    | Modified
+    | Deleted
+    | Renamed
+    | Conflicted
+
 type GitSidebarChange = {
     Path: string
     OriginalPath: string option
-    IndexStatus: string
-    WorkingTreeStatus: string
-    IsConflicted: bool
+    Kind: GitSidebarChangeKind
 }
 
 type GitSidebarBranchOption = {
@@ -159,15 +164,3 @@ type GitSidebarCallbacks = {
     OnDedupLfsStorage: unit -> unit
     OnCancelOperation: unit -> unit
 }
-
-[<RequireQualifiedAccess>]
-module GitStatusCode =
-
-    let normalize (code: string) =
-        let trimmed = code |> Option.ofObj |> Option.defaultValue String.Empty |> _.Trim()
-
-        if String.IsNullOrWhiteSpace trimmed then "." else trimmed
-
-    let isStagedIndexStatus (code: string) =
-        let normalized = normalize code
-        normalized <> "." && normalized <> "?"

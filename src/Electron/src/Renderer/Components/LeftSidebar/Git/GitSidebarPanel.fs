@@ -249,7 +249,9 @@ let Main () =
                     fun paths ->
                         let conflictedPaths =
                             gitStateCtx.state.ChangedFiles
-                            |> Array.filter _.IsConflicted
+                            |> Array.filter (fun change ->
+                                change.Kind = Arcitisa.Components.Page.GitSidebarTypes.GitSidebarChangeKind.Conflicted
+                            )
                             |> Array.map _.Path
                             |> Set.ofArray
 

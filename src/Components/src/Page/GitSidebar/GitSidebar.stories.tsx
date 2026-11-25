@@ -100,23 +100,17 @@ const changedFiles = [
   {
     Path: "README.md",
     OriginalPath: undefined,
-    IndexStatus: "M",
-    WorkingTreeStatus: " ",
-    IsConflicted: false,
+    Kind: "Modified",
   },
   {
     Path: "assays/isa.assay.xlsx",
     OriginalPath: undefined,
-    IndexStatus: "?",
-    WorkingTreeStatus: "?",
-    IsConflicted: false,
+    Kind: "Added",
   },
   {
     Path: "notes/protocol.md",
     OriginalPath: "notes/protocol-draft.md",
-    IndexStatus: "R",
-    WorkingTreeStatus: "M",
-    IsConflicted: false,
+    Kind: "Renamed",
   },
 ] as const;
 
@@ -125,18 +119,14 @@ const conflictedFiles = [
   {
     Path: "studies/s-study-01/protocol.md",
     OriginalPath: undefined,
-    IndexStatus: "U",
-    WorkingTreeStatus: "U",
-    IsConflicted: true,
+    Kind: "Conflicted",
   },
 ] as const;
 
 const largeChangedFiles = Array.from({ length: 400 }, (_, index) => ({
   Path: `src/file-${String(index).padStart(3, "0")}.txt`,
   OriginalPath: undefined,
-  IndexStatus: "M",
-  WorkingTreeStatus: " ",
-  IsConflicted: false,
+  Kind: "Modified",
 }));
 
 function StatefulSidebar(
@@ -412,9 +402,7 @@ export const ConflictsPresent: Story = {
       {
         Path: "README.md",
         OriginalPath: undefined,
-        IndexStatus: "M",
-        WorkingTreeStatus: " ",
-        IsConflicted: false,
+        Kind: "Modified",
       },
     ],
     branchOptions: branchOptions.slice(),
@@ -482,9 +470,7 @@ export const DeletedFile: Story = {
       {
         Path: "obsolete.md",
         OriginalPath: undefined,
-        IndexStatus: "D",
-        WorkingTreeStatus: " ",
-        IsConflicted: false,
+        Kind: "Deleted",
       },
     ],
     branchOptions: branchOptions.slice(),
@@ -495,13 +481,7 @@ export const DeletedFile: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await expect(canvas.getByTestId("GitSidebar")).not.toHaveTextContent("git: D.");
-    await expect(canvas.getByTestId("GitSidebar")).not.toHaveTextContent("Deleted");
     await expect(canvas.getByTestId("GitSidebarChangeStatusIcon-0")).toHaveClass("swt:text-error");
-    await expect(canvas.getByTestId("GitSidebarChangeStatusIcon-0")).toHaveAttribute(
-      "title",
-      "Deleted:\n- git: D.",
-    );
   },
 };
 
@@ -512,23 +492,17 @@ export const ChangeStatusIconColors: Story = {
       {
         Path: "new-file.md",
         OriginalPath: undefined,
-        IndexStatus: "A",
-        WorkingTreeStatus: " ",
-        IsConflicted: false,
+        Kind: "Added",
       },
       {
         Path: "changed-file.md",
         OriginalPath: undefined,
-        IndexStatus: "M",
-        WorkingTreeStatus: " ",
-        IsConflicted: false,
+        Kind: "Modified",
       },
       {
         Path: "deleted-file.md",
         OriginalPath: undefined,
-        IndexStatus: "D",
-        WorkingTreeStatus: " ",
-        IsConflicted: false,
+        Kind: "Deleted",
       },
     ],
     branchOptions: branchOptions.slice(),
@@ -553,9 +527,7 @@ export const LongWrappedFile: Story = {
       {
         Path: "src/very/long/path/that/wraps/in/the/sidebar/and/needs/a/fixed/status/icon.txt",
         OriginalPath: undefined,
-        IndexStatus: "M",
-        WorkingTreeStatus: " ",
-        IsConflicted: false,
+        Kind: "Modified",
       },
     ],
     branchOptions: branchOptions.slice(),

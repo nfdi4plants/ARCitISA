@@ -11,24 +11,8 @@ open Arcitisa.Components.Primitive
 module private RepoListRowHelper =
 
     let timeAgoUpdated (dt: System.DateTime option) =
-        match dt with
-        | Some dateTime ->
-            let span = System.DateTime.UtcNow - dateTime.ToUniversalTime()
-
-            if span.TotalSeconds < 60.0 then
-                sprintf "Updated %d seconds ago" (int span.TotalSeconds)
-            elif span.TotalMinutes < 60.0 then
-                sprintf "Updated %d minutes ago" (int span.TotalMinutes)
-            elif span.TotalHours < 24.0 then
-                sprintf "Updated %d hours ago" (int span.TotalHours)
-            elif span.TotalDays < 30.0 then
-                sprintf "Updated %d days ago" (int span.TotalDays)
-            elif span.TotalDays < 365.0 then
-                sprintf "Updated %d months ago" (int (span.TotalDays / 30.0))
-            else
-                sprintf "Updated %d years ago" (int (span.TotalDays / 365.0))
-            |> Some
-        | None -> None
+        dt
+        |> Option.map (fun dateTime -> "Updated " + DateTimeExtensions.timeAgo System.DateTime.UtcNow dateTime)
 
 [<Erase; Mangle(false)>]
 type RepoListRow =

@@ -186,12 +186,10 @@ let private remoteProject: ExploreProjectDto = {
     }
 }
 
-let private changedFile path i w c : GitSidebarChange = {
+let private changedFile path kind : GitSidebarChange = {
     Path = path
     OriginalPath = None
-    IndexStatus = i
-    WorkingTreeStatus = w
-    IsConflicted = c
+    Kind = kind
 }
 
 let private sidebarLocalBranch name current tracking : GitSidebarBranchOption = {
@@ -319,7 +317,7 @@ delete globalThis.__arcitisaGitLabCreateProjectFetches;
 let private cleanupGitLabCreateProjectFetchSpy () : unit = jsNative
 
 let private manyChangedFiles count = [|
-    for i in 0 .. count - 1 -> changedFile (sprintf "src/file-%03i.txt" i) "M" " " false
+    for i in 0 .. count - 1 -> changedFile (sprintf "src/file-%03i.txt" i) GitSidebarChangeKind.Modified
 |]
 
 let private buildSingleConflictDocument currentLines incomingLines =
@@ -1147,9 +1145,9 @@ Vitest.describe (
                 let state = {
                     GitState.Empty with
                         ChangedFiles = [|
-                            changedFile "a.txt" "M" " " false
-                            changedFile "b.txt" "M" " " false
-                            changedFile "a.txt" "M" " " false
+                            changedFile "a.txt" GitSidebarChangeKind.Modified
+                            changedFile "b.txt" GitSidebarChangeKind.Modified
+                            changedFile "a.txt" GitSidebarChangeKind.Modified
                         |]
                 }
 
@@ -2823,7 +2821,7 @@ Vitest.describe (
 
                 let state = {
                     runningState with
-                        ChangedFiles = [| changedFile "README.md" "M" " " false |]
+                        ChangedFiles = [| changedFile "README.md" GitSidebarChangeKind.Modified |]
                 }
 
                 let! requested, requestMessages = step deps state (PrimarySaveAllRequested "Publish")
@@ -2976,7 +2974,7 @@ Vitest.describe (
 
                 let initialState = {
                     runningState with
-                        ChangedFiles = [| changedFile "saved.txt" "M" " " false |]
+                        ChangedFiles = [| changedFile "saved.txt" GitSidebarChangeKind.Modified |]
                         PendingPublishRename =
                             Some {
                                 CurrentName = "Existing ARC"
@@ -5814,7 +5812,7 @@ Vitest.describe (
 
                 let state = {
                     runningState with
-                        ChangedFiles = [| changedFile "README.md" "M" " " false |]
+                        ChangedFiles = [| changedFile "README.md" GitSidebarChangeKind.Modified |]
                 }
 
                 let stateAfterRequest, requestCmd =
@@ -5867,7 +5865,7 @@ Vitest.describe (
 
                 let state = {
                     runningState with
-                        ChangedFiles = [| changedFile "README.md" "M" " " false |]
+                        ChangedFiles = [| changedFile "README.md" GitSidebarChangeKind.Modified |]
                 }
 
                 let stateAfterRequest, requestCmd =
@@ -5991,7 +5989,7 @@ Vitest.describe (
 
                 let state = {
                     runningState with
-                        ChangedFiles = [| changedFile "README.md" "M" " " false |]
+                        ChangedFiles = [| changedFile "README.md" GitSidebarChangeKind.Modified |]
                 }
 
                 let stateAfterRequest, requestCmd =
@@ -6070,7 +6068,7 @@ Vitest.describe (
 
                 let saveState = {
                     runningState with
-                        ChangedFiles = [| changedFile "README.md" "M" " " false |]
+                        ChangedFiles = [| changedFile "README.md" GitSidebarChangeKind.Modified |]
                 }
 
                 let stateAfterRequest, requestCmd =
@@ -6186,7 +6184,7 @@ Vitest.describe (
 
                 let saveState = {
                     runningState with
-                        ChangedFiles = [| changedFile "README.md" "M" " " false |]
+                        ChangedFiles = [| changedFile "README.md" GitSidebarChangeKind.Modified |]
                 }
 
                 let stateAfterRequest, requestCmd =
@@ -6319,7 +6317,7 @@ Vitest.describe (
 
                 let state = {
                     runningState with
-                        ChangedFiles = [| changedFile "README.md" "M" " " false |]
+                        ChangedFiles = [| changedFile "README.md" GitSidebarChangeKind.Modified |]
                 }
 
                 let stateAfterRequest, requestCmd =
@@ -6395,7 +6393,7 @@ Vitest.describe (
 
                 let state = {
                     runningState with
-                        ChangedFiles = [| changedFile "README.md" "M" " " false |]
+                        ChangedFiles = [| changedFile "README.md" GitSidebarChangeKind.Modified |]
                 }
 
                 let stateAfterRequest, requestCmd =
@@ -6528,7 +6526,7 @@ Vitest.describe (
 
                     let state = {
                         runningState with
-                            ChangedFiles = [| changedFile "README.md" "M" " " false |]
+                            ChangedFiles = [| changedFile "README.md" GitSidebarChangeKind.Modified |]
                     }
 
                     let stateAfterRequest, requestCmd =
@@ -6680,7 +6678,7 @@ Vitest.describe (
 
                 let state = {
                     runningState with
-                        ChangedFiles = [| changedFile "README.md" "M" " " false |]
+                        ChangedFiles = [| changedFile "README.md" GitSidebarChangeKind.Modified |]
                 }
 
                 let stateAfterRequest, requestCmd =
@@ -6792,7 +6790,7 @@ Vitest.describe (
 
                 let state = {
                     runningState with
-                        ChangedFiles = [| changedFile "a.txt" "M" " " false |]
+                        ChangedFiles = [| changedFile "a.txt" GitSidebarChangeKind.Modified |]
                 }
 
                 let stateAfterRequest, requestCmd =
@@ -6831,7 +6829,7 @@ Vitest.describe (
 
                 let state = {
                     runningState with
-                        ChangedFiles = [| changedFile "README.md" "M" " " false |]
+                        ChangedFiles = [| changedFile "README.md" GitSidebarChangeKind.Modified |]
                 }
 
                 let stateAfterRequest, requestCmd =
@@ -6892,7 +6890,7 @@ Vitest.describe (
 
                 let state = {
                     runningState with
-                        ChangedFiles = [| changedFile "README.md" "M" " " false |]
+                        ChangedFiles = [| changedFile "README.md" GitSidebarChangeKind.Modified |]
                 }
 
                 let stateAfterRequest, requestCmd =
@@ -6952,7 +6950,7 @@ Vitest.describe (
 
                 let state = {
                     runningState with
-                        ChangedFiles = [| changedFile "README.md" "M" " " false |]
+                        ChangedFiles = [| changedFile "README.md" GitSidebarChangeKind.Modified |]
                 }
 
                 let stateAfterRequest, requestCmd =
@@ -7348,7 +7346,7 @@ Vitest.describe (
 
                 let state = {
                     runningState with
-                        ChangedFiles = [| changedFile "README.md" "M" " " false |]
+                        ChangedFiles = [| changedFile "README.md" GitSidebarChangeKind.Modified |]
                 }
 
                 let requested, requestCmd =
@@ -7446,7 +7444,7 @@ Vitest.describe (
 
                 let state = {
                     runningState with
-                        ChangedFiles = [| changedFile "README.md" "M" " " false |]
+                        ChangedFiles = [| changedFile "README.md" GitSidebarChangeKind.Modified |]
                 }
 
                 let stateAfterRequest, requestCmd =
@@ -9132,7 +9130,7 @@ Vitest.describe (
 
                 let saveState = {
                     runningState with
-                        ChangedFiles = [| changedFile "README.md" "M" " " false |]
+                        ChangedFiles = [| changedFile "README.md" GitSidebarChangeKind.Modified |]
                 }
 
                 let stateAfterRequest, requestCmd =
@@ -10879,7 +10877,7 @@ Vitest.describe (
 
                 let state = {
                     runningState with
-                        ChangedFiles = [| changedFile "a.txt" "M" " " false |]
+                        ChangedFiles = [| changedFile "a.txt" GitSidebarChangeKind.Modified |]
                 }
 
                 let model, command = update deps ignore (CommitAllRequested "save") state
@@ -10920,7 +10918,7 @@ Vitest.describe (
 
                 let state = {
                     runningState with
-                        ChangedFiles = [| changedFile "a.txt" "M" " " false |]
+                        ChangedFiles = [| changedFile "a.txt" GitSidebarChangeKind.Modified |]
                 }
 
                 let model, command = update deps ignore (CommitAllRequested "save") state
@@ -10953,7 +10951,7 @@ Vitest.describe (
 
                 let state = {
                     runningState with
-                        ChangedFiles = [| changedFile "a.txt" "M" " " false |]
+                        ChangedFiles = [| changedFile "a.txt" GitSidebarChangeKind.Modified |]
                 }
 
                 let model, command = update deps ignore (CommitAllRequested "save") state
@@ -11001,7 +10999,7 @@ Vitest.describe (
 
                 let state = {
                     runningState with
-                        ChangedFiles = [| changedFile "a.txt" "M" " " false |]
+                        ChangedFiles = [| changedFile "a.txt" GitSidebarChangeKind.Modified |]
                 }
 
                 let model, command = requestAndConfirmDiscard deps state [| "a.txt" |]
@@ -11657,7 +11655,7 @@ Vitest.describe (
 
                 let state = {
                     runningState with
-                        ChangedFiles = [| changedFile "a.txt" "M" " " false |]
+                        ChangedFiles = [| changedFile "a.txt" GitSidebarChangeKind.Modified |]
                 }
 
                 let model, command = update deps ignore (CommitAllRequested "save") state
@@ -11742,7 +11740,7 @@ Vitest.describe (
 
                 let state = {
                     runningState with
-                        ChangedFiles = [| changedFile "a.txt" "M" " " false |]
+                        ChangedFiles = [| changedFile "a.txt" GitSidebarChangeKind.Modified |]
                 }
 
                 let model, command = update deps ignore (PrimarySaveAllRequested "save") state
@@ -11959,7 +11957,7 @@ Vitest.describe (
 
                 let state = {
                     runningState with
-                        ChangedFiles = [| changedFile "a.txt" "M" " " false |]
+                        ChangedFiles = [| changedFile "a.txt" GitSidebarChangeKind.Modified |]
                 }
 
                 let model, command = update deps ignore (PrimarySaveAllRequested "save") state
@@ -12461,7 +12459,7 @@ Vitest.describe (
                     let model = {
                         runningState with
                             SelectedChangePath = Some "x"
-                            ChangedFiles = [| changedFile "x" "M" " " false |]
+                            ChangedFiles = [| changedFile "x" GitSidebarChangeKind.Modified |]
                     }
 
                     Vitest.expect((applyStatus cleanStatus model).SelectedChangePath).toEqual (None)
@@ -12846,10 +12844,10 @@ Vitest.describe (
                                 IsMergeInProgress = true
                             },
                             changedFiles = [|
-                                changedFile "README.md" "M" " " false
-                                changedFile "assays/isa.assay.xlsx" "?" "?" false
-                                changedFile "notes/protocol.md" "R" "M" false
-                                changedFile "studies/s-study-01/protocol.md" "U" "U" true
+                                changedFile "README.md" GitSidebarChangeKind.Modified
+                                changedFile "assays/isa.assay.xlsx" GitSidebarChangeKind.Added
+                                changedFile "notes/protocol.md" GitSidebarChangeKind.Renamed
+                                changedFile "studies/s-study-01/protocol.md" GitSidebarChangeKind.Conflicted
                             |],
                             branchOptions = [| sidebarLocalBranch "main" true true |],
                             callbacks = {
@@ -13147,7 +13145,7 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "GitSidebar hides the inline git return text and exposes it through a popover trigger",
+            "GitSidebar tones the status icon of a deleted file as an error",
             fun () -> promise {
                 let! container, cleanup =
                     renderToBody (
@@ -13160,7 +13158,7 @@ Vitest.describe (
                                 IsClean = false
                                 IsMergeInProgress = false
                             },
-                            changedFiles = [| changedFile "obsolete.md" "D" " " false |],
+                            changedFiles = [| changedFile "obsolete.md" GitSidebarChangeKind.Deleted |],
                             branchOptions = [| sidebarLocalBranch "main" true true |],
                             callbacks = {
                                 OnRefresh = fun () -> ()
@@ -13190,9 +13188,10 @@ Vitest.describe (
                         )
                     )
 
-                Vitest.expect(container.textContent.Contains("git: D.")).toBe (false)
-                Vitest.expect(container.textContent.Contains("Deleted")).toBe (false)
-                Vitest.expect(container.querySelector ("[data-testid='GitSidebarChangeStatusIcon-0']")).not.toBeNull ()
+                let statusIcon =
+                    container.querySelector ("[data-testid='GitSidebarChangeStatusIcon-0']") :?> HTMLElement
+
+                Vitest.expect(statusIcon.className.Contains("swt:text-error")).toBe (true)
 
                 cleanup ()
             }
@@ -13218,9 +13217,7 @@ Vitest.describe (
                                     changedFiles = [|
                                         changedFile
                                             "src/very/long/path/that/wraps/in/the/sidebar/and/needs/a/fixed/status/icon.txt"
-                                            "M"
-                                            " "
-                                            false
+                                            GitSidebarChangeKind.Modified
                                     |],
                                     branchOptions = [| sidebarLocalBranch "main" true true |],
                                     callbacks = {
@@ -13598,8 +13595,8 @@ Vitest.describe (
                                 IsMergeInProgress = false
                             },
                             changedFiles = [|
-                                changedFile "README.md" "M" " " false
-                                changedFile "docs/guide.md" "M" " " false
+                                changedFile "README.md" GitSidebarChangeKind.Modified
+                                changedFile "docs/guide.md" GitSidebarChangeKind.Modified
                             |],
                             branchOptions = [| sidebarLocalBranch "main" true true |],
                             callbacks = {
@@ -13717,8 +13714,8 @@ Vitest.describe (
                                 IsMergeInProgress = false
                             },
                             changedFiles = [|
-                                changedFile "README.md" "M" " " false
-                                changedFile "docs/guide.md" "M" " " false
+                                changedFile "README.md" GitSidebarChangeKind.Modified
+                                changedFile "docs/guide.md" GitSidebarChangeKind.Modified
                             |],
                             branchOptions = [| sidebarLocalBranch "main" true true |],
                             callbacks = {
@@ -13794,7 +13791,7 @@ Vitest.describe (
                                 IsClean = false
                                 IsMergeInProgress = false
                             },
-                            changedFiles = [| changedFile "README.md" "M" " " false |],
+                            changedFiles = [| changedFile "README.md" GitSidebarChangeKind.Modified |],
                             branchOptions = [| sidebarLocalBranch "main" true true |],
                             callbacks = {
                                 noopCallbacks with
@@ -13837,7 +13834,7 @@ Vitest.describe (
                                 IsClean = false
                                 IsMergeInProgress = false
                             },
-                            changedFiles = [| changedFile "README.md" "M" " " false |],
+                            changedFiles = [| changedFile "README.md" GitSidebarChangeKind.Modified |],
                             branchOptions = [| sidebarLocalBranch "main" true true |],
                             callbacks = noopCallbacks,
                             downloadLargeFiles = true,

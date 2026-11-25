@@ -221,9 +221,7 @@ let private runningState = {
 let private change path : GitSidebarChange = {
     Path = path
     OriginalPath = None
-    IndexStatus = "M"
-    WorkingTreeStatus = "."
-    IsConflicted = false
+    Kind = GitSidebarChangeKind.Modified
 }
 
 let private select path =
@@ -450,7 +448,7 @@ Vitest.describe (
                 let renamed = {
                     change "new.txt" with
                         OriginalPath = Some "old.txt"
-                        IndexStatus = "R"
+                        Kind = GitSidebarChangeKind.Renamed
                 }
 
                 let! state = run fake (SelectChangeRequested(renamed, ignore)) runningState
@@ -2693,7 +2691,7 @@ Vitest.describe (
 
                 let conflicted = {
                     change "c.txt" with
-                        IsConflicted = true
+                        Kind = GitSidebarChangeKind.Conflicted
                 }
 
                 let requested, requestCmd =
@@ -2736,7 +2734,7 @@ Vitest.describe (
 
                 let conflicted = {
                     change "c.txt" with
-                        IsConflicted = true
+                        Kind = GitSidebarChangeKind.Conflicted
                 }
 
                 // The first ARC starts loading the page of a conflicted change.

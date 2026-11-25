@@ -854,14 +854,13 @@ let mapStatus (status: WorkspaceStatusDto) : GitSidebarStatus = {
     IsMergeInProgress = status.ActiveConflictSession.IsSome
 }
 
-/// Porcelain-style status letters the sidebar already renders.
-let private changeCode (kind: FileChangeKindDto) =
+let private changeKind (kind: FileChangeKindDto) : GitSidebarChangeKind =
     match kind with
-    | FileChangeKindDto.Added -> "A"
-    | FileChangeKindDto.Modified -> "M"
-    | FileChangeKindDto.Deleted -> "D"
-    | FileChangeKindDto.Renamed -> "R"
-    | FileChangeKindDto.Conflicted -> "U"
+    | FileChangeKindDto.Added -> GitSidebarChangeKind.Added
+    | FileChangeKindDto.Modified -> GitSidebarChangeKind.Modified
+    | FileChangeKindDto.Deleted -> GitSidebarChangeKind.Deleted
+    | FileChangeKindDto.Renamed -> GitSidebarChangeKind.Renamed
+    | FileChangeKindDto.Conflicted -> GitSidebarChangeKind.Conflicted
 
 let mapChanges (status: WorkspaceStatusDto) : GitSidebarChange[] =
     let conflictedPaths =
@@ -870,19 +869,15 @@ let mapChanges (status: WorkspaceStatusDto) : GitSidebarChange[] =
         |> Option.defaultValue Set.empty
 
     status.Changes
-    |> Array.map (fun change ->
-        let isConflicted =
-            change.Kind = FileChangeKindDto.Conflicted
-            || conflictedPaths.Contains change.Path
-
-        {
-            Path = change.Path
-            OriginalPath = change.OldPath
-            IndexStatus = if isConflicted then "U" else changeCode change.Kind
-            WorkingTreeStatus = if isConflicted then "U" else "."
-            IsConflicted = isConflicted
-        }
-    )
+    |> Array.map (fun change -> {
+        Path = change.Path
+        OriginalPath = change.OldPath
+        Kind =
+            if conflictedPaths.Contains change.Path then
+                GitSidebarChangeKind.Conflicted
+            else
+                changeKind change.Kind
+    })
 
 let private mapRefKind (kind: RefKindDto) : GitSidebarBranchKind =
     match kind with
@@ -1783,7 +1778,7 @@ let private loadPageAsync
     (workspaceVersion: string option)
     (change: GitSidebarChange)
     =
-    if not change.IsConflicted then
+    if change.Kind <> GitSidebarChangeKind.Conflicted then
         promise { return Ok GitPageChange.NoChange }
     else
         promise {
@@ -1884,10 +1879,10 @@ module GitDiffPageLoader =
         }
     |]
 
-    let changeKindOf (change: GitSidebarChange) =
-        match change.IndexStatus with
-        | "A" -> Paged.GitDiffChangeKind.Added
-        | "D" -> Paged.GitDiffChangeKind.Deleted
+    let changeKindOf (kind: GitSidebarChangeKind) =
+        match kind with
+        | GitSidebarChangeKind.Added -> Paged.GitDiffChangeKind.Added
+        | GitSidebarChangeKind.Deleted -> Paged.GitDiffChangeKind.Deleted
         | _ -> Paged.GitDiffChangeKind.Modified
 
     /// The size a DTO takes on the wire, measured as the length of its JSON in UTF-16 code units.
@@ -2074,7 +2069,7 @@ module GitDiffPageLoader =
         let page: GitDiffPageData = {
             Path = change.Path
             PreviousPath = change.OriginalPath
-            ChangeKind = Some(changeKindOf change)
+            ChangeKind = Some(changeKindOf change.Kind)
             Generation = generation
             Handle = None
             SourceInfos = None
@@ -5657,7 +5652,7 @@ let private updateCore
         nextModel, Cmd.ofMsg RefreshRequested
     | SelectChangeRequested(_, reply) when model.CurrentArcPath.IsNone ->
         model, resolveReplyCmd reply (Error "No ARC is loaded.")
-    | SelectChangeRequested(change, reply) when not change.IsConflicted ->
+    | SelectChangeRequested(change, reply) when change.Kind <> GitSidebarChangeKind.Conflicted ->
         let requestId = nextPageLoadRequestId model
         let page, openCmd = GitDiffPageLoader.start deps requestId change
 
