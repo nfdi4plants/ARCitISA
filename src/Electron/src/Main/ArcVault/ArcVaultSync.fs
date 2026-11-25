@@ -52,15 +52,35 @@ let internal changedPath (change: ArcDiskChange) : string =
     | Changed path
     | Removed path -> path
 
-let private writeBusyError () =
-    exn "ARCitISA is still saving another change. Please wait a moment and try again."
+/// The error of a vault that is busy with another operation. A retry after a short wait can succeed.
+type VaultBusyError(message: string) =
+    inherit exn(message)
 
-let private externalOperationBusyError () =
-    exn
-        "Another operation, such as a Git pull or a file download, is still running. Please try again when it has finished."
+[<Literal>]
+let private WriteBusyMessage =
+    "ARCitISA is still saving another change. Please wait a moment and try again."
 
-let private loadingBusyError () =
-    exn "ARCitISA is still loading external changes. Please wait a moment and try again."
+[<Literal>]
+let private ExternalOperationBusyMessage =
+    "Another operation, such as a Git pull or a file download, is still running. Please try again when it has finished."
+
+[<Literal>]
+let private LoadingBusyMessage =
+    "ARCitISA is still loading external changes. Please wait a moment and try again."
+
+let private writeBusyError () : exn = VaultBusyError WriteBusyMessage :> exn
+
+let private externalOperationBusyError () : exn =
+    VaultBusyError ExternalOperationBusyMessage :> exn
+
+let private loadingBusyError () : exn =
+    VaultBusyError LoadingBusyMessage :> exn
+
+/// True for the errors that mean the vault is busy with another operation and a retry can succeed.
+let isVaultBusyError (error: exn) : bool =
+    match error with
+    | :? VaultBusyError -> true
+    | _ -> false
 
 let private resolvedUnit () : JS.Promise<unit> = JS.Constructors.Promise.resolve ()
 
@@ -455,7 +475,7 @@ type ArcVault with
         | Ok(Error error) -> return raise error
     }
 
-    /// Entity delete and import. It is refused while another external operation runs. Other external operations, rename and DataMap delete wait until it ends, because they could change files that the delete or import has already read. Save and add are refused.
+    /// For entity delete and import, and for text editor saves. It is refused while another external operation runs, so a Git pull cannot change a file between the hash check and the rename of a text save. Other external operations, rename and DataMap delete wait until it ends, because they could change files that the delete or import has already read. ARC saves and adds are refused while it holds the vault.
     member this.TryWithExclusiveExternalOperationScope<'T>
         (announce: bool, operation: unit -> JS.Promise<Result<'T, exn>>)
         : JS.Promise<Result<'T, exn>> =

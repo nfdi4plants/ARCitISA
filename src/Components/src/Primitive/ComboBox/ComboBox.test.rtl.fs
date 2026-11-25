@@ -2,6 +2,7 @@ module internal Swate.Components.Primitive.ComboBox.ComboBoxTests
 
 open Feliz
 open Vitest
+open Swate.Components.Primitive.ComboBox.Types
 
 Vitest.afterEach (fun () -> RTL.cleanup ())
 
@@ -55,4 +56,45 @@ Vitest.test (
 
         Vitest.expect(RTL.screen.queryByRole("listbox").IsSome).toBe true
         Vitest.expect(blurs.Count).toBe 0
+)
+
+Vitest.test (
+    "onKeyDown gets every key and usedByList marks the Enter that picks an item and Escape",
+    fun () ->
+        let keys = ResizeArray<string * bool>()
+        let picked = ResizeArray<string>()
+
+        RTL.render (
+            ComboBox.ComboBox<string>(
+                inputValue = "",
+                onInputChange = ignore,
+                items = [| "Apple"; "Avocado" |],
+                filterFn = (fun _ -> true),
+                itemToString = id,
+                onChange = (fun _ item -> picked.Add item),
+                onKeyDown = (fun e -> keys.Add((e.key, ComboBoxKey.usedByList e)))
+            )
+        )
+        |> ignore
+
+        let combobox = RTL.screen.getByRole "combobox"
+
+        let press (key: string) =
+            RTL.fireEvent.custom ("keyDown", combobox, {| key = key; code = key |})
+
+        RTL.fireEvent.change (combobox, {| target = {| value = "a" |} |})
+        press "ArrowDown"
+        press "Enter"
+        // The list is closed now, so it leaves this Enter alone.
+        press "Enter"
+        press "Escape"
+
+        Vitest.expect(picked.ToArray()).toEqual [| "Apple" |]
+
+        // The arrow key belongs to the list navigation of Floating UI, so only the keys of the ComboBox are checked.
+        Vitest.expect(keys.ToArray() |> Array.filter (fun (key, _) -> key <> "ArrowDown")).toEqual [|
+            "Enter", true
+            "Enter", false
+            "Escape", true
+        |]
 )

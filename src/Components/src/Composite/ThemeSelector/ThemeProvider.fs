@@ -17,7 +17,6 @@ type ThemeProvider =
         =
         let localStorageKey = defaultArg localStorageKey "swate-theme-ctx"
         let dataAttribute = defaultArg dataAttribute "data-theme"
-        let colorModeAttribute = "data-color-mode"
         let (theme, setTheme) = React.useLocalStorage (localStorageKey, Theme.Auto)
 
         React.useLayoutEffect (
@@ -25,25 +24,8 @@ type ThemeProvider =
                 let root = document.documentElement
 
                 match theme with
-                | Theme.Auto ->
-                    root.removeAttribute (dataAttribute)
-                    // Without the attribute, the markdown preview follows the OS color scheme.
-                    root.removeAttribute (colorModeAttribute)
-                | themeName ->
-                    root.setAttribute (dataAttribute, unbox themeName)
-
-                    // The markdown preview picks its syntax colors from data-color-mode. The
-                    // daisyUI theme that was just applied decides whether that is light or dark.
-                    let colorMode =
-                        if JsBindings.Dom.computedColorScheme root = "dark" then
-                            "dark"
-                        else
-                            "light"
-
-                    root.setAttribute (colorModeAttribute, colorMode)
-
-                ()
-
+                | Theme.Auto -> root.removeAttribute (dataAttribute)
+                | themeName -> root.setAttribute (dataAttribute, unbox themeName)
             ),
             [| box theme |]
         )

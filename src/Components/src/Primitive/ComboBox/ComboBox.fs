@@ -27,6 +27,7 @@ type ComboBox =
             yield! props
         ]
 
+    /// onKeyDown gets every key of the input, also the keys the list uses. ComboBoxKey.usedByList tells those apart.
     [<ReactComponent(true)>]
     static member ComboBox<'a>
         (
@@ -291,17 +292,24 @@ type ComboBox =
                                     onBlur = onBlur
                                     onKeyDown =
                                         fun (ev: Browser.Types.KeyboardEvent) ->
-                                            if
-                                                ev.key = "Enter"
-                                                && activeIndex.IsSome
-                                                && Array.tryItem activeIndex.Value filteredItems |> Option.isSome
-                                            then
+                                            let picked =
+                                                match activeIndex with
+                                                | Some index when ev.key = "Enter" ->
+                                                    Array.tryItem index filteredItems
+                                                    |> Option.map (fun item -> index, item)
+                                                | _ -> None
+
+                                            // The list uses these keys. Their propagation stops before onChange and
+                                            // onKeyDown run, which is what ComboBoxKey.usedByList reads.
+                                            if picked.IsSome || ev.key = "Escape" then
                                                 ev.stopPropagation ()
-                                                onSelect activeIndex.Value filteredItems.[activeIndex.Value]
-                                            elif ev.key = "Escape" then
-                                                ev.stopPropagation ()
+
+                                            match picked with
+                                            | Some(index, item) -> onSelect index item
+                                            | None when ev.key = "Escape" ->
                                                 setOpen false
                                                 setActiveIndex None
+                                            | None -> ()
 
                                             onKeyDown |> Option.iter (fun fn -> fn ev)
                                     onDoubleClick =

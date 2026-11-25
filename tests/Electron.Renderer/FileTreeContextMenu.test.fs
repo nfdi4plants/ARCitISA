@@ -25,7 +25,7 @@ let private createContextMenuConfig () : ContextMenuConfig = {
     openItem = ignore
     arcRootPath = Some "C:\\arc-root"
     openCreateModal = ignore
-    openNoteDraft = ignore
+    openNoteDialog = ignore
     createDataMap = ignore
     tryFindDataMapItemByPath = fun _ -> None
     openFileSystemCreateModal = fun _ _ -> ()
@@ -422,14 +422,14 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "add note action requests note creation",
+            "add note action asks for a note on the clicked folder",
             fun () ->
                 let item = createFolderItem "AssayA" (Some "assays/AssayA")
-                let mutable didRequestNote = false
+                let mutable requestedFolder = None
 
                 let config = {
                     createContextMenuConfig () with
-                        openNoteDraft = fun () -> didRequestNote <- true
+                        openNoteDialog = fun folder -> requestedFolder <- folder.Path
                 }
 
                 let menuItems = createComposedContextMenuItems config item
@@ -439,7 +439,7 @@ Vitest.describe (
 
                 addNoteItem.OnClick()
 
-                Vitest.expect(didRequestNote).toBeTruthy ()
+                Vitest.expect(requestedFolder).toEqual (Some "assays/AssayA")
         )
 
         Vitest.test (

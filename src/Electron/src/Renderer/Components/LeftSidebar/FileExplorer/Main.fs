@@ -92,6 +92,8 @@ type Main =
         let fileStateCtx = Renderer.Context.FileStateContext.useFileStateCtx ()
         let errorModalCtx = useErrorModalCtx ()
         let arcNameContextMenuRef = React.useElementRef ()
+        // The file tree hosts the note dialog and puts the function that opens it here.
+        let createNoteHandle = React.useRef (None: (unit -> unit) option)
 
         let copyArcPathToClipboard path =
             promise {
@@ -124,7 +126,8 @@ type Main =
                                     ButtonInfo.create (
                                         "swt:fluent--document-add-24-regular swt:size-5",
                                         "Create Note",
-                                        fun _ -> pageStateCtx.setState (Some Renderer.Types.PageState.NotesDraftPage)
+                                        fun _ ->
+                                            createNoteHandle.current |> Option.iter (fun openDialog -> openDialog ())
                                     )
                                     ButtonInfo.create (
                                         "swt:fluent--document-search-24-regular swt:size-5",
@@ -170,7 +173,10 @@ type Main =
                         prop.testId "left-sidebar-file-explorer-tree"
                         prop.className "swt:flex-1 swt:min-h-0 swt:overflow-x-auto swt:[scrollbar-gutter:stable]"
                         prop.children [
-                            FileTree.FileTree(rootContextMenuRef = arcNameContextMenuRef)
+                            FileTree.FileTree(
+                                rootContextMenuRef = arcNameContextMenuRef,
+                                createNoteHandle = createNoteHandle
+                            )
                         ]
                     ]
                 ]

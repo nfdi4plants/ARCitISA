@@ -16,18 +16,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 3.4.0-rc.2 - 2026-11-24
+
+### 🔄 Changed
+
+- In the text editor, the "Close file" button sits next to Save instead of in the toolbar. (by @Freymaurer)
+- Markdown, HTML and SVG files open in Edit or Preview/View mode, whichever you chose last. (by @Freymaurer)
+
+### 🐛 Fixed
+
+- Disabled buttons at the end of a text editor toolbar group, such as Redo, keep their right border. (by @Freymaurer)
+
+## 3.4.0-rc.1 - 2026-11-23
+
 ### ✨ Added
 
-- The File Picker can now select multiple files or folders and insert their ARC-relative paths into a table or DataMap. Separate file and folder buttons provide consistent behavior across platforms. #1518 (by @Gitarackur)
+- Added new plain text editor with the following features 🚀 (by @Freymaurer):
+    - Syntax highlighting for various text file types.
+    - For markdown toolbar with common text formatting options, with keyboard shortcut support, including ontology search.
+    - Link/Image support for files located in arcs with path auto-completion.
+    - Undo and Redo functionality.
+    - yaml schema validation for `.arc/validation_packages.yml` against the ISA-ARC specification.
+    - leave file guard to prevent loosing unsaved changes.
 - The sign-in remembers DataHUB addresses you signed in to and offers them next to the official PLANTdataHUB. All DataHUBs other than the official one, including the preset ones, can be added or removed in the DataHUB settings, which the sign-in links to. (by @caroott)
 
 ### 🔄 Changed
 
+- "New File" and "New Folder" accept a path such as `docs/guide.md` and create the folders that lead to it. (by @Freymaurer)
+- "Add Note" asks only for a title. It creates the note as a Markdown file and opens it in the text editor. A note added on a study or assay goes into its protocols folder, every other note into `notes/<date>/`. (by @Freymaurer)
 - Removing an account or regenerating its token asks whether to delete the token on the DataHUB as well. The Logout button is now "Remove all logins": it removes every account and asks once whether to delete their tokens too. (by @caroott)
 - The settings are split into the pages General, DataHUB, Git, Large files and Term search. A navigation beside the settings, or above them in a narrow window, opens each page and lists its settings. Git switches apply right away and the MB limits apply with their Update button, so the Git defaults no longer need Save. (by @caroott)
 
 ### 🐛 Fixed
 
+- Dialogs put the focus on their first field or button when they open, instead of on the close button. (by @Freymaurer)
 - Regular expressions in "Update Rows" now respect anchors such as `^` and `$` and replace only their actual matches. #943 (by @Gitarackur)
 
 ## 3.3.0 - 2026-11-19

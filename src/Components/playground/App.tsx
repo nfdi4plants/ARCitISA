@@ -18,7 +18,7 @@ import {Entry as DataMapTable} from '../src/Composite/DataMapTable/DataMapTable.
 import {Entry as Layout} from '../src/Composite/Layout/Layout.fs.js'
 import {FileExplorerExample_Example} from '../src/Page/FileExplorer/FileExplorer.fs.ts'
 import {Entry as WidgetController} from '../src/Composite/Widgets/Widgets.fs.ts';
-import {Entry as TextInputWithMarkdown} from '../src/Composite/MarkdownText/TextInputWithMarkdown.fs.ts';
+import {Entry as MarkdownTextEditor} from '../src/Composite/MarkdownText/MarkdownTextEditor.sample.fs.ts';
 import {Entry as AuthButton} from '../src/Composite/Authentication/Authentication.fs.ts';
 import {GitLabEntry as DataHubBrowser} from '../src/Page/DataHubBrowser/DataHubBrowser.fs.ts';
 import {Entry as ARCSelectorEntry} from '../src/Composite/ArcSelector/ArcSelector.fs.ts';
@@ -182,7 +182,7 @@ function LandingContainer() {
 function MarkdownTextContainer() {
   return <div className='swt:flex swt:flex-col swt:gap-4 swt:w-full'>
     <h2 className='swt:text-5xl swt:font-bold swt:mb-4'>Markdown Editor</h2>
-    <TextInputWithMarkdown />
+    <MarkdownTextEditor />
   </div>
 }
 

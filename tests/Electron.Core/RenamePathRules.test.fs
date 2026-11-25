@@ -83,6 +83,41 @@ Vitest.describe (
         )
 
         Vitest.test (
+            "validateNewItemPath accepts a name and a path of trimmed parts",
+            fun () ->
+                Vitest.expect(validateNewItemPath " notes.md ").toEqual (Ok "notes.md")
+                Vitest.expect(validateNewItemPath " docs / guide.md ").toEqual (Ok "docs/guide.md")
+                Vitest.expect(validateNewItemPath "data/raw/day 1").toEqual (Ok "data/raw/day 1")
+        )
+
+        Vitest.test (
+            "validateNewItemPath rejects backslashes, empty parts and leading or trailing slashes",
+            fun () ->
+                // Each path breaks one rule only. The messages carry no value of the path, so only the refusal counts.
+                for path in
+                    [
+                        "docs\\guide.md"
+                        "/docs/guide.md"
+                        "docs/"
+                        "docs//guide.md"
+                        "docs/ /guide.md"
+                    ] do
+                    match validateNewItemPath path with
+                    | Ok accepted -> failwith $"Expected '{path}' to be rejected, but got '{accepted}'."
+                    | Error _ -> ()
+        )
+
+        Vitest.test (
+            "validateNewItemPath names the part that breaks a rule of validateRenameName",
+            fun () ->
+                validateNewItemPath "docs/../guide.md" |> expectErrorContaining "'..':"
+                validateNewItemPath "docs/a:b/guide.md" |> expectErrorContaining "'a:b':"
+                validateNewItemPath "aux/guide.md" |> expectErrorContaining "'aux':"
+                // A single name keeps the message of validateRenameName.
+                Vitest.expect(validateNewItemPath "a:b").toEqual (validateRenameName "a:b")
+        )
+
+        Vitest.test (
             "validateRenameName rejects characters Windows does not allow",
             fun () ->
                 [

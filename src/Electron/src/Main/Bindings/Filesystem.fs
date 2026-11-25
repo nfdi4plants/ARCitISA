@@ -34,6 +34,7 @@ type Stats =
     abstract member isSymbolicLink: unit -> bool
     abstract member size: float
     abstract member mtimeMs: float
+    abstract member mode: int
 
 type Dirent =
     abstract member name: string
@@ -169,24 +170,62 @@ type ReadResult =
     abstract member bytesRead: int
     abstract member buffer: byte[]
 
+/// A Node.js readable stream. The binding only needs to destroy it and hand it to Readable.toWeb.
+type NodeReadStream =
+    abstract member destroy: unit -> unit
+
 type FileHandle =
     abstract member close: unit -> JS.Promise<unit>
     abstract member read: buffer: byte[] * offset: int * length: int * position: int -> JS.Promise<ReadResult>
+    abstract member readFile: unit -> JS.Promise<byte[]>
+    abstract member writeFile: byte[] -> JS.Promise<unit>
+    abstract member stat: unit -> JS.Promise<Stats>
+    abstract member chmod: int -> JS.Promise<unit>
+    abstract member sync: unit -> JS.Promise<unit>
+
+    /// Streams the bytes from start to end (both inclusive). With autoClose the handle closes when the stream ends.
+    abstract member createReadStream:
+        options:
+            {|
+                start: float
+                ``end``: float
+                autoClose: bool
+            |} ->
+            NodeReadStream
 
 [<Import("open", "fs/promises")>]
 let openAsync (path: string) (flags: string) : JS.Promise<FileHandle> = jsNative
 
+[<Import("open", "fs/promises")>]
+let openWithModeAsync (path: string) (flags: string) (mode: int) : JS.Promise<FileHandle> = jsNative
+
 [<Emit("Buffer.alloc($0)")>]
 let allocBuffer (length: int) : byte[] = jsNative
 
-/// Decodes the first length bytes of a Node buffer as UTF-8. A leading BOM stays in the text, as with readFile.
-[<Emit("$0.toString('utf8', 0, $1)")>]
-let bufferToUtf8Prefix (buffer: byte[]) (length: int) : string = jsNative
-
-/// Decodes the first length bytes with a TextDecoder. The label is a WHATWG encoding label such as utf-16le.
-/// The decoder drops a leading BOM.
-[<Emit("new TextDecoder($2).decode($0.subarray(0, $1))")>]
-let bufferDecodePrefix (buffer: byte[]) (length: int) (encodingLabel: string) : string = jsNative
-
 [<Emit("$0.toString('base64', 0, $1)")>]
 let bufferToBase64Prefix (buffer: byte[]) (length: int) : string = jsNative
+
+[<Emit("Buffer.from($0, $1)")>]
+let bufferFromString (text: string) (encoding: string) : byte[] = jsNative
+
+[<Emit("Buffer.concat($0)")>]
+let bufferConcat (parts: byte[][]) : byte[] = jsNative
+
+/// Swaps the byte order of every 16-bit unit. The input buffer stays unchanged.
+[<Emit("Buffer.from($0).swap16()")>]
+let bufferSwap16 (buffer: byte[]) : byte[] = jsNative
+
+[<Emit("(() => { try { return new TextDecoder($3, { fatal: true, ignoreBOM: true }).decode($0.subarray($1, $1 + $2)) } catch { return undefined } })()")>]
+let tryDecodeFatal (buffer: byte[]) (offset: int) (length: int) (label: string) : string option = jsNative
+
+[<Emit("new TextDecoder($3, { ignoreBOM: true }).decode($0.subarray($1, $1 + $2))")>]
+let decodeLenient (buffer: byte[]) (offset: int) (length: int) (label: string) : string = jsNative
+
+type private ReadableClass =
+    abstract member toWeb: NodeReadStream -> obj
+
+[<Import("Readable", "node:stream")>]
+let private readableClass: ReadableClass = jsNative
+
+/// Converts a Node.js readable stream into a web ReadableStream, the body type of a fetch Response.
+let readableToWeb (stream: NodeReadStream) : obj = readableClass.toWeb stream

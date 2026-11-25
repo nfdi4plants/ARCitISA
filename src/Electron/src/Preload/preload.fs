@@ -22,6 +22,7 @@ contextBridge.exposeInMainWorld (
 )
 
 Remoting.createIpc () |> Remoting.buildTwoWayBridge<IArcVaultsApi>
+Remoting.createIpc () |> Remoting.buildTwoWayBridge<IMarkdownResolverApi>
 Remoting.createIpc () |> Remoting.buildTwoWayBridge<IVersionControlApi>
 Remoting.createIpc () |> Remoting.buildTwoWayBridge<IGitLabApi>
 Remoting.createIpc () |> Remoting.buildTwoWayBridge<IAuthApi>

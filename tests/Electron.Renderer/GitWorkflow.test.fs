@@ -17,6 +17,15 @@ open Vitest
 [<Import("renderToStaticMarkup", "react-dom/server")>]
 let private renderToStaticMarkup (element: ReactElement) : string = jsNative
 
+/// A text page that another part of the app opened.
+let private textPage (content: string) =
+    PageState.TextDocumentPage {
+        Path = "notes.txt"
+        Content = content
+        FileType = Swate.Electron.Shared.FileIOTypes.FileContentType.PlainText
+        Info = None
+    }
+
 let private localBranch name current _ = {
     Name = name
     ProviderRef = $"git-local:{name}"
@@ -1859,7 +1868,7 @@ Vitest.describe (
                     update
                         defaultDependencies
                         ignore
-                        (SelectChangeCompleted(1, "A.txt", reply, Ok(GitPageChange.Set(PageState.TextPage "late"))))
+                        (SelectChangeCompleted(1, "A.txt", reply, Ok(GitPageChange.Set(textPage "late"))))
                         state
 
                 let! _ = collectMessages cmd

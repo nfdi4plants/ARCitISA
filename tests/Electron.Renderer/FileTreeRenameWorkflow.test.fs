@@ -165,6 +165,7 @@ let private createConfirmRenameConfig
                 probe.ReloadedPreviewPath <- Some path
                 return Ok()
             }
+        confirmLeaveFor = fun _ -> Promise.lift true
         renamePath =
             fun request -> promise {
                 probe.RenameRequest <- Some request
@@ -448,7 +449,14 @@ Vitest.describe (
                     createConfirmRenameConfig
                         renameDraft
                         "assays/AssayA/protocols/old.txt"
-                        (Some(Renderer.Types.PageState.TextPage "old content"))
+                        (Some(
+                            Renderer.Types.PageState.TextDocumentPage {
+                                Path = "assays/AssayA/protocols/old.txt"
+                                Content = "old content"
+                                FileType = Swate.Electron.Shared.FileIOTypes.FileContentType.PlainText
+                                Info = None
+                            }
+                        ))
                         probe
 
                 RenameWorkflow.confirmRenameItem config "new.txt"
@@ -457,7 +465,37 @@ Vitest.describe (
                 expectRenameRequest probe "assays/AssayA/protocols/old.txt" "new.txt"
                 Vitest.expect(probe.RenamedSelection.IsSome).toBe (true)
                 Vitest.expect(probe.RenamedSelection.Value.TreePath).toEqual (Some "assays/AssayA/protocols/new.txt")
+                // The open text page reloads at the new path, so a later save does not recreate the old file.
+                Vitest.expect(probe.ReloadedPreviewPath).toEqual (Some "assays/AssayA/protocols/new.txt")
                 Vitest.expect(probe.GitStatusRefreshCount).toBe (1)
+            }
+        )
+
+        Vitest.test (
+            "confirmRenameItem leaves the file alone when the user keeps the open text document",
+            fun () -> promise {
+                let renameDraft =
+                    createFileItem "old.txt" "assays/AssayA/protocols/old.txt"
+                    |> buildRenameDraftOrFail
+
+                let probe = createRenameWorkflowProbe ()
+                let askedPaths = ResizeArray<string>()
+
+                let config = {
+                    createConfirmRenameConfig renameDraft "assays/AssayA/protocols/old.txt" None probe with
+                        confirmLeaveFor =
+                            fun path ->
+                                askedPaths.Add path
+                                Promise.lift false
+                }
+
+                RenameWorkflow.confirmRenameItem config "new.txt"
+                do! waitUntil ((fun () -> probe.Closed), 50)
+
+                Vitest.expect(askedPaths.ToArray()).toEqual ([| "assays/AssayA/protocols/old.txt" |])
+                Vitest.expect(probe.RenameRequest.IsNone).toBe (true)
+                Vitest.expect(probe.RenamedSelection.IsNone).toBe (true)
+                Vitest.expect(probe.GitStatusRefreshCount).toBe (0)
             }
         )
 )

@@ -23,6 +23,9 @@ let ipcVersionControlApi =
 let ipcArcVaultApi =
     Remoting.createIpc () |> Remoting.buildProxySender<IArcVaultsApi>
 
+let ipcMarkdownResolverApi =
+    Remoting.createIpc () |> Remoting.buildProxySender<IMarkdownResolverApi>
+
 let ipcAuthApi = Remoting.createIpc () |> Remoting.buildProxySender<IAuthApi>
 
 let ipcAppVersionApi =

@@ -8,7 +8,7 @@ open Feliz
 open Swate.Components
 open Swate.Components.Primitive
 open Swate.Components.Primitive.Buttons
-open Swate.Components.Primitive.Navbar
+open Swate.Components.Composite.EditorToolbar
 open Swate.Components.Composite.Widgets.Context
 open Swate.Components.Composite.DataMapTable
 open Swate.Components.Composite.Widgets.JsonImport.Types
@@ -323,6 +323,7 @@ type Main =
     /// Loads tables from the whole ARC so an empty table can reuse their input and output columns.
     /// Without it, only the other tables of the open file are offered.
     /// </param>
+    /// <param name="onClose">Adds the toolbar's Close file button. The host decides what closing means.</param>
     [<ReactComponent>]
     static member ArcFileEditor
         (
@@ -338,7 +339,8 @@ type Main =
             ?onError: string -> unit,
             ?onImportPersons: unit -> JS.Promise<Person[]>,
             ?fetchArcNodes: unit -> JS.Promise<ArcNodeTable[]>,
-            ?onJsonImportError: JsonImportError -> unit
+            ?onJsonImportError: JsonImportError -> unit,
+            ?onClose: unit -> unit
         ) =
 
         let onError =
@@ -383,15 +385,17 @@ type Main =
             | Some renderTrailingNavbarElements -> renderTrailingNavbarElements headerProps
             | None -> Html.none
 
-        let navbar =
-            Navbar.Main(
-                left =
+        // The same bar as over text and Markdown files. The host's elements sit at its end, before Close file.
+        let toolbar =
+            EditorToolbar.EditorToolbar(
+                ariaLabel = "ARC file",
+                children =
                     React.Fragment [
                         SearchField.SearchField(arcFile, activeView, tableRef)
                         Swate.Components.Page.ArcFileEditor.Widgets.Main.WidgetToggleBtns()
                     ],
-                right = trailingNavbarElement,
-                className = "swt:border swt:border-base-300"
+                trailing = trailingNavbarElement,
+                ?onClose = onClose
             )
 
 
@@ -454,7 +458,7 @@ type Main =
             Html.div [
                 prop.className "swt:grow swt:flex swt:flex-col swt:overflow-hidden"
                 prop.children [
-                    navbar
+                    toolbar
                     Html.div [
                         prop.className "swt:grow swt:flex swt:flex-col swt:overflow-hidden"
                         prop.children [

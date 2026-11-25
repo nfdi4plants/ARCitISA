@@ -68,10 +68,6 @@ module Dom =
     [<Emit("getComputedStyle($0).fontFamily")>]
     let computedFontFamily (el: Element) : string = jsNative
 
-    /// The computed CSS color-scheme of an element, such as "light" or "dark".
-    [<Emit("getComputedStyle($0).colorScheme")>]
-    let computedColorScheme (el: Element) : string = jsNative
-
     [<Emit("$0.isConnected")>]
     let isConnected (el: Element) : bool = jsNative
 

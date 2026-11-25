@@ -64,7 +64,11 @@ type CloseWindowController =
                     match! resolveCloseRequest SaveBeforeQuitDecision.SaveAndClose with
                     | Ok() -> setModalIsOpen false
                     | Error resolveError -> enqueueCloseError "Could not save and close window" resolveError
-                | Error saveError -> enqueueCloseError "Save before close failed" saveError
+                | Error saveError ->
+                    // Main keeps a close request pending until it hears back, and would ignore the next close.
+                    let! _ = resolveCloseRequest SaveBeforeQuitDecision.CancelClose
+                    setModalIsOpen false
+                    enqueueCloseError "Save before close failed" saveError
             }
             |> Promise.start
 
