@@ -12,6 +12,7 @@ open Swate.Components.Composite.SortableList.Types
 open Swate.Components.Shared
 open Swate.Components.Primitive
 open Swate.Components.Primitive.Buttons
+open Swate.Components.Primitive.Dropdown
 open Swate.Components.Primitive.LoadingSpinner
 open Swate.Components.Composite.AnnotationTable.Context
 open Swate.Components.Composite.DataMapTable
@@ -217,62 +218,50 @@ type FilePickerWidget =
         Html.div [
             prop.className "swt:flex swt:flex-wrap swt:gap-2 swt:w-full"
             prop.children [
-                Html.div [
-                    prop.className "swt:dropdown"
-                    prop.children [
-                        Html.button [
-                            prop.type'.button
-                            prop.className "swt:btn swt:btn-outline swt:gap-2"
-                            prop.ariaExpanded isPickMenuOpen
-                            prop.onClick (fun _ -> setIsPickMenuOpen (not isPickMenuOpen))
-                            prop.children [
-                                Html.span "Add paths"
-                                Html.i [
-                                    prop.className "swt:iconify swt:fluent--chevron-down-20-regular swt:size-4"
+                Dropdown.Main(
+                    isPickMenuOpen,
+                    setIsPickMenuOpen,
+                    Html.button [
+                        prop.type'.button
+                        prop.className "swt:btn swt:btn-outline swt:gap-2"
+                        prop.ariaExpanded isPickMenuOpen
+                        prop.onClick (fun _ -> setIsPickMenuOpen (not isPickMenuOpen))
+                        prop.children [
+                            Html.span "Add paths"
+                            Html.i [
+                                prop.className "swt:iconify swt:fluent--chevron-down-20-regular swt:size-4"
+                            ]
+                        ]
+                    ],
+                    React.Fragment [
+                        Html.li [
+                            Html.button [
+                                prop.type'.button
+                                prop.onClick (fun _ -> pickPaths PathPickerKind.File)
+                                prop.children [
+                                    Html.i [
+                                        prop.className "swt:iconify swt:fluent--document-24-regular swt:size-4"
+                                    ]
+                                    Html.span "Pick files"
                                 ]
                             ]
                         ]
-                        if isPickMenuOpen then
-                            Html.ul [
-                                prop.className
-                                    "swt:dropdown-content swt:menu swt:bg-base-200 swt:rounded-box swt:z-10 swt:w-52 swt:p-2 swt:shadow-sm"
+                        Html.li [
+                            Html.button [
+                                prop.type'.button
+                                prop.onClick (fun _ -> pickPaths PathPickerKind.Folder)
                                 prop.children [
-                                    Html.li [
-                                        Html.button [
-                                            prop.type'.button
-                                            prop.onClick (fun _ ->
-                                                setIsPickMenuOpen false
-                                                pickPaths PathPickerKind.File
-                                            )
-                                            prop.children [
-                                                Html.i [
-                                                    prop.className
-                                                        "swt:iconify swt:fluent--document-24-regular swt:size-4"
-                                                ]
-                                                Html.span "Pick files"
-                                            ]
-                                        ]
+                                    Html.i [
+                                        prop.className "swt:iconify swt:fluent--folder-24-regular swt:size-4"
                                     ]
-                                    Html.li [
-                                        Html.button [
-                                            prop.type'.button
-                                            prop.onClick (fun _ ->
-                                                setIsPickMenuOpen false
-                                                pickPaths PathPickerKind.Folder
-                                            )
-                                            prop.children [
-                                                Html.i [
-                                                    prop.className
-                                                        "swt:iconify swt:fluent--folder-24-regular swt:size-4"
-                                                ]
-                                                Html.span "Pick folders"
-                                            ]
-                                        ]
-                                    ]
+                                    Html.span "Pick folders"
                                 ]
                             ]
-                    ]
-                ]
+                        ]
+                    ],
+                    contentClassName =
+                        "swt:w-52 swt:menu swt:bg-base-200 swt:rounded-box swt:z-99 swt:p-2 swt:shadow-sm"
+                )
                 FilePickerWidget.ActionButtonClear(hasSelection, clearAll, clearSelected)
                 FilePickerWidget.ActionButtonInsert(hasSelection, insertPaths, tableCellSelected)
             ]
