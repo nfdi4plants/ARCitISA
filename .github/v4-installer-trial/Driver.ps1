@@ -63,6 +63,9 @@ public static class Win32Control {
   [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr h, uint msg, IntPtr w, IntPtr l);
   [DllImport("user32.dll")] public static extern IntPtr GetParent(IntPtr h);
   [DllImport("user32.dll")] public static extern int GetDlgCtrlID(IntPtr h);
+  [DllImport("user32.dll")] public static extern IntPtr GetDlgItem(IntPtr h, int id);
+  [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
+  [DllImport("user32.dll")] public static extern void mouse_event(uint flags, uint dx, uint dy, uint data, UIntPtr extra);
 }
 "@
 }
@@ -83,17 +86,26 @@ function Select-Radio($el, $siblings) {
   foreach ($s in $siblings) { if ($s.Current.NativeWindowHandle -ne $el.Current.NativeWindowHandle) { [void][Win32Control]::SendMessage((Get-Hwnd $s), 0x00F1, [IntPtr]::Zero, [IntPtr]::Zero) } }
   Set-Toggle $el $true
 }
+# A real left click in the middle of the element, for the taskbar, which ignores the Invoke pattern.
+function Invoke-Click($el) {
+  $r = $el.Current.BoundingRectangle
+  [void][Win32Control]::SetCursorPos([int]($r.X + $r.Width / 2), [int]($r.Y + $r.Height / 2))
+  [Win32Control]::mouse_event(0x0002, 0, 0, 0, [UIntPtr]::Zero)
+  Start-Sleep -Milliseconds 100
+  [Win32Control]::mouse_event(0x0004, 0, 0, 0, [UIntPtr]::Zero)
+}
 function Get-WindowText($el) {
   $sb = New-Object System.Text.StringBuilder 1024
   [void][Win32Control]::SendMessage((Get-Hwnd $el), 0x000D, [IntPtr]1024, $sb)
   $sb.ToString()
 }
 
-# NSIS windows are dialogs (#32770). The wizard has the Back button (3), a message box has not.
+# NSIS windows are dialogs (#32770). The wizard has the Back button (3), a message box has not. On the
+# first page the button is hidden, so UI Automation does not list it; GetDlgItem finds it anyway.
 function Get-NsisWindows {
   Get-TopWindows | Where-Object { $_.Current.ClassName -eq '#32770' -and $_.Current.Name -like '*ARCitISA*' -and -not $_.Current.IsOffscreen }
 }
-function Test-Wizard($w) { $null -ne (Find-Id $w '3') }
+function Test-Wizard($w) { [Win32Control]::GetDlgItem((Get-Hwnd $w), 3) -ne [IntPtr]::Zero }
 
 # Answers a message box: Yes (6), No (7) or the only button. Returns its text.
 function Send-MessageBoxAnswer($w, [string]$answer) {
@@ -150,6 +162,9 @@ function Get-State([string]$label) {
     Links = @(Get-Links)
     AppData = @(Get-ChildItem -Force $env:APPDATA -Directory | Where-Object { $_.Name -match 'swate|arcitisa' } | ForEach-Object { '{0} (created {1:HH:mm:ss}, entries: {2})' -f $_.Name, $_.CreationTime, ((Get-ChildItem -Force $_.FullName | ForEach-Object Name) -join ',') })
     StartApps = @(try { Get-StartApps | Where-Object { $_.Name -like '*ARCitISA*' } | ForEach-Object { '{0} = {1}' -f $_.Name, $_.AppID } } catch { "Get-StartApps failed: $($_.Exception.Message)" })
+    # What keeps an old app-<version> folder: its remaining files and the processes started from it.
+    OldAppFiles = @(foreach ($id in 'swate', 'arcitisa') { Get-ChildItem -Force -Recurse -File "$env:LOCALAPPDATA\$id\app-*" -ErrorAction SilentlyContinue | Select-Object -First 20 | ForEach-Object { $_.FullName.Substring($env:LOCALAPPDATA.Length + 1) } })
+    OldAppProcesses = @(Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -like "$env:LOCALAPPDATA\swate\*" -or $_.ExecutablePath -like "$env:LOCALAPPDATA\arcitisa\*" } | ForEach-Object { '{0} {1}' -f $_.ProcessId, $_.ExecutablePath })
   }
   Log ("STATE {0}: {1}" -f $label, ($s | ConvertTo-Json -Depth 5 -Compress))
   $s
@@ -267,6 +282,7 @@ function Invoke-SetupQuestionOnly([string]$path, [string]$answer) {
 }
 
 function Invoke-Uninstall([string]$uninstaller) {
+  if (-not (Test-Path $uninstaller)) { Log "no uninstaller at $uninstaller, nothing to uninstall"; return }
   Log "uninstalling with $uninstaller"
   Open-AsUser $uninstaller
   $deadline = (Get-Date).AddMinutes(5)
@@ -374,12 +390,21 @@ try {
       $s1 = Get-State 'after first attempt with the old app running'
       Note ("messages: " + ($wz.Errors -join ' / '))
       Note ("old app still running: " + [bool](Get-Process swate -ErrorAction SilentlyContinue))
-      Check 'first attempt stopped with a message' ($wz.Errors.Count -ge 1 -and -not $s1.PerUserApp) ($wz.Errors -join ' / ')
-      Close-App 'swate'
-      Start-Setup $rc1
-      $wz2 = Invoke-Wizard $rc1 @{ Question = 'Yes'; Mode = 'user'; Desktop = $false; Run = $false }
-      $s2 = Get-State 'after second attempt'
-      Check 'second attempt installs' ($s2.PerUserApp -and (Test-Entry $s2 $guid)) ("errors: " + ($wz2.Errors -join ' / ') + ", questions: $($wz2.Questions)")
+      # Squirrel stops the running app. Setup either installs right away or stops with a message,
+      # and then the second attempt must install.
+      $s2 = $s1
+      if ($s1.PerUserApp) {
+        Note 'first attempt installed'
+        Check 'no error message' ($wz.Errors.Count -eq 0) ($wz.Errors -join ' / ')
+      } else {
+        Check 'first attempt stopped with a message' ($wz.Errors.Count -ge 1) ($wz.Errors -join ' / ')
+        Close-App 'swate'
+        Start-Setup $rc1
+        $wz2 = Invoke-Wizard $rc1 @{ Question = 'Yes'; Mode = 'user'; Desktop = $false; Run = $false }
+        $s2 = Get-State 'after second attempt'
+        Check 'second attempt without an error' ($wz2.Errors.Count -eq 0) ("errors: " + ($wz2.Errors -join ' / ') + ", questions: $($wz2.Questions)")
+      }
+      Check 'new version installed' ($s2.PerUserApp -and (Test-Entry $s2 $guid))
       Check 'old install gone' (-not (Test-Entry $s2 'swate') -and -not (Test-AppFolder "$env:LOCALAPPDATA\swate"))
     }
     'D' {
@@ -465,8 +490,8 @@ try {
       # 2. Start from the pinned taskbar icon.
       $tray = Get-TopWindows | Where-Object { $_.Current.ClassName -eq 'Shell_TrayWnd' } | Select-Object -First 1
       $pin = Get-Descendants $tray | Where-Object { $_.Current.ControlType.ProgrammaticName -eq 'ControlType.Button' -and $_.Current.Name -like '*ARCitISA*' } | Select-Object -First 1
-      # The taskbar is not a classic Win32 control, its buttons support the Invoke pattern.
-      if ($pin) { try { $pin.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke() } catch { Note "pinned icon invoke failed: $($_.Exception.Message)" } }
+      # The Invoke pattern of the taskbar button did not start the app in the first run, a click does.
+      if ($pin) { Invoke-Click $pin } else { Note 'pinned icon not found' }
       Test-AppStarted 'pinned icon'
       Start-Sleep -Seconds 3
       $b2 = Get-TaskbarButtons

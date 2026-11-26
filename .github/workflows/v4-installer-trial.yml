@@ -133,6 +133,7 @@ jobs:
         run: |
           case "${{ matrix.platform }}" in
             win) target="${{ matrix.app }}/arcitisa.exe" ;;
+            linux) target="${{ matrix.app }}/arcitisa" ;;
             *) target="${{ matrix.app }}" ;;
           esac
           npx electron-fuses read --app "$target" | tee "$RUNNER_TEMP/fuses.txt"
@@ -382,6 +383,22 @@ jobs:
             ls -la /opt/ARCitISA/arcitisa /usr/bin/arcitisa
             test "$(readlink -f /usr/bin/arcitisa)" = /opt/ARCitISA/arcitisa'
 
+      # electron-builder's remove script deletes /usr/bin/arcitisa and the AppArmor profile. fpm only
+      # skips it on updates when the package has an upgrade script, and electron-builder passes none.
+      # rpm runs the remove script of the old package after the install script of the new one.
+      - name: "Linux: Fedora, dnf updates 4.0.0-rc.1 to 4.0.0-rc.2"
+        if: ${{ !cancelled() && steps.build.outcome == 'success' && runner.os == 'Linux' && matrix.arch == 'x64' }}
+        run: |
+          npx electron-builder --prepackaged "${{ matrix.app }}" --linux rpm --x64 --config electron-builder.config.js --publish never -c.extraMetadata.version=4.0.0-rc.2 -c.directories.output=out/installers-rc.2
+          docker run --rm -v "$PWD/out/installers:/rc1:ro" -v "$PWD/out/installers-rc.2:/rc2:ro" fedora:latest bash -euxc '
+            dnf install -y -q /rc1/*.x86_64.rpm
+            rpm -q arcitisa
+            ls -la /usr/bin/arcitisa
+            dnf install -y /rc2/*.x86_64.rpm
+            rpm -q arcitisa
+            ls -la /opt/ARCitISA/arcitisa /usr/bin/arcitisa
+            test "$(readlink -f /usr/bin/arcitisa)" = /opt/ARCitISA/arcitisa'
+
       - name: "Linux: Arch, pacman -U upgrades arcitisa"
         if: ${{ !cancelled() && steps.old.outcome == 'success' }}
         run: |
@@ -399,7 +416,10 @@ jobs:
         if: ${{ !cancelled() && steps.build.outcome == 'success' && runner.os == 'Linux' && matrix.arch == 'x64' }}
         run: |
           sudo apt-get install -y ./out/installers/*_amd64.deb
-          npx electron-fuses read --app /opt/ARCitISA/arcitisa
+          # Same files as the packaged app, whose fuses an earlier step read. electron-fuses opens the
+          # binary for writing, which a non-root user cannot do in /opt.
+          cmp /opt/ARCitISA/arcitisa "${{ matrix.app }}/arcitisa"
+          cmp /opt/ARCitISA/resources/app.asar "${{ matrix.app }}/resources/app.asar"
           # timeout exits with 124 when the app was still running after 30 s.
           set +e
           xvfb-run -a timeout 30 /opt/ARCitISA/arcitisa --user-data-dir="$(mktemp -d)"
@@ -442,7 +462,8 @@ jobs:
             sleep 25
             if kill -0 "$pid" 2> /dev/null; then echo "app still running after 25 s"; kill "$pid"; else wait "$pid"; echo "app exited with $?"; status=1; fi
           done
-          hdiutil detach "$RUNNER_TEMP/dmg"
+          # No hdiutil detach: helper processes of the stopped app can keep the image busy for a while
+          # ("Resource busy"), and the runner is thrown away anyway.
           exit "$status"
 
       - uses: actions/upload-artifact@v4
