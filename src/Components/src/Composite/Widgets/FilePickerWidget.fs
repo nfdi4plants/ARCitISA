@@ -286,7 +286,8 @@ type FilePickerWidget =
                         // ]
                         Html.span [
                             prop.className "swt:text-sm swt:opacity-70"
-                            prop.text "Pick files or folders to add their ARC-relative paths."
+                            prop.text
+                                "No paths selected. Pick files or folders below and insert their paths into your table."
                         ]
                         Html.div [
                             prop.className "swt:flex swt:w-full swt:max-w-sm swt:gap-2 swt:pt-2"
