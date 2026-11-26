@@ -1,9 +1,9 @@
 # Phase 0 trial build of the 4.0.0 installers (docs/maintainer/V4InstallerAndCleanupPlan.md).
 # Temporary. Delete this file before feature/v4-installers is merged.
 #
-# Builds every installer with version 4.0.0-rc.1, checks that electron-builder left the packaged app
-# alone, and tests the package metadata and the upgrade from the 3.4.0-rc.2 packages. Each check is its
-# own step, so one failure does not hide the others.
+# Builds every installer with version 4.0.0-rc.1 the way a release does (Release.electronBinaries),
+# checks what electron-builder made of the packaged app, and tests the package metadata and the
+# upgrades from the 3.x packages. Each check is its own step, so one failure does not hide the others.
 
 name: v4 installer trial
 
@@ -14,6 +14,8 @@ on:
 
 permissions:
   contents: read
+  # gh run download of the Forge-built 3.4.0 packages from an earlier run.
+  actions: read
 
 env:
   TRIAL_VERSION: 4.0.0-rc.1
@@ -30,28 +32,23 @@ jobs:
           - os: windows-latest
             arch: x64
             platform: win
-            targets: nsis
             app: out/ARCitISA-win32-x64
           - os: macos-latest
             arch: x64
             platform: mac
-            targets: dmg zip
             app: out/ARCitISA-darwin-x64/ARCitISA.app
           - os: macos-latest
             arch: arm64
             platform: mac
-            targets: dmg zip
             app: out/ARCitISA-darwin-arm64/ARCitISA.app
           # Same runners as release_electron_binaries. arm64 is cross-built on the x64 runner there too.
           - os: ubuntu-24.04
             arch: x64
             platform: linux
-            targets: deb rpm pacman AppImage zip
             app: out/ARCitISA-linux-x64
           - os: ubuntu-24.04
             arch: arm64
             platform: linux
-            targets: deb rpm zip
             app: out/ARCitISA-linux-arm64
 
     runs-on: ${{ matrix.os }}
@@ -84,49 +81,42 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y rpm zstd libarchive-tools xvfb
 
-      - run: npm run fable
-
-      # No release has the Squirrel id and package name arcitisa yet. 3.4.0 will, and it is built by
-      # the Forge makers that this branch still has. Goes together with the makers in phase 1.
-      - name: Build 3.4.0 packages with the Forge makers
+      # No release has the Squirrel id and package name arcitisa yet; 3.4.0 will. Its Squirrel setup, deb
+      # and rpm were built with the Forge makers before phase 1 removed them, and every run uploads them
+      # again (see the end of this job), so they come from the newest earlier run that still has them.
+      - name: Download the Forge-built 3.4.0 packages from an earlier run
         if: runner.os == 'Windows' || (runner.os == 'Linux' && matrix.arch == 'x64')
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          npm version 3.4.0 --no-git-tag-version
-          if [ "$RUNNER_OS" = Windows ]; then makers=@electron-forge/maker-squirrel; else makers=@electron-forge/maker-deb,@electron-forge/maker-rpm; fi
-          node scripts/forge-make.cjs --arch=x64 --targets=$makers
-          mkdir -p "$RUNNER_TEMP/forge-3.4.0"
-          find out/make -type f \( -name '*Setup.exe' -o -name '*.deb' -o -name '*.rpm' \) -exec cp {} "$RUNNER_TEMP/forge-3.4.0/" \;
+          name="v4-installer-trial-forge-3.4.0-$RUNNER_OS"
+          run_id=$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=$name&per_page=20" --jq '[.artifacts[] | select(.expired == false)][0].workflow_run.id')
+          if [ -z "$run_id" ] || [ "$run_id" = null ]; then echo "::error::No run has $name any more (artifacts expire after 7 days)"; exit 1; fi
+          echo "from run $run_id"
+          gh run download "$run_id" --repo "$GITHUB_REPOSITORY" -n "$name" -D "$RUNNER_TEMP/forge-3.4.0"
           ls -la "$RUNNER_TEMP/forge-3.4.0"
-          rm -rf out
 
-      - name: Set the trial version
-        run: npm version "$TRIAL_VERSION" --no-git-tag-version
-
-      - name: electron-forge package
-        run: npx electron-forge package --arch=${{ matrix.arch }}
-
-      - name: Hash the packaged app
+      # A release takes its version from the newest entry in CHANGELOG.md.
+      - name: Add the trial version to CHANGELOG.md
+        working-directory: .
         run: |
-          (cd "${{ matrix.app }}" && find . -type f -print0 | LC_ALL=C sort -z | xargs -0 $(command -v sha256sum || echo shasum -a 256)) > "$RUNNER_TEMP/packaged.sha256"
-          wc -l "$RUNNER_TEMP/packaged.sha256"
+          awk -v heading="## $TRIAL_VERSION - $(date -u +%F)" '!done && /^## [0-9]/ { print heading; print ""; print "- Trial build of the electron-builder installers."; print ""; done = 1 } { print }' CHANGELOG.md > "$RUNNER_TEMP/CHANGELOG.md"
+          mv "$RUNNER_TEMP/CHANGELOG.md" CHANGELOG.md
+          grep -m 2 '^## [0-9]' CHANGELOG.md
 
-      - name: electron-builder --prepackaged
+      # Same command as release_electron_binaries in release-pipeline.yml: npm run fable, then
+      # scripts/make.cjs (electron-forge package, then electron-builder), then the check of out/installers.
+      - name: Build like the release
         id: build
-        run: npx electron-builder --prepackaged "${{ matrix.app }}" --${{ matrix.platform }} ${{ matrix.targets }} --${{ matrix.arch }} --config electron-builder.config.js --publish never
+        working-directory: .
+        run: dotnet run --project ./build/Build.fsproj -- release electron-bin --ci --arch=${{ matrix.arch }}
 
       - name: List the installers
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
-        run: ls -la out/installers
-
-      - name: Packaged app unchanged by electron-builder
-        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: |
-          (cd "${{ matrix.app }}" && find . -type f -print0 | LC_ALL=C sort -z | xargs -0 $(command -v sha256sum || echo shasum -a 256)) > "$RUNNER_TEMP/after.sha256"
-          echo "Files electron-builder added or changed (informational):"
-          diff "$RUNNER_TEMP/packaged.sha256" "$RUNNER_TEMP/after.sha256" || true
-          # Only the files that the fuses and the asar integrity check protect must stay identical.
-          changed=$(diff "$RUNNER_TEMP/packaged.sha256" "$RUNNER_TEMP/after.sha256" | grep -E '^[<>].*(app\.asar|/arcitisa(\.exe)?)$' || true)
-          if [ -n "$changed" ]; then echo "::error::electron-builder changed the app.asar or the executable: $changed"; exit 1; fi
+          ls -la out/installers
+          grep '"version"' package.json
 
       - name: Fuses of the packaged app
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
@@ -471,7 +461,9 @@ jobs:
           status=0
           for app in "$RUNNER_TEMP/dmg/ARCitISA.app" "$RUNNER_TEMP/zip/ARCitISA.app"; do
             echo "== $app"
-            echo "bundle id: $(defaults read "$app/Contents/Info.plist" CFBundleIdentifier)"
+            bundle_id=$(defaults read "$app/Contents/Info.plist" CFBundleIdentifier)
+            echo "bundle id: $bundle_id"
+            [ "$bundle_id" = org.nfdi4plants.app-arc-management-core ] || status=1
             cmp "$app/Contents/Resources/app.asar" "${{ matrix.app }}/Contents/Resources/app.asar" || status=1
             cmp "$app/Contents/MacOS/arcitisa" "${{ matrix.app }}/Contents/MacOS/arcitisa" || status=1
             codesign -dv "$app" 2>&1 | grep -E '^(Signature|Identifier|Format)' || true
@@ -495,7 +487,8 @@ jobs:
           path: src/Electron/out/installers/*
           retention-days: 7
 
-      # The 3.4.0 Squirrel setup is the old version in Sandbox test H.
+      # The 3.4.0 Squirrel setup is the old version in test H. Uploaded again on every run, so that the
+      # next run finds them (artifacts expire after 7 days).
       - uses: actions/upload-artifact@v4
         if: ${{ !cancelled() && (runner.os == 'Windows' || (runner.os == 'Linux' && matrix.arch == 'x64')) }}
         with:
