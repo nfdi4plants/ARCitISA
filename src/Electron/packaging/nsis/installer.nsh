@@ -13,6 +13,7 @@
   Var oldSquirrelAppDir
   Var createDesktopShortcut
   Var desktopShortcutCheckbox
+  Var desktopShortcutPageShown
 !else
   Var userDataDir
   Var legacyUserDataDir
@@ -83,13 +84,29 @@
   ${EndIf}
 !macroend
 
-; Shown after the folder page. A silent install skips it and creates no desktop shortcut.
+; Shown after the folder page, so that the page shows what will be on the desktop. The first time it
+; shows, the box is ticked when the installed version has a desktop shortcut: on the desktop of the
+; chosen install mode, or for "all users" also on the current user's own desktop. A silent install
+; skips the page (see customInstall).
 !macro customPageAfterChangeDir
   Page custom desktopShortcutPageCreate desktopShortcutPageLeave
 
   Function desktopShortcutPageCreate
     ${If} ${isUpdated}
       Abort
+    ${EndIf}
+
+    ${If} $desktopShortcutPageShown != "1"
+      StrCpy $desktopShortcutPageShown "1"
+      ${If} ${FileExists} "$DESKTOP\${SHORTCUT_NAME}.lnk"
+        StrCpy $createDesktopShortcut ${BST_CHECKED}
+      ${ElseIf} $installMode == "all"
+        SetShellVarContext current
+        ${If} ${FileExists} "$DESKTOP\${SHORTCUT_NAME}.lnk"
+          StrCpy $createDesktopShortcut ${BST_CHECKED}
+        ${EndIf}
+        SetShellVarContext all
+      ${EndIf}
     ${EndIf}
 
     !insertmacro MUI_HEADER_TEXT "Shortcuts" "Choose the shortcuts that setup creates."
@@ -112,15 +129,39 @@
   FunctionEnd
 !macroend
 
-; An update keeps the shortcut the user already has. The old uninstaller gets --updated as well, so it
-; leaves the shortcut in place (see customUnInstall).
+!macro createDesktopLink
+  CreateShortCut "$newDesktopLink" "$appExe" "" "$appExe" 0 "" "" "${APP_DESCRIPTION}"
+  ClearErrors
+  ; Same as electron-builder's own shortcuts, so the window groups with the shortcut in the taskbar.
+  WinShell::SetLnkAUMI "$newDesktopLink" "${APP_ID}"
+!macroend
+
+; Setup runs the uninstaller of the installed version with --updated first, which keeps the desktop
+; shortcut (see customUnInstall). Here the shortcut follows the box: ticked creates it or points it
+; at the new folder, unticked removes it. Installing for all users also uninstalls a per-user
+; install of the current user; the shortcut on the public desktop replaces its desktop shortcut.
+; A silent install keeps an existing shortcut and points it at the new folder, and creates none.
+; An updater run (--updated) leaves everything as it is.
 !macro customInstall
   ${IfNot} ${isUpdated}
-  ${AndIf} $createDesktopShortcut == ${BST_CHECKED}
-    CreateShortCut "$newDesktopLink" "$appExe" "" "$appExe" 0 "" "" "${APP_DESCRIPTION}"
-    ClearErrors
-    ; Same as electron-builder's own shortcuts, so the window groups with the shortcut in the taskbar.
-    WinShell::SetLnkAUMI "$newDesktopLink" "${APP_ID}"
+    ${If} $desktopShortcutPageShown == "1"
+      ${If} $createDesktopShortcut == ${BST_CHECKED}
+        !insertmacro createDesktopLink
+      ${ElseIf} ${FileExists} "$newDesktopLink"
+        WinShell::UninstShortcut "$newDesktopLink"
+        Delete "$newDesktopLink"
+      ${EndIf}
+      ${If} $installMode == "all"
+        SetShellVarContext current
+        ${If} ${FileExists} "$DESKTOP\${SHORTCUT_NAME}.lnk"
+          WinShell::UninstShortcut "$DESKTOP\${SHORTCUT_NAME}.lnk"
+          Delete "$DESKTOP\${SHORTCUT_NAME}.lnk"
+        ${EndIf}
+        SetShellVarContext all
+      ${EndIf}
+    ${ElseIf} ${FileExists} "$newDesktopLink"
+      !insertmacro createDesktopLink
+    ${EndIf}
     System::Call 'Shell32::SHChangeNotify(i 0x8000000, i 0, i 0, i 0)'
   ${EndIf}
 !macroend
