@@ -6,7 +6,8 @@
 !include nsDialogs.nsh
 
 !ifndef BUILD_UNINSTALLER
-  Var oldSquirrelDir
+  Var oldSwateDir
+  Var oldArcitisaDir
   Var oldSquirrelExitCode
   Var createDesktopShortcut
   Var desktopShortcutCheckbox
@@ -18,8 +19,27 @@
   Quit
 !macroend
 
-; ARCitISA 3.x was installed by Squirrel into %LocalAppData%\swate. Without this check both versions
-; end up installed side by side. Remove in 5.0.0 (docs/maintainer/ObsoleteRemoveOnNextMajor.md).
+; Squirrel leaves Update.exe and a .dead file behind after an uninstall. Only an app-<version> folder
+; means that the old version is still installed.
+!macro removeOldSquirrelInstall DIR
+  ${If} ${FileExists} "${DIR}\app-*"
+    ClearErrors
+    ExecWait '"${DIR}\Update.exe" --uninstall' $oldSquirrelExitCode
+    ${If} ${Errors}
+      !insertmacro quitBecauseOldVersionRemains "Setup could not start ${DIR}\Update.exe to remove the older version of ARCitISA.$\r$\n$\r$\nDelete the folder ${DIR}, then run setup again."
+    ${EndIf}
+    ${If} $oldSquirrelExitCode != 0
+      !insertmacro quitBecauseOldVersionRemains "The older version of ARCitISA could not be removed. Its uninstaller exited with code $oldSquirrelExitCode.$\r$\n$\r$\nClose all ARCitISA windows, then run setup again."
+    ${EndIf}
+    ${If} ${FileExists} "${DIR}\app-*"
+      !insertmacro quitBecauseOldVersionRemains "The older version of ARCitISA was not removed completely. Its files are still in ${DIR}.$\r$\n$\r$\nClose all ARCitISA windows, then run setup again."
+    ${EndIf}
+  ${EndIf}
+!macroend
+
+; ARCitISA 3.x was installed by Squirrel, up to 3.4.0-rc.2 into %LocalAppData%\swate and from 3.4.0
+; into %LocalAppData%\arcitisa. Without this check both end up installed next to this version.
+; Remove in 5.0.0 (docs/maintainer/ObsoleteRemoveOnNextMajor.md).
 !macro customInit
   StrCpy $createDesktopShortcut ${BST_UNCHECKED}
 
@@ -27,27 +47,18 @@
   ; the check, and the elevated one may run as another user.
   ${IfNot} ${UAC_IsInnerInstance}
     ; Not $LOCALAPPDATA: it points to ProgramData once a previous install sets the mode to all users.
-    ExpandEnvStrings $oldSquirrelDir "%LOCALAPPDATA%\swate"
+    ExpandEnvStrings $oldSwateDir "%LOCALAPPDATA%\swate"
+    ExpandEnvStrings $oldArcitisaDir "%LOCALAPPDATA%\arcitisa"
 
-    ; Squirrel leaves Update.exe and a .dead file behind after an uninstall. Only an app-<version>
-    ; folder means that the old version is still installed.
-    ${If} ${FileExists} "$oldSquirrelDir\app-*"
+    ${If} ${FileExists} "$oldSwateDir\app-*"
+    ${OrIf} ${FileExists} "$oldArcitisaDir\app-*"
       ${If} ${Cmd} `MessageBox MB_YESNO|MB_ICONQUESTION "An older version of ARCitISA was found. It must be removed before this version can be installed. Your settings and signed-in accounts are kept.$\r$\n$\r$\nRemove it now?" /SD IDNO IDNO`
         SetErrorLevel 1
         Quit
       ${EndIf}
 
-      ClearErrors
-      ExecWait '"$oldSquirrelDir\Update.exe" --uninstall' $oldSquirrelExitCode
-      ${If} ${Errors}
-        !insertmacro quitBecauseOldVersionRemains "Setup could not start $oldSquirrelDir\Update.exe to remove the older version of ARCitISA.$\r$\n$\r$\nDelete the folder $oldSquirrelDir, then run setup again."
-      ${EndIf}
-      ${If} $oldSquirrelExitCode != 0
-        !insertmacro quitBecauseOldVersionRemains "The older version of ARCitISA could not be removed. Its uninstaller exited with code $oldSquirrelExitCode.$\r$\n$\r$\nClose all ARCitISA windows, then run setup again."
-      ${EndIf}
-      ${If} ${FileExists} "$oldSquirrelDir\app-*"
-        !insertmacro quitBecauseOldVersionRemains "The older version of ARCitISA was not removed completely. Its files are still in $oldSquirrelDir.$\r$\n$\r$\nClose all ARCitISA windows, then run setup again."
-      ${EndIf}
+      !insertmacro removeOldSquirrelInstall $oldSwateDir
+      !insertmacro removeOldSquirrelInstall $oldArcitisaDir
     ${EndIf}
   ${EndIf}
 !macroend
