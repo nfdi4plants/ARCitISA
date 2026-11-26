@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### ✨ Added
+
+- The File Picker can select files and folders and insert their ARC-relative paths into a table. Use the **Add paths** menu to add more files or folders to the same list. #1518 (by @Gitarackur)
+
 ## 3.4.0-rc.2 - 2026-11-24
 
 ### 🔄 Changed

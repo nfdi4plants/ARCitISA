@@ -10,6 +10,7 @@ open Swate.Components.Composite.SortableList.Types
 open Swate.Components.Shared
 open Swate.Components.Primitive
 open Swate.Components.Primitive.Buttons
+open Swate.Components.Primitive.Dropdown
 open Swate.Components.Primitive.LoadingSpinner
 open Swate.Components.Composite.AnnotationTable.Context
 open Swate.Components.Composite.DataMapTable
@@ -190,9 +191,14 @@ type FilePickerWidget =
 
     [<ReactComponent>]
     static member private ActionButtons
-        (setPaths: (string[] -> string[]) -> unit, pickPaths, insertPaths: bool -> unit, tableCellSelected: bool)
-        =
+        (
+            setPaths: (string[] -> string[]) -> unit,
+            pickPaths: PathPickerKind -> unit,
+            insertPaths: bool -> unit,
+            tableCellSelected: bool
+        ) =
         let selectedPathsCtx = FilePickerWidgetContext.useSelectedPathsCtx ()
+        let isPickMenuOpen, setIsPickMenuOpen = React.useState false
 
         let hasSelection = selectedPathsCtx.state |> List.isEmpty |> not
 
@@ -210,26 +216,107 @@ type FilePickerWidget =
         Html.div [
             prop.className "swt:flex swt:flex-wrap swt:gap-2 swt:w-full"
             prop.children [
-                Html.button [
-                    prop.className "swt:btn swt:btn-outline"
-                    prop.text "Pick more files"
-                    prop.title "Select more file paths and add them to the list"
-                    prop.onClick (fun _ -> pickPaths ())
-                ]
+                Dropdown.Main(
+                    isPickMenuOpen,
+                    setIsPickMenuOpen,
+                    Html.button [
+                        prop.type'.button
+                        prop.className "swt:btn swt:btn-outline swt:gap-2"
+                        prop.ariaExpanded isPickMenuOpen
+                        prop.onClick (fun _ -> setIsPickMenuOpen (not isPickMenuOpen))
+                        prop.children [
+                            Html.span "Add paths"
+                            Html.i [
+                                prop.className "swt:iconify swt:fluent--chevron-down-20-regular swt:size-4"
+                            ]
+                        ]
+                    ],
+                    React.Fragment [
+                        Html.li [
+                            Html.button [
+                                prop.type'.button
+                                prop.onClick (fun _ -> pickPaths PathPickerKind.File)
+                                prop.children [
+                                    Html.i [
+                                        prop.className "swt:iconify swt:fluent--document-24-regular swt:size-4"
+                                    ]
+                                    Html.span "Pick files"
+                                ]
+                            ]
+                        ]
+                        Html.li [
+                            Html.button [
+                                prop.type'.button
+                                prop.onClick (fun _ -> pickPaths PathPickerKind.Folder)
+                                prop.children [
+                                    Html.i [
+                                        prop.className "swt:iconify swt:fluent--folder-24-regular swt:size-4"
+                                    ]
+                                    Html.span "Pick folders"
+                                ]
+                            ]
+                        ]
+                    ],
+                    contentClassName =
+                        "swt:w-52 swt:menu swt:bg-base-200 swt:rounded-box swt:z-99 swt:p-2 swt:shadow-sm"
+                )
                 FilePickerWidget.ActionButtonClear(hasSelection, clearAll, clearSelected)
                 FilePickerWidget.ActionButtonInsert(hasSelection, insertPaths, tableCellSelected)
             ]
         ]
 
     [<ReactComponent>]
-    static member private PickFilePathsButtons(onPickPaths: unit -> unit) =
+    static member private EmptyState(onPickPaths: PathPickerKind -> unit) =
         Html.div [
-            prop.className "swt:flex swt:flex-wrap swt:gap-2"
+            prop.className "swt:flex swt:flex-col swt:gap-3"
             prop.children [
-                Html.button [
-                    prop.className "swt:btn swt:btn-sm swt:btn-primary swt:w-full"
-                    prop.text "Pick Files"
-                    prop.onClick (fun _ -> onPickPaths ())
+                Html.div [
+                    // Restore the drop affordances once the Electron drag-and-drop bridge is wrapped.
+                    prop.className [
+                        "swt:flex swt:min-h-36 swt:flex-col swt:items-center swt:justify-center swt:gap-2 swt:rounded-box swt:bg-base-200/50 swt:p-6 swt:text-center"
+                    // "swt:border-2 swt:border-dashed swt:border-base-300"
+                    ]
+                    prop.children [
+                        // Html.i [
+                        //     prop.className "swt:iconify swt:fluent--document-arrow-down-24-regular swt:size-8"
+                        // ]
+                        // Html.span [
+                        //     prop.className "swt:font-semibold"
+                        //     prop.text "Drop files or folders here"
+                        // ]
+                        Html.span [
+                            prop.className "swt:text-sm swt:opacity-70"
+                            prop.text
+                                "No paths selected. Pick files or folders below and insert their paths into your table."
+                        ]
+                        Html.div [
+                            prop.className "swt:flex swt:w-full swt:max-w-sm swt:gap-2 swt:pt-2"
+                            prop.children [
+                                Html.button [
+                                    prop.type'.button
+                                    prop.className "swt:btn swt:btn-sm swt:btn-primary swt:flex-1"
+                                    prop.onClick (fun _ -> onPickPaths PathPickerKind.File)
+                                    prop.children [
+                                        Html.i [
+                                            prop.className "swt:iconify swt:fluent--document-24-regular swt:size-4"
+                                        ]
+                                        Html.span "Pick files"
+                                    ]
+                                ]
+                                Html.button [
+                                    prop.type'.button
+                                    prop.className "swt:btn swt:btn-sm swt:btn-primary swt:flex-1"
+                                    prop.onClick (fun _ -> onPickPaths PathPickerKind.Folder)
+                                    prop.children [
+                                        Html.i [
+                                            prop.className "swt:iconify swt:fluent--folder-24-regular swt:size-4"
+                                        ]
+                                        Html.span "Pick folders"
+                                    ]
+                                ]
+                            ]
+                        ]
+                    ]
                 ]
             ]
         ]
@@ -240,7 +327,7 @@ type FilePickerWidget =
             arcFile: ArcFiles,
             activeTableIndex: int option,
             setArcFile: ArcFiles -> unit,
-            onPickPaths: unit -> JS.Promise<string[]>
+            onPickPaths: PathPickerKind -> JS.Promise<string[]>
         ) =
 
         let paths, setPaths = React.useStateWithUpdater ([||]: string[])
@@ -254,12 +341,12 @@ type FilePickerWidget =
 
         let hasPaths = paths.Length > 0
 
-        let pickPaths () =
+        let pickPaths kind =
             promise {
                 setIsLoading true
 
                 try
-                    let! paths = onPickPaths ()
+                    let! paths = onPickPaths kind
                     FilePickerWidgetHelper.appendPickedPaths setPaths paths
                 finally
                     setIsLoading false
@@ -303,12 +390,6 @@ type FilePickerWidget =
                         ]
                     )
                 else
-                    Html.span [
-                        prop.className "swt:text-sm swt:opacity-70 swt:p-4 swt:text-center"
-                        prop.text
-                            "No file paths selected. Click the button below to pick files and insert their paths into your table."
-                    ]
-
-                    FilePickerWidget.PickFilePathsButtons(pickPaths)
+                    FilePickerWidget.EmptyState(pickPaths)
             ]
         ]

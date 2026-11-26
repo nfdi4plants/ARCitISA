@@ -8,6 +8,7 @@ open Vitest
 open Swate.Components.Composite.AnnotationTable
 open Swate.Components.Composite.AnnotationTable.Context
 open Swate.Components.Composite.DataMapTable
+open Swate.Components.Composite.Widgets.Types
 open Swate.Components.Shared
 
 [<Emit("$0.spyOn(HTMLElement.prototype, $1, 'get').mockReturnValue($2)")>]
@@ -47,7 +48,7 @@ let private checkDeselection arcFile activeTableIndex table clearSelection = pro
                         arcFile,
                         activeTableIndex,
                         (fun next -> updated <- Some next),
-                        fun () -> promise { return [| "file.csv" |] }
+                        fun _ -> promise { return [| "file.csv" |] }
                     )
                 ]
             ]
@@ -55,7 +56,7 @@ let private checkDeselection arcFile activeTableIndex table clearSelection = pro
     )
     |> ignore
 
-    RTL.fireEvent.click (RTL.screen.getByRole ("button", ByRoleOptions(name = Text "Pick Files")))
+    RTL.fireEvent.click (RTL.screen.getByRole ("button", ByRoleOptions(name = Text "Pick files")))
     let! _ = RTL.screen.findByTestId "sortable-list-row-file.csv"
 
     let insertButton () =
@@ -145,12 +146,12 @@ Vitest.test (
                 ArcFiles.Assay(ArcAssay.init "sortable-file-picker"),
                 None,
                 ignore,
-                fun () -> promise { return [| "beta.txt"; "alpha.txt"; "gamma.txt" |] }
+                fun _ -> promise { return [| "beta.txt"; "alpha.txt"; "gamma.txt" |] }
             )
         )
         |> ignore
 
-        RTL.fireEvent.click (RTL.screen.getByRole ("button", ByRoleOptions(name = Text "Pick Files")))
+        RTL.fireEvent.click (RTL.screen.getByRole ("button", ByRoleOptions(name = Text "Pick files")))
         let! beta = RTL.screen.findByTestId "sortable-list-row-beta.txt"
         RTL.fireEvent.click beta
         Vitest.expect(beta.classList.contains "swt:bg-base-300").toBe true
@@ -171,7 +172,12 @@ Vitest.test (
         Vitest.expect(RTL.screen.queryByTestId("sortable-list-row-gamma.txt").IsNone).toBe true
         RTL.screen.getByTestId "sortable-list-row-alpha.txt" |> ignore
 
-        RTL.screen.getByRole ("button", ByRoleOptions(name = Text "Pick more files"))
+        RTL.fireEvent.click (RTL.screen.getByRole ("button", ByRoleOptions(name = Text "Add paths")))
+
+        RTL.screen.getByRole ("button", ByRoleOptions(name = Text "Pick files"))
+        |> ignore
+
+        RTL.screen.getByRole ("button", ByRoleOptions(name = Text "Pick folders"))
         |> ignore
 
         RTL.screen.getByRole ("button", ByRoleOptions(name = Text "Insert file names"))
@@ -187,12 +193,12 @@ Vitest.test (
                 ArcFiles.Assay(ArcAssay.init "shift-select-file-picker"),
                 None,
                 ignore,
-                fun () -> promise { return [| "alpha.txt"; "beta.txt"; "gamma.txt" |] }
+                fun _ -> promise { return [| "alpha.txt"; "beta.txt"; "gamma.txt" |] }
             )
         )
         |> ignore
 
-        RTL.fireEvent.click (RTL.screen.getByRole ("button", ByRoleOptions(name = Text "Pick Files")))
+        RTL.fireEvent.click (RTL.screen.getByRole ("button", ByRoleOptions(name = Text "Pick files")))
         let! _ = RTL.screen.findByTestId "sortable-list-row-alpha.txt"
 
         RTL.fireEvent.click (RTL.screen.getByTestId "sortable-list-row-alpha.txt")
@@ -201,5 +207,39 @@ Vitest.test (
 
         Vitest.expect((RTL.screen.getByTestId "sortable-list-row-beta.txt").classList.contains "swt:bg-base-300").toBe
             true
+    }
+)
+
+Vitest.test (
+    "file picker requests files and folders separately and combines their paths",
+    fun () -> promise {
+        let requestedKinds = ResizeArray<PathPickerKind>()
+
+        RTL.render (
+            FilePickerWidget.Main(
+                ArcFiles.Assay(ArcAssay.init "file-and-folder-picker"),
+                None,
+                ignore,
+                fun kind -> promise {
+                    requestedKinds.Add kind
+
+                    return
+                        match kind with
+                        | PathPickerKind.File -> [| "data/file.csv" |]
+                        | PathPickerKind.Folder -> [| "data/images" |]
+                }
+            )
+        )
+        |> ignore
+
+        RTL.fireEvent.click (RTL.screen.getByRole ("button", ByRoleOptions(name = Text "Pick folders")))
+        let! _ = RTL.screen.findByTestId "sortable-list-row-data/images"
+
+        RTL.fireEvent.click (RTL.screen.getByRole ("button", ByRoleOptions(name = Text "Add paths")))
+        RTL.fireEvent.click (RTL.screen.getByRole ("button", ByRoleOptions(name = Text "Pick files")))
+        let! _ = RTL.screen.findByTestId "sortable-list-row-data/file.csv"
+
+        Vitest.expect(requestedKinds.ToArray()).toEqual [| PathPickerKind.Folder; PathPickerKind.File |]
+        RTL.screen.getByTestId "sortable-list-row-data/images" |> ignore
     }
 )

@@ -445,7 +445,7 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
                 return Error e
         }
     pickArcPaths =
-        fun () -> promise {
+        fun kind -> promise {
             try
                 let windowId = windowIdFromIpcEvent event
 
@@ -455,8 +455,13 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
                     match vault.path with
                     | None -> return Error(arcNotOpenError ())
                     | Some arcPath ->
+                        let pickProperty =
+                            match kind with
+                            | FileSystemItemKind.File -> Enums.Dialog.ShowOpenDialog.Options.Properties.OpenFile
+                            | FileSystemItemKind.Folder -> Enums.Dialog.ShowOpenDialog.Options.Properties.OpenDirectory
+
                         let properties = [|
-                            Enums.Dialog.ShowOpenDialog.Options.Properties.OpenFile
+                            pickProperty
                             Enums.Dialog.ShowOpenDialog.Options.Properties.MultiSelections
                         |]
 
@@ -482,6 +487,34 @@ let api (event: IpcMainInvokeEvent) : IPCTypes.IArcVaultsApi = {
                                         | Error _ -> None
                                     )
                                     |> Ok
+            with e ->
+                return Error e
+        }
+    resolveArcPaths =
+        fun absolutePaths -> promise {
+            try
+                let windowId = windowIdFromIpcEvent event
+
+                match ARC_VAULTS.TryGetVault(windowId) with
+                | None -> return Error(exn $"The ARC for window id {windowId} should exist")
+                | Some vault ->
+                    match vault.path with
+                    | None -> return Error(arcNotOpenError ())
+                    | Some arcPath ->
+                        let relativePaths = absolutePaths |> Array.map (tryGetArcRelativePath arcPath)
+
+                        match relativePaths |> Array.tryFind Result.isError with
+                        | Some(Error pathError) -> return Error pathError
+                        | _ ->
+                            return
+                                relativePaths
+                                |> Array.choose (
+                                    function
+                                    | Ok path when String.IsNullOrWhiteSpace path -> None
+                                    | Ok path -> Some path
+                                    | Error _ -> None
+                                )
+                                |> Ok
             with e ->
                 return Error e
         }

@@ -48,7 +48,7 @@ type private LazyComponents =
             arcFile: ArcFiles,
             activeTableIndex: int option,
             setArcFile: ArcFiles -> unit,
-            onPickPaths: unit -> Fable.Core.JS.Promise<string[]>
+            onPickPaths: Composite.Widgets.Types.PathPickerKind -> Fable.Core.JS.Promise<string[]>
         ) =
         Swate.Components.Composite.Widgets.FilePickerWidget.Main(
             arcFile = arcFile,
@@ -326,7 +326,7 @@ type Main =
         (
             arcFile: ArcFiles,
             setArcFile: ArcFiles -> unit,
-            pickPaths: unit -> Fable.Core.JS.Promise<string[]>,
+            pickPaths: Composite.Widgets.Types.PathPickerKind -> Fable.Core.JS.Promise<string[]>,
             ?onAddDataMap: unit -> unit,
             ?onDeleteDataMap: unit -> unit,
             ?trailingNavbarElements: ArcFileEditorHeaderProps -> ReactElement,
@@ -582,7 +582,7 @@ type Main =
                 prop.text ("Column count: " + firstTableColumnCount)
             ]
 
-        let pickPathsMockFn () = promise {
+        let pickPathsMockFn _ = promise {
             return [|
                 yield "myImage.png"
                 yield "README.md"
