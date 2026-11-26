@@ -121,16 +121,10 @@ function Get-WindowText($el) {
 
 # NSIS windows are dialogs (#32770). The wizard has the Back button (3), a message box has not. On the
 # first page the button is hidden, so UI Automation does not list it; GetDlgItem finds it anyway.
-# Any of OK (1), Cancel (2), Yes (6) or No (7). The wizard and every message box have one.
-function Test-HasButton([IntPtr]$h) {
-  foreach ($id in 1, 2, 6, 7) { if ([Win32Control]::GetDlgItem($h, $id) -ne [IntPtr]::Zero) { return $true } }
-  $false
-}
 # A message box that the wizard owns is not a child of the UI Automation root, so the windows come
-# from EnumWindows. A dialog without buttons has nothing to answer: one showed up once right after
-# the finish page, probably the wizard while it closed. A window that closed in between is skipped.
+# from EnumWindows. A window that closed in between is skipped.
 function Get-NsisWindows {
-  [Win32Control]::FindDialogs('ARCitISA') | Where-Object { Test-HasButton $_ } | ForEach-Object { try { $AE::FromHandle($_) } catch { } }
+  [Win32Control]::FindDialogs('ARCitISA') | ForEach-Object { try { $AE::FromHandle($_) } catch { } }
 }
 function Test-Wizard($w) { [Win32Control]::GetDlgItem((Get-Hwnd $w), 3) -ne [IntPtr]::Zero }
 
@@ -140,6 +134,8 @@ function Send-MessageBoxAnswer($w, [string]$answer) {
   Shot 'message-box'
   $button = $(switch ($answer) { 'Yes' { Find-Id $w '6' } 'No' { Find-Id $w '7' } default { $null } })
   if ($null -eq $button) { $button = Find-Class $w 'Button' | Select-Object -First 1 }
+  # Seen right after the finish page, probably the wizard while it closes: nothing to answer.
+  if ($null -eq $button) { Log "dialog without a button skipped: '$text'"; return $null }
   Log "message box: '$text' -> $answer ($($button.Current.Name))"
   $script:result.Questions += $text
   Invoke-Control $button
@@ -253,7 +249,8 @@ function Invoke-Wizard([string]$path, [hashtable]$o) {
         $r.Questions++
         Send-MessageBoxAnswer $w $o.Question | Out-Null
       } else {
-        $r.Errors += (Send-MessageBoxAnswer $w 'OK')
+        $message = Send-MessageBoxAnswer $w 'OK'
+        if ($null -ne $message) { $r.Errors += $message }
       }
       Start-Sleep -Seconds 1; continue
     }
@@ -330,7 +327,7 @@ function Invoke-Uninstall([string]$uninstaller, [string]$dataAnswer) {
     $w = Select-NsisWindow $windows
     if (-not (Test-Wizard $w)) {
       if ((Get-Texts $w) -like '*delete your ARCitISA settings*') { $r.DataQuestions += (Send-MessageBoxAnswer $w $dataAnswer) }
-      else { $r.Messages += (Send-MessageBoxAnswer $w 'OK') }
+      else { $message = Send-MessageBoxAnswer $w 'OK'; if ($null -ne $message) { $r.Messages += $message } }
       Start-Sleep -Seconds 1; continue
     }
     $texts = Get-Texts $w
