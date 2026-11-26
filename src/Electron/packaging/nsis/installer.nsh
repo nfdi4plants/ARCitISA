@@ -126,8 +126,8 @@
 !macroend
 
 ; Asks whether to delete the user data: %AppData%\ARCitISA, and %AppData%\Swate, where 3.x kept it.
-; A silent uninstall (winget, IT tools) cannot ask and deletes it. Not $APPDATA: it points to
-; ProgramData in an all-users uninstall.
+; A silent uninstall cannot ask and keeps it: deployment tools (winget, Intune) may uninstall silently
+; as the first step of an update. Not $APPDATA: it points to ProgramData in an all-users uninstall.
 !macro askToDeleteUserData
   ExpandEnvStrings $userDataDir "%APPDATA%\ARCitISA"
   ExpandEnvStrings $legacyUserDataDir "%APPDATA%\Swate"
@@ -140,7 +140,7 @@
   ${EndIf}
 
   ${If} $userDataFolders != ""
-    ${If} ${Cmd} `MessageBox MB_YESNO|MB_ICONQUESTION|MB_DEFBUTTON2 "Do you also want to delete your ARCitISA settings, signed-in accounts and list of recent ARCs?$\r$\n$\r$\nThey are stored in:$\r$\n$userDataFolders$\r$\nYes deletes them. If you install ARCitISA again, it starts with default settings and you sign in again.$\r$\nNo keeps them for a later install.$\r$\n$\r$\nYour ARCs are not deleted. They stay in their folders." /SD IDYES IDYES`
+    ${If} ${Cmd} `MessageBox MB_YESNO|MB_ICONQUESTION|MB_DEFBUTTON2 "Do you also want to delete your ARCitISA settings, signed-in accounts and list of recent ARCs?$\r$\n$\r$\nThey are stored in:$\r$\n$userDataFolders$\r$\nYes deletes them. If you install ARCitISA again, it starts with default settings and you sign in again.$\r$\nNo keeps them for a later install.$\r$\n$\r$\nYour ARCs are not deleted. They stay in their folders." /SD IDNO IDYES`
       RMDir /r "$userDataDir"
       RMDir /r "$legacyUserDataDir"
       ${If} ${FileExists} "$userDataDir\*.*"
