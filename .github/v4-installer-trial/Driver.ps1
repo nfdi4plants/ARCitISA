@@ -121,11 +121,16 @@ function Get-WindowText($el) {
 
 # NSIS windows are dialogs (#32770). The wizard has the Back button (3), a message box has not. On the
 # first page the button is hidden, so UI Automation does not list it; GetDlgItem finds it anyway.
+# Any of OK (1), Cancel (2), Yes (6) or No (7). The wizard and every message box have one.
+function Test-HasButton([IntPtr]$h) {
+  foreach ($id in 1, 2, 6, 7) { if ([Win32Control]::GetDlgItem($h, $id) -ne [IntPtr]::Zero) { return $true } }
+  $false
+}
 # A message box that the wizard owns is not a child of the UI Automation root, so the windows come
-# from EnumWindows.
+# from EnumWindows. A dialog without buttons has nothing to answer: one showed up once right after
+# the finish page, probably the wizard while it closed. A window that closed in between is skipped.
 function Get-NsisWindows {
-  # A window that closed in between is skipped.
-  [Win32Control]::FindDialogs('ARCitISA') | ForEach-Object { try { $AE::FromHandle($_) } catch { } }
+  [Win32Control]::FindDialogs('ARCitISA') | Where-Object { Test-HasButton $_ } | ForEach-Object { try { $AE::FromHandle($_) } catch { } }
 }
 function Test-Wizard($w) { [Win32Control]::GetDlgItem((Get-Hwnd $w), 3) -ne [IntPtr]::Zero }
 
