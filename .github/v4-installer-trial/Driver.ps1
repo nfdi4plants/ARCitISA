@@ -219,7 +219,7 @@ function Invoke-Wizard([string]$path, [hashtable]$o) {
       Start-Sleep -Milliseconds 500; continue
     }
     $seen++
-    $w = $windows[0]
+    $w = Select-NsisWindow $windows
     if (-not (Test-Wizard $w)) {
       $text = (Get-Texts $w)
       if ($text -like '*An older version of ARCitISA was found*') {
@@ -281,18 +281,31 @@ function Invoke-SetupQuestionOnly([string]$path, [string]$answer) {
   $text
 }
 
-function Invoke-Uninstall([string]$uninstaller) {
-  if (-not (Test-Path $uninstaller)) { Log "no uninstaller at $uninstaller, nothing to uninstall"; return }
-  Log "uninstalling with $uninstaller"
+# A message box sits on top of the wizard while both are open, so it comes first.
+function Select-NsisWindow($windows) {
+  $boxes = @($windows | Where-Object { -not (Test-Wizard $_) })
+  $(if ($boxes.Count -gt 0) { $boxes[0] } else { $windows[0] })
+}
+
+# Goes through the uninstaller and answers the question whether to delete the user data.
+function Invoke-Uninstall([string]$uninstaller, [string]$dataAnswer) {
+  $r = [ordered]@{ DataQuestions = @(); Messages = @() }
+  if (-not (Test-Path $uninstaller)) { Log "no uninstaller at $uninstaller, nothing to uninstall"; return $r }
+  Log "uninstalling with $uninstaller, user data question: $dataAnswer"
   Open-AsUser $uninstaller
   $deadline = (Get-Date).AddMinutes(5)
   $seen = $false
   $last = ''
   while ((Get-Date) -lt $deadline) {
-    $w = Get-TopWindows | Where-Object { $_.Current.ClassName -eq '#32770' -and $_.Current.Name -like '*ARCitISA*' -and -not $_.Current.IsOffscreen } | Select-Object -First 1
-    if ($null -eq $w) { if ($seen) { break }; Start-Sleep -Milliseconds 500; continue }
+    $windows = @(Get-NsisWindows)
+    if ($windows.Count -eq 0) { if ($seen) { break }; Start-Sleep -Milliseconds 500; continue }
     $seen = $true
-    if (-not (Test-Wizard $w)) { Send-MessageBoxAnswer $w 'Yes' | Out-Null; Start-Sleep -Seconds 1; continue }
+    $w = Select-NsisWindow $windows
+    if (-not (Test-Wizard $w)) {
+      if ((Get-Texts $w) -like '*delete your ARCitISA settings*') { $r.DataQuestions += (Send-MessageBoxAnswer $w $dataAnswer) }
+      else { $r.Messages += (Send-MessageBoxAnswer $w 'OK') }
+      Start-Sleep -Seconds 1; continue
+    }
     $texts = Get-Texts $w
     if ($texts -ne $last) { Shot 'uninstall-page'; $last = $texts }
     $next = Find-Id $w '1'
@@ -300,6 +313,8 @@ function Invoke-Uninstall([string]$uninstaller) {
     Start-Sleep -Seconds 1
   }
   Start-Sleep -Seconds 3
+  Log ("uninstall: " + ($r | ConvertTo-Json -Compress))
+  $r
 }
 
 function Get-AppWindows {
@@ -418,8 +433,9 @@ try {
       Start-Process explorer.exe -ArgumentList "`"$($link[0].Path)`""
       Test-AppStarted 'desktop shortcut'
       Stop-NewApp
-      Invoke-Uninstall $perUserUninstaller
+      $u = Invoke-Uninstall $perUserUninstaller 'No'
       $s2 = Get-State 'after uninstall'
+      Check 'user data question shown once' ($u.DataQuestions.Count -eq 1) ($u.DataQuestions -join ' / ')
       Check 'desktop shortcut removed' (-not (Test-Link $s2 '*\Desktop\ARCitISA.lnk'))
       Check 'Start menu shortcut removed' (-not (Test-Link $s2 '*Start Menu\Programs\ARCitISA.lnk'))
       Check 'program folder removed' (-not (Test-Path "$env:LOCALAPPDATA\Programs\ARCitISA"))
@@ -431,10 +447,14 @@ try {
       $null = Invoke-Wizard $rc1 @{ Question = 'Yes'; Mode = 'user'; Desktop = $true; Run = $false }
       $s1 = Get-State 'after rc.1 with desktop shortcut'
       Check 'rc.1 desktop shortcut' (Test-Link $s1 '*\Desktop\ARCitISA.lnk')
+      $userData = "$env:APPDATA\ARCitISA", "$env:APPDATA\Swate"
+      foreach ($d in $userData) { New-Item -ItemType Directory -Force $d | Out-Null; Set-Content "$d\marker.txt" 'user data' }
       Start-Setup $rc2
       $wz = Invoke-Wizard $rc2 @{ Question = 'Yes'; Mode = 'user'; Desktop = $false; Run = $false }
       $s2 = Get-State 'after rc.2 without ticking the box'
       Check 'rc.2 installed' (@($s2.Entries | Where-Object { $_.Key -eq $guid -and $_.Version -eq '4.0.0-rc.2' }).Count -eq 1) (($s2.Entries | ConvertTo-Json -Compress))
+      Check 'no message during the update' ($wz.Errors.Count -eq 0 -and $wz.Questions -eq 0) ($wz.Errors -join ' / ')
+      Check 'update keeps the user data' (@($userData | Where-Object { Test-Path "$_\marker.txt" }).Count -eq 2)
       Check 'desktop shortcut kept' (Test-Link $s2 '*\Desktop\ARCitISA.lnk')
       Note "rc.2 checkbox initially $($wz.Desktop)"
       $link = @($s2.Links | Where-Object { $_.Path -like '*\Desktop\ARCitISA.lnk' })
@@ -443,9 +463,11 @@ try {
         Test-AppStarted 'kept desktop shortcut'
         Stop-NewApp
       }
-      Invoke-Uninstall $perUserUninstaller
+      $u = Invoke-Uninstall $perUserUninstaller 'Yes'
       $s3 = Get-State 'after uninstall'
       Check 'desktop shortcut removed by uninstall' (-not (Test-Link $s3 '*\Desktop\ARCitISA.lnk'))
+      Check 'user data question shown once' ($u.DataQuestions.Count -eq 1) ($u.DataQuestions -join ' / ')
+      Check 'Yes deletes the user data' (@($userData | Where-Object { Test-Path $_ }).Count -eq 0) ($s3.AppData -join '; ')
     }
     'F' {
       Start-Setup $rc1
@@ -521,8 +543,9 @@ try {
       Check 'entry in HKLM' (@($s1.Entries | Where-Object { $_.Hive -eq 'HKLM' -and $_.Key -eq $guid }).Count -eq 1)
       Check 'shortcut on the public desktop' (Test-Link $s1 "$env:PUBLIC\Desktop\ARCitISA.lnk")
       Check 'Start menu shortcut for all users' (Test-Link $s1 "$env:ProgramData\Microsoft\Windows\Start Menu\Programs\ARCitISA.lnk")
-      Invoke-Uninstall "$env:ProgramFiles\ARCitISA\Uninstall ARCitISA.exe"
+      $u = Invoke-Uninstall "$env:ProgramFiles\ARCitISA\Uninstall ARCitISA.exe" 'No'
       $s2 = Get-State 'after uninstall'
+      Check 'user data question shown once' ($u.DataQuestions.Count -eq 1) ($u.DataQuestions -join ' / ')
       Check 'public desktop shortcut removed' (-not (Test-Link $s2 "$env:PUBLIC\Desktop\ARCitISA.lnk"))
       Check 'program removed' (-not (Test-Path "$env:ProgramFiles\ARCitISA\ARCitISA.exe") -and -not (Test-Entry $s2 $guid))
       Check 'user data kept' (Test-Path "$env:APPDATA\Swate")

@@ -157,7 +157,19 @@ jobs:
           if ($diff) { Write-Error 'The installer payload differs from the packaged app' }
           Get-ChildItem "$env:RUNNER_TEMP\setup\`$R0" | Select-Object Name
 
-      - name: "Windows: silent install, start, silent uninstall keeps user data"
+      # The silent update below and test E install this one over the trial version.
+      - name: "Windows: build a 4.0.0-rc.2 installer for the update tests"
+        if: ${{ !cancelled() && steps.build.outcome == 'success' && runner.os == 'Windows' }}
+        run: npx electron-builder --prepackaged "${{ matrix.app }}" --win nsis --x64 --config electron-builder.config.js --publish never -c.extraMetadata.version=4.0.0-rc.2 -c.directories.output=out/installers-rc.2
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() && steps.build.outcome == 'success' && runner.os == 'Windows' }}
+        with:
+          name: v4-installer-trial-Windows-x64-rc.2
+          path: src/Electron/out/installers-rc.2/*.exe
+          retention-days: 7
+
+      - name: "Windows: silent install and start, silent update keeps user data, silent uninstall deletes it"
         if: ${{ !cancelled() && steps.build.outcome == 'success' && runner.os == 'Windows' }}
         shell: pwsh
         run: |
@@ -189,8 +201,20 @@ jobs:
           Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -like "$installDir\*" } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
           Start-Sleep -Seconds 3
 
-          New-Item -ItemType Directory -Force "$env:APPDATA\ARCitISA" | Out-Null
-          Set-Content "$env:APPDATA\ARCitISA\keep.txt" 'must survive the uninstall'
+          # User data of 4.x and of 3.x.
+          $userData = "$env:APPDATA\ARCitISA", "$env:APPDATA\Swate"
+          foreach ($d in $userData) { New-Item -ItemType Directory -Force $d | Out-Null; Set-Content "$d\marker.txt" 'user data' }
+
+          # An update runs the old uninstaller silently with --updated. It must keep the user data.
+          $rc2 = (Get-ChildItem out/installers-rc.2/*.exe | Select-Object -First 1).FullName
+          $p = Start-Process $rc2 -ArgumentList '/S' -Wait -PassThru
+          "update exit code: $($p.ExitCode)"
+          if ($p.ExitCode -ne 0) { Write-Error 'Silent update failed' }
+          $version = (Get-ItemProperty $uninstallKey).DisplayVersion
+          if ($version -ne '4.0.0-rc.2') { Write-Error "Installed version after the update: $version" }
+          foreach ($d in $userData) { if (-not (Test-Path "$d\marker.txt")) { Write-Error "The update deleted $d" } }
+
+          # A silent uninstall cannot ask whether to delete the user data, so it deletes it.
           Start-Process "$installDir\Uninstall ARCitISA.exe" -ArgumentList '/S'
           # The uninstaller restarts itself from %TEMP%, so wait for its registry entry to go away.
           $deadline = (Get-Date).AddSeconds(120)
@@ -199,8 +223,8 @@ jobs:
           if (Test-Path $uninstallKey) { Write-Error 'The uninstall entry is still there' }
           if (Test-Path "$installDir\ARCitISA.exe") { Write-Error 'The app is still installed' }
           if (Test-Path $startMenuLink) { Write-Error 'The Start menu shortcut is still there' }
-          if (-not (Test-Path "$env:APPDATA\ARCitISA\keep.txt")) { Write-Error 'The uninstall deleted the user data folder' }
-          'install and uninstall checks passed'
+          foreach ($d in $userData) { if (Test-Path $d) { Write-Error "The silent uninstall kept $d" } }
+          'install, update and uninstall checks passed'
 
       - name: "Windows: silent setup stops when the old Squirrel install is found"
         if: ${{ !cancelled() && steps.build.outcome == 'success' && runner.os == 'Windows' }}
@@ -257,18 +281,6 @@ jobs:
           if (Test-Path "$env:LOCALAPPDATA\Programs\ARCitISA\ARCitISA.exe") { Write-Error 'Setup installed although it should have stopped' }
           if (-not (Test-Path "$squirrel\app-*")) { Write-Error 'Setup removed the 3.4.0 install in silent mode' }
           '3.4.0 install check passed'
-
-      # Test E installs this one over the trial version.
-      - name: "Windows: build a 4.0.0-rc.2 installer for the update test"
-        if: ${{ !cancelled() && steps.build.outcome == 'success' && runner.os == 'Windows' }}
-        run: npx electron-builder --prepackaged "${{ matrix.app }}" --win nsis --x64 --config electron-builder.config.js --publish never -c.extraMetadata.version=4.0.0-rc.2 -c.directories.output=out/installers-rc.2
-
-      - uses: actions/upload-artifact@v4
-        if: ${{ !cancelled() && steps.build.outcome == 'success' && runner.os == 'Windows' }}
-        with:
-          name: v4-installer-trial-Windows-x64-rc.2
-          path: src/Electron/out/installers-rc.2/*.exe
-          retention-days: 7
 
       # ----- Linux ---------------------------------------------------------------------------------
 
