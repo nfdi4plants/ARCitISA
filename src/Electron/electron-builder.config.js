@@ -1,7 +1,11 @@
 // Builds the installers from the app that `electron-forge package` leaves in out/. electron-builder
 // only wraps that app (--prepackaged). Forge sets up the fuses, the asar and the macOS ad-hoc
 // signature, and electron-builder leaves them alone because it skips its own packaging step.
+const path = require('node:path');
 const { version } = require('./package.json');
+
+// fpm reads script files relative to its working directory, which electron-builder does not set.
+const restoreCommandLink = path.join(__dirname, 'packaging', 'linux', 'restore-command-link.sh');
 
 module.exports = {
   // Never change appId or nsis.guid. macOS identifies the installed app by the bundle id, Windows
@@ -51,16 +55,19 @@ module.exports = {
     artifactName: '${name}_${version}_${arch}.${ext}',
   },
   rpm: {
-    // fpm writes --replaces as Obsoletes into the rpm.
-    fpm: ['--replaces=swate'],
+    // fpm writes --replaces as Obsoletes into the rpm. %posttrans runs after the old package is gone,
+    // see packaging/linux/restore-command-link.sh.
+    fpm: ['--replaces=swate', '--rpm-posttrans', restoreCommandLink],
     artifactName: '${name}-${version}-1.${arch}.${ext}',
   },
-  // The dependencies of the PKGBUILD that built the 3.x pacman package.
+  // The dependencies of the PKGBUILD that built the 3.x pacman package. Its optional git-lfs is not
+  // here: fpm 1.17.0 never writes optdepend (the option and the template use different names).
   pacman: {
     depends: ['gtk3', 'nss', 'alsa-lib', 'libnotify', 'xdg-utils', 'mesa', 'libdrm', 'git'],
     compression: 'zstd',
     fpm: [
-      '--pacman-optional-depends=git-lfs: large files in ARCs',
+      '--after-upgrade',
+      restoreCommandLink,
       // electron-builder turns 4.0.0-rc.1 into 4.0.0_rc.1, which pacman sorts above 4.0.0.
       // 4.0.0rc.1 sorts below it. fpm takes the last --version.
       `--version=${version.replace(/-/g, '')}`,
