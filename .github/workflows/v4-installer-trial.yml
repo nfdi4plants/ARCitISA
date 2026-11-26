@@ -18,6 +18,8 @@ permissions:
 env:
   TRIAL_VERSION: 4.0.0-rc.1
   OLD_RELEASE: 3.4.0-rc.2
+  # Same as the release build: the macOS runners otherwise run out of heap in the Vite build (#1421).
+  NODE_OPTIONS: --max-old-space-size=4096
 
 jobs:
   trial:
