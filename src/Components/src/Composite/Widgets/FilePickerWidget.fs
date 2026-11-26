@@ -1,9 +1,7 @@
 namespace Swate.Components.Composite.Widgets
 
 open ARCtrl
-open Browser.Types
 open Fable.Core
-open Fable.Core.JsInterop
 open Feliz
 open Swate.Components
 open Swate.Components.Composite.DataMapTable.ClipboardTarget
@@ -268,56 +266,27 @@ type FilePickerWidget =
         ]
 
     [<ReactComponent>]
-    static member private EmptyState
-        (
-            onPickPaths: PathPickerKind -> unit,
-            onDropFiles: File[] -> unit,
-            isDropActive: bool,
-            setIsDropActive: bool -> unit
-        ) =
+    static member private EmptyState(onPickPaths: PathPickerKind -> unit) =
         Html.div [
             prop.className "swt:flex swt:flex-col swt:gap-3"
             prop.children [
                 Html.div [
-                    prop.testId "file-picker-dropzone"
+                    // Restore the drop affordances once the Electron drag-and-drop bridge is wrapped.
                     prop.className [
-                        "swt:flex swt:min-h-36 swt:flex-col swt:items-center swt:justify-center swt:gap-2 swt:rounded-box swt:border-2 swt:border-dashed swt:p-6 swt:text-center swt:transition-colors"
-                        if isDropActive then
-                            "swt:border-primary swt:bg-primary/10"
-                        else
-                            "swt:border-base-300 swt:bg-base-200/50"
+                        "swt:flex swt:min-h-36 swt:flex-col swt:items-center swt:justify-center swt:gap-2 swt:rounded-box swt:bg-base-200/50 swt:p-6 swt:text-center"
+                    // "swt:border-2 swt:border-dashed swt:border-base-300"
                     ]
-                    prop.onDragEnter (fun (event: DragEvent) ->
-                        event.preventDefault ()
-                        event.stopPropagation ()
-                        setIsDropActive true
-                    )
-                    prop.onDragLeave (fun (event: DragEvent) ->
-                        event.preventDefault ()
-                        event.stopPropagation ()
-                        setIsDropActive false
-                    )
-                    prop.onDragOver (fun (event: DragEvent) ->
-                        event.preventDefault ()
-                        event.stopPropagation ()
-                    )
-                    prop.onDrop (fun (event: DragEvent) ->
-                        event.preventDefault ()
-                        event.stopPropagation ()
-                        setIsDropActive false
-                        emitJsExpr event.dataTransfer.files "Array.from($0)" |> onDropFiles
-                    )
                     prop.children [
-                        Html.i [
-                            prop.className "swt:iconify swt:fluent--document-arrow-down-24-regular swt:size-8"
-                        ]
-                        Html.span [
-                            prop.className "swt:font-semibold"
-                            prop.text "Drop files or folders here"
-                        ]
+                        // Html.i [
+                        //     prop.className "swt:iconify swt:fluent--document-arrow-down-24-regular swt:size-8"
+                        // ]
+                        // Html.span [
+                        //     prop.className "swt:font-semibold"
+                        //     prop.text "Drop files or folders here"
+                        // ]
                         Html.span [
                             prop.className "swt:text-sm swt:opacity-70"
-                            prop.text "Their ARC-relative paths will be added to the list."
+                            prop.text "Pick files or folders to add their ARC-relative paths."
                         ]
                         Html.div [
                             prop.className "swt:flex swt:w-full swt:max-w-sm swt:gap-2 swt:pt-2"
@@ -357,14 +326,12 @@ type FilePickerWidget =
             arcFile: ArcFiles,
             activeTableIndex: int option,
             setArcFile: ArcFiles -> unit,
-            onPickPaths: PathPickerKind -> JS.Promise<string[]>,
-            ?onDropFiles: File[] -> JS.Promise<string[]>
+            onPickPaths: PathPickerKind -> JS.Promise<string[]>
         ) =
 
         let paths, setPaths = React.useStateWithUpdater ([||]: string[])
         let selectedPaths, setSelectedPaths = React.useStateWithUpdater ([]: string list)
         let isLoading, setIsLoading = React.useState false
-        let isDropActive, setIsDropActive = React.useState false
 
         let annotationCtx = useAnnotationTableStateCtx ()
 
@@ -384,21 +351,6 @@ type FilePickerWidget =
                     setIsLoading false
             }
             |> Promise.start
-
-        let dropFiles (files: File[]) =
-            match onDropFiles with
-            | Some resolveFiles when files.Length > 0 ->
-                promise {
-                    setIsLoading true
-
-                    try
-                        let! paths = resolveFiles files
-                        FilePickerWidgetHelper.appendPickedPaths setPaths paths
-                    finally
-                        setIsLoading false
-                }
-                |> Promise.start
-            | _ -> ()
 
         let insertPaths =
             fun (useSelectedPaths: bool) ->
@@ -437,6 +389,6 @@ type FilePickerWidget =
                         ]
                     )
                 else
-                    FilePickerWidget.EmptyState(pickPaths, dropFiles, isDropActive, setIsDropActive)
+                    FilePickerWidget.EmptyState(pickPaths)
             ]
         ]

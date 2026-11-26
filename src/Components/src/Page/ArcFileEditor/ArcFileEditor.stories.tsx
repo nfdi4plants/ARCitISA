@@ -78,8 +78,7 @@ export const FileAndFolderPicker: Story = {
 
     await userEvent.click(getWidgetButton(canvas, 'File Picker'));
 
-    expect(await canvas.findByTestId('file-picker-dropzone')).toBeInTheDocument();
-    expect(canvas.getByRole('button', { name: 'Pick files' })).toBeEnabled();
+    expect(await canvas.findByRole('button', { name: 'Pick files' })).toBeEnabled();
     expect(canvas.getByRole('button', { name: 'Pick folders' })).toBeEnabled();
   },
 };
