@@ -50,12 +50,13 @@ flowchart TD
         b-mac-x64["macOS x64"]
         b-mac-arm["macOS arm64"]
         b-linux["linux x64"]
+        b-linux-arm["linux arm64 (built on x64)"]
     end
 
     rel-fork --> r-nuget & r-npm & r-docker & r-story
-    rel-fork --> b-win & b-mac-x64 & b-mac-arm & b-linux
+    rel-fork --> b-win & b-mac-x64 & b-mac-arm & b-linux & b-linux-arm
 
-    b-win & b-mac-x64 & b-mac-arm & b-linux --> art-bin["upload-artifact: release-assets-electron-* (fails if nothing was built)"]
+    b-win & b-mac-x64 & b-mac-arm & b-linux & b-linux-arm --> art-bin["upload-artifact: release-assets-electron-* (fails if nothing was built)"]
 
     r-nuget & r-npm & r-docker & r-story --> rel-join{{"join"}}
     art-bin --> bin-join{{"join"}}
@@ -106,7 +107,10 @@ flowchart LR
     end
     subgraph electron-bin["electron-bin (per OS/arch)"]
         direction TB
-        n11["npm run fable"] --> n12["node scripts/forge-make.cjs --arch"] --> n12b["check out/make for fresh installers"]
+        n11["npm run fable"] --> n12["node scripts/make.cjs --arch"]
+        n12 --> n12a["electron-forge package (fuses, asar, macOS ad-hoc signature)"]
+        n12a --> n12c["electron-builder --prepackaged (setup, dmg, zip, deb, rpm, pacman, AppImage)"]
+        n12c --> n12b["check out/installers for fresh installers"]
     end
     subgraph storybook["storybook"]
         direction TB
