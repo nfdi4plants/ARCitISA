@@ -146,11 +146,11 @@ jobs:
         run: npm i
 
       - name: .NET tool Restore
-        run: dotnet restore ./Arcitisa.sln
+        run: dotnet restore ./Arcitisa.slnx
 
       - name: Test Build
         id: build
-        run: dotnet build ./Arcitisa.sln
+        run: dotnet build ./Arcitisa.slnx
 
       # Both suites run even if the other one fails, so CI reports both results.
       - name: Run server tests
