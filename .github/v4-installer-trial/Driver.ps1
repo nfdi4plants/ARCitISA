@@ -1,5 +1,5 @@
 param(
-  [Parameter(Mandatory)][ValidatePattern('^[A-H]$')][string]$Test,
+  [Parameter(Mandatory)][ValidatePattern('^[A-J]$')][string]$Test,
   # Holds installers-4.0.0-rc.1, installers-4.0.0-rc.2, old-3.4.0-rc.2 and old-3.4.0.
   [Parameter(Mandatory)][string]$Kit,
   [Parameter(Mandatory)][string]$Out
@@ -474,13 +474,13 @@ try {
       $userData = "$env:APPDATA\ARCitISA", "$env:APPDATA\Swate"
       foreach ($d in $userData) { New-Item -ItemType Directory -Force $d | Out-Null; Set-Content "$d\marker.txt" 'user data' }
       Start-Setup $rc2
-      $wz = Invoke-Wizard $rc2 @{ Question = 'Yes'; Mode = 'user'; Desktop = $false; Run = $false }
-      $s2 = Get-State 'after rc.2 without ticking the box'
+      $wz = Invoke-Wizard $rc2 @{ Question = 'Yes'; Mode = 'user'; Desktop = $true; Run = $false }
+      $s2 = Get-State 'after rc.2 with the box left ticked'
+      Check 'rc.2 box ticked because the shortcut exists' ($wz.Desktop -eq 'On') "$($wz.Desktop)"
       Check 'rc.2 installed' (@($s2.Entries | Where-Object { $_.Key -eq $guid -and $_.Version -eq '4.0.0-rc.2' }).Count -eq 1) (($s2.Entries | ConvertTo-Json -Compress))
       Check 'no message during the update' ($wz.Errors.Count -eq 0 -and $wz.Questions -eq 0) ($wz.Errors -join ' / ')
       Check 'update keeps the user data' (@($userData | Where-Object { Test-Path "$_\marker.txt" }).Count -eq 2)
       Check 'desktop shortcut kept' (Test-Link $s2 '*\Desktop\ARCitISA.lnk')
-      Note "rc.2 checkbox initially $($wz.Desktop)"
       $link = @($s2.Links | Where-Object { $_.Path -like '*\Desktop\ARCitISA.lnk' })
       if ($link.Count -eq 1) {
         Start-Process explorer.exe -ArgumentList "`"$($link[0].Path)`""
@@ -573,6 +573,35 @@ try {
       Check 'public desktop shortcut removed' (-not (Test-Link $s2 "$env:PUBLIC\Desktop\ARCitISA.lnk"))
       Check 'program removed' (-not (Test-Path "$env:ProgramFiles\ARCitISA\ARCitISA.exe") -and -not (Test-Entry $s2 $guid))
       Check 'user data kept' (Test-Path "$env:APPDATA\Swate")
+    }
+    'I' {
+      Start-Setup $rc1
+      $null = Invoke-Wizard $rc1 @{ Question = 'Yes'; Mode = 'user'; Desktop = $true; Run = $false }
+      $s1 = Get-State 'after rc.1 with desktop shortcut'
+      Check 'rc.1 desktop shortcut' (Test-Link $s1 '*\Desktop\ARCitISA.lnk')
+      Start-Setup $rc2
+      $wz = Invoke-Wizard $rc2 @{ Question = 'Yes'; Mode = 'user'; Desktop = $false; Run = $false }
+      $s2 = Get-State 'after rc.2 with the box unticked'
+      Check 'rc.2 box ticked because the shortcut exists' ($wz.Desktop -eq 'On') "$($wz.Desktop)"
+      Check 'unticking removes the desktop shortcut' (-not (Test-Link $s2 '*\Desktop\ARCitISA.lnk'))
+      Check 'Start menu shortcut still there' (Test-Link $s2 '*Start Menu\Programs\ARCitISA.lnk')
+    }
+    'J' {
+      Start-Setup $rc1
+      $null = Invoke-Wizard $rc1 @{ Question = 'Yes'; Mode = 'user'; Desktop = $true; Run = $false }
+      $s1 = Get-State 'after rc.1 for this user with desktop shortcut'
+      Check 'rc.1 desktop shortcut for this user' (Test-Link $s1 '*\Desktop\ARCitISA.lnk')
+      Start-Setup $rc2
+      $wz = Invoke-Wizard $rc2 @{ Question = 'Yes'; Mode = 'all'; Desktop = $true; Run = $false }
+      $s2 = Get-State 'after rc.2 for all users'
+      $userDesktopLink = Join-Path ([Environment]::GetFolderPath('Desktop')) 'ARCitISA.lnk'
+      $publicLink = @($s2.Links | Where-Object { $_.Path -eq "$env:PUBLIC\Desktop\ARCitISA.lnk" })
+      Check 'rc.2 box ticked because this user has the shortcut' ($wz.Desktop -eq 'On') "$($wz.Desktop)"
+      Check 'installed for all users' ($s2.AllUsersApp -and @($s2.Entries | Where-Object { $_.Hive -eq 'HKLM' -and $_.Key -eq $guid }).Count -eq 1)
+      Check 'per-user install removed' (-not $s2.PerUserApp -and @($s2.Entries | Where-Object { $_.Hive -eq 'HKCU' }).Count -eq 0) ($s2.Entries | ConvertTo-Json -Compress)
+      Check 'shortcut on the public desktop with the app id' ($publicLink.Count -eq 1 -and $publicLink[0].Aumid -eq $appId) ($publicLink | ConvertTo-Json -Compress)
+      Check 'this user''s desktop shortcut removed' (-not (Test-Path $userDesktopLink))
+      $null = Invoke-Uninstall "$env:ProgramFiles\ARCitISA\Uninstall ARCitISA.exe" 'No'
     }
     'H' {
       if (-not $old340) { throw 'old-3.4.0 setup missing in the kit' }

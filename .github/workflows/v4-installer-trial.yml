@@ -510,7 +510,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        test: [A, B, C, D, E, F, G, H]
+        test: [A, B, C, D, E, F, G, H, I, J]
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
