@@ -3,6 +3,7 @@
   "productName": "ARCitISA",
   "version": "0.0.0",
   "description": "An open-source, cross-platform, and user-friendly software for managing and sharing scientific data.",
+  "homepage": "https://github.com/nfdi4plants/ARCitISA",
   "main": ".vite/build/main.fs.js",
   "config": {
     "forge": "./forge.config.js"
