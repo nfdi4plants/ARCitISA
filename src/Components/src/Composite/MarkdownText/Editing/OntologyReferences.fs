@@ -1,12 +1,12 @@
-module Swate.Components.Composite.MarkdownText.Editing.OntologyReferences
+module Arcitisa.Components.Composite.MarkdownText.Editing.OntologyReferences
 
 open System
 open System.Text.RegularExpressions
 open Fable.Core
-open Swate.Components.Composite.TextEditor.Types
-open Swate.Components.Composite.TermSearch.Types
-open Swate.Components.Composite.MarkdownText.JsBindings.Mdast
-open Swate.Components.Composite.MarkdownText.Editing.MarkdownEdits
+open Arcitisa.Components.Composite.TextEditor.Types
+open Arcitisa.Components.Composite.TermSearch.Types
+open Arcitisa.Components.Composite.MarkdownText.JsBindings.Mdast
+open Arcitisa.Components.Composite.MarkdownText.Editing.MarkdownEdits
 
 /// A term to link. curie can be empty. iri is what the link definition points to.
 type OntologyReference = {|

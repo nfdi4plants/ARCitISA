@@ -1,13 +1,13 @@
 /// Connects a TextCompletionSource to the autocompletion of the editor. The source sees the line of the cursor and
 /// the syntax nodes around it, and its entries can carry an icon and open the list again after they are inserted.
-module Swate.Components.Composite.TextEditor.TextCompletion
+module Arcitisa.Components.Composite.TextEditor.TextCompletion
 
 open Browser.Types
 open Fable.Core
-open Swate.Components.Composite.TextEditor.JsBindings.CodeMirror
-open Swate.Components.Composite.TextEditor.JsBindings.Lezer
-open Swate.Components.Composite.TextEditor.JsBindings.Autocomplete
-open Swate.Components.Composite.TextEditor.Types
+open Arcitisa.Components.Composite.TextEditor.JsBindings.CodeMirror
+open Arcitisa.Components.Composite.TextEditor.JsBindings.Lezer
+open Arcitisa.Components.Composite.TextEditor.JsBindings.Autocomplete
+open Arcitisa.Components.Composite.TextEditor.Types
 
 /// The completion type of an entry with its own icon. The theme hides CodeMirror's icon for this type, so the
 /// entry shows only its own.

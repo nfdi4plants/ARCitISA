@@ -1,7 +1,7 @@
-module Swate.Electron.Shared.DTOs.ProvenanceGroupingDto
+module Arcitisa.Electron.Shared.DTOs.ProvenanceGroupingDto
 
-open Swate.Components.Shared.ProvenanceGrouping.Types
-open Swate.Components.Shared.ProvenanceGrouping.ARCtrlConverter
+open Arcitisa.Components.Shared.ProvenanceGrouping.Types
+open Arcitisa.Components.Shared.ProvenanceGrouping.ARCtrlConverter
 
 [<RequireQualifiedAccess>]
 type ProvenanceTableScopeDto =

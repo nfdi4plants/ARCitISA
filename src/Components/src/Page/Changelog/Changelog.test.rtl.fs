@@ -1,9 +1,9 @@
-module internal Swate.Components.Page.Changelog.Tests
+module internal Arcitisa.Components.Page.Changelog.Tests
 
 open Browser.Types
 open Fable.Core
 open Vitest
-open Swate.Components.Api.GitHubReleases
+open Arcitisa.Components.Api.GitHubReleases
 
 module private Helpers =
     [<Emit("Array.from($0.querySelectorAll('button')).map(button => button.textContent)")>]

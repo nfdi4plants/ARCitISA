@@ -2,31 +2,31 @@ module ElectronRenderer.GitLabCreateProjectTests
 
 open Fable.Core
 open Fable.Core.JsInterop
-open Swate.Components.Api.GitLabApi
+open Arcitisa.Components.Api.GitLabApi
 open Vitest
 
 [<Emit("""
-globalThis.__swateApiOriginalFetch = globalThis.fetch;
-globalThis.__swateApiFetches = [];
+globalThis.__arcitisaApiOriginalFetch = globalThis.fetch;
+globalThis.__arcitisaApiFetches = [];
 globalThis.fetch = async (url, options) => {
   const body = options && options.body ? JSON.parse(options.body) : null;
-  globalThis.__swateApiFetches.push({ url, options, body });
+  globalThis.__arcitisaApiFetches.push({ url, options, body });
   return $0({ url, body });
 };
 """)>]
 let private installFetchSpy (respond: obj -> obj) : unit = jsNative
 
-[<Emit("globalThis.__swateApiFetches")>]
+[<Emit("globalThis.__arcitisaApiFetches")>]
 let private recordedFetches () : obj[] = jsNative
 
 [<Emit("""
-if (globalThis.__swateApiOriginalFetch === undefined) {
+if (globalThis.__arcitisaApiOriginalFetch === undefined) {
   delete globalThis.fetch;
 } else {
-  globalThis.fetch = globalThis.__swateApiOriginalFetch;
+  globalThis.fetch = globalThis.__arcitisaApiOriginalFetch;
 }
-delete globalThis.__swateApiOriginalFetch;
-delete globalThis.__swateApiFetches;
+delete globalThis.__arcitisaApiOriginalFetch;
+delete globalThis.__arcitisaApiFetches;
 """)>]
 let private removeFetchSpy () : unit = jsNative
 

@@ -5,8 +5,8 @@ open Fetch
 open Main.Bindings.Filesystem
 open Main.Bindings.Path
 open Main.Services.MarkdownResolverService
-open Swate.Electron.Shared
-open Swate.Electron.Shared.DTOs.MarkdownResolverDto
+open Arcitisa.Electron.Shared
+open Arcitisa.Electron.Shared.DTOs.MarkdownResolverDto
 open Vitest
 
 [<Import("writeFile", "fs/promises")>]
@@ -50,7 +50,7 @@ let private nonce = "0123456789abcdef0123456789abcdef"
 let private authority = "w3-" + nonce
 
 let private withDirectory (check: string -> JS.Promise<unit>) = promise {
-    let! directoryPath = TestHelpers.createTempDirectoryAsync "swate-md-resolver-"
+    let! directoryPath = TestHelpers.createTempDirectoryAsync "arcitisa-md-resolver-"
 
     try
         do! check directoryPath
@@ -387,7 +387,7 @@ Vitest.describe (
             fun () ->
                 withDirectory (fun dir -> promise {
                     let limit =
-                        Swate.Components.Composite.MarkdownText.Links.LinkDiagnostics.maxCheckedPaths
+                        Arcitisa.Components.Composite.MarkdownText.Links.LinkDiagnostics.maxCheckedPaths
 
                     let! atLimit = (serviceFor dir).CheckPaths(Array.create limit "a.md")
                     let! aboveLimit = (serviceFor dir).CheckPaths(Array.create (limit + 1) "a.md")

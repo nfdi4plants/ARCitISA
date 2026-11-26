@@ -1,7 +1,7 @@
 module ElectronCore.VersionControlProgressThrottleTests
 
 open Main.IPC.IVersionControlApi
-open Swate.Electron.Shared.VersionControlTypes
+open Arcitisa.Electron.Shared.VersionControlTypes
 open Vitest
 
 /// A throttle on a manual clock. Timers fire only when the test advances the time.

@@ -4,10 +4,10 @@ module Renderer.Components.MainContent.TextDocument.TextDocumentSync
 
 open Fable.Core
 open Feliz
-open Swate.Components.Composite.TextEditor.Types
-open Swate.Components.Page.FileViewer.Types
-open Swate.Electron.Shared
-open Swate.Electron.Shared.FileIOTypes
+open Arcitisa.Components.Composite.TextEditor.Types
+open Arcitisa.Components.Page.FileViewer.Types
+open Arcitisa.Electron.Shared
+open Arcitisa.Electron.Shared.FileIOTypes
 open Renderer.Types
 open Renderer.Context.LeaveGuardContext
 open Renderer.Components.MainContent.TextDocument.TextDocumentState

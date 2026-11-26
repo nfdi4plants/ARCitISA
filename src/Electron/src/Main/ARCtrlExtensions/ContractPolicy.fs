@@ -7,7 +7,7 @@ open ARCtrl.Spreadsheet
 open Fable.Core
 open Main.Bindings.Filesystem
 open Main.Bindings.Path
-open Swate.Components.Shared
+open Arcitisa.Components.Shared
 
 let private key = ArcPathHelper.normalizePathKey
 
@@ -188,7 +188,7 @@ let private parentHasEmbeddedDatamapAsync
 
                 let contract = Contract.createRead (relativeParentPath, dtoType)
 
-                match! ContractExecutor.fulfillReadContractsSwateAsync arcPath [| contract |] with
+                match! ContractExecutor.fulfillReadContractsArcitisaAsync arcPath [| contract |] with
                 | Ok [| { DTO = Some(DTO.Spreadsheet workbook) } |] ->
                     return
                         workbook.GetWorksheets()

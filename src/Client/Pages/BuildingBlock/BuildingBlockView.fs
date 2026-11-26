@@ -3,7 +3,7 @@ module BuildingBlock.Core
 open Model
 open Messages
 open Messages.BuildingBlock
-open Swate.Components.Shared
+open Arcitisa.Components.Shared
 open SearchComponent
 
 open Elmish
@@ -67,7 +67,7 @@ let addBuildingBlockComponent (model: Model) (dispatch: Messages.Msg -> unit) =
         SidebarComponents.SidebarLayout.Description "Add annotation building blocks (columns) to the annotation table."
         SidebarComponents.SidebarLayout.LogicContainer [ SearchComponent.Main(model, dispatch) ]
         match model.PersistentStorageState.Host with
-        | Some Swatehost.Excel ->
+        | Some Arcitisahost.Excel ->
             Html.p "Convert existing Building Block."
             SidebarComponents.SidebarLayout.LogicContainer [ CellConvertComponent.Main() ]
         | _ -> Html.none

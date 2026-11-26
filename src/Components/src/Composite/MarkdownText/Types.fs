@@ -1,4 +1,4 @@
-module Swate.Components.Composite.MarkdownText.Types
+module Arcitisa.Components.Composite.MarkdownText.Types
 
 [<RequireQualifiedAccess>]
 type PreviewMode =

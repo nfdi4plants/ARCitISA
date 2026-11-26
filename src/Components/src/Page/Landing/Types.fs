@@ -1,8 +1,8 @@
-namespace Swate.Components.Page.Landing
+namespace Arcitisa.Components.Page.Landing
 
 open ARCtrl
 open Fable.Core
-open Swate.Components.Shared
+open Arcitisa.Components.Shared
 
 
 [<RequireQualifiedAccess>]

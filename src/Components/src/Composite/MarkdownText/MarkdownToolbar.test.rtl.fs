@@ -1,15 +1,15 @@
-module internal Swate.Components.Composite.MarkdownText.MarkdownToolbarTests
+module internal Arcitisa.Components.Composite.MarkdownText.MarkdownToolbarTests
 
 open Browser.Types
 open Vitest
-open Swate.Components.Composite.TextEditor
-open Swate.Components.Util
-open Swate.Components.Composite.TextEditor.Types
-open Swate.Components.Composite.TermSearch.Types
-open Swate.Components.Composite.MarkdownText
-open Swate.Components.Composite.MarkdownText.Editing
-open Swate.Components.Composite.MarkdownText.Editing.Types
-open Swate.Components.Composite.MarkdownText.Editing.MarkdownCommands
+open Arcitisa.Components.Composite.TextEditor
+open Arcitisa.Components.Util
+open Arcitisa.Components.Composite.TextEditor.Types
+open Arcitisa.Components.Composite.TermSearch.Types
+open Arcitisa.Components.Composite.MarkdownText
+open Arcitisa.Components.Composite.MarkdownText.Editing
+open Arcitisa.Components.Composite.MarkdownText.Editing.Types
+open Arcitisa.Components.Composite.MarkdownText.Editing.MarkdownCommands
 
 type private FakeSurface(state: TextEditState) =
     member val Applied = ResizeArray<TextEdit>()

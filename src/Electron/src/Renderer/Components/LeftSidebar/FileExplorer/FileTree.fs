@@ -3,13 +3,13 @@ namespace Renderer.Components.LeftSidebar.FileExplorer
 open Renderer.Components.Helper
 open Renderer.Components.Helper.ArcViewHelper
 open Renderer.Components.LeftSidebar.FileExplorer.Modals
-open Swate.Components
-open Swate.Components.Page.FileExplorer.Types
-open Swate.Components.Primitive.ErrorModal.Types
-open Swate.Components.Primitive.ErrorModal.Context
-open Swate.Components.Shared
-open Swate.Electron.Shared.FileIOTypes
-open Swate.Electron.Shared.FileIOHelper
+open Arcitisa.Components
+open Arcitisa.Components.Page.FileExplorer.Types
+open Arcitisa.Components.Primitive.ErrorModal.Types
+open Arcitisa.Components.Primitive.ErrorModal.Context
+open Arcitisa.Components.Shared
+open Arcitisa.Electron.Shared.FileIOTypes
+open Arcitisa.Electron.Shared.FileIOHelper
 open Feliz
 open Fable.Core
 open ARCtrl
@@ -62,7 +62,7 @@ type FileTree =
             match leaveGuard.documentPath () with
             | Some documentPath when
                 leaveGuard.isDirty ()
-                && Swate.Electron.Shared.TextDocumentHelper.isPathOrAncestor path documentPath
+                && Arcitisa.Electron.Shared.TextDocumentHelper.isPathOrAncestor path documentPath
                 ->
                 leaveGuard.confirmLeave ()
             | _ -> Promise.lift true
@@ -460,7 +460,7 @@ type FileTree =
             // because the open page, such as the Markdown editor, saves to the selected path.
             | FileTreeClick.Folder -> ()
             | FileTreeClick.File selectedPath ->
-                navigation.OpenFile selectedPath (Swate.Components.Page.FileExplorer.Helper.needsLfsDownload item)
+                navigation.OpenFile selectedPath (Arcitisa.Components.Page.FileExplorer.Helper.needsLfsDownload item)
                 |> Promise.start
 
         let reloadPreviewAfterFileTreeUpdate path transformPageState =
@@ -754,7 +754,7 @@ type FileTree =
             Renderer.Context.FileTreeStore.tryFind fileStateCtx.fileTreeStore.Snapshot path
             |> Option.map (fun entry ->
                 let item =
-                    Swate.Components.Page.FileExplorer.Types.FileTree.createFile
+                    Arcitisa.Components.Page.FileExplorer.Types.FileTree.createFile
                         entry.name
                         (Some entry.path)
                         FileItemIcon.Document
@@ -831,7 +831,7 @@ type FileTree =
                     IsDirectory = true
             }
 
-            Swate.Components.Primitive.ContextMenu.ContextMenu.ContextMenu(
+            Arcitisa.Components.Primitive.ContextMenu.ContextMenu.ContextMenu(
                 (fun _ ->
                     FileTreeContextMenu.rootContextMenuItems contextMenuConfig rootMenuItem
                     |> List.map (fun item -> item.ToPrimitiveContextMenuItem())
@@ -954,7 +954,7 @@ type FileTree =
                 Html.div [
                     prop.className "swt:w-full swt:h-full swt:min-h-0"
                     prop.children [
-                        Swate.Components.Page.FileExplorer.FileExplorer.FileExplorer(
+                        Arcitisa.Components.Page.FileExplorer.FileExplorer.FileExplorer(
                             initialItems = visibleItems,
                             onItemClick = openPreview,
                             onDirectoryExpansionChange = handleExpansionChange,

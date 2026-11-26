@@ -1,4 +1,4 @@
-namespace Swate.Components.Composite.TableImport
+namespace Arcitisa.Components.Composite.TableImport
 
 open ARCtrl
 open Fable.Core

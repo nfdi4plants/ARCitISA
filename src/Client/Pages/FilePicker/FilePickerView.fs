@@ -6,12 +6,12 @@ open Elmish
 open Messages.FilePicker
 open Messages
 open Feliz
-open Swate
-open Swate.Components
-open Swate.Components.Composite.AnnotationTable
-open Swate.Components.Composite.AnnotationTable.Context
-open Swate.Components.Primitive
-open Swate.Components.Primitive.Buttons
+open Arcitisa
+open Arcitisa.Components
+open Arcitisa.Components.Composite.AnnotationTable
+open Arcitisa.Components.Composite.AnnotationTable.Context
+open Arcitisa.Components.Primitive
+open Arcitisa.Components.Primitive.Buttons
 
 module FilePicker =
 
@@ -66,7 +66,7 @@ type FilePicker =
                     )
                 ]
                 match model.PersistentStorageState.Host with
-                | Some Swatehost.ARCitect ->
+                | Some Arcitisahost.ARCitect ->
                     Html.button [
                         prop.className "swt:btn swt:btn-primary swt:btn-block"
                         prop.text "Pick Files"
@@ -105,7 +105,7 @@ type FilePicker =
                 yStart = x.yStart - 1
                 yEnd = x.yEnd - 1
             |})
-            |> unbox<Swate.Components.CellCoordinateRange option>
+            |> unbox<Arcitisa.Components.CellCoordinateRange option>
 
         Html.div [
             prop.className "swt:flex swt:flex-row swt:justify-center swt:gap-2"

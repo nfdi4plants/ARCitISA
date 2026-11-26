@@ -1,7 +1,7 @@
 module Main.Services.MarkdownResolverService.AssetPolicy
 
-open Swate.Components.Composite.MarkdownText.Links
-open Swate.Electron.Shared.DTOs.MarkdownResolverDto
+open Arcitisa.Components.Composite.MarkdownText.Links
+open Arcitisa.Electron.Shared.DTOs.MarkdownResolverDto
 
 let defaultMaxImageBytes = 50.0 * 1024.0 * 1024.0
 

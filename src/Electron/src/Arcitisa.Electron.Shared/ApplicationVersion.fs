@@ -1,4 +1,4 @@
-module Swate.Electron.Shared.ApplicationVersion
+module Arcitisa.Electron.Shared.ApplicationVersion
 
 open Fable.Core
 
@@ -15,7 +15,7 @@ let private changelog: string = jsNative
 /// ```
 /// </summary>
 let current =
-    changelog.Split(Swate.Components.ClipboardContract.Contract.LineBreaks, System.StringSplitOptions.None)
+    changelog.Split(Arcitisa.Components.ClipboardContract.Contract.LineBreaks, System.StringSplitOptions.None)
     |> Array.tryPick (fun line ->
         if line.StartsWith "## " then
             let heading = line.Substring 3

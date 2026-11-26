@@ -8,7 +8,7 @@
 /// Convert a kind to text with `toText` only. The built-in conversions (`string`,
 /// `ToString()`, `%A` and string interpolation) differ per runtime: .NET prints
 /// "Study" and Fable prints "study".
-module Swate.Components.Shared.ProvenanceGraph.Types
+module Arcitisa.Components.Shared.ProvenanceGraph.Types
 
 open System.Collections.Generic
 open System.Text

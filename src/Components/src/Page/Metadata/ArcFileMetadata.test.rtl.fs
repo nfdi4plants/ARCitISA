@@ -1,9 +1,9 @@
-module internal Swate.Components.Page.Metadata.ImportRtlTests
+module internal Arcitisa.Components.Page.Metadata.ImportRtlTests
 
 open ARCtrl
 open Fable.Core
 open Vitest
-open Swate.Components.Shared
+open Arcitisa.Components.Shared
 
 Vitest.afterEach (fun () -> RTL.cleanup ())
 

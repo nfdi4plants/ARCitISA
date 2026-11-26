@@ -3,7 +3,7 @@ module ElectronRenderer.SettingsPageTargetTests
 open Fable.Core.JsInterop
 open Renderer.Components.MainContent.SettingsPageTarget
 open Renderer.Context.VersionControlDependencyContext
-open Swate.Electron.Shared.VersionControlTypes
+open Arcitisa.Electron.Shared.VersionControlTypes
 open Vitest
 
 // The target reaches the IPC bridges through the Api module. The preload is absent in tests,

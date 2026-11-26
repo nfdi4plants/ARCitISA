@@ -1,7 +1,7 @@
-module Swate.Components.Page.DataHub.DataHubTypes
+module Arcitisa.Components.Page.DataHub.DataHubTypes
 
 open Fable.Core
-open Swate.Components.Api.GitLabApi
+open Arcitisa.Components.Api.GitLabApi
 
 [<RequireQualifiedAccess>]
 type ExploreTab =

@@ -1,7 +1,7 @@
 namespace Renderer.Components.LeftSidebar.FileExplorer
 
-open Swate.Components.Page.FileExplorer.Types
-open Swate.Components.Shared
+open Arcitisa.Components.Page.FileExplorer.Types
+open Arcitisa.Components.Shared
 
 /// Decides what a click on a file tree item opens.
 [<RequireQualifiedAccess>]

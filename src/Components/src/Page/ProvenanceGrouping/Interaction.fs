@@ -1,10 +1,10 @@
-namespace Swate.Components.Page.ProvenanceGrouping
+namespace Arcitisa.Components.Page.ProvenanceGrouping
 
 /// Stable identity strings for React keys, DOM lookup attributes, and DnD payload/drop parsing.
 module DragDrop =
 
-    open Swate.Components.Shared.ProvenanceGrouping.Types
-    open Swate.Components.Page.ProvenanceGrouping.Types
+    open Arcitisa.Components.Shared.ProvenanceGrouping.Types
+    open Arcitisa.Components.Page.ProvenanceGrouping.Types
 
     let private encode (value: string) = System.Uri.EscapeDataString value
     let private decode (value: string) = System.Uri.UnescapeDataString value
@@ -167,7 +167,7 @@ module DragDrop =
 /// repaint the overlay layer that needs the live path.
 module LiveDrag =
 
-    open Swate.Components.Page.ProvenanceGrouping.Types
+    open Arcitisa.Components.Page.ProvenanceGrouping.Types
 
     type Store = {
         mutable Current: LiveConnectionDrag option
@@ -215,7 +215,7 @@ module HoverHighlight =
     open Fable.Core
     open Fable.Core.JsInterop
     open Feliz
-    open Swate.Components.Shared.ProvenanceGrouping.Types
+    open Arcitisa.Components.Shared.ProvenanceGrouping.Types
 
     type Target = {
         Side: ProvenanceSide
@@ -264,8 +264,8 @@ module HoverHighlight =
 /// Validates edge-handle drag/drop pairs and returns the editor action they imply.
 module ConnectionRouting =
 
-    open Swate.Components.Shared.ProvenanceGrouping.Types
-    open Swate.Components.Page.ProvenanceGrouping.Types
+    open Arcitisa.Components.Shared.ProvenanceGrouping.Types
+    open Arcitisa.Components.Page.ProvenanceGrouping.Types
 
     type ConnectionAction =
         | ConnectGroups of inputGroupId: string * outputGroupId: string

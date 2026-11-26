@@ -1,4 +1,4 @@
-module Swate.Components.Composite.ThemeSelector.Types
+module Arcitisa.Components.Composite.ThemeSelector.Types
 
 open Fable.Core
 

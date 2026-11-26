@@ -3,7 +3,7 @@
 module Renderer.Context.OperationLog
 
 open System.Collections.Generic
-open Swate.Electron.Shared.VersionControlTypes
+open Arcitisa.Electron.Shared.VersionControlTypes
 
 type OperationLogLine = {
     CommandId: string
@@ -102,14 +102,14 @@ let append (entries: VersionControlOutputEntryDto[]) (log: OperationLog) : Opera
         }
 
 /// The log for the sidebar. A log without lines is None, so the notice offers no "Show logs" button for it.
-let toSidebarLog (log: OperationLog) : Swate.Components.Page.GitSidebarTypes.GitSidebarLog option =
+let toSidebarLog (log: OperationLog) : Arcitisa.Components.Page.GitSidebarTypes.GitSidebarLog option =
     if log.Lines.Length = 0 then
         None
     else
         let lines =
             log.Lines
             |> Array.map (fun line ->
-                let mapped: Swate.Components.Page.GitSidebarTypes.GitSidebarLogLine = {
+                let mapped: Arcitisa.Components.Page.GitSidebarTypes.GitSidebarLogLine = {
                     Kind = line.Kind
                     Text = line.Text
                 }
@@ -117,14 +117,14 @@ let toSidebarLog (log: OperationLog) : Swate.Components.Page.GitSidebarTypes.Git
                 mapped
             )
 
-        let mapped: Swate.Components.Page.GitSidebarTypes.GitSidebarLog = { Lines = lines; Omitted = log.Omitted }
+        let mapped: Arcitisa.Components.Page.GitSidebarTypes.GitSidebarLog = { Lines = lines; Omitted = log.Omitted }
 
         Some mapped
 
 /// The log as plain text, the same text the sidebar copies. None for a log without lines.
 let tryText (log: OperationLog) : string option =
     toSidebarLog log
-    |> Option.map Swate.Components.Page.GitSidebarTypes.GitSidebarLog.toText
+    |> Option.map Arcitisa.Components.Page.GitSidebarTypes.GitSidebarLog.toText
 
 /// The log as the text of an error's technical details. A heading line in front lets the reader tell the log from
 /// other details. None for a log without lines.
@@ -133,7 +133,9 @@ let tryDetails (log: OperationLog) : string option =
 
 /// The last finished log for the sidebar. The title starts with the operation name and ends with the local time of
 /// the end, with the ARC name between them when there is one. A log without lines is None.
-let toSidebarLastLog (lastLog: FinishedOperationLog) : Swate.Components.Page.GitSidebarTypes.GitSidebarLastLog option =
+let toSidebarLastLog
+    (lastLog: FinishedOperationLog)
+    : Arcitisa.Components.Page.GitSidebarTypes.GitSidebarLastLog option =
     toSidebarLog lastLog.Log
     |> Option.map (fun log ->
         let finishedAt =
@@ -144,7 +146,7 @@ let toSidebarLastLog (lastLog: FinishedOperationLog) : Swate.Components.Page.Git
             |> List.choose id
             |> String.concat " · "
 
-        let mapped: Swate.Components.Page.GitSidebarTypes.GitSidebarLastLog = { Title = title; Log = log }
+        let mapped: Arcitisa.Components.Page.GitSidebarTypes.GitSidebarLastLog = { Title = title; Log = log }
 
         mapped
     )

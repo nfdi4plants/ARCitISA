@@ -5,8 +5,8 @@ open ExcelJS.Fable
 open Excel
 open GlobalBindings
 
-open Swate.Components.Shared
-open Swate.Components.Shared.DTOs
+open Arcitisa.Components.Shared
+open Arcitisa.Components.Shared.DTOs
 open Database
 
 open OfficeInterop
@@ -1893,7 +1893,7 @@ type Main =
         }
 
     /// <summary>
-    /// Handle any diverging functionality here. This function is also used to make sure any new building blocks comply to the swate annotation-table definition
+    /// Handle any diverging functionality here. This function is also used to make sure any new building blocks comply to the arcitisa annotation-table definition
     /// </summary>
     /// <param name="newColumn"></param>
     static member addCompositeColumn(newColumn: CompositeColumn, ?table: Excel.Table, ?context0: RequestContext) =

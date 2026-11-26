@@ -1,6 +1,6 @@
 namespace Model
 
-// open Swate.Components.Shared
+// open Arcitisa.Components.Shared
 // open ARCtrl
 
 // open Feliz

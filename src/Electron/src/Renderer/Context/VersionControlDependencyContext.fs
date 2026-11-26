@@ -2,8 +2,8 @@ module Renderer.Context.VersionControlDependencyContext
 
 open Browser.Dom
 open Feliz
-open Swate.Electron.Shared.IPCTypes.MainToRendererIpc
-open Swate.Electron.Shared.VersionControlTypes
+open Arcitisa.Electron.Shared.IPCTypes.MainToRendererIpc
+open Arcitisa.Electron.Shared.VersionControlTypes
 
 /// One text per component with a problem. The library decides what is required (Git 2.42, Git
 /// LFS 3.7 and the LFS filter configuration) and says how to fix it. Its remediation text starts

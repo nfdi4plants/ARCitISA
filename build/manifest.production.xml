@@ -6,8 +6,8 @@
   <DefaultLocale>en-US</DefaultLocale>
   <DisplayName DefaultValue="ARCitISA"/>
   <Description DefaultValue="Utility functions to ARCify your data!"/>
-  <IconUrl DefaultValue="https://swate-alpha.nfdi4plants.org/assets/swate_32x32.png"/>
-  <HighResolutionIconUrl DefaultValue="https://swate-alpha.nfdi4plants.org/assets/swate_80x80.png"/>
+  <IconUrl DefaultValue="https://swate-alpha.nfdi4plants.org/assets/arcitisa_32x32.png"/>
+  <HighResolutionIconUrl DefaultValue="https://swate-alpha.nfdi4plants.org/assets/arcitisa_80x80.png"/>
   <SupportUrl DefaultValue="https://github.com/nfdi4plants/ARCitISA/issues"/>
   <AppDomains>
     <AppDomain>nfdi4plants.org</AppDomain>
@@ -30,8 +30,8 @@
           </GetStarted>
           <ExtensionPoint xsi:type="PrimaryCommandSurface">
             <OfficeTab id="TabData">
-              <Group id="SwateCommands">
-                <Label resid="Swate.Label"/>
+              <Group id="ArcitisaCommands">
+                <Label resid="Arcitisa.Label"/>
                 <Icon>
                   <bt:Image size="16" resid="Icon.16x16"/>
                   <bt:Image size="20" resid="Icon.20x20"/>
@@ -43,11 +43,11 @@
                   <bt:Image size="80" resid="Icon.80x80"/>
                   <bt:Image size="96" resid="Icon.96x96"/>
                 </Icon>
-                <Control xsi:type="Button" id="Swate">
-                    <Label resid="Swate.Label"/>
+                <Control xsi:type="Button" id="ARCitISA">
+                    <Label resid="Arcitisa.Label"/>
                     <Supertip>
-                        <Title resid="Swate.Label"/>
-                        <Description resid="Swate.Tooltip"/>
+                        <Title resid="Arcitisa.Label"/>
+                        <Description resid="Arcitisa.Tooltip"/>
                     </Supertip>
                     <Icon>
                         <bt:Image size="16" resid="Icon.16x16"/>
@@ -62,7 +62,7 @@
                     </Icon>
                     <Action xsi:type="ShowTaskpane">
                         <TaskpaneId>ButtonId2</TaskpaneId>
-                        <SourceLocation resid="Swate.Url"/>
+                        <SourceLocation resid="Arcitisa.Url"/>
                     </Action>
                 </Control>
               </Group>
@@ -73,27 +73,27 @@
     </Hosts>
     <Resources>
       <bt:Images>
-        <bt:Image id="Icon.16x16" DefaultValue="https://swate-alpha.nfdi4plants.org/assets/swate_16x16.png"/>
-        <bt:Image id="Icon.20x20" DefaultValue="https://swate-alpha.nfdi4plants.org/assets/swate_20x20.png"/>
-        <bt:Image id="Icon.24x24" DefaultValue="https://swate-alpha.nfdi4plants.org/assets/swate_24x24.png"/>
-        <bt:Image id="Icon.32x32" DefaultValue="https://swate-alpha.nfdi4plants.org/assets/swate_32x32.png"/>
-        <bt:Image id="Icon.40x40" DefaultValue="https://swate-alpha.nfdi4plants.org/assets/swate_40x40.png"/>
-        <bt:Image id="Icon.48x48" DefaultValue="https://swate-alpha.nfdi4plants.org/assets/swate_48x48.png"/>
-        <bt:Image id="Icon.64x64" DefaultValue="https://swate-alpha.nfdi4plants.org/assets/swate_64x64.png"/>
-        <bt:Image id="Icon.80x80" DefaultValue="https://swate-alpha.nfdi4plants.org/assets/swate_80x80.png"/>
-        <bt:Image id="Icon.96x96" DefaultValue="https://swate-alpha.nfdi4plants.org/assets/swate_96x96.png"/>
+        <bt:Image id="Icon.16x16" DefaultValue="https://swate-alpha.nfdi4plants.org/assets/arcitisa_16x16.png"/>
+        <bt:Image id="Icon.20x20" DefaultValue="https://swate-alpha.nfdi4plants.org/assets/arcitisa_20x20.png"/>
+        <bt:Image id="Icon.24x24" DefaultValue="https://swate-alpha.nfdi4plants.org/assets/arcitisa_24x24.png"/>
+        <bt:Image id="Icon.32x32" DefaultValue="https://swate-alpha.nfdi4plants.org/assets/arcitisa_32x32.png"/>
+        <bt:Image id="Icon.40x40" DefaultValue="https://swate-alpha.nfdi4plants.org/assets/arcitisa_40x40.png"/>
+        <bt:Image id="Icon.48x48" DefaultValue="https://swate-alpha.nfdi4plants.org/assets/arcitisa_48x48.png"/>
+        <bt:Image id="Icon.64x64" DefaultValue="https://swate-alpha.nfdi4plants.org/assets/arcitisa_64x64.png"/>
+        <bt:Image id="Icon.80x80" DefaultValue="https://swate-alpha.nfdi4plants.org/assets/arcitisa_80x80.png"/>
+        <bt:Image id="Icon.96x96" DefaultValue="https://swate-alpha.nfdi4plants.org/assets/arcitisa_96x96.png"/>
       </bt:Images>
       <bt:Urls>
         <bt:Url id="GetStarted.LearnMoreUrl" DefaultValue="https://go.microsoft.com/fwlink/?LinkId=276812"/>
-        <bt:Url id="Swate.Url" DefaultValue="https://swate-alpha.nfdi4plants.org?is_swatehost=2"/>
+        <bt:Url id="Arcitisa.Url" DefaultValue="https://swate-alpha.nfdi4plants.org?is_swatehost=2"/>
       </bt:Urls>
       <bt:ShortStrings>
         <bt:String id="GetStarted.Title" DefaultValue="Get started annotating your data for greater good!"/>
-        <bt:String id="Swate.Label" DefaultValue="ARCitISA"/>
+        <bt:String id="Arcitisa.Label" DefaultValue="ARCitISA"/>
       </bt:ShortStrings>
       <bt:LongStrings>
         <bt:String id="GetStarted.Description" DefaultValue="ARCitISA was loaded succesfully. Go to the DATA tab and click the 'ARCitISA' button to get started."/>
-        <bt:String id="Swate.Tooltip" DefaultValue="Open a task pane to gain full access to the ARCitISA user functionality."/>
+        <bt:String id="Arcitisa.Tooltip" DefaultValue="Open a task pane to gain full access to the ARCitISA user functionality."/>
       </bt:LongStrings>
     </Resources>
   </VersionOverrides>

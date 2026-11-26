@@ -1,5 +1,5 @@
 /// The URL format of ARC images in Markdown documents. The main process serves them, and the renderer builds them.
-module Swate.Electron.Shared.MarkdownAssetUrl
+module Arcitisa.Electron.Shared.MarkdownAssetUrl
 
 open System
 open System.Text.RegularExpressions

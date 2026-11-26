@@ -2,10 +2,10 @@ module Main.IPC.AuthApi
 
 open Fable.Core
 open Main
-open Swate.Electron.Shared.IPCTypes
-open Swate.Electron.Shared.IPCTypes.MainToRendererIpc
-open Swate.Electron.Shared.AuthTypes
-open Swate.Components.Composite.Authentication.Types
+open Arcitisa.Electron.Shared.IPCTypes
+open Arcitisa.Electron.Shared.IPCTypes.MainToRendererIpc
+open Arcitisa.Electron.Shared.AuthTypes
+open Arcitisa.Components.Composite.Authentication.Types
 open Main.Auth
 
 let private broadcastAccountsUpdate () =
@@ -58,9 +58,9 @@ let api: IAuthApi = {
                 return Error(exn "Failed to list accounts.")
         }
     rotatePersonalAccessToken =
-        fun (localSwateAccountId: string) -> promise {
+        fun (localArcitisaAccountId: string) -> promise {
             try
-                let! result = AuthService.rotatePersonalAccessToken localSwateAccountId
+                let! result = AuthService.rotatePersonalAccessToken localArcitisaAccountId
 
                 return
                     match result with
@@ -72,9 +72,9 @@ let api: IAuthApi = {
                 return Error(exn "Failed to rotate personal access token.")
         }
     setActiveAccount =
-        fun (localSwateAccountId: string) -> promise {
+        fun (localArcitisaAccountId: string) -> promise {
             try
-                let state = AuthService.setActiveAccount localSwateAccountId
+                let state = AuthService.setActiveAccount localArcitisaAccountId
                 broadcastAccountsUpdate ()
                 return Ok state
             with _ ->
@@ -84,7 +84,7 @@ let api: IAuthApi = {
         fun (request: RemoveAccountsRequest) -> promise {
             try
                 // The accounts go at once. Deleting the tokens waits for the DataHUBs.
-                let removed = AuthService.removeAccounts request.LocalSwateAccountIds
+                let removed = AuthService.removeAccounts request.LocalArcitisaAccountIds
                 broadcastAccountsUpdate ()
 
                 if request.DeleteTokensOnDataHub then

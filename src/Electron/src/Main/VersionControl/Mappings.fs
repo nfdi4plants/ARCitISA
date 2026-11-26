@@ -3,7 +3,7 @@
 /// recovery action and revision evidence, and results keep their three shapes.
 module Main.VersionControl.Mappings
 
-open Swate.Electron.Shared.VersionControlTypes
+open Arcitisa.Electron.Shared.VersionControlTypes
 open VersionControlService.Abstractions
 open Main.Bindings.Node
 
@@ -304,7 +304,7 @@ let tryRevisionId (value: string) : Result<RevisionId, OperationFailure> =
     RevisionId.tryCreate value
     |> Result.mapError (OperationFailure.create Validation VersionControlCodes.InvalidRevision)
 
-/// The longest operation id or handle id a text diff request may carry. Swate checks no length of
+/// The longest operation id or handle id a text diff request may carry. ARCitISA checks no length of
 /// the other tokens (cursors, page ids, gap ids, continuations, preparation tokens, handle versions
 /// and encoding names). They are opaque here, and the library rejects a value it did not issue
 /// or does not support.
@@ -657,7 +657,7 @@ let private tryBounded (name: string) (maxLength: int) (value: string) : Result<
 let private tryTextDiffId (name: string) : string -> Result<string, OperationFailure> =
     tryBounded name MaxTextDiffIdLength
 
-/// Swate checks only that the token is present, since the token is opaque here.
+/// ARCitISA checks only that the token is present, since the token is opaque here.
 let private tryPresent (name: string) (value: string) : Result<string, OperationFailure> =
     if isNull value then
         Error(invalidDiffRequest $"The {name} is missing.")

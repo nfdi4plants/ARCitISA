@@ -1,4 +1,4 @@
-module Swate.Components.Page.FileExplorer.Types
+module Arcitisa.Components.Page.FileExplorer.Types
 
 open System
 open Feliz
@@ -270,7 +270,7 @@ type ContextMenuItem = {
 
     member this.ToPrimitiveContextMenuItem() =
         if defaultArg this.IsDivider false then
-            Swate.Components.Primitive.ContextMenu.Types.ContextMenuItem(isDivider = true)
+            Arcitisa.Components.Primitive.ContextMenu.Types.ContextMenuItem(isDivider = true)
         else
             let isDisabled = defaultArg this.Disabled false
 
@@ -284,7 +284,7 @@ type ContextMenuItem = {
                 |> List.choose id
                 |> String.concat " "
 
-            Swate.Components.Primitive.ContextMenu.Types.ContextMenuItem(
+            Arcitisa.Components.Primitive.ContextMenu.Types.ContextMenuItem(
                 text = Html.span [ prop.className className; prop.text this.Label ],
                 icon =
                     Html.i [

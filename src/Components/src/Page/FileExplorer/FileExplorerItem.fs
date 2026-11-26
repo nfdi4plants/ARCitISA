@@ -1,8 +1,8 @@
-namespace Swate.Components.Page.FileExplorer
+namespace Arcitisa.Components.Page.FileExplorer
 
 open Fable.Core
 open Feliz
-open Swate.Components.Page.FileExplorer.Types
+open Arcitisa.Components.Page.FileExplorer.Types
 
 [<Mangle(false); Erase>]
 type FileExplorerItem =
@@ -360,7 +360,7 @@ type FileExplorerItem =
                             prop.children [
                                 Html.i [
                                     prop.className (
-                                        Swate.Components.Page.FileExplorer.Helper.iconClassName
+                                        Arcitisa.Components.Page.FileExplorer.Helper.iconClassName
                                             [ "swt:iconify"; "swt:shrink-0" ]
                                             item
                                             getItemIconClass
@@ -461,7 +461,7 @@ type FileExplorerItem =
                     prop.children [
                         Html.i [
                             prop.className (
-                                Swate.Components.Page.FileExplorer.Helper.iconClassName
+                                Arcitisa.Components.Page.FileExplorer.Helper.iconClassName
                                     [ "swt:iconify"; "swt:shrink-0" ]
                                     item
                                     getItemIconClass

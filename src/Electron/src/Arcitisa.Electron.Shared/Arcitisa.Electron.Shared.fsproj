@@ -32,7 +32,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\..\Components\src\Swate.Components.fsproj" />
+    <ProjectReference Include="..\..\..\Components\src\Arcitisa.Components.fsproj" />
     <ProjectReference Include="..\..\..\Fable.Electron.Remoting.Compatibility\Fable.Electron.Remoting.fsproj" />
   </ItemGroup>
 

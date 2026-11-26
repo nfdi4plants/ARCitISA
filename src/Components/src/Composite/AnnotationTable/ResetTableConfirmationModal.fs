@@ -1,8 +1,8 @@
-namespace Swate.Components.Composite.AnnotationTable
+namespace Arcitisa.Components.Composite.AnnotationTable
 
 open Feliz
 open Fable.Core
-open Swate.Components.Primitive.BaseModal
+open Arcitisa.Components.Primitive.BaseModal
 
 [<Erase; Mangle(false)>]
 type ResetTableConfirmationModal =

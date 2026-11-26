@@ -1,11 +1,11 @@
 module Renderer.Components.MainContent.NotesSearchTarget
 
 open Feliz
-open Swate.Components.Composite
-open Swate.Components.Composite.Notes.Types
-open Swate.Components.Shared
-open Swate.Electron.Shared.FileIOHelper
-open Swate.Electron.Shared.DTOs.NoteSearchDto
+open Arcitisa.Components.Composite
+open Arcitisa.Components.Composite.Notes.Types
+open Arcitisa.Components.Shared
+open Arcitisa.Electron.Shared.FileIOHelper
+open Arcitisa.Electron.Shared.DTOs.NoteSearchDto
 open Renderer
 
 [<ReactComponent>]

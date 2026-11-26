@@ -40,7 +40,7 @@ let private fulfillCreateContractAsync
 /// Executes contracts in order. CREATE fills missing files without replacing existing content.
 /// Stops at the first failure so later writes cannot discard data needed for a retry.
 /// The successful result contains fulfilled contracts, excluding CREATE paths that already existed.
-let fulfillContractsSwateAsync (arcPath: string) (contracts: Contract[]) : JS.Promise<Result<Contract[], string[]>> = promise {
+let fulfillContractsArcitisaAsync (arcPath: string) (contracts: Contract[]) : JS.Promise<Result<Contract[], string[]>> = promise {
     let fulfilled = ResizeArray<Contract>()
 
     let rec execute index = promise {
@@ -69,7 +69,7 @@ let fulfillContractsSwateAsync (arcPath: string) (contracts: Contract[]) : JS.Pr
 }
 
 /// Validates the entire read batch before I/O, then reports every unreadable file.
-let fulfillReadContractsSwateAsync
+let fulfillReadContractsArcitisaAsync
     (arcPath: string)
     (contracts: Contract[])
     : JS.Promise<Result<Contract[], string[]>> =

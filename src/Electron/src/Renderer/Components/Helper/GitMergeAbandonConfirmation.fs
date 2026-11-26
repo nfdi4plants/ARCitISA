@@ -2,7 +2,7 @@ module Renderer.Components.Helper.GitMergeAbandonConfirmation
 
 open Fable.Core
 open Feliz
-open Swate.Components.Primitive.BaseModal
+open Arcitisa.Components.Primitive.BaseModal
 
 [<ReactComponent>]
 let Main (isBusy: bool, onAbandon: unit -> unit, testIdPrefix: string) =

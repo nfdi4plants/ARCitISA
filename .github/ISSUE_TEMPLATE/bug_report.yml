@@ -13,7 +13,7 @@ body:
       label: What happened?
       description: This MUST include a step-by-step description of how to reproduce the bug. If you can add files which triggered the issue. Try to reproduce the issue in a minimal example. You can also open the inspect console (<kbd>Ctrl+Shift+J</kbd> or <kbd>Cmd+Opt+J</kbd>) and copy any error messages you see there.
   - type: dropdown
-    id: swate-host
+    id: arcitisa-host
     attributes:
       label: Host
       description: Where did you run ARCitISA?
@@ -25,7 +25,7 @@ body:
         - Electron ARCitISA App
       default: 0
   - type: textarea
-    id: swate-host-details
+    id: arcitisa-host-details
     attributes:
       label: Host Details
       description: Please give us more information.

@@ -1,12 +1,12 @@
 module Components.Metadata.Assay
 
-open Swate.Components.Shared
+open Arcitisa.Components.Shared
 open Feliz
 open ARCtrl
-open Swate.Components.Shared
+open Arcitisa.Components.Shared
 open Components
 open Components.Forms
-open Swate.Components
+open Arcitisa.Components
 
 [<ReactComponent>]
 let Main (assay: ArcAssay, setArcAssay: ArcAssay -> unit, model: Model.Model) =

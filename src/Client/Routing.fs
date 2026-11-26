@@ -2,8 +2,8 @@ module Routing
 
 open Elmish.UrlParser
 open Feliz
-open Swate.Components
-open Swate.Components.Primitive
+open Arcitisa.Components
+open Arcitisa.Components.Primitive
 
 [<RequireQualifiedAccess>]
 type SidebarPage =

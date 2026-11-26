@@ -1,7 +1,7 @@
-module internal Swate.Components.ClipboardCodecTests
+module internal Arcitisa.Components.ClipboardCodecTests
 
 open ARCtrl
-open Swate.Components.ClipboardCodec
+open Arcitisa.Components.ClipboardCodec
 open Vitest
 
 Vitest.test (

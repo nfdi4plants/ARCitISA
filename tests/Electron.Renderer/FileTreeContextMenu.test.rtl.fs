@@ -3,8 +3,8 @@ module ElectronRenderer.FileTreeContextMenuRtlTests
 open Renderer.Context.LfsActivityContext
 open Renderer.Components.LeftSidebar.FileExplorer.FileTreeContextMenu
 open Renderer.Components.LeftSidebar.FileExplorer.Types
-open Swate.Components.Page.FileExplorer
-open Swate.Components.Page.FileExplorer.Types
+open Arcitisa.Components.Page.FileExplorer
+open Arcitisa.Components.Page.FileExplorer.Types
 open Vitest
 
 Vitest.afterEach (fun () -> RTL.cleanup ())

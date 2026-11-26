@@ -1,5 +1,5 @@
 [<AutoOpen>]
-module Swate.Components.Primitive.Types
+module Arcitisa.Components.Primitive.Types
 
 open Fable.Core
 

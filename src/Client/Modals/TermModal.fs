@@ -1,12 +1,12 @@
 namespace Modals
 
-open Swate.Components.Shared.Database
+open Arcitisa.Components.Shared.Database
 open Feliz
 open ARCtrl
-open Swate.Components
-open Swate.Components.Primitive
-open Swate.Components.Primitive.BaseModal
-open Swate.Components.Shared
+open Arcitisa.Components
+open Arcitisa.Components.Primitive
+open Arcitisa.Components.Primitive.BaseModal
+open Arcitisa.Components.Shared
 
 
 module private TermModalUtil =

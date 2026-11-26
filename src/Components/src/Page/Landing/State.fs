@@ -1,4 +1,4 @@
-namespace Swate.Components.Page.Landing
+namespace Arcitisa.Components.Page.Landing
 
 module State =
 

@@ -10,7 +10,7 @@ open Main.ARCtrlExtensions.ContractExecutor
 open Main.ARCtrlExtensions.ContractPolicy
 open Main.Bindings.Filesystem
 open Main.Bindings.Path
-open Swate.Components.Shared
+open Arcitisa.Components.Shared
 open Vitest
 
 let private key = ArcPathHelper.normalizePathKey
@@ -29,7 +29,7 @@ let private expectExecuted (result: Result<Contract[], string[]>) =
     | Error errors -> failwith (String.concat "\n" errors)
 
 let private withTempDirectory (testBody: string -> JS.Promise<unit>) = promise {
-    let! arcPath = TestHelpers.createTempDirectoryAsync "swate-contract-policy-"
+    let! arcPath = TestHelpers.createTempDirectoryAsync "arcitisa-contract-policy-"
 
     try
         do! testBody arcPath
@@ -258,7 +258,7 @@ Vitest.describe (
                     withTempDirectory (fun arcPath -> promise {
                         let arc, parentInfo, dm = fixture parent "Existing"
                         let separate = DataMapContract.update parentInfo dm
-                        let! written = fulfillContractsSwateAsync arcPath [| separate |]
+                        let! written = fulfillContractsArcitisaAsync arcPath [| separate |]
                         expectExecuted written |> ignore
                         let absolutePath = join [| arcPath; separate.Path |]
                         let! before = readFileBase64Async absolutePath
@@ -277,7 +277,7 @@ Vitest.describe (
                             let arc, parentInfo, dm = fixture parent "Legacy"
 
                             let! written =
-                                fulfillContractsSwateAsync arcPath [| parentUpdate arc parentInfo embedded |]
+                                fulfillContractsArcitisaAsync arcPath [| parentUpdate arc parentInfo embedded |]
 
                             expectExecuted written |> ignore
                             let separate = DataMapContract.update parentInfo dm
@@ -304,7 +304,7 @@ Vitest.describe (
                     withTempDirectory (fun arcPath -> promise {
                         let arc, parentInfo, dm = fixture parent "AfterRename"
                         let oldInfo = DatamapParentInfo.create "BeforeRename" parent
-                        let! written = fulfillContractsSwateAsync arcPath [| DataMapContract.update oldInfo dm |]
+                        let! written = fulfillContractsArcitisaAsync arcPath [| DataMapContract.update oldInfo dm |]
                         expectExecuted written |> ignore
                         let! targetExists = TestHelpers.pathExistsAsync (join [| arcPath; dataMapPath parentInfo |])
                         Vitest.expect(targetExists).toBe false
@@ -328,7 +328,7 @@ Vitest.describe (
                 fun () ->
                     withTempDirectory (fun arcPath -> promise {
                         let oldArc, oldInfo, _ = fixture parent "BeforeRename"
-                        let! written = fulfillContractsSwateAsync arcPath [| parentUpdate oldArc oldInfo true |]
+                        let! written = fulfillContractsArcitisaAsync arcPath [| parentUpdate oldArc oldInfo true |]
                         expectExecuted written |> ignore
                         let arc, parentInfo, dm = fixture parent "AfterRename"
                         let! targetExists = TestHelpers.pathExistsAsync (join [| arcPath; parentPath parentInfo |])

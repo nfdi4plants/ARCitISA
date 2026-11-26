@@ -1,7 +1,7 @@
-module internal Swate.Components.Tests.TableFiles
+module internal Arcitisa.Components.Tests.TableFiles
 
 open ARCtrl
-open Swate.Components.Shared
+open Arcitisa.Components.Shared
 
 /// The file types that can hold annotation tables, each with a function that creates an empty file.
 let tableFileTypes: (string * (unit -> ArcFiles)) list = [

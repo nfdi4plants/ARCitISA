@@ -1,10 +1,10 @@
-module Swate.Components.Page.ValidationPackageBrowser.Helper
+module Arcitisa.Components.Page.ValidationPackageBrowser.Helper
 
 open ARCtrl.ValidationPackages
 open Types
 open ARCtrl.Helper.SemVer
 
-open Swate.Components.Util.SemVer
+open Arcitisa.Components.Util.SemVer
 
 let pageSize = 20
 
@@ -69,7 +69,7 @@ let rowState (config: ValidationPackagesConfig) (dto: ValidationPackageDTO) =
                 else
                     PackageRowState.InvalidVersion // The config version is newer than the DTO version, which is unexpected
         // To my understanding no version means, always take latest, so we can consider it checked
-        // I think it might be best if Swate does list specific versions, so we will never actually write this case.
+        // I think it might be best if ARCitISA does list specific versions, so we will never actually write this case.
         | None -> PackageRowState.Checked
     | None ->
         // Not found in current config

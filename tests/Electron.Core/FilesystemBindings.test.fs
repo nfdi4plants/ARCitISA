@@ -3,8 +3,8 @@ module ElectronCore.FilesystemBindingsTests
 open Fable.Core
 open Main.Bindings.Filesystem
 open Main.Bindings.Path
-open Swate.Electron.Shared.FileIOHelper
-open Swate.Electron.Shared.FileIOTypes
+open Arcitisa.Electron.Shared.FileIOHelper
+open Arcitisa.Electron.Shared.FileIOTypes
 open Vitest
 
 Vitest.describe (
@@ -13,7 +13,7 @@ Vitest.describe (
         Vitest.test (
             "returns ENOENT for a failed stat of a missing path",
             fun () -> promise {
-                let! directoryPath = TestHelpers.createTempDirectoryAsync "swate-error-code-"
+                let! directoryPath = TestHelpers.createTempDirectoryAsync "arcitisa-error-code-"
 
                 try
                     try
@@ -36,7 +36,7 @@ Vitest.describe (
 )
 
 let private withPreviewFile (name: string) (content: string) (check: string -> JS.Promise<unit>) = promise {
-    let! directoryPath = TestHelpers.createTempDirectoryAsync "swate-preview-"
+    let! directoryPath = TestHelpers.createTempDirectoryAsync "arcitisa-preview-"
 
     try
         let filePath = join [| directoryPath; name |]
@@ -199,7 +199,7 @@ Vitest.describe (
         Vitest.test (
             "reports a directory as binary without opening it",
             fun () -> promise {
-                let! directoryPath = TestHelpers.createTempDirectoryAsync "swate-preview-dir-"
+                let! directoryPath = TestHelpers.createTempDirectoryAsync "arcitisa-preview-dir-"
 
                 try
                     let! dto = Main.ArcVaultHelper.readFileForPreviewAsync directoryPath "folder"

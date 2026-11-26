@@ -1,4 +1,4 @@
-module Swate.Components.Page.FileViewer.Types
+module Arcitisa.Components.Page.FileViewer.Types
 
 open Fable.Core
 

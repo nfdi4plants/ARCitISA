@@ -2,9 +2,9 @@ namespace Renderer.Components.LeftSidebar.FileExplorer.Modals
 
 open Fable.Core
 open Feliz
-open Swate.Components.Primitive.Dialog
-open Swate.Electron.Shared.FileIOTypes
-open Swate.Electron.Shared.RenamePathRules
+open Arcitisa.Components.Primitive.Dialog
+open Arcitisa.Electron.Shared.FileIOTypes
+open Arcitisa.Electron.Shared.RenamePathRules
 open Renderer.Components.LeftSidebar.FileExplorer.Helper
 
 [<Erase; Mangle(false)>]

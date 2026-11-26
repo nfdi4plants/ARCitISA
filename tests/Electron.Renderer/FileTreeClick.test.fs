@@ -1,7 +1,7 @@
 module ElectronRenderer.FileTreeClickTests
 
 open Renderer.Components.LeftSidebar.FileExplorer
-open Swate.Components.Page.FileExplorer.Types
+open Arcitisa.Components.Page.FileExplorer.Types
 open Vitest
 
 Vitest.describe (

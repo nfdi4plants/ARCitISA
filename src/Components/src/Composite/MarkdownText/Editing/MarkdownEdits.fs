@@ -1,7 +1,7 @@
-module Swate.Components.Composite.MarkdownText.Editing.MarkdownEdits
+module Arcitisa.Components.Composite.MarkdownText.Editing.MarkdownEdits
 
 open System.Text.RegularExpressions
-open Swate.Components.Composite.TextEditor.Types
+open Arcitisa.Components.Composite.TextEditor.Types
 
 // Shared helpers
 

@@ -2,7 +2,7 @@ module ProjectInfo
 
 open System.IO
 
-let DEFINE_SWATE_ENVIRONMENT_FABLE = [ "--define"; "SWATE_ENVIRONMENT" ]
+let DEFINE_ARCITISA_ENVIRONMENT_FABLE = [ "--define"; "ARCITISA_ENVIRONMENT" ]
 
 module ProjectPaths =
 
@@ -39,4 +39,4 @@ let gitOwner = "nfdi4plants"
 let project = "ARCitISA"
 let projectRepo = $"https://github.com/{gitOwner}/{project}"
 
-let componentsPackageName = "@nfdi4plants/swate-components"
+let componentsPackageName = "@nfdi4plants/arcitisa-components"

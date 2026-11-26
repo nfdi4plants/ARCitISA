@@ -1,11 +1,11 @@
 module Renderer.Components.LeftSidebar.FileExplorer.Helper
 
 open System
-open Swate.Components.Page.FileExplorer.Types
-open Swate.Components.Shared
-open Swate.Electron.Shared.FileIOHelper
-open Swate.Electron.Shared.FileIOTypes
-open Swate.Electron.Shared.RenamePathRules
+open Arcitisa.Components.Page.FileExplorer.Types
+open Arcitisa.Components.Shared
+open Arcitisa.Electron.Shared.FileIOHelper
+open Arcitisa.Electron.Shared.FileIOTypes
+open Arcitisa.Electron.Shared.RenamePathRules
 open ARCtrl
 open Types
 
@@ -175,7 +175,7 @@ let importRevealPaths
 
 /// Builds the row of an entry in one record. Entry paths are already normalized, so nothing normalizes them again.
 let createItem
-    (tryFindLfs: string -> Swate.Electron.Shared.VersionControlTypes.ObjectStateDto option)
+    (tryFindLfs: string -> Arcitisa.Electron.Shared.VersionControlTypes.ObjectStateDto option)
     (node: FileEntry)
     : FileItem =
     let path = node.path

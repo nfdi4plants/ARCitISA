@@ -1,11 +1,11 @@
-module internal Swate.Components.Composite.Widgets.JsonImport.JsonImportSample
+module internal Arcitisa.Components.Composite.Widgets.JsonImport.JsonImportSample
 
 open ARCtrl
 open Fable.Core
 open Feliz
-open Swate.Components.Shared
-open Swate.Components.Composite.TableImport.TableImportPreviewSample
-open Swate.Components.Composite.Widgets.JsonImport.Types
+open Arcitisa.Components.Shared
+open Arcitisa.Components.Composite.TableImport.TableImportPreviewSample
+open Arcitisa.Components.Composite.Widgets.JsonImport.Types
 
 let private currentAssay =
     let assay = ArcAssay.init "CurrentAssay"

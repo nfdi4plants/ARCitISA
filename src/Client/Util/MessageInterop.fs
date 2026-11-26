@@ -7,7 +7,7 @@ open System.Collections.Generic
 open Fable.Core.JsInterop
 
 type private IMessagePayload = {|
-    swate: bool
+    arcitisa: bool
     api: string option
     requestId: string
     data: obj option
@@ -84,7 +84,7 @@ module MessageInteropHelper =
                 | _ -> arg0
 
             let requestBody: IMessagePayload = {|
-                swate = true
+                arcitisa = true
                 api = Some func.FieldName
                 data = Some data
                 requestId = System.Guid.NewGuid().ToString()
@@ -164,7 +164,7 @@ module MessageInteropHelper =
 
         let verifyMsg (e: Browser.Types.MessageEvent) =
             let content = e.data :?> IMessagePayload
-            if content.swate then Some content else None
+            if content.arcitisa then Some content else None
 
         let getEventHandlerByName (inst: 'A) (s: string) =
             let fields = Microsoft.FSharp.Reflection.FSharpType.GetRecordFields(recordTypeType)

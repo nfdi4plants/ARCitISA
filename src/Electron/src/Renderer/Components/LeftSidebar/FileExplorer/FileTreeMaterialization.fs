@@ -1,9 +1,9 @@
 module Renderer.Components.LeftSidebar.FileExplorer.FileTreeMaterialization
 
 open System
-open Swate.Components.Shared
-open Swate.Components.Page.FileExplorer.Types
-open Swate.Electron.Shared.FileIOTypes
+open Arcitisa.Components.Shared
+open Arcitisa.Components.Page.FileExplorer.Types
+open Arcitisa.Electron.Shared.FileIOTypes
 open Renderer.Context.FileTreeStore
 
 let private rootItemSortKey (entry: FileEntry) =

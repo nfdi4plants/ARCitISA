@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-    DndId_write_6591325B as DndId_write,
+    DndId_write_14F81B59 as DndId_write,
     DndId_read_Z721C83C5 as DndId_read,
     DndId_Tab,
     DndId_TabBar,
@@ -9,7 +9,7 @@ import {
 } from './DndId.fs.ts';
 import {
     EdgeDirection_fromString_Z721C83C5 as EdgeDirection_fromString,
-    EdgeDirection_toString_174587BE as EdgeDirection_toString,
+    EdgeDirection_toString_Z3FAB5E84 as EdgeDirection_toString,
 } from '../Types.fs.ts';
 
 describe('DndId.write + DndId.read roundtrip', () => {

@@ -1,10 +1,10 @@
-namespace Swate.Components.Composite.TableImport
+namespace Arcitisa.Components.Composite.TableImport
 
 open ARCtrl
 open Fable.Core
 open Feliz
-open Swate.Components.Shared.ARCtrlHelper
-open Swate.Components.Composite.TableImport.Types
+open Arcitisa.Components.Shared.ARCtrlHelper
+open Arcitisa.Components.Composite.TableImport.Types
 
 [<Erase; Mangle(false)>]
 type TableImportForm =

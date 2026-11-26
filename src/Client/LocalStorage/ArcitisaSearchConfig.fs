@@ -1,4 +1,4 @@
-module LocalStorage.SwateSearchConfig
+module LocalStorage.ArcitisaSearchConfig
 
 module Util =
 
@@ -6,7 +6,7 @@ module Util =
     let BASE_KEY = "Swate_Search_Config"
 
 [<RequireQualifiedAccess>]
-module SwateDefaultSearch =
+module ArcitisaDefaultSearch =
 
     [<Literal>]
     let KEY = Util.BASE_KEY + "_SwateDefaultSearch"

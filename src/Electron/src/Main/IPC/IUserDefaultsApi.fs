@@ -2,9 +2,9 @@ module Main.IPC.UserDefaultsApi
 
 open Fable.Core
 open Fable.Electron.Main
-open Swate.Components.Composite.Authentication.Helper
-open Swate.Electron.Shared.IPCTypes
-open Swate.Electron.Shared.IPCTypes.MainToRendererIpc
+open Arcitisa.Components.Composite.Authentication.Helper
+open Arcitisa.Electron.Shared.IPCTypes
+open Arcitisa.Electron.Shared.IPCTypes.MainToRendererIpc
 
 let private toDto (store: Main.UserDefaults.IUserDefaultsStore) : UserDefaultsDto = {
     Effective = store.Effective()

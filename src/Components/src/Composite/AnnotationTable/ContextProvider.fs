@@ -1,11 +1,11 @@
-namespace Swate.Components.Composite.AnnotationTable
+namespace Arcitisa.Components.Composite.AnnotationTable
 
 open Feliz
 open Fable.Core
-open Swate.Components
-open Swate.Components.Primitive
-open Swate.Components.Composite.AnnotationTable
-open Swate.Components.Composite.AnnotationTable.Context
+open Arcitisa.Components
+open Arcitisa.Components.Primitive
+open Arcitisa.Components.Composite.AnnotationTable
+open Arcitisa.Components.Composite.AnnotationTable.Context
 
 [<Erase; Mangle(false)>]
 type AnnotationTableContextProvider =

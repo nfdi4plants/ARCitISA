@@ -375,7 +375,7 @@ Vitest.describe (
                 Vitest.expect(storedKeys file).toEqual [| "schemaVersion" |]
 
                 Vitest.expect(store.Effective().DataHubUrls).toEqual
-                    Swate.Components.Composite.Authentication.Helper.Default_DataHub_Urls
+                    Arcitisa.Components.Composite.Authentication.Helper.Default_DataHub_Urls
         )
 
         Vitest.test (

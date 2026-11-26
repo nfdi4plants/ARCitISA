@@ -1,9 +1,9 @@
-module Swate.Components.Composite.Widgets.JsonImport.Helper
+module Arcitisa.Components.Composite.Widgets.JsonImport.Helper
 
 open ARCtrl
-open Swate.Components.Shared
-open Swate.Components.Composite.TableImport.Types
-open Swate.Components.Composite.Widgets.JsonImport.Types
+open Arcitisa.Components.Shared
+open Arcitisa.Components.Composite.TableImport.Types
+open Arcitisa.Components.Composite.Widgets.JsonImport.Types
 
 let formatDescription (format: JsonExportFormat) =
     match format with
@@ -69,7 +69,7 @@ let applyImport
     (decisions: TableImportDecisions)
     : Result<ArcFiles * JsonImportSummary, exn> =
     if isTableImport current then
-        Swate.Components.Composite.TableImport.Helper.applyImport current (sourcesOf parsed.File) decisions
+        Arcitisa.Components.Composite.TableImport.Helper.applyImport current (sourcesOf parsed.File) decisions
         |> Result.map (fun result ->
             result.ArcFile,
             {
@@ -92,7 +92,7 @@ let applyImport
 /// The first reason the decisions block the import. A file that gets replaced has no decisions to check.
 let importBlockedReason (current: ArcFiles) (parsed: ParsedJsonFile) (decisions: TableImportDecisions) =
     if isTableImport current then
-        Swate.Components.Composite.TableImport.Helper.validate current (sourcesOf parsed.File) decisions
+        Arcitisa.Components.Composite.TableImport.Helper.validate current (sourcesOf parsed.File) decisions
     else
         None
 

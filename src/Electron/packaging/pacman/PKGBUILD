@@ -16,7 +16,7 @@ package() {
   chmod 4755 "$pkgdir/usr/lib/arcitisa/chrome-sandbox"
 
   install -d "$pkgdir/usr/bin"
-  ln -s /usr/lib/arcitisa/swate "$pkgdir/usr/bin/arcitisa"
+  ln -s /usr/lib/arcitisa/arcitisa "$pkgdir/usr/bin/arcitisa"
 
   install -Dm644 "$startdir/arcitisa.desktop" "$pkgdir/usr/share/applications/arcitisa.desktop"
 

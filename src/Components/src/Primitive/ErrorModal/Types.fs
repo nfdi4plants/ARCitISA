@@ -1,4 +1,4 @@
-module Swate.Components.Primitive.ErrorModal.Types
+module Arcitisa.Components.Primitive.ErrorModal.Types
 
 [<RequireQualifiedAccess>]
 type ErrorModalActionStyle =

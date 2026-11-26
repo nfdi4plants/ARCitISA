@@ -7,11 +7,11 @@ open Renderer.Components.Helper
 open Renderer.Context.FileStateContext
 open Renderer.Context.FileTreeStore
 open Renderer.Types
-open Swate.Components.Shared
-open Swate.Electron.Shared.FileIOHelper
-open Swate.Electron.Shared.FileIOTypes
-open Swate.Electron.Shared.VersionControlTypes
-open Swate.Electron.Shared.IPCTypes
+open Arcitisa.Components.Shared
+open Arcitisa.Electron.Shared.FileIOHelper
+open Arcitisa.Electron.Shared.FileIOTypes
+open Arcitisa.Electron.Shared.VersionControlTypes
+open Arcitisa.Electron.Shared.IPCTypes
 open Vitest
 
 Vitest.afterEach (fun () -> RTL.cleanup ())

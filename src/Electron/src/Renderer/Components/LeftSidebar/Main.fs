@@ -3,9 +3,9 @@ module Renderer.Components.LeftSidebar.Main
 open Fable.Core
 open Feliz
 open Renderer.Types
-open Swate.Components.Primitive.ErrorModal.Context
-open Swate.Components.Primitive.ErrorModal.Types
-open Swate.Electron.Shared.FileIOTypes
+open Arcitisa.Components.Primitive.ErrorModal.Context
+open Arcitisa.Components.Primitive.ErrorModal.Types
+open Arcitisa.Electron.Shared.FileIOTypes
 open Renderer.Components.LeftSidebar.FileImportStatus
 
 [<ReactComponent>]
@@ -62,7 +62,7 @@ let private FileImportStatusNotice () =
                                 prop.className "swt:contents"
                                 prop.custom ("aria-hidden", "true")
                                 prop.children [
-                                    Swate.Components.Primitive.LoadingSpinner.LoadingSpinner.LoadingSpinner(
+                                    Arcitisa.Components.Primitive.LoadingSpinner.LoadingSpinner.LoadingSpinner(
                                         text = statusText
                                     )
                                 ]

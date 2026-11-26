@@ -4,10 +4,10 @@ module Renderer.Context.LargeObjectStore
 
 open Fable.Core
 open Feliz
-open Swate.Components.Shared
-open Swate.Electron.Shared.FileIOHelper
-open Swate.Electron.Shared.IPCTypes
-open Swate.Electron.Shared.VersionControlTypes
+open Arcitisa.Components.Shared
+open Arcitisa.Electron.Shared.FileIOHelper
+open Arcitisa.Electron.Shared.IPCTypes
+open Arcitisa.Electron.Shared.VersionControlTypes
 
 type LargeObjectSnapshot = {
     Version: int

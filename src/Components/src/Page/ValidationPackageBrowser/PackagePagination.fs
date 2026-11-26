@@ -1,8 +1,8 @@
-namespace Swate.Components.Page.ValidationPackageBrowser
+namespace Arcitisa.Components.Page.ValidationPackageBrowser
 
 open Fable.Core
 open Feliz
-open Swate.Components
+open Arcitisa.Components
 open Types
 open Context
 

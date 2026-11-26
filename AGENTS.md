@@ -1,6 +1,7 @@
 ## Git Rules
 
-- You MUST NEVER run any git write commands (commit, stage, push, pull, amend, etc.). Only read-only git commands are allowed (log, diff, status, show, etc.). When git write actions are needed, suggest the commands for the user to run themselves.
+- You may commit changes locally, but you MUST NOT push them to the remote repository. You MUST never add yourself as a collaborator or make any changes that affect the remote repository.
+- You may resolve merge issues when the user requests it, but you MUST NOT push the resolved changes to the remote repository.
 
 ## ReactComponent design rules
 
@@ -23,7 +24,7 @@
 Fable is used to transpile F# code to JavaScript/TypeScript. Never directly write to an `.fs.{ts,js,tsx}` file because it will be overwritten by the transpiler. Instead, write to the corresponding `.fs` file and let Fable handle the transpilation. You MAY inspect the transpiled code to understand how F# constructs are translated to JavaScript, but you MUST NOT edit the transpiled code directly.
 
 - You MUST implement reusable bindings for JavaScript native libraries/functions. Dynamic Access using `?` can be brittle and SHOULD be avoided in favor of strongly typed bindings.
-- Not all F# types translate to native JavaScript types. This can be important in certain performance-sensitive scenarios as well as outward facing APIs, which are meant to be usable from JavaScript apps. (The transpiled Swate.Components project is also published to npm.)
+- Not all F# types translate to native JavaScript types. This can be important in certain performance-sensitive scenarios as well as outward facing APIs, which are meant to be usable from JavaScript apps. (The transpiled Arcitisa.Components project is also published to npm.)
     - Anonymous record types and classes with the `[<POJO>]` attribute translate to native JavaScript objects.
     - Arrays/ResizeArrays translate to native JavaScript arrays.
     - for promised use Fable.Promise's `promise {}` computation expression. It can be converted easily from and to F#s `async {}` computation expression.

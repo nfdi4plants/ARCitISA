@@ -3,7 +3,7 @@ module ElectronCore.NoteSearchReaderTests
 open Fable.Core
 open Fable.Core.JsInterop
 open Main.NoteSearchReader
-open Swate.Electron.Shared.FileIOTypes
+open Arcitisa.Electron.Shared.FileIOTypes
 open Vitest
 
 let private fsPromisesDynamic: obj = importAll "fs/promises"
@@ -59,7 +59,7 @@ Vitest.describe (
                 let tmpDir = osDynamic?tmpdir () |> unbox<string>
 
                 let! repoRoot =
-                    fsPromisesDynamic?mkdtemp (pathDynamic?join (tmpDir, "swate-notes-"))
+                    fsPromisesDynamic?mkdtemp (pathDynamic?join (tmpDir, "arcitisa-notes-"))
                     |> unbox<JS.Promise<string>>
 
                 let notesDir =
@@ -102,7 +102,7 @@ Vitest.describe (
                 let tmpDir = osDynamic?tmpdir () |> unbox<string>
 
                 let! repoRoot =
-                    fsPromisesDynamic?mkdtemp (pathDynamic?join (tmpDir, "swate-notes-"))
+                    fsPromisesDynamic?mkdtemp (pathDynamic?join (tmpDir, "arcitisa-notes-"))
                     |> unbox<JS.Promise<string>>
 
                 let notesDir =
@@ -131,7 +131,7 @@ Vitest.describe (
                 let tmpDir = osDynamic?tmpdir () |> unbox<string>
 
                 let! repoRoot =
-                    fsPromisesDynamic?mkdtemp (pathDynamic?join (tmpDir, "swate-notes-"))
+                    fsPromisesDynamic?mkdtemp (pathDynamic?join (tmpDir, "arcitisa-notes-"))
                     |> unbox<JS.Promise<string>>
 
                 let notesDir =

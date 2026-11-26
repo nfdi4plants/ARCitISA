@@ -4,7 +4,7 @@ open ARCtrl
 open ARCtrl.Contract
 open CrossAsync
 open Main.ARCtrlExtensions
-open Swate.Components.Shared
+open Arcitisa.Components.Shared
 
 [<AutoOpen>]
 module ArcAddExtensions =
@@ -201,7 +201,7 @@ module ArcAddExtensions =
             try
                 let workingArc, contracts = prepareAddContracts this arcFile
 
-                let! result = ContractExecutor.fulfillContractsSwateAsync arcPath contracts
+                let! result = ContractExecutor.fulfillContractsArcitisaAsync arcPath contracts
 
                 match result with
                 | Ok _ -> commitAddedArcFile this workingArc arcFile

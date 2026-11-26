@@ -7,12 +7,12 @@ open Model
 open Messages
 open ARCtrl
 open Fable.Core
-open Swate.Components
-open Swate.Components.Primitive
-open Swate.Components.Shared
-open Swate.Components.Composite.AnnotationTable
-open Swate.Components.Composite.AnnotationTable.Context
-open Swate.Components.Composite.TermSearch.Types
+open Arcitisa.Components
+open Arcitisa.Components.Primitive
+open Arcitisa.Components.Shared
+open Arcitisa.Components.Composite.AnnotationTable
+open Arcitisa.Components.Composite.AnnotationTable.Context
+open Arcitisa.Components.Composite.TermSearch.Types
 
 
 module SearchComponentHelper =
@@ -101,7 +101,7 @@ type SearchComponent =
                         let parent = model.AddBuildingBlockState.TryHeaderOA()
                         let input = model.AddBuildingBlockState.TryBodyOA()
 
-                        Swate.Components.Composite.TermSearch.TermSearch.TermSearch(
+                        Arcitisa.Components.Composite.TermSearch.TermSearch.TermSearch(
                             (input |> Option.map _.ToTerm()),
                             setter,
                             classNames = TermSearchStyle(!^"swt:border-current swt:join-item swt:w-full"),
@@ -145,7 +145,7 @@ type SearchComponent =
 
                             let input = model.AddBuildingBlockState.TryHeaderOA()
 
-                            Swate.Components.Composite.TermSearch.TermSearch.TermSearch(
+                            Arcitisa.Components.Composite.TermSearch.TermSearch.TermSearch(
                                 (input |> Option.map _.ToTerm()),
                                 setter,
                                 classNames = TermSearchStyle(!^"swt:border-current swt:join-item swt:w-full")

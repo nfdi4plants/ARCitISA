@@ -1,8 +1,8 @@
-module internal Swate.Components.Primitive.ComboBox.ComboBoxTests
+module internal Arcitisa.Components.Primitive.ComboBox.ComboBoxTests
 
 open Feliz
 open Vitest
-open Swate.Components.Primitive.ComboBox.Types
+open Arcitisa.Components.Primitive.ComboBox.Types
 
 Vitest.afterEach (fun () -> RTL.cleanup ())
 

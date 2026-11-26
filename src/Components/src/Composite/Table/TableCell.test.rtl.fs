@@ -1,4 +1,4 @@
-module internal Swate.Components.Composite.Table.TableCellTests
+module internal Arcitisa.Components.Composite.Table.TableCellTests
 
 open ARCtrl
 open Browser.Dom
@@ -6,8 +6,8 @@ open Browser.Types
 open Fable.Core
 open Feliz
 open Vitest
-open Swate.Components
-open Swate.Components.Composite.TermSearch.Context.ConfigContext
+open Arcitisa.Components
+open Arcitisa.Components.Composite.TermSearch.Context.ConfigContext
 
 type private User =
     abstract click: Element -> JS.Promise<unit>

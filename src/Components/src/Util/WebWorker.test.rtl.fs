@@ -1,7 +1,7 @@
-module internal Swate.Components.Util.WebWorkerRtlTests
+module internal Arcitisa.Components.Util.WebWorkerRtlTests
 
 open Vitest
-open Swate.Components.Util.WebWorkerSample
+open Arcitisa.Components.Util.WebWorkerSample
 
 Vitest.afterEach (fun () -> RTL.cleanup ())
 

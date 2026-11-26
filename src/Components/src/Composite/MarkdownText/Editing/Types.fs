@@ -1,7 +1,7 @@
-module Swate.Components.Composite.MarkdownText.Editing.Types
+module Arcitisa.Components.Composite.MarkdownText.Editing.Types
 
 open Feliz
-open Swate.Components.Composite.TextEditor.Types
+open Arcitisa.Components.Composite.TextEditor.Types
 
 /// The text the toolbar edits. A TextEditor is one. A textarea can be another later.
 type MarkdownSurface =

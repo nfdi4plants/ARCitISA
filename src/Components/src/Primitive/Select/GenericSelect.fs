@@ -1,10 +1,10 @@
-namespace Swate.Components.Primitive.Select
+namespace Arcitisa.Components.Primitive.Select
 
 open Fable.Core
 open Feliz
-open Swate.Components
-open Swate.Components.Primitive.Select.Context
-open Swate.Components.Primitive.Select.Types
+open Arcitisa.Components
+open Arcitisa.Components.Primitive.Select.Context
+open Arcitisa.Components.Primitive.Select.Types
 
 
 [<Erase; Mangle(false)>]

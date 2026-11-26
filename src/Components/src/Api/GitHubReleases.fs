@@ -1,8 +1,8 @@
-module Swate.Components.Api.GitHubReleases
+module Arcitisa.Components.Api.GitHubReleases
 
 open Fable.Core
 open Fetch
-open Swate.Components.Util.SemVer
+open Arcitisa.Components.Util.SemVer
 open ARCtrl.Helper.SemVer
 
 [<CLIMutable>]
@@ -14,7 +14,7 @@ type Release = {
     prerelease: bool
 }
 
-/// Repository is an owner/name pair, e.g. nfdi4plants/Swate.
+/// Repository is an owner/name pair, e.g. nfdi4plants/ARCitISA.
 let repositoryPath (repository: string) =
     let parts = repository.Trim().Split('/')
 

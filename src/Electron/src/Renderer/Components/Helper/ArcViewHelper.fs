@@ -2,8 +2,8 @@ module Renderer.Components.Helper.ArcViewHelper
 
 open Fable.Core
 open Renderer.Components.Helper.ArcViewSelection
-open Swate.Components.Shared
-open Swate.Electron.Shared.FileIOHelper
+open Arcitisa.Components.Shared
+open Arcitisa.Electron.Shared.FileIOHelper
 
 let private loadViewResult (previewPath: string) : JS.Promise<Result<Renderer.Types.PageState, string>> = promise {
     let! result = Api.ipcArcVaultApi.openFile previewPath

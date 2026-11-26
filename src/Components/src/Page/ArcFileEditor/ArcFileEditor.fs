@@ -1,22 +1,22 @@
-namespace Swate.Components.Page.ArcFileEditor
+namespace Arcitisa.Components.Page.ArcFileEditor
 
 open ARCtrl
 open Fable.Core
 open Fable.Core.JsInterop
 open Feliz
-open Swate.Components
-open Swate.Components.Primitive
-open Swate.Components.Primitive.Buttons
-open Swate.Components.Composite.EditorToolbar
-open Swate.Components.Composite.Widgets.Context
-open Swate.Components.Composite.DataMapTable
-open Swate.Components.Composite.Widgets.JsonImport.Types
-open Swate.Components.Shared
-open Swate.Components.Page.ArcFileEditor.Types
-open Swate.Components.Composite.AnnotationTable
-open Swate.Components.Composite.Widgets.DataAnnotator.Types
-open Swate.Components.Page.ArcFileEditor.EmptyTableView.Types
-open Swate.Components.Composite.Table.Types
+open Arcitisa.Components
+open Arcitisa.Components.Primitive
+open Arcitisa.Components.Primitive.Buttons
+open Arcitisa.Components.Composite.EditorToolbar
+open Arcitisa.Components.Composite.Widgets.Context
+open Arcitisa.Components.Composite.DataMapTable
+open Arcitisa.Components.Composite.Widgets.JsonImport.Types
+open Arcitisa.Components.Shared
+open Arcitisa.Components.Page.ArcFileEditor.Types
+open Arcitisa.Components.Composite.AnnotationTable
+open Arcitisa.Components.Composite.Widgets.DataAnnotator.Types
+open Arcitisa.Components.Page.ArcFileEditor.EmptyTableView.Types
+open Arcitisa.Components.Composite.Table.Types
 
 type private LazyComponents =
 
@@ -28,7 +28,7 @@ type private LazyComponents =
     static member LazyBuildingBlockWidget
         (arcFile: ArcFiles, activeTableIndex: int option, setArcFile: ArcFiles -> unit)
         =
-        Swate.Components.Composite.Widgets.BuildingBlockWidget.BuildingBlockWidget.Main(
+        Arcitisa.Components.Composite.Widgets.BuildingBlockWidget.BuildingBlockWidget.Main(
             arcFile = arcFile,
             activeTableIndex = activeTableIndex,
             setArcFile = setArcFile
@@ -36,7 +36,7 @@ type private LazyComponents =
 
     [<ReactLazyComponent>]
     static member LazyTemplateWidget(arcFile: ArcFiles, activeTableIndex: int option, setArcFile: ArcFiles -> unit) =
-        Swate.Components.Composite.Widgets.TemplateWidget.TemplateWidget(
+        Arcitisa.Components.Composite.Widgets.TemplateWidget.TemplateWidget(
             arcFile = arcFile,
             activeTableIndex = activeTableIndex,
             setArcFile = setArcFile
@@ -50,7 +50,7 @@ type private LazyComponents =
             setArcFile: ArcFiles -> unit,
             onPickPaths: unit -> Fable.Core.JS.Promise<string[]>
         ) =
-        Swate.Components.Composite.Widgets.FilePickerWidget.Main(
+        Arcitisa.Components.Composite.Widgets.FilePickerWidget.Main(
             arcFile = arcFile,
             activeTableIndex = activeTableIndex,
             setArcFile = setArcFile,
@@ -66,7 +66,7 @@ type private LazyComponents =
             onImportJson: (JsonImportRequest -> JS.Promise<Result<unit, exn>>) option,
             onError: JsonImportError -> unit
         ) =
-        Swate.Components.Composite.Widgets.JsonImport.JsonImport.JsonImport(
+        Arcitisa.Components.Composite.Widgets.JsonImport.JsonImport.JsonImport(
             arcFile = arcFile,
             setArcFile = setArcFile,
             ?activeTableIndex = activeTableIndex,
@@ -77,7 +77,7 @@ type private LazyComponents =
 
     [<ReactLazyComponent>]
     static member LazyJsonExportWidget(arcFile: ArcFiles, onError: exn -> unit) =
-        Swate.Components.Composite.Widgets.JsonExport.JsonExport.JsonExport(arcFile = arcFile, onError = onError)
+        Arcitisa.Components.Composite.Widgets.JsonExport.JsonExport.JsonExport(arcFile = arcFile, onError = onError)
 
     [<ReactLazyComponent>]
     static member LazyDataAnnotator
@@ -93,7 +93,7 @@ type private LazyComponents =
     static member LazyArcFileMetadata
         (arcFile: ArcFiles, setArcFile: ArcFiles -> unit, ?onImportPersons: unit -> JS.Promise<Person[]>)
         =
-        Swate.Components.Page.Metadata.ArcFileMetadata.ArcFileMetadata(
+        Arcitisa.Components.Page.Metadata.ArcFileMetadata.ArcFileMetadata(
             arcFile = arcFile,
             setArcFile = setArcFile,
             ?onImportPersons = onImportPersons
@@ -388,7 +388,7 @@ type Main =
                 children =
                     React.Fragment [
                         SearchField.SearchField(arcFile, activeView, tableRef)
-                        Swate.Components.Page.ArcFileEditor.Widgets.Main.WidgetToggleBtns()
+                        Arcitisa.Components.Page.ArcFileEditor.Widgets.Main.WidgetToggleBtns()
                     ],
                 trailing = trailingNavbarElement,
                 ?onClose = onClose
@@ -474,7 +474,7 @@ type Main =
             ]
 
         AnnotationTableContextProvider.AnnotationTableContextProvider(
-            Swate.Components.Page.ArcFileEditor.Widgets.Main.Widgets(
+            Arcitisa.Components.Page.ArcFileEditor.Widgets.Main.Widgets(
                 content,
                 widgetElements.buildingBlock,
                 widgetElements.template,
@@ -562,7 +562,7 @@ type Main =
                 | _ ->
 
                     promise {
-                        let! json = Api.SwateApi.SwateTemplateApi.getTemplates () |> Async.StartAsPromise
+                        let! json = Api.ArcitisaApi.ArcitisaTemplateApi.getTemplates () |> Async.StartAsPromise
                         return Ok(ARCtrl.Json.Templates.fromJsonString json)
                     }
                     |> Promise.catch (fun error ->
@@ -590,7 +590,7 @@ type Main =
             |]
         }
 
-        Swate.Components.Composite.Template.TemplateCacheProvider.TemplateCacheProvider(
+        Arcitisa.Components.Composite.Template.TemplateCacheProvider.TemplateCacheProvider(
             loadTemplates,
             React.Fragment [
                 ColumnCountTestDisplay()

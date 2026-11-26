@@ -1,9 +1,9 @@
 /// The CM6 theme of the TextEditor, built only from DaisyUI CSS variables. CM6 styles are plain CSS,
 /// so var(--color-*) and color-mix() resolve live and a data-theme switch needs no code.
-module Swate.Components.Composite.TextEditor.Theme
+module Arcitisa.Components.Composite.TextEditor.Theme
 
 open Fable.Core.JsInterop
-open Swate.Components.Composite.TextEditor.JsBindings.CodeMirror
+open Arcitisa.Components.Composite.TextEditor.JsBindings.CodeMirror
 
 let private mix (variable: string) (percent: int) =
     $"color-mix(in oklch, var({variable}) {percent}%%, transparent)"

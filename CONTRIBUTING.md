@@ -46,7 +46,7 @@ This needs to be done once per repository download.
 **ARCitISA** runs on [https://localhost:3000](https://localhost:3000), **Swobup** on [http://localhost:8000/docs](http://localhost:8000/docs), **Database - Neo4j** can be viewed in the browser on [http://localhost:7474/browser/](http://localhost:7474/browser/).
 
 > [!WARNING]
-> Should the neo4j database not correctly start up with `./build.cmd run db` delete the container (only container not the volume) and start it again. This can be easily done with the docker ui. Open the `swate_dev` network and click on the thrash bin icon next to the neo4j container.
+> Should the neo4j database not correctly start up with `./build.cmd run db` delete the container (only container not the volume) and start it again. This can be easily done with the docker ui. Open the `arcitisa_dev` network and click on the thrash bin icon next to the neo4j container.
 >
 > If you know a solution to this issue, please let us know 😞
 >

@@ -5,7 +5,7 @@ open Microsoft.AspNetCore.Builder
 open Microsoft.Extensions.DependencyInjection
 open Giraffe
 open Saturn
-open Swate.Components.Shared
+open Arcitisa.Components.Shared
 
 open Fable.Remoting.Server
 open Fable.Remoting.Giraffe
@@ -131,7 +131,7 @@ let getNeo4JCredentials (ctx: HttpContext) =
         credentials
 
 //// https://cors-test.codehappy.dev/?url=https%3A%2F%2Fswate.nfdi4plants.org%2Fapi%2FIOntologyAPIv2%2FgetAllOntologies&method=get
-///// Enable CORS. Makes external access of Swate API possible
+///// Enable CORS. Makes external access of ARCitISA API possible
 //let allow_cors =
 //    pipeline {
 //        set_header "Access-Control-Allow-Origin" "*"
@@ -181,7 +181,7 @@ let topLevelRouter = router {
 open Microsoft.AspNetCore.StaticFiles
 open Microsoft.AspNetCore.Cors.Infrastructure
 
-/// Enable CORS. Makes external access of Swate API possible
+/// Enable CORS. Makes external access of ARCitISA API possible
 let cors_config =
     fun (b: CorsPolicyBuilder) -> b.AllowAnyHeader().AllowAnyMethod().AllowAnyOrigin() |> ignore
 

@@ -1,9 +1,9 @@
-module internal Swate.Components.Composite.TextEditor.TextEditorRtlTests
+module internal Arcitisa.Components.Composite.TextEditor.TextEditorRtlTests
 
 open Fable.Core
 open Feliz
 open Vitest
-open Swate.Components.Composite.TextEditor.Types
+open Arcitisa.Components.Composite.TextEditor.Types
 
 type private HandleBox() =
     member val Value: TextEditorHandle option = None with get, set

@@ -1,8 +1,8 @@
-module internal Swate.Components.ClipboardContract.ContractTests
+module internal Arcitisa.Components.ClipboardContract.ContractTests
 
 open ARCtrl
-open Swate.Components
-open Swate.Components.ClipboardContract.Contract
+open Arcitisa.Components
+open Arcitisa.Components.ClipboardContract.Contract
 open Vitest
 
 for newline in [ "\n"; "\r\n"; "\r" ] do

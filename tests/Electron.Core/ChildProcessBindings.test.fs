@@ -10,7 +10,7 @@ let private processExecutable () : string = jsNative
 Vitest.test (
     "process launchers preserve the working directory and arguments and report failed exits",
     fun () -> promise {
-        let! directory = TestHelpers.createTempDirectoryAsync "swate launcher & spaces-"
+        let! directory = TestHelpers.createTempDirectoryAsync "arcitisa launcher & spaces-"
 
         try
             do!
@@ -45,7 +45,7 @@ Vitest.test (
         let mutable errorCode = None
 
         try
-            do! ChildProcess.startDetached "swate-nonexistent-terminal-1146" [||] (Path.resolve [| "." |])
+            do! ChildProcess.startDetached "arcitisa-nonexistent-terminal-1146" [||] (Path.resolve [| "." |])
         with error ->
             errorCode <- Filesystem.tryGetNodeErrorCode error
 

@@ -57,8 +57,16 @@ Vitest.test (
         AppMenu.install ()
         AppMenu.install ()
         let menu = Menu.getApplicationMenu().Value
-        let arc = getItem menu "swate-arc"
-        Vitest.expect(menu.items |> Array.filter (fun item -> item.id = "swate-arc") |> Array.length).toBe 1
+        let arc = getItem menu "arcitisa-arc"
+
+        Vitest
+            .expect(
+                menu.items
+                |> Array.filter (fun item -> item.id = "arcitisa-arc")
+                |> Array.length
+            )
+            .toBe
+            1
 
         Vitest.expect(arc.submenu.items |> Array.map _.label).toEqual [|
             "Open ARC in Visual Studio Code"
@@ -66,7 +74,7 @@ Vitest.test (
             "Open ARC in File Manager"
         |]
 
-        Vitest.expect(menu.items.[menu.items.Length - 1].id).toBe "swate-help"
+        Vitest.expect(menu.items.[menu.items.Length - 1].id).toBe "arcitisa-help"
         Vitest.expect(mock.focusListenerCount ()).toBe 1
 )
 
@@ -74,7 +82,7 @@ Vitest.test (
     "VS Code is disabled until the OS lookup finds an existing application",
     fun () -> promise {
         let menu = buildMenu actions
-        let item = getItem menu "swate-open-arc-in-vscode"
+        let item = getItem menu "arcitisa-open-arc-in-vscode"
         let mutable applicationPath = ""
         let mutable lookupFails = false
 
@@ -118,7 +126,7 @@ Vitest.test (
         mock.focusWindow (TestHelpers.testWindow ())
         do! Promise.sleep 1
         Vitest.expect(mock.protocolLookupCount ()).toBe 2
-        let item = getItem (Menu.getApplicationMenu().Value) "swate-open-arc-in-vscode"
+        let item = getItem (Menu.getApplicationMenu().Value) "arcitisa-open-arc-in-vscode"
         Vitest.expect(item.enabled).toBe false
     }
 )
@@ -177,14 +185,14 @@ Vitest.test (
                     OpenInFileManager = record "files"
             }
 
-        let code = getItem menu "swate-open-arc-in-vscode"
+        let code = getItem menu "arcitisa-open-arc-in-vscode"
         click code (Some(unbox first.window))
         do! Promise.sleep 1
         first.path <- Some "C:/renamed ARC"
         click code (Some(unbox first.window))
         do! Promise.sleep 1
-        click (getItem menu "swate-open-terminal-in-arc") (Some(unbox second.window))
-        click (getItem menu "swate-open-arc-in-file-manager") (Some(unbox first.window))
+        click (getItem menu "arcitisa-open-terminal-in-arc") (Some(unbox second.window))
+        click (getItem menu "arcitisa-open-arc-in-file-manager") (Some(unbox first.window))
         do! Promise.sleep 1
 
         Vitest.expect(calls.ToArray()).toEqual [|
@@ -223,7 +231,7 @@ Vitest.test (
             }
 
         available <- false
-        click (getItem menu "swate-open-arc-in-vscode") (Some(unbox vault.window))
+        click (getItem menu "arcitisa-open-arc-in-vscode") (Some(unbox vault.window))
         do! Promise.sleep 1
         Vitest.expect(launched).toBe false
 
@@ -258,7 +266,7 @@ Vitest.test (
                     OpenTerminal = fun _ -> promise { launched <- true }
             }
 
-        let item = getItem menu "swate-open-terminal-in-arc"
+        let item = getItem menu "arcitisa-open-terminal-in-arc"
         click item None
         click item (Some(unbox vault.window))
         ARC_VAULTS.Vaults.Clear()
@@ -293,7 +301,7 @@ Vitest.test (
                     OpenTerminal = fun _ -> promise { return failwith "Terminal failed" }
             }
 
-        click (getItem menu "swate-open-terminal-in-arc") (Some(unbox vault.window))
+        click (getItem menu "arcitisa-open-terminal-in-arc") (Some(unbox vault.window))
         do! Promise.sleep 1
         Vitest.expect(messages.ToArray()).toEqual [| "Terminal failed" |]
     }

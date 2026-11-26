@@ -1,14 +1,14 @@
 {
-  "name": "swate",
+  "name": "arcitisa",
   "productName": "ARCitISA",
-  "version": "2.0.0-alpha.5",
+  "version": "0.0.0",
   "description": "An open-source, cross-platform, and user-friendly software for managing and sharing scientific data.",
   "main": ".vite/build/main.fs.js",
   "config": {
     "forge": "./forge.config.js"
   },
   "scripts": {
-    "fable": "dotnet fable ./src/Swate.Electron.fsproj -o ./src/fable_output -e fs.jsx --verbose",
+    "fable": "dotnet fable ./src/Arcitisa.Electron.fsproj -o ./src/fable_output -e fs.jsx --verbose",
     "fable:watch": "npm run fable -- --watch",
     "start": "npm run fable -- --watch --run electron-forge start",
     "start:e": "electron-forge start",

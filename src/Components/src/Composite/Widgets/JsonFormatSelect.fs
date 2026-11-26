@@ -1,8 +1,8 @@
-namespace Swate.Components.Composite.Widgets
+namespace Arcitisa.Components.Composite.Widgets
 
 open Fable.Core
 open Feliz
-open Swate.Components.Shared
+open Arcitisa.Components.Shared
 
 module private JsonFormatSelectHelper =
 

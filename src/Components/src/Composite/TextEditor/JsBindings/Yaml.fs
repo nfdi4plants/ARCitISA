@@ -1,6 +1,6 @@
 /// Typed bindings for the document API of the yaml package (https://eemeli.org/yaml).
 /// Every node carries range = [start, valueEnd, nodeEnd]. valueEnd leaves out trailing comments.
-module Swate.Components.Composite.TextEditor.JsBindings.Yaml
+module Arcitisa.Components.Composite.TextEditor.JsBindings.Yaml
 
 open Fable.Core
 

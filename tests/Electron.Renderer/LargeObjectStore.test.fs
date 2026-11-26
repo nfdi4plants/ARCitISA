@@ -1,8 +1,8 @@
 module ElectronRenderer.LargeObjectStoreTests
 
 open Renderer.Context.LargeObjectStore
-open Swate.Electron.Shared.IPCTypes
-open Swate.Electron.Shared.VersionControlTypes
+open Arcitisa.Electron.Shared.IPCTypes
+open Arcitisa.Electron.Shared.VersionControlTypes
 open Vitest
 
 let private entry (path: string) : ObjectStateDto = {

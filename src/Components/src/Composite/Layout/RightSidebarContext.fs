@@ -1,7 +1,7 @@
-module Swate.Components.Composite.Layout.RightSidebarContext
+module Arcitisa.Components.Composite.Layout.RightSidebarContext
 
 open Feliz
-open Swate.Components.Primitive
+open Arcitisa.Components.Primitive
 
 type RightSidebarState<'A> = {
     isOpen: bool

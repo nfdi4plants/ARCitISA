@@ -1,4 +1,4 @@
-module internal Swate.Components.Composite.GraphCanvas.LayoutTests
+module internal Arcitisa.Components.Composite.GraphCanvas.LayoutTests
 
 // Ported from graphCanvasLayout.test.ts of arc-portal-ui. Every case is ported and runs the real ELK.
 // Differences from the TypeScript version:
@@ -13,10 +13,10 @@ module internal Swate.Components.Composite.GraphCanvas.LayoutTests
 
 open Fable.Core
 open Vitest
-open Swate.Components.JsBindings
-open Swate.Components.Composite.GraphCanvas.Types
-open Swate.Components.Composite.GraphCanvas.Pills
-open Swate.Components.Composite.GraphCanvas.Layout
+open Arcitisa.Components.JsBindings
+open Arcitisa.Components.Composite.GraphCanvas.Types
+open Arcitisa.Components.Composite.GraphCanvas.Pills
+open Arcitisa.Components.Composite.GraphCanvas.Layout
 
 let private measure: MeasureText = fun text _ _ _ -> Dom.estimateTextWidth text
 

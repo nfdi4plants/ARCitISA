@@ -1,4 +1,4 @@
-module internal Swate.Components.Page.ValidationPackageBrowser.Sample
+module internal Arcitisa.Components.Page.ValidationPackageBrowser.Sample
 
 open Fable.Core
 open Feliz

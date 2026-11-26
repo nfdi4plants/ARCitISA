@@ -4,13 +4,13 @@
 /// complete nothing, and neither does a target that starts with a name. The host lists one folder level per request,
 /// so the cost depends only on the folders the user types through. Pure, apart from source, which asks the host.
 [<RequireQualifiedAccess>]
-module Swate.Components.Composite.MarkdownText.Links.PathCompletion
+module Arcitisa.Components.Composite.MarkdownText.Links.PathCompletion
 
 open System
 open System.Text.RegularExpressions
 open Fable.Core
-open Swate.Components.Composite.TextEditor.Types
-open Swate.Components.Composite.MarkdownText.Links.Types
+open Arcitisa.Components.Composite.TextEditor.Types
+open Arcitisa.Components.Composite.MarkdownText.Links.Types
 
 module private PathCompletionHelpers =
 

@@ -4,9 +4,9 @@ open Fable.Core
 open Renderer.Context.LfsActivityContext
 open Renderer.Components.LeftSidebar.FileExplorer.Helper
 open Renderer.Components.LeftSidebar.FileExplorer.FileTreeContextMenu
-open Swate.Components.Page.FileExplorer.Types
-open Swate.Components.Shared
-open Swate.Electron.Shared.FileIOTypes
+open Arcitisa.Components.Page.FileExplorer.Types
+open Arcitisa.Components.Shared
+open Arcitisa.Electron.Shared.FileIOTypes
 open Vitest
 open Renderer.Components.LeftSidebar.FileExplorer.Types
 

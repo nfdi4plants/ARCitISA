@@ -1,4 +1,4 @@
-module internal Swate.Components.ClipboardTestHelpers
+module internal Arcitisa.Components.ClipboardTestHelpers
 
 open ARCtrl
 open Fable.Core

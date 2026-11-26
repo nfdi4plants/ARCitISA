@@ -5,7 +5,7 @@ module Renderer.Components.MainContent.ProvenanceGraphArea
 // library load when the user opens the graph.
 
 open Feliz
-open Swate.Components.Primitive.ErrorBoundary
+open Arcitisa.Components.Primitive.ErrorBoundary
 
 /// An alert with an icon, what failed and a hint. A page open shows the ARC as it was at that time, so the hint
 /// sends the user to close the graph and open it again after a fix.

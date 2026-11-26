@@ -1,4 +1,4 @@
-module internal Swate.Components.Page.ArcFileEditor.EmptyTableView.MainTests
+module internal Arcitisa.Components.Page.ArcFileEditor.EmptyTableView.MainTests
 
 open ARCtrl
 open Browser.Dom
@@ -6,13 +6,13 @@ open Browser.Types
 open Fable.Core
 open Feliz
 open Vitest
-open Swate.Components
-open Swate.Components.Shared
-open Swate.Components.Composite.Template.TemplateCacheContext
-open Swate.Components.Composite.Widgets.Context
-open Swate.Components.Page.ArcFileEditor.EmptyTableView
-open Swate.Components.Page.ArcFileEditor.EmptyTableViewSample
-open Swate.Components.Shared.ProvenanceGrouping.ARCtrlConverter
+open Arcitisa.Components
+open Arcitisa.Components.Shared
+open Arcitisa.Components.Composite.Template.TemplateCacheContext
+open Arcitisa.Components.Composite.Widgets.Context
+open Arcitisa.Components.Page.ArcFileEditor.EmptyTableView
+open Arcitisa.Components.Page.ArcFileEditor.EmptyTableViewSample
+open Arcitisa.Components.Shared.ProvenanceGrouping.ARCtrlConverter
 
 let private templates = Fixtures.templates ()
 let private leafTemplateId = templates.[0].Id
@@ -54,11 +54,13 @@ let private providers (children: ReactElement) =
     Main.Providers(TemplateCacheCtx.Provider(cache, children))
 
 let private view arcFile setArcFile activeIndex =
-    providers (Swate.Components.Page.ArcFileEditor.EmptyTableView.Main.EmptyTableView(arcFile, setArcFile, activeIndex))
+    providers (
+        Arcitisa.Components.Page.ArcFileEditor.EmptyTableView.Main.EmptyTableView(arcFile, setArcFile, activeIndex)
+    )
 
 let private viewWithArcNodes arcFile setArcFile activeIndex fetchArcNodes =
     providers (
-        Swate.Components.Page.ArcFileEditor.EmptyTableView.Main.EmptyTableView(
+        Arcitisa.Components.Page.ArcFileEditor.EmptyTableView.Main.EmptyTableView(
             arcFile,
             setArcFile,
             activeIndex,

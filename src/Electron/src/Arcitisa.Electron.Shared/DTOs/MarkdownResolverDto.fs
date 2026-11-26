@@ -1,4 +1,4 @@
-module Swate.Electron.Shared.DTOs.MarkdownResolverDto
+module Arcitisa.Electron.Shared.DTOs.MarkdownResolverDto
 
 /// Why the main process does not serve an image of the ARC.
 [<RequireQualifiedAccess>]
@@ -30,10 +30,10 @@ type PathCheck =
 
 /// A folder listing for the path completion of Markdown documents. folder is ARC-relative, "" for the ARC root.
 /// The listed names start with namePrefix, ignoring case. The same type the path completion asks with.
-type ListFolderRequestDto = Swate.Components.Composite.MarkdownText.Links.Types.ListFolderRequest
+type ListFolderRequestDto = Arcitisa.Components.Composite.MarkdownText.Links.Types.ListFolderRequest
 
 /// One regular file or folder of a listing. The same type the path completion offers from.
-type FolderEntryDto = Swate.Components.Composite.MarkdownText.Links.Types.FolderEntry
+type FolderEntryDto = Arcitisa.Components.Composite.MarkdownText.Links.Types.FolderEntry
 
 /// What a folder listing found.
 [<RequireQualifiedAccess>]

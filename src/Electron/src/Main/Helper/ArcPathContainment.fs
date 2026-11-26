@@ -2,7 +2,7 @@ module Main.Helper.ArcPathContainment
 
 open System
 open Fable.Core
-open Swate.Components.Shared
+open Arcitisa.Components.Shared
 open Main.Bindings
 open Main.Bindings.Filesystem
 open Main.Bindings.Path

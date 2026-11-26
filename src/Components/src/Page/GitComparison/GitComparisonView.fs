@@ -1,4 +1,4 @@
-namespace Swate.Components.Page
+namespace Arcitisa.Components.Page
 
 open Feliz
 

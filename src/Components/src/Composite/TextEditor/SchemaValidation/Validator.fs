@@ -1,11 +1,11 @@
 /// A JSON Schema 2020-12 validator over a set of schema objects that reference each other by $id.
 /// Ajv never fetches a schema, so every $ref must point at one of the given schemas.
-module Swate.Components.Composite.TextEditor.SchemaValidation.Validator
+module Arcitisa.Components.Composite.TextEditor.SchemaValidation.Validator
 
 open Fable.Core
 open Fable.Core.JsInterop
-open Swate.Components.Composite.TextEditor.JsBindings.Ajv
-open Swate.Components.Composite.TextEditor.SchemaValidation.SchemaIndex
+open Arcitisa.Components.Composite.TextEditor.JsBindings.Ajv
+open Arcitisa.Components.Composite.TextEditor.SchemaValidation.SchemaIndex
 
 type SchemaValidator = {
     RootId: string

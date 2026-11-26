@@ -2,8 +2,8 @@ namespace View
 
 open Feliz
 open Messages
-open Swate.Components
-open Swate.Components.Primitive
+open Arcitisa.Components
+open Arcitisa.Components.Primitive
 
 module private MainPageUtil =
     [<Literal>]

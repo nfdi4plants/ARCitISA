@@ -1,9 +1,9 @@
-module Swate.Components.Composite.Widgets.LocalStorage
+module Arcitisa.Components.Composite.Widgets.LocalStorage
 
 open Feliz
 open Fable.Core.JsInterop
 open Fable.SimpleJson
-open Swate.Components.Composite.Widgets.Types
+open Arcitisa.Components.Composite.Widgets.Types
 
 let private tryLoadRect (key: string) =
     match Browser.WebStorage.localStorage.getItem key with

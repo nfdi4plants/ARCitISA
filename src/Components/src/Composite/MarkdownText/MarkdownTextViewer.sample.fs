@@ -1,10 +1,10 @@
-namespace Swate.Components.Composite.MarkdownTextViewerSample
+namespace Arcitisa.Components.Composite.MarkdownTextViewerSample
 
 open Fable.Core
 open Feliz
 
-open Swate.Components.Composite.MarkdownText
-open Swate.Components.Composite.MarkdownText.Links.Types
+open Arcitisa.Components.Composite.MarkdownText
+open Arcitisa.Components.Composite.MarkdownText.Links.Types
 
 module private MarkdownTextViewerSampleHelpers =
 

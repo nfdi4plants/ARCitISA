@@ -1,14 +1,14 @@
-namespace Swate.Components.Composite.GraphCanvas
+namespace Arcitisa.Components.Composite.GraphCanvas
 
 open Browser.Types
 open Fable.Core
 open Fable.Core.JsInterop
 open Feliz
-open Swate.Components
-open Swate.Components.JsBindings
-open Swate.Components.Composite.GraphCanvas.Types
-open Swate.Components.Composite.GraphCanvas.Pills
-open Swate.Components.Composite.GraphCanvas.Layout
+open Arcitisa.Components
+open Arcitisa.Components.JsBindings
+open Arcitisa.Components.Composite.GraphCanvas.Types
+open Arcitisa.Components.Composite.GraphCanvas.Pills
+open Arcitisa.Components.Composite.GraphCanvas.Layout
 
 module private GraphCanvasTypes =
 

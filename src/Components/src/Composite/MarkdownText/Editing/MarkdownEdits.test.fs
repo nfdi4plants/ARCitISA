@@ -1,8 +1,8 @@
-module internal Swate.Components.Composite.MarkdownText.Editing.MarkdownEditsTests
+module internal Arcitisa.Components.Composite.MarkdownText.Editing.MarkdownEditsTests
 
 open Vitest
-open Swate.Components.Composite.TextEditor.Types
-open Swate.Components.Composite.MarkdownText.Editing.MarkdownEdits
+open Arcitisa.Components.Composite.TextEditor.Types
+open Arcitisa.Components.Composite.MarkdownText.Editing.MarkdownEdits
 
 let private state (text: string) (anchor: int) (head: int) : TextEditState = {|
     text = text

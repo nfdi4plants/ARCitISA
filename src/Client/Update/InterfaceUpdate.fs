@@ -6,7 +6,7 @@ namespace Update
 open Messages
 open OfficeInterop
 open SpreadsheetInterface
-open Swate.Components.Shared
+open Arcitisa.Components.Shared
 // </-->
 
 open Elmish
@@ -16,7 +16,7 @@ open Fable.Core.JsInterop
 
 open ARCtrl
 open ArcTableHelper
-open Swate.Components
+open Arcitisa.Components
 
 module private ModelUtil =
 
@@ -27,7 +27,7 @@ module private ModelUtil =
         member this.UpdateFromLocalStorage() =
 
             match this.PersistentStorageState.Host with
-            | Some Swatehost.Browser -> {
+            | Some Arcitisahost.Browser -> {
                 this with
                     Model.SpreadsheetModel = Spreadsheet.Model.fromLocalStorage ()
                     Model.History = this.History.UpdateFromSessionStorage()
@@ -92,13 +92,13 @@ module Interface =
             | Initialize host ->
                 let cmd =
                     match host with
-                    | Swatehost.Excel ->
+                    | Arcitisahost.Excel ->
                         ExcelHelper.officeload () |> Async.StartImmediate
                         Cmd.none
-                    | Swatehost.Browser ->
+                    | Arcitisahost.Browser ->
                         Spreadsheet.Model.initHistoryIndexedDB () |> Promise.start
                         Cmd.none
-                    | Swatehost.ARCitect ->
+                    | Arcitisahost.ARCitect ->
                         LocalHistory.Model.ResetHistoryWebStorage()
                         Start() |> ARCitect.Init |> ARCitectMsg |> Cmd.ofMsg
 
@@ -107,15 +107,15 @@ module Interface =
                 nextModel, cmd
             | CreateAnnotationTable usePrevOutput ->
                 match host with
-                | Some Swatehost.Excel ->
+                | Some Arcitisahost.Excel ->
                     let cmd =
                         OfficeInterop.CreateAnnotationTable usePrevOutput
                         |> OfficeInteropMsg
                         |> Cmd.ofMsg
 
                     model, cmd
-                | Some Swatehost.Browser
-                | Some Swatehost.ARCitect ->
+                | Some Arcitisahost.Browser
+                | Some Arcitisahost.ARCitect ->
                     let cmd =
                         Spreadsheet.CreateAnnotationTable usePrevOutput |> SpreadsheetMsg |> Cmd.ofMsg
 
@@ -123,22 +123,22 @@ module Interface =
                 | _ -> failwith "not implemented"
             | UpdateDatamap datamapOption ->
                 match host with
-                | Some Swatehost.Excel ->
+                | Some Arcitisahost.Excel ->
                     failwith "UpdateDatamap not implemented for Excel"
                     model, Cmd.none
-                | Some Swatehost.Browser
-                | Some Swatehost.ARCitect ->
+                | Some Arcitisahost.Browser
+                | Some Arcitisahost.ARCitect ->
                     let cmd = Spreadsheet.UpdateDatamap datamapOption |> SpreadsheetMsg |> Cmd.ofMsg
                     model, cmd
                 | _ -> failwith "not implemented"
             | UpdateDataMapDataContextAt(index, dc) ->
                 match host with
-                | Some Swatehost.Excel ->
+                | Some Arcitisahost.Excel ->
                     //let cmd = OfficeInterop.UpdateDataContextAt (dc, index) |> OfficeInteropMsg |> Cmd.ofMsg
                     failwith "UpdateDataContextAt not implemented for Excel"
                     model, Cmd.none
-                | Some Swatehost.Browser
-                | Some Swatehost.ARCitect ->
+                | Some Arcitisahost.Browser
+                | Some Arcitisahost.ARCitect ->
                     let cmd =
                         Spreadsheet.UpdateDataMapDataContextAt(index, dc) |> SpreadsheetMsg |> Cmd.ofMsg
 
@@ -146,26 +146,26 @@ module Interface =
                 | _ -> failwith "not implemented"
             | AddTable table ->
                 match host with
-                | Some Swatehost.Excel ->
+                | Some Arcitisahost.Excel ->
                     //let cmd = OfficeInterop.AddTable table |> OfficeInteropMsg |> Cmd.ofMsg
                     failwith "AddTable not implemented for Excel"
                     model, Cmd.none
-                | Some Swatehost.Browser
-                | Some Swatehost.ARCitect ->
+                | Some Arcitisahost.Browser
+                | Some Arcitisahost.ARCitect ->
                     let cmd = Spreadsheet.AddTable table |> SpreadsheetMsg |> Cmd.ofMsg
                     model, cmd
                 | _ -> failwith "not implemented"
             | AddAnnotationBlock(index, minBuildingBlockInfo) ->
                 match host with
-                | Some Swatehost.Excel ->
+                | Some Arcitisahost.Excel ->
                     let cmd =
                         OfficeInterop.AddAnnotationBlock minBuildingBlockInfo
                         |> OfficeInteropMsg
                         |> Cmd.ofMsg
 
                     model, cmd
-                | Some Swatehost.Browser
-                | Some Swatehost.ARCitect ->
+                | Some Arcitisahost.Browser
+                | Some Arcitisahost.ARCitect ->
                     let cmd =
                         Spreadsheet.AddAnnotationBlock(index, minBuildingBlockInfo)
                         |> SpreadsheetMsg
@@ -175,21 +175,21 @@ module Interface =
                 | _ -> failwith "not implemented"
             | ValidateBuildingBlock ->
                 match host with
-                | Some Swatehost.Excel ->
+                | Some Arcitisahost.Excel ->
                     let cmd = OfficeInterop.ValidateBuildingBlock |> OfficeInteropMsg |> Cmd.ofMsg
                     model, cmd
                 | _ -> failwith "not implemented"
             | AddAnnotationBlocks(index, compositeColumns) ->
                 match host with
-                | Some Swatehost.Excel ->
+                | Some Arcitisahost.Excel ->
                     let cmd =
                         OfficeInterop.AddAnnotationBlocks compositeColumns
                         |> OfficeInteropMsg
                         |> Cmd.ofMsg
 
                     model, cmd
-                | Some Swatehost.Browser
-                | Some Swatehost.ARCitect ->
+                | Some Arcitisahost.Browser
+                | Some Arcitisahost.ARCitect ->
                     let cmd =
                         Spreadsheet.AddAnnotationBlocks(index, compositeColumns)
                         |> SpreadsheetMsg
@@ -200,15 +200,15 @@ module Interface =
             | AddTemplates(tables, importType) ->
 
                 match host with
-                | Some Swatehost.Excel ->
+                | Some Arcitisahost.Excel ->
                     let cmd =
                         OfficeInterop.AddTemplates(Array.ofList tables, importType)
                         |> OfficeInteropMsg
                         |> Cmd.ofMsg
 
                     model, cmd
-                | Some Swatehost.Browser
-                | Some Swatehost.ARCitect ->
+                | Some Arcitisahost.Browser
+                | Some Arcitisahost.ARCitect ->
                     let cmd =
                         Spreadsheet.AddTemplates(Array.ofList tables, importType)
                         |> SpreadsheetMsg
@@ -218,11 +218,11 @@ module Interface =
                 | _ -> failwith "not implemented"
             | JoinTable(table, index, options) ->
                 match host with
-                | Some Swatehost.Excel ->
+                | Some Arcitisahost.Excel ->
                     let cmd = OfficeInterop.JoinTable(table, options) |> OfficeInteropMsg |> Cmd.ofMsg
                     model, cmd
-                | Some Swatehost.Browser
-                | Some Swatehost.ARCitect ->
+                | Some Arcitisahost.Browser
+                | Some Arcitisahost.ARCitect ->
                     let cmd =
                         Spreadsheet.JoinTable(table, index, options, None)
                         |> SpreadsheetMsg
@@ -232,21 +232,21 @@ module Interface =
                 | _ -> failwith "not implemented"
             | UpdateArcFile arcFiles ->
                 match host with
-                | Some Swatehost.Excel ->
+                | Some Arcitisahost.Excel ->
                     let cmd = OfficeInterop.UpdateArcFile arcFiles |> OfficeInteropMsg |> Cmd.ofMsg
                     model, cmd
-                | Some Swatehost.Browser
-                | Some Swatehost.ARCitect ->
+                | Some Arcitisahost.Browser
+                | Some Arcitisahost.ARCitect ->
                     let cmd = Spreadsheet.UpdateArcFile arcFiles |> SpreadsheetMsg |> Cmd.ofMsg
                     model, cmd
                 | _ -> failwith "not implemented"
             | ImportXlsx bytes ->
                 match host with
-                | Some Swatehost.Excel ->
+                | Some Arcitisahost.Excel ->
                     Browser.Dom.window.alert "ImportXlsx Not implemented"
                     model, Cmd.none
-                | Some Swatehost.Browser
-                | Some Swatehost.ARCitect ->
+                | Some Arcitisahost.Browser
+                | Some Arcitisahost.ARCitect ->
                     let cmd = Spreadsheet.ImportXlsx bytes |> SpreadsheetMsg |> Cmd.ofMsg
                     model, cmd
                 | _ -> failwith "not implemented"
@@ -254,7 +254,7 @@ module Interface =
                 let deselectedColumns = data.deselectedColumns
 
                 match host with
-                | Some Swatehost.Excel ->
+                | Some Arcitisahost.Excel ->
                     /// In Excel we must get the current information from worksheets and update them with the imported information
                     let updateExistingInfoWithImportedInfo () = promise {
                         match data.importState.ImportMetadata with
@@ -298,8 +298,8 @@ module Interface =
                             (curry GenericError Cmd.none >> DevMsg)
 
                     model, cmd
-                | Some Swatehost.Browser
-                | Some Swatehost.ARCitect ->
+                | Some Arcitisahost.Browser
+                | Some Arcitisahost.ARCitect ->
                     let cmd =
                         match data.importState.ImportMetadata with
                         | true ->
@@ -321,15 +321,15 @@ module Interface =
                 | _ -> failwith "not implemented"
             | InsertOntologyAnnotation(range, ontologyAnnotation) ->
                 match host with
-                | Some Swatehost.Excel ->
+                | Some Arcitisahost.Excel ->
                     let cmd =
                         OfficeInterop.InsertOntologyTerm ontologyAnnotation
                         |> OfficeInteropMsg
                         |> Cmd.ofMsg
 
                     model, cmd
-                | Some Swatehost.Browser
-                | Some Swatehost.ARCitect ->
+                | Some Arcitisahost.Browser
+                | Some Arcitisahost.ARCitect ->
                     match range with
                     | Some range ->
 
@@ -343,11 +343,11 @@ module Interface =
                 | _ -> failwith "not implemented"
             | InsertFileNames(range, fileNames) ->
                 match host with
-                | Some Swatehost.Excel ->
+                | Some Arcitisahost.Excel ->
                     let cmd = OfficeInterop.InsertFileNames fileNames |> OfficeInteropMsg |> Cmd.ofMsg
                     model, cmd
-                | Some Swatehost.Browser
-                | Some Swatehost.ARCitect ->
+                | Some Arcitisahost.Browser
+                | Some Arcitisahost.ARCitect ->
                     if range.IsSome then
                         let columnIndex, rowIndex =
                             if range.IsSome then
@@ -375,11 +375,11 @@ module Interface =
                 | _ -> failwith "not implemented"
             | RemoveBuildingBlock index ->
                 match host, index with
-                | Some Swatehost.Excel, _ ->
+                | Some Arcitisahost.Excel, _ ->
                     let cmd = OfficeInterop.RemoveBuildingBlock |> OfficeInteropMsg |> Cmd.ofMsg
                     model, cmd
-                | Some Swatehost.Browser, Some index
-                | Some Swatehost.ARCitect, Some index ->
+                | Some Arcitisahost.Browser, Some index
+                | Some Arcitisahost.ARCitect, Some index ->
 
                     let deselectedColumns =
                         CellCoordinateRange.toArray index
@@ -401,42 +401,42 @@ module Interface =
                 | _, _ -> failwith "not implemented"
             | AddDataAnnotation data ->
                 match host with
-                | Some Swatehost.Excel ->
+                | Some Arcitisahost.Excel ->
                     //let cmd = OfficeInterop.AddDataAnnotation data |> OfficeInteropMsg |> Cmd.ofMsg
                     failwith "AddDataAnnotation is not implemented"
                     model, Cmd.none
-                | Some Swatehost.Browser
-                | Some Swatehost.ARCitect ->
+                | Some Arcitisahost.Browser
+                | Some Arcitisahost.ARCitect ->
                     let cmd = Spreadsheet.AddDataAnnotation data |> SpreadsheetMsg |> Cmd.ofMsg
                     model, cmd
                 | _ -> failwith "not implemented"
             | ExportJson(arcfile, jef) ->
                 match host with
-                | Some Swatehost.Excel ->
+                | Some Arcitisahost.Excel ->
                     let cmd = OfficeInteropMsg(OfficeInterop.ExportJson(arcfile, jef)) |> Cmd.ofMsg
                     model, cmd
-                | Some Swatehost.Browser
-                | Some Swatehost.ARCitect ->
+                | Some Arcitisahost.Browser
+                | Some Arcitisahost.ARCitect ->
                     let cmd = SpreadsheetMsg(Spreadsheet.ExportJson(arcfile, jef)) |> Cmd.ofMsg
                     model, cmd
                 | _ -> failwith "not implemented"
             | UpdateUnitForCells ->
                 match host with
-                | Some Swatehost.Excel ->
+                | Some Arcitisahost.Excel ->
                     let cmd = OfficeInterop.UpdateUnitForCells |> OfficeInteropMsg |> Cmd.ofMsg
                     model, cmd
                 | _ -> failwith "not implemented"
             | RectifyTermColumns ->
                 match host with
-                | Some Swatehost.Excel ->
+                | Some Arcitisahost.Excel ->
                     let cmd = OfficeInterop.RectifyTermColumns |> OfficeInteropMsg |> Cmd.ofMsg
                     model, cmd
                 | _ -> failwith "not implemented"
             | ImportRawJson data ->
                 match host with
-                | Some Swatehost.Excel -> failwith "not implemented"
-                | Some Swatehost.Browser
-                | Some Swatehost.ARCitect ->
+                | Some Arcitisahost.Excel -> failwith "not implemented"
+                | Some Arcitisahost.Browser
+                | Some Arcitisahost.ARCitect ->
                     let cmd = Spreadsheet.ImportJsonRaw data |> SpreadsheetMsg |> Cmd.ofMsg
 
                     model, cmd

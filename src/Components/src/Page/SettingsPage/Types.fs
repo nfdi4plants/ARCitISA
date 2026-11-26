@@ -1,7 +1,7 @@
-module Swate.Components.PageComponents.SettingsPage.Types
+module Arcitisa.Components.PageComponents.SettingsPage.Types
 
 open Fable.Core
-open Swate.Components.Page.GitSidebarTypes
+open Arcitisa.Components.Page.GitSidebarTypes
 
 /// The categories of the settings page. Other parts of the app open the page at one of them.
 [<StringEnum; RequireQualifiedAccess>]

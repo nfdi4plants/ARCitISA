@@ -1,8 +1,8 @@
 /// Keys in CodeMirror's notation and how the UI writes them, for example in a button title. Every view that names
 /// a key goes through here, so a toolbar, a menu and a settings page write the same key the same way.
-module Swate.Components.Util.Shortcuts
+module Arcitisa.Components.Util.Shortcuts
 
-open Swate.Components.Util.UserOS
+open Arcitisa.Components.Util.UserOS
 
 /// The key that saves the editor.
 let saveKey = "Mod-s"

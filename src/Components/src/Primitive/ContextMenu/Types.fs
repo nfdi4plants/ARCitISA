@@ -1,4 +1,4 @@
-module Swate.Components.Primitive.ContextMenu.Types
+module Arcitisa.Components.Primitive.ContextMenu.Types
 
 open Fable.Core
 open Feliz

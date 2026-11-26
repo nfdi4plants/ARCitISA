@@ -3,17 +3,17 @@ namespace MainComponents
 open Feliz
 open Browser.Types
 open LocalStorage.Widgets
-open Swate
-open Swate.Components
+open Arcitisa
+open Arcitisa.Components
 open ARCtrl
 open BuildingBlock.SearchComponent
-open Swate.Components.Shared
-open Swate.Components.Primitive.Buttons
-open Swate.Components.Composite.Widgets.Types
-open Swate.Components.Composite.Widgets.DataAnnotator
-open Swate.Components.Composite.Widgets.DataAnnotator.Types
-open Swate.Components.Composite.Widgets.DataAnnotator.Helper
-open Swate.Components.Page.ArcFileEditor.Helper
+open Arcitisa.Components.Shared
+open Arcitisa.Components.Primitive.Buttons
+open Arcitisa.Components.Composite.Widgets.Types
+open Arcitisa.Components.Composite.Widgets.DataAnnotator
+open Arcitisa.Components.Composite.Widgets.DataAnnotator.Types
+open Arcitisa.Components.Composite.Widgets.DataAnnotator.Helper
+open Arcitisa.Components.Page.ArcFileEditor.Helper
 
 module InitExtensions =
 

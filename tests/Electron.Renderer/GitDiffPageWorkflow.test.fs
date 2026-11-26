@@ -8,11 +8,11 @@ open Fable.Core.JsInterop
 open Feliz
 open Renderer.Context.GitWorkflow
 open Renderer.Types
-open Swate.Components.Page.GitSidebarTypes
-open Swate.Electron.Shared.VersionControlTypes
+open Arcitisa.Components.Page.GitSidebarTypes
+open Arcitisa.Electron.Shared.VersionControlTypes
 open Vitest
 
-module Paged = Swate.Components.Page.GitComparison.GitPagedDiffTypes
+module Paged = Arcitisa.Components.Page.GitComparison.GitPagedDiffTypes
 
 [<Import("renderToStaticMarkup", "react-dom/server")>]
 let private renderToStaticMarkup (element: ReactElement) : string = jsNative
@@ -43,7 +43,7 @@ let private textPage (content: string) =
     PageState.TextDocumentPage {
         Path = "notes.txt"
         Content = content
-        FileType = Swate.Electron.Shared.FileIOTypes.FileContentType.PlainText
+        FileType = Arcitisa.Electron.Shared.FileIOTypes.FileContentType.PlainText
         Info = None
     }
 

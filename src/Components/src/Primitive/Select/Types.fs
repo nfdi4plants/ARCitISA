@@ -1,4 +1,4 @@
-module Swate.Components.Primitive.Select.Types
+module Arcitisa.Components.Primitive.Select.Types
 
 open Fable.Core
 open Feliz

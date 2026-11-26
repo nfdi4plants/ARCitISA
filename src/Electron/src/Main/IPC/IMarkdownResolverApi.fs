@@ -5,7 +5,7 @@ open Fable.Electron
 open Fable.Electron.Main
 open Main
 open Main.ArcVaultHelper
-open Swate.Electron.Shared.IPCTypes
+open Arcitisa.Electron.Shared.IPCTypes
 
 let private noVaultError (windowId: int) =
     exn $"The ARC for window id {windowId} should exist"

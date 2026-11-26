@@ -1,9 +1,9 @@
 /// Worker definitions for the WebWorker tests and stories. The file stays free of React and DOM code, like a
 /// real worker file, because it is the entry of the worker bundle.
-module internal Swate.Components.Util.WebWorkerTestWorker
+module internal Arcitisa.Components.Util.WebWorkerTestWorker
 
 open Fable.Core
-open Swate.Components.Util.WebWorker
+open Arcitisa.Components.Util.WebWorker
 
 [<Emit("() => new Worker('/does-not-exist.js', { type: 'module' })")>]
 let private missingScript: unit -> WorkerInstance = jsNative

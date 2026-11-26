@@ -1,4 +1,4 @@
-namespace Swate.Components.Page.FileViewer
+namespace Arcitisa.Components.Page.FileViewer
 
 open Feliz
 open Fable.Core

@@ -1,8 +1,8 @@
-module internal Swate.Components.Composite.MarkdownText.Links.LinkResolutionTests
+module internal Arcitisa.Components.Composite.MarkdownText.Links.LinkResolutionTests
 
 open Vitest
-open Swate.Components.Composite.MarkdownText.Links
-open Swate.Components.Composite.MarkdownText.Links.Types
+open Arcitisa.Components.Composite.MarkdownText.Links
+open Arcitisa.Components.Composite.MarkdownText.Links.Types
 
 let private guide = "docs/guide"
 

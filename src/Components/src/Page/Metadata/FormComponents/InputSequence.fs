@@ -1,4 +1,4 @@
-namespace Swate.Components.Page.Metadata.FormComponents
+namespace Arcitisa.Components.Page.Metadata.FormComponents
 
 open System
 open Browser.Types
@@ -6,11 +6,11 @@ open Fable.Core
 open Fable.Core.JsInterop
 open Feliz
 
-open Swate.Components
-open Swate.Components.Primitive
-open Swate.Components.Primitive.BaseModal
-open Swate.Components.Primitive.LayoutComponents
-open Swate.Components.JsBindings
+open Arcitisa.Components
+open Arcitisa.Components.Primitive
+open Arcitisa.Components.Primitive.BaseModal
+open Arcitisa.Components.Primitive.LayoutComponents
+open Arcitisa.Components.JsBindings
 
 [<Erase; Mangle(false)>]
 type InputSequence =

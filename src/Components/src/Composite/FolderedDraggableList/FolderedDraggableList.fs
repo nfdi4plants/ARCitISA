@@ -1,12 +1,12 @@
-namespace Swate.Components.Composite.FolderedDraggableList
+namespace Arcitisa.Components.Composite.FolderedDraggableList
 
 open Fable.Core
 open Fable.Core.JsInterop
 open Feliz
-open Swate.Components
-open Swate.Components.JsBindings
-open Swate.Components.Primitive.Popover
-open Swate.Components.Composite.FolderedDraggableList.Types
+open Arcitisa.Components
+open Arcitisa.Components.JsBindings
+open Arcitisa.Components.Primitive.Popover
+open Arcitisa.Components.Composite.FolderedDraggableList.Types
 
 module private FolderedDraggableListHelper =
 

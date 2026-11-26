@@ -1,15 +1,15 @@
-namespace Swate.Components.Composite.Widgets.BuildingBlockWidget
+namespace Arcitisa.Components.Composite.Widgets.BuildingBlockWidget
 
 open ARCtrl
 open Fable.Core
 open Feliz
-open Swate.Components
-open Swate.Components.Shared
-open Swate.Components.Composite.AnnotationTable
-open Swate.Components.Composite.AnnotationTable.Context
-open Swate.Components.Composite.TermSearch
-open Swate.Components.Composite.TermSearch.Types
-open Swate.Components.Composite.Widgets.Context
+open Arcitisa.Components
+open Arcitisa.Components.Shared
+open Arcitisa.Components.Composite.AnnotationTable
+open Arcitisa.Components.Composite.AnnotationTable.Context
+open Arcitisa.Components.Composite.TermSearch
+open Arcitisa.Components.Composite.TermSearch.Types
+open Arcitisa.Components.Composite.Widgets.Context
 
 module private BuildingBlockWidgetState =
 

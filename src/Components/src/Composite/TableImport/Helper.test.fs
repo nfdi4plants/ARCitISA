@@ -1,11 +1,11 @@
-module internal Swate.Components.Composite.TableImport.HelperTests
+module internal Arcitisa.Components.Composite.TableImport.HelperTests
 
 open ARCtrl
 open ARCtrl.Json
 open ARCtrl.Spreadsheet
-open Swate.Components.Shared
-open Swate.Components.Composite.TableImport.Types
-open Swate.Components.Composite.TableImport.Helper
+open Arcitisa.Components.Shared
+open Arcitisa.Components.Composite.TableImport.Types
+open Arcitisa.Components.Composite.TableImport.Helper
 open Vitest
 
 let private createBasicAssay () =

@@ -1,7 +1,7 @@
-module Swate.Components.Api.Helper
+module Arcitisa.Components.Api.Helper
 
-open Swate.Components
-open Swate.Components.Shared
+open Arcitisa.Components
+open Arcitisa.Components.Shared
 open Fable.Core
 open Fable.Core.JsInterop
 open Fable.Remoting.Client

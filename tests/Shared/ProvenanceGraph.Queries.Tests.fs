@@ -22,9 +22,9 @@ open Fable.Mocha
 open Expecto
 #endif
 
-open Swate.Components.Shared.ProvenanceGraph.Types
-open Swate.Components.Shared.ProvenanceGraph.BuildIndex
-open Swate.Components.Shared.ProvenanceGraph.Queries
+open Arcitisa.Components.Shared.ProvenanceGraph.Types
+open Arcitisa.Components.Shared.ProvenanceGraph.BuildIndex
+open Arcitisa.Components.Shared.ProvenanceGraph.Queries
 
 // Builders
 

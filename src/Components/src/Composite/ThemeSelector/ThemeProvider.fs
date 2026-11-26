@@ -1,12 +1,12 @@
-namespace Swate.Components.Composite.ThemeSelector
+namespace Arcitisa.Components.Composite.ThemeSelector
 
 open Feliz
 open Fable.Core
 open Browser
 open Fable.React
-open Swate.Components
-open Swate.Components.Primitive
-open Swate.Components.Composite.ThemeSelector.Types
+open Arcitisa.Components
+open Arcitisa.Components.Primitive
+open Arcitisa.Components.Composite.ThemeSelector.Types
 
 [<Erase; Mangle(false)>]
 type ThemeProvider =

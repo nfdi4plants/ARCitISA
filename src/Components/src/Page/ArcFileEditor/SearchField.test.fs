@@ -1,8 +1,8 @@
-module internal Swate.Components.Page.ArcFileEditor.SearchTests
+module internal Arcitisa.Components.Page.ArcFileEditor.SearchTests
 
 open ARCtrl
 open Vitest
-open Swate.Components.Page.ArcFileEditor.Types
+open Arcitisa.Components.Page.ArcFileEditor.Types
 
 Vitest.test (
     "search matches displayed string values once per cell in row order, ignoring case",

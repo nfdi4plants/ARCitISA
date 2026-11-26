@@ -2,8 +2,8 @@ module Renderer.Components.MainContent.LargeFilePreviewTarget
 
 open Fable.Core
 open Feliz
-open Swate.Components.Page.FileExplorer.Types
-open Swate.Electron.Shared.FileIOTypes
+open Arcitisa.Components.Page.FileExplorer.Types
+open Arcitisa.Electron.Shared.FileIOTypes
 open Renderer
 
 /// The page of a file without text preview. The button opens the file in the default application.

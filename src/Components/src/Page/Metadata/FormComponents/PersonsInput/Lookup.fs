@@ -1,12 +1,12 @@
-module Swate.Components.Page.Metadata.FormComponents.PersonsInput.Lookup
+module Arcitisa.Components.Page.Metadata.FormComponents.PersonsInput.Lookup
 
 open System
 open System.Text.RegularExpressions
 open ARCtrl
 open Fable.Core
 open Fetch
-open Swate.Components.Page.Metadata.FormComponents.Helpers
-open Swate.Components.Page.Metadata.FormComponents.PersonsInput.Types
+open Arcitisa.Components.Page.Metadata.FormComponents.Helpers
+open Arcitisa.Components.Page.Metadata.FormComponents.PersonsInput.Types
 
 let private joinWith (separator: string) (values: string option[]) =
     values

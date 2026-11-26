@@ -1,11 +1,11 @@
-module internal Swate.Components.PageComponents.SettingsPage.SettingsPageTests
+module internal Arcitisa.Components.PageComponents.SettingsPage.SettingsPageTests
 
 open Browser.Types
 open Feliz
 open Vitest
-open Swate.Components.Composite.TermSearch
-open Swate.Components.Composite.ThemeSelector
-open Swate.Components.PageComponents.SettingsPage.Types
+open Arcitisa.Components.Composite.TermSearch
+open Arcitisa.Components.Composite.ThemeSelector
+open Arcitisa.Components.PageComponents.SettingsPage.Types
 
 Vitest.afterEach (fun () -> RTL.cleanup ())
 

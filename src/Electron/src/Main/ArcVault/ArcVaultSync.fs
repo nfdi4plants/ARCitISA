@@ -8,9 +8,9 @@ open Main.ARCtrlExtensions
 open Main.ArcMerge
 open Main.ArcDiskState
 open Main.ArcVaultHelper
-open Swate.Components.Shared
-open Swate.Electron.Shared.IPCTypes
-open Swate.Electron.Shared.FileIOHelper
+open Arcitisa.Components.Shared
+open Arcitisa.Electron.Shared.IPCTypes
+open Arcitisa.Electron.Shared.FileIOHelper
 open ARCtrl
 open Main.ArcVaultState
 
@@ -88,14 +88,14 @@ type ArcVault with
 
     member internal this.ReportSyncStarted() =
         if not (this.window.isDestroyed ()) then
-            swatelogfn this.window.id "Loading external changes to the ARC."
+            arcitisalogfn this.window.id "Loading external changes to the ARC."
             WindowSend.send<IArcSyncRendererApi> this.window (fun api -> api.arcSyncStarted ())
 
     member internal this.ReportSyncFinished(changedPaths: string[], replacedUnsaved: string[]) =
         this.LastSyncFailed <- false
 
         if not (this.window.isDestroyed ()) then
-            swatelogfn this.window.id "Loaded external changes to the ARC."
+            arcitisalogfn this.window.id "Loaded external changes to the ARC."
 
             WindowSend.send<IArcSyncRendererApi>
                 this.window
@@ -110,7 +110,7 @@ type ArcVault with
         this.LastSyncFailed <- true
 
         if not (this.window.isDestroyed ()) then
-            swatelogfn this.window.id "Unable to load external changes to the ARC: %s" message
+            arcitisalogfn this.window.id "Unable to load external changes to the ARC: %s" message
             WindowSend.send<IArcSyncRendererApi> this.window (fun api -> api.arcSyncFailed message)
 
     member internal this.PublishSyncSnapshot(snapshot: ARC, events: FileEvent list) : Result<unit, exn> =

@@ -1,4 +1,4 @@
-module internal Swate.Components.Composite.Widgets.BuildingBlockWidget.DropdownSample
+module internal Arcitisa.Components.Composite.Widgets.BuildingBlockWidget.DropdownSample
 
 open ARCtrl
 

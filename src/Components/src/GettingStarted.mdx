@@ -6,14 +6,14 @@
 
 #### Install component library
 
-`npm i @nfdi4plants/swate-components`
+`npm i @nfdi4plants/arcitisa-components`
 
 #### Import the components you want to use:
 
 ```jsx
 
-import '@nfdi4plants/swate-components/style.css' // Import minified tailwind and daisyui style
-import { TermSearch } from '@nfdi4plants/swate-components'
+import '@nfdi4plants/arcitisa-components/style.css' // Import minified tailwind and daisyui style
+import { TermSearch } from '@nfdi4plants/arcitisa-components'
 
 <TermSearch
     onTermSelect={(term) => console.log(term)}
@@ -27,16 +27,16 @@ import { TermSearch } from '@nfdi4plants/swate-components'
 
 #### Install with **Femto**
 
-`dotnet femto install Swate.Components <path/to/.fsproj>`
+`dotnet femto install ARCitISA.Components <path/to/.fsproj>`
 
 #### Install **Manually**:
 
-Install [nuget package](https://www.nuget.org/packages/Swate.Components).
+Install [nuget package](https://www.nuget.org/packages/ARCitISA.Components).
 
 ```
-<PackageReference Include="Swate.Components" Version="1.0.0" />
+<PackageReference Include="ARCitISA.Components" Version="1.0.0" />
 
-paket add Swate.Components
+paket add ARCitISA.Components
 ```
 
 Install npm dependencies
@@ -51,9 +51,9 @@ npm i @floating-ui/react@^0 @tanstack/react-virtual@^3 @uidotdev/usehooks@^2
 ```fsharp
 open Fable.Core.JsInterop
 
-Swate.Components.SwateStyle.import
+Arcitisa.Components.ArcitisaStyle.import
 
-Swate.Components.TermSearch.TermSearch(
+Arcitisa.Components.TermSearch.TermSearch(
     (fun term -> Browser.Dom.console.log term),
     None
 )

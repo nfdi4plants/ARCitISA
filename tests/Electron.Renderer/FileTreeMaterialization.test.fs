@@ -2,9 +2,9 @@ module ElectronRenderer.FileTreeMaterializationTests
 
 open Renderer.Components.LeftSidebar.FileExplorer.FileTreeMaterialization
 open Renderer.Context.FileTreeStore
-open Swate.Components.Page.FileExplorer.Types
-open Swate.Electron.Shared.FileIOTypes
-open Swate.Electron.Shared.IPCTypes
+open Arcitisa.Components.Page.FileExplorer.Types
+open Arcitisa.Electron.Shared.FileIOTypes
+open Arcitisa.Electron.Shared.IPCTypes
 open Vitest
 
 let private nameOf (path: string) =

@@ -1,8 +1,8 @@
-module internal Swate.Components.Composite.DataMapTable.ClipboardTargetTests
+module internal Arcitisa.Components.Composite.DataMapTable.ClipboardTargetTests
 
 open ARCtrl
 open Vitest
-open Swate.Components.Composite.DataMapTable.ClipboardTarget
+open Arcitisa.Components.Composite.DataMapTable.ClipboardTarget
 
 let private emptyMap () = Datamap(ResizeArray [ DataContext() ])
 

@@ -1,4 +1,4 @@
-module internal Swate.Components.Page.ArcFileEditor.SearchFieldTests
+module internal Arcitisa.Components.Page.ArcFileEditor.SearchFieldTests
 
 open ARCtrl
 open Browser.Dom
@@ -6,11 +6,11 @@ open Browser.Types
 open Fable.Core
 open Feliz
 open Vitest
-open Swate.Components
-open Swate.Components.Composite.AnnotationTable.Context
-open Swate.Components.Primitive.BaseModal
-open Swate.Components.Shared
-open Swate.Components.Page.ArcFileEditor.Types
+open Arcitisa.Components
+open Arcitisa.Components.Composite.AnnotationTable.Context
+open Arcitisa.Components.Primitive.BaseModal
+open Arcitisa.Components.Shared
+open Arcitisa.Components.Page.ArcFileEditor.Types
 
 [<Emit("$0.spyOn(HTMLElement.prototype, $1, 'get').mockReturnValue($2)")>]
 let private mockGeometry (vi: Vi) (property: string) (value: int) : unit = jsNative
@@ -96,7 +96,8 @@ for platform, modifier, ctrl, meta in
             renderEditor () |> ignore
             // The hint names the key like every other toolbar title, through Shortcuts.label. Mod is the command key
             // where the shortcut takes meta.
-            let hint = RTL.screen.getByText (Swate.Components.Util.Shortcuts.label meta "Mod-f")
+            let hint =
+                RTL.screen.getByText (Arcitisa.Components.Util.Shortcuts.label meta "Mod-f")
 
             Vitest.expect(hint.tagName).toBe "KBD"
             search "alpha"

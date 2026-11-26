@@ -1,14 +1,14 @@
-namespace Swate.Components.Page
+namespace Arcitisa.Components.Page
 
 open System
 open Browser.Types
 open Fable.Core
 open Feliz
-open Swate.Components
-open Swate.Components.Primitive
-open Swate.Components.Primitive.BaseModal
+open Arcitisa.Components
+open Arcitisa.Components.Primitive
+open Arcitisa.Components.Primitive.BaseModal
 
-open Swate.Components.Page.GitSidebarTypes
+open Arcitisa.Components.Page.GitSidebarTypes
 
 module private GitSidebarInternal =
 
@@ -532,7 +532,7 @@ type GitSidebar =
             promise {
                 try
                     do!
-                        Swate.Components.GlobalBindings.navigator.clipboard.writeText (
+                        Arcitisa.Components.GlobalBindings.navigator.clipboard.writeText (
                             GitSidebarInternal.logCopyText props.Sections
                         )
 

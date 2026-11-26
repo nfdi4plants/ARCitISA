@@ -2,12 +2,12 @@ module Renderer.Components.MainContent.TextDocument.TextDocumentTargetView
 
 open Fable.Core
 open Feliz
-open Swate.Components.Composite.MarkdownText.Links
-open Swate.Components.Page.FileViewer
-open Swate.Components.Page.FileViewer.Types
+open Arcitisa.Components.Composite.MarkdownText.Links
+open Arcitisa.Components.Page.FileViewer
+open Arcitisa.Components.Page.FileViewer.Types
 open Renderer.Components.Helper
-open Swate.Electron.Shared
-open Swate.Electron.Shared.FileIOTypes
+open Arcitisa.Electron.Shared
+open Arcitisa.Electron.Shared.FileIOTypes
 open Renderer.Types
 open Renderer.Components.MainContent.TextDocument.TextDocumentState
 open Renderer.Components.MainContent.TextDocument.TextDocumentSync

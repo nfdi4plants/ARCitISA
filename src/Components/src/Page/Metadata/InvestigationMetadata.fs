@@ -1,14 +1,14 @@
-namespace Swate.Components.Page.Metadata
+namespace Arcitisa.Components.Page.Metadata
 
 open System
 open Fable.Core
 open Feliz
 open ARCtrl
-open Swate.Components
-open Swate.Components.Primitive.LayoutComponents
-open Swate.Components.Page.Metadata.FormComponents
-open Swate.Components.Page.Metadata.FormComponents.PersonsInput
-open Swate.Components.Page.Metadata.FormComponents.PublicationsInput
+open Arcitisa.Components
+open Arcitisa.Components.Primitive.LayoutComponents
+open Arcitisa.Components.Page.Metadata.FormComponents
+open Arcitisa.Components.Page.Metadata.FormComponents.PersonsInput
+open Arcitisa.Components.Page.Metadata.FormComponents.PublicationsInput
 
 [<Erase; Mangle(false)>]
 type InvestigationMetadata =

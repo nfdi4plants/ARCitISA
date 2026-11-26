@@ -1,7 +1,7 @@
 namespace Main.ARCtrlExtensions
 
 open ARCtrl
-open Swate.Components.Shared
+open Arcitisa.Components.Shared
 
 [<AutoOpen>]
 module InMemoryChangesExtensions =

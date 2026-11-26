@@ -1,8 +1,8 @@
-module Swate.Components.Composite.MarkdownText.LinkContext
+module Arcitisa.Components.Composite.MarkdownText.LinkContext
 
 open Feliz
 
-open Swate.Components.Composite.MarkdownText.Links.Types
+open Arcitisa.Components.Composite.MarkdownText.Links.Types
 
 /// The host context of the preview. None means the host has no ARC.
 let LinkCtx = React.createContext<IMarkdownLinkContext option> (None)

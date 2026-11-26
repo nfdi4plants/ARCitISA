@@ -5,8 +5,8 @@ open Fable.Core.JsInterop
 open Feliz
 open Renderer.Components.MainContent.ArcSyncNotice
 open Renderer.Context.ArcSyncContext
-open Swate.Components.Composite.Layout
-open Swate.Components.Primitive.Banner.Types
+open Arcitisa.Components.Composite.Layout
+open Arcitisa.Components.Primitive.Banner.Types
 open Vitest
 
 Vitest.afterEach (fun () -> RTL.cleanup ())

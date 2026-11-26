@@ -1,10 +1,10 @@
 module Renderer.Components.LeftSidebar.FileExplorer.FileTreeRenameHelper
 
-open Swate.Components.Page.FileExplorer.Types
-open Swate.Components.Shared
+open Arcitisa.Components.Page.FileExplorer.Types
+open Arcitisa.Components.Shared
 open Renderer.Components.LeftSidebar.FileExplorer.Types
 open Renderer.Components.LeftSidebar.FileExplorer.Helper
-open Swate.Electron.Shared.RenamePathRules
+open Arcitisa.Electron.Shared.RenamePathRules
 
 let validateRenameDraftName (draft: ArcRenameDraft) (newName: string) =
     validateItemRenameName (not draft.Item.IsDirectory) draft.SourcePath newName

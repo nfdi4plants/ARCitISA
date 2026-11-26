@@ -1,10 +1,10 @@
 /// Typed bindings for the parts of @codemirror/autocomplete that the TextEditor uses. basicSetup turns the
 /// autocompletion on, these bindings add sources and settings to it.
-module Swate.Components.Composite.TextEditor.JsBindings.Autocomplete
+module Arcitisa.Components.Composite.TextEditor.JsBindings.Autocomplete
 
 open Browser.Types
 open Fable.Core
-open Swate.Components.Composite.TextEditor.JsBindings.CodeMirror
+open Arcitisa.Components.Composite.TextEditor.JsBindings.CodeMirror
 
 /// Where a completion source is asked for completions.
 [<AllowNullLiteral>]

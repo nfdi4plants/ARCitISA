@@ -2,7 +2,7 @@ module Database.Helper
 
 open System
 open Neo4j.Driver
-open Swate.Components.Shared.Database
+open Arcitisa.Components.Shared.Database
 
 let defaultOutputWith<'a> (def: 'a) (neo4jReturnVal: obj) =
     if isNull neo4jReturnVal then
@@ -31,7 +31,7 @@ module Regex =
     /// Cypher full text search is based on Apache lucene syntax. Which in turn uses certain special characters to apply advanced logic to the query.
     /// This function escapes these special characters so they can be used in the query without being interpreted as special logic characters.
     ///
-    /// https://github.com/nfdi4plants/Swate/issues/491
+    /// https://github.com/nfdi4plants/ARCitISA/issues/491
     /// </summary>
     /// <param name="query"></param>
     let escapeQuery (query: string) =

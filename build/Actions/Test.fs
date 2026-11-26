@@ -34,7 +34,7 @@ let Watch () =
                 "-o"
                 "output"
                 "-s"
-                yield! DEFINE_SWATE_ENVIRONMENT_FABLE
+                yield! DEFINE_ARCITISA_ENVIRONMENT_FABLE
                 "--run"
                 "npx"
                 "mocha"
@@ -51,7 +51,7 @@ let Watch () =
                 "-o"
                 "output"
                 "-s"
-                yield! DEFINE_SWATE_ENVIRONMENT_FABLE
+                yield! DEFINE_ARCITISA_ENVIRONMENT_FABLE
                 "--run"
                 "npx"
                 "vitest"
@@ -66,7 +66,7 @@ let Watch () =
                 "-o"
                 "output"
                 "-s"
-                yield! DEFINE_SWATE_ENVIRONMENT_FABLE
+                yield! DEFINE_ARCITISA_ENVIRONMENT_FABLE
                 "--run"
                 "npx"
                 "vitest"
@@ -91,7 +91,7 @@ let WatchJs () =
                 "-o"
                 "output"
                 "-s"
-                yield! DEFINE_SWATE_ENVIRONMENT_FABLE
+                yield! DEFINE_ARCITISA_ENVIRONMENT_FABLE
                 "--run"
                 "npx"
                 "mocha"
@@ -109,7 +109,7 @@ let WatchJs () =
                 "-o"
                 "output"
                 "-s"
-                yield! DEFINE_SWATE_ENVIRONMENT_FABLE
+                yield! DEFINE_ARCITISA_ENVIRONMENT_FABLE
                 "--run"
                 "npx"
                 "vitest"
@@ -124,7 +124,7 @@ let WatchJs () =
                 "-o"
                 "output"
                 "-s"
-                yield! DEFINE_SWATE_ENVIRONMENT_FABLE
+                yield! DEFINE_ARCITISA_ENVIRONMENT_FABLE
                 "--run"
                 "npx"
                 "vitest"
@@ -147,7 +147,7 @@ module Run =
                 "-o"
                 "output"
                 "-s"
-                yield! DEFINE_SWATE_ENVIRONMENT_FABLE
+                yield! DEFINE_ARCITISA_ENVIRONMENT_FABLE
                 "--run"
                 "npx"
                 "mocha"
@@ -166,7 +166,7 @@ module Run =
                 "-o"
                 "output"
                 "-s"
-                yield! DEFINE_SWATE_ENVIRONMENT_FABLE
+                yield! DEFINE_ARCITISA_ENVIRONMENT_FABLE
                 "--run"
                 "npx"
                 "vitest"
@@ -185,7 +185,7 @@ module Run =
                 "-o"
                 "output"
                 "-s"
-                yield! DEFINE_SWATE_ENVIRONMENT_FABLE
+                yield! DEFINE_ARCITISA_ENVIRONMENT_FABLE
                 "--run"
                 "npx"
                 "vitest"

@@ -1,8 +1,8 @@
-module internal Swate.Components.Composite.Authentication.AccountManagerTests
+module internal Arcitisa.Components.Composite.Authentication.AccountManagerTests
 
 open Fable.Core
 open Vitest
-open Swate.Components.Composite.Authentication.Types
+open Arcitisa.Components.Composite.Authentication.Types
 
 /// Replaces window.open, which jsdom lacks, and records the opened addresses.
 [<Emit("$0.spyOn(window, 'open').mockImplementation(() => null)")>]
@@ -19,7 +19,7 @@ Vitest.afterEach (fun () -> RTL.cleanup ())
 let private account (id: string) (tokenStatus: TokenStatus) : AccountSummary = {
     User = {
         Id = 1
-        LocalSwateAccountId = id
+        LocalArcitisaAccountId = id
         Username = id
         Name = id
         Email = $"{id}@example.org"
@@ -48,7 +48,7 @@ let private render () =
     RTL.render (
         AccountManager.Main(
             accounts,
-            onRegenerateToken = (fun account -> regenerated.Add account.User.LocalSwateAccountId),
+            onRegenerateToken = (fun account -> regenerated.Add account.User.LocalArcitisaAccountId),
             onRemoveAccounts = removals.Add
         )
     )
@@ -85,7 +85,7 @@ Vitest.describe (
 
                     Vitest.expect(Array.ofSeq removals).toEqual [|
                         {
-                            LocalSwateAccountIds = [| "ok" |]
+                            LocalArcitisaAccountIds = [| "ok" |]
                             DeleteTokensOnDataHub = deleteToken
                         }
                     |]
@@ -115,7 +115,7 @@ Vitest.describe (
 
                 Vitest.expect(Array.ofSeq removals).toEqual [|
                     {
-                        LocalSwateAccountIds = [| "broken" |]
+                        LocalArcitisaAccountIds = [| "broken" |]
                         DeleteTokensOnDataHub = true
                     }
                 |]
@@ -156,7 +156,7 @@ Vitest.describe (
 
                     Vitest.expect(Array.ofSeq removals).toEqual [|
                         {
-                            LocalSwateAccountIds = [| "ok"; "broken" |]
+                            LocalArcitisaAccountIds = [| "ok"; "broken" |]
                             DeleteTokensOnDataHub = deleteTokens
                         }
                     |]

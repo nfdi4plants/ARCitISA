@@ -2,7 +2,7 @@ module SpreadsheetView
 
 open Feliz
 open Messages
-open Swate.Components.Shared
+open Arcitisa.Components.Shared
 open MainComponents
 open Fable.Core.JsInterop
 open Model
@@ -24,7 +24,7 @@ let private ModalDisplay (widgets: Widget list, displayWidget: Widget -> ReactEl
                 displayWidget widget
         ]
 
-open Swate.Components.Shared
+open Arcitisa.Components.Shared
 open FileImport
 
 [<ReactComponent>]

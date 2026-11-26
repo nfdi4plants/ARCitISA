@@ -2,7 +2,7 @@ namespace Modals
 
 open Feliz
 open Messages
-open Swate.Components.Composite.AnnotationTable
+open Arcitisa.Components.Composite.AnnotationTable
 
 type ResetTable =
 

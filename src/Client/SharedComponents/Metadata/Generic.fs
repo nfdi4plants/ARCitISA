@@ -1,13 +1,13 @@
 namespace Components.Forms
 
 open Feliz
-open Swate.Components
-open Swate.Components.Primitive
+open Arcitisa.Components
+open Arcitisa.Components.Primitive
 
 type Generic =
 
-    static member isDisabledInARCitect(host: Swatehost option) =
-        host.IsSome && host.Value = Swatehost.ARCitect
+    static member isDisabledInARCitect(host: Arcitisahost option) =
+        host.IsSome && host.Value = Arcitisahost.ARCitect
 
     static member FieldTitle(title: string) =
         Html.h5 [

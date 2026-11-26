@@ -1,5 +1,5 @@
 version: '3.8'
-name: swate_dev
+name: arcitisa_dev
 services:
   redis:
     image: redis:6.2-alpine

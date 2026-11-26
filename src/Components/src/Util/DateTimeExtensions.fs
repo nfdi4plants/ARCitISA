@@ -1,3 +1,3 @@
-module Swate.Components.DateTimeExtensions
+module Arcitisa.Components.DateTimeExtensions
 
 let getUtcNowISO () = System.DateTime.UtcNow.ToString("O")

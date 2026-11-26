@@ -1,4 +1,4 @@
-module Swate.Components.Shared.TableNamesTests
+module Arcitisa.Components.Shared.TableNamesTests
 
 #if FABLE_COMPILER
 open Fable.Mocha
@@ -8,7 +8,7 @@ open Expecto
 
 open ARCtrl
 open ARCtrl.Spreadsheet
-open Swate.Components.Shared
+open Arcitisa.Components.Shared
 
 let private names (newTableNames: NewTableName[]) = newTableNames |> Array.map _.Name
 

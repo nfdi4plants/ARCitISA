@@ -1,7 +1,7 @@
-namespace Swate.Components.Composite.Table
+namespace Arcitisa.Components.Composite.Table
 
 open Fable.Core
-open Swate.Components
+open Arcitisa.Components
 
 module GridSelect =
 

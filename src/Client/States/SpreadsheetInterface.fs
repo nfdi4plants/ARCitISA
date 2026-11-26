@@ -1,9 +1,9 @@
 namespace SpreadsheetInterface
 
-open Swate.Components
+open Arcitisa.Components
 open ARCtrl
 open FileImport
-open Swate.Components.Shared
+open Arcitisa.Components.Shared
 
 
 type ImportJsonRawDTO = {|
@@ -15,7 +15,7 @@ type ImportJsonRawDTO = {|
 
 ///<summary>This type is used to interface between standalone, electron and excel logic and will forward the command to the correct logic.</summary>
 type Msg =
-    | Initialize of Swatehost
+    | Initialize of Arcitisahost
     | CreateAnnotationTable of tryUsePrevOutput: bool
     | RemoveBuildingBlock of index: CellCoordinateRange option
     | UpdateDatamap of Datamap option

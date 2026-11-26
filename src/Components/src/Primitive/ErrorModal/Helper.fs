@@ -1,6 +1,6 @@
-module Swate.Components.Primitive.ErrorModal.Helper
+module Arcitisa.Components.Primitive.ErrorModal.Helper
 
-open Swate.Components.Primitive.ErrorModal.Types
+open Arcitisa.Components.Primitive.ErrorModal.Types
 
 let reducer (queue: ErrorModalEntry list) (msg: ErrorModalMsg) =
     match msg with

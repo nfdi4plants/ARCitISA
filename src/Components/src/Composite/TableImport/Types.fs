@@ -1,7 +1,7 @@
-module Swate.Components.Composite.TableImport.Types
+module Arcitisa.Components.Composite.TableImport.Types
 
 open ARCtrl
-open Swate.Components.Shared.ARCtrlHelper
+open Arcitisa.Components.Shared.ARCtrlHelper
 
 [<RequireQualifiedAccess>]
 type TableImportAction =

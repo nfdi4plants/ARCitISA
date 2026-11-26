@@ -8,11 +8,11 @@
 ///
 /// The work in progress ARC (wipIndex) has an assay Draft with unfinished rows: one extraction table whose rows
 /// lack an output or an input, and a planned table that holds only a protocol.
-module internal Swate.Components.Page.ProvenanceGraphSample
+module internal Arcitisa.Components.Page.ProvenanceGraphSample
 
 open ARCtrl
-open Swate.Components.Shared.ProvenanceGraph.Types
-open Swate.Components.Shared.ProvenanceGraph.BuildIndex
+open Arcitisa.Components.Shared.ProvenanceGraph.Types
+open Arcitisa.Components.Shared.ProvenanceGraph.BuildIndex
 
 module private Fixtures =
 

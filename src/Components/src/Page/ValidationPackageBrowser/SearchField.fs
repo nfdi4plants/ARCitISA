@@ -1,10 +1,10 @@
-namespace Swate.Components.Page.ValidationPackageBrowser
+namespace Arcitisa.Components.Page.ValidationPackageBrowser
 
 open Fable.Core
 open Feliz
-open Swate.Components
-open Swate.Components.Page.ValidationPackageBrowser.Context
-open Swate.Components.Primitive.Popover
+open Arcitisa.Components
+open Arcitisa.Components.Page.ValidationPackageBrowser.Context
+open Arcitisa.Components.Primitive.Popover
 open Types
 
 [<Erase; Mangle(false)>]

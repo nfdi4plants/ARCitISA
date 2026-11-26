@@ -6,7 +6,7 @@ These rules cover the actions "Import files", "Import folders", "New File", "New
 
 ### Names that Windows does not allow
 
-`validateRenameName` in `src/Electron/src/Swate.Electron.Shared/RenamePathRules.fs` rejects these names:
+`validateRenameName` in `src/Electron/src/Arcitisa.Electron.Shared/RenamePathRules.fs` rejects these names:
 
 - an empty name
 - "." and ".."
@@ -76,7 +76,7 @@ Delete has its own permission rules. Files and folders named ".gitkeep", ".gitat
 
 ## Dropped rules
 
-All code paths below are at commit [13056ca0](https://github.com/nfdi4plants/ARCitISA/pull/1429/commits/13056ca04681d669299cec9aa655474c4e9c72da). `FileSystemIO.fs` is `src/Electron/src/Main/IPC/FileSystemIO.fs`, `RenamePathRules.fs` is `src/Electron/src/Swate.Electron.Shared/RenamePathRules.fs` and `PathHelpers.fs` is `src/Shared/PathHelpers.fs`.
+All code paths below are at commit [13056ca0](https://github.com/nfdi4plants/ARCitISA/pull/1429/commits/13056ca04681d669299cec9aa655474c4e9c72da). `FileSystemIO.fs` is `src/Electron/src/Main/IPC/FileSystemIO.fs`, `RenamePathRules.fs` is `src/Electron/src/Arcitisa.Electron.Shared/RenamePathRules.fs` and `PathHelpers.fs` is `src/Shared/PathHelpers.fs`.
 
 ### ARC metadata file names
 

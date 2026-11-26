@@ -101,8 +101,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\..\Components\src\Swate.Components.fsproj" />
-    <ProjectReference Include="..\Swate.Electron.Shared\Swate.Electron.Shared.fsproj" />
+    <ProjectReference Include="..\..\..\Components\src\Arcitisa.Components.fsproj" />
+    <ProjectReference Include="..\Arcitisa.Electron.Shared\Arcitisa.Electron.Shared.fsproj" />
   </ItemGroup>
 
   <ItemGroup>

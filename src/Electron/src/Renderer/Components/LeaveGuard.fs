@@ -4,8 +4,8 @@ module Renderer.Components.LeaveGuard
 open Browser.Types
 open Fable.Core
 open Feliz
-open Swate.Components.Primitive.BaseModal
-open Swate.Electron.Shared
+open Arcitisa.Components.Primitive.BaseModal
+open Arcitisa.Electron.Shared
 open Renderer.Context.LeaveGuardContext
 
 module private LeaveGuardHelpers =
@@ -83,7 +83,8 @@ let useLeaveGuard () : LeaveGuardController * ReactElement =
                                 setDialog (
                                     Some {
                                         FileName =
-                                            Swate.Components.Shared.PathHelpers.getFileName registration.documentPath
+                                            Arcitisa.Components.Shared.PathHelpers.getFileName
+                                                registration.documentPath
                                         Saving = false
                                         SaveFailed = false
                                         SaveRunning = false

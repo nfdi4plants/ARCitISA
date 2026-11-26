@@ -1,15 +1,15 @@
-namespace Swate.Components.Composite.Table
+namespace Arcitisa.Components.Composite.Table
 
-open Swate.Components
-open Swate.Components.Shared
-open Swate.Components.Composite.Table.Context
-open Swate.Components.Composite.TermSearch
-open Swate.Components.Composite.TermSearch.Types
+open Arcitisa.Components
+open Arcitisa.Components.Shared
+open Arcitisa.Components.Composite.Table.Context
+open Arcitisa.Components.Composite.TermSearch
+open Arcitisa.Components.Composite.TermSearch.Types
 open Fable.Core
 open Fable.Core.JsInterop
 open Feliz
 open ARCtrl
-open Swate.Components.Primitive
+open Arcitisa.Components.Primitive
 
 type ActiveCellProps<'a> = {|
     data: 'a

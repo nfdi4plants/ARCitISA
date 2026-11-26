@@ -3,8 +3,8 @@ module ElectronRenderer.NoteSearchInteropTests
 open System
 open ARCtrl
 open ARCtrl.Json
-open Swate.Components.Composite.Notes.Types
-open Swate.Electron.Shared.DTOs.NoteSearchDto
+open Arcitisa.Components.Composite.Notes.Types
+open Arcitisa.Electron.Shared.DTOs.NoteSearchDto
 open Vitest
 
 let private buildNoteDto (tags: string[] option) : NoteSearchDto = {

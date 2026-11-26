@@ -1,4 +1,4 @@
-module internal Swate.Components.Util.Interop
+module internal Arcitisa.Components.Util.Interop
 
 let listOfArray (items: 'T[]) : 'T list = List.ofArray items
 

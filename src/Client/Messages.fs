@@ -2,7 +2,7 @@
 module rec Messages
 
 open Elmish
-open Swate.Components.Shared
+open Arcitisa.Components.Shared
 open Fable.Remoting.Client
 open Fable.SimpleJson
 open Database
@@ -46,7 +46,7 @@ module AdvancedSearch =
     type Msg =
         | GetSearchResults of
             {|
-                config: Swate.Components.Shared.DTOs.AdvancedSearchQuery
+                config: Arcitisa.Components.Shared.DTOs.AdvancedSearchQuery
                 responseSetter: Term[] -> unit
             |}
 

@@ -1,7 +1,7 @@
 [<RequireQualifiedAccess>]
-module Swate.Components.Composite.MarkdownText.Links.LinkCollection
+module Arcitisa.Components.Composite.MarkdownText.Links.LinkCollection
 
-open Swate.Components.Composite.MarkdownText.JsBindings
+open Arcitisa.Components.Composite.MarkdownText.JsBindings
 
 /// A URL of a Markdown document with its range, as offsets into the text.
 type CollectedLink = { Url: string; From: int; To: int }

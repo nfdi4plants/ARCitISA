@@ -1,9 +1,9 @@
-namespace Swate.Components.Composite.MarkdownTextEditorSample
+namespace Arcitisa.Components.Composite.MarkdownTextEditorSample
 
 open Fable.Core
 open Feliz
 
-open Swate.Components.Composite.MarkdownText
+open Arcitisa.Components.Composite.MarkdownText
 
 module private MarkdownTextEditorSampleHelpers =
 

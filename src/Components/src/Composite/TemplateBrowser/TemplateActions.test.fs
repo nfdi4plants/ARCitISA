@@ -1,10 +1,10 @@
-module internal Swate.Components.Composite.Template.TemplateActionsTests
+module internal Arcitisa.Components.Composite.Template.TemplateActionsTests
 
 open ARCtrl
-open Swate.Components.Shared
-open Swate.Components.Composite.TableImport.Types
-open Swate.Components.Composite.Template.TemplateActions
-open Swate.Components.Tests.TableFiles
+open Arcitisa.Components.Shared
+open Arcitisa.Components.Composite.TableImport.Types
+open Arcitisa.Components.Composite.Template.TemplateActions
+open Arcitisa.Components.Tests.TableFiles
 open Vitest
 
 /// A template whose table is named like the template.

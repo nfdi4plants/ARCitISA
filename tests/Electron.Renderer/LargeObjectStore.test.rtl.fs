@@ -3,8 +3,8 @@ module ElectronRenderer.LargeObjectStoreRtlTests
 open Fable.Core
 open Feliz
 open Renderer.Context.LargeObjectStore
-open Swate.Electron.Shared.IPCTypes
-open Swate.Electron.Shared.VersionControlTypes
+open Arcitisa.Electron.Shared.IPCTypes
+open Arcitisa.Electron.Shared.VersionControlTypes
 open Vitest
 
 Vitest.afterEach (fun () -> RTL.cleanup ())

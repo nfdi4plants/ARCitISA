@@ -2,8 +2,8 @@ module Main.HelpMenu
 
 open Fable.Core
 open Fable.Electron.Main
-open Swate.Electron.Shared.IPCTypes
-open Swate.Electron.Shared.IPCTypes.MainToRendererIpc
+open Arcitisa.Electron.Shared.IPCTypes
+open Arcitisa.Electron.Shared.IPCTypes.MainToRendererIpc
 
 let private showMessage window title message detail messageType = promise {
     let! _ =
@@ -61,13 +61,13 @@ let showReleaseNotes (window: BaseWindow option) =
 
 let create () =
     MenuItem.Options(
-        id = "swate-help",
+        id = "arcitisa-help",
         label = "Help",
         role = Enums.MenuItem.Options.Role.Help,
         submenu =
             U2.Case1 [|
                 MenuItem.Options(
-                    id = "swate-check-for-updates",
+                    id = "arcitisa-check-for-updates",
                     label = "Check for updates ...",
                     click =
                         Main.Bindings.Menu.adaptClick (fun (item, window, _) ->
@@ -86,12 +86,12 @@ let create () =
                         )
                 )
                 MenuItem.Options(
-                    id = "swate-about",
+                    id = "arcitisa-about",
                     label = "About",
                     click = Main.Bindings.Menu.adaptClick (fun (_, window, _) -> showAbout window |> Promise.start)
                 )
                 MenuItem.Options(
-                    id = "swate-release-notes",
+                    id = "arcitisa-release-notes",
                     label = "Show Release Notes",
                     click = Main.Bindings.Menu.adaptClick (fun (_, window, _) -> showReleaseNotes window)
                 )

@@ -2,8 +2,8 @@ module Renderer.Components.VersionControlDependencyBanner
 
 open Feliz
 open Renderer.Context.VersionControlDependencyContext
-open Swate.Components.Primitive.Banner.Types
-open Swate.Electron.Shared.VersionControlTypes
+open Arcitisa.Components.Primitive.Banner.Types
+open Arcitisa.Electron.Shared.VersionControlTypes
 
 type BannerContent = {
     Message: string
@@ -43,7 +43,7 @@ let useBannerEntry () : BannerEntry option =
                         pageStateCtx.setState (
                             Some(
                                 Renderer.Types.PageState.SettingsPage(
-                                    Some Swate.Components.PageComponents.SettingsPage.Types.SettingsCategory.Git,
+                                    Some Arcitisa.Components.PageComponents.SettingsPage.Types.SettingsCategory.Git,
                                     System.Guid.NewGuid().ToString()
                                 )
                             )

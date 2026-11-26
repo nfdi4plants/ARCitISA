@@ -7,11 +7,11 @@ open System
 open System.Collections.Generic
 open Fable.Core
 open Feliz
-open Swate.Components.Page.FileExplorer.Types
-open Swate.Components.Shared
-open Swate.Electron.Shared.FileIOTypes
-open Swate.Electron.Shared.IPCTypes.MainToRendererIpc
-open Swate.Electron.Shared.VersionControlTypes
+open Arcitisa.Components.Page.FileExplorer.Types
+open Arcitisa.Components.Shared
+open Arcitisa.Electron.Shared.FileIOTypes
+open Arcitisa.Electron.Shared.IPCTypes.MainToRendererIpc
+open Arcitisa.Electron.Shared.VersionControlTypes
 
 type LfsActivity = {
     /// Shown in the row while the action runs, for example "Freeing".

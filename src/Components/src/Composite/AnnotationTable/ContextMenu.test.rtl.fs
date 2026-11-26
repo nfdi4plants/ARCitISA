@@ -1,12 +1,12 @@
-module internal Swate.Components.Composite.AnnotationTable.ContextMenuTests
+module internal Arcitisa.Components.Composite.AnnotationTable.ContextMenuTests
 
 open ARCtrl
 open Browser.Dom
 open Browser.Types
 open Fable.Core
 open Vitest
-open Swate.Components
-open Swate.Components.Composite.Table.Types
+open Arcitisa.Components
+open Arcitisa.Components.Composite.Table.Types
 
 [<Emit("$0.spyOn(HTMLElement.prototype, $1, 'get').mockImplementation(function () { return $1 === 'offsetWidth' && this.hasAttribute('data-column') ? 120 : $2; })")>]
 let private mockGeometry (vi: Vi) (property: string) (value: int) : unit = jsNative

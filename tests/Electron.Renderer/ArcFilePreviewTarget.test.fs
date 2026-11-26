@@ -4,10 +4,10 @@ open Vitest
 open Fable.Core
 open ARCtrl
 open Renderer.Components.MainContent.ArcFilePreviewTargetHelper
-open Swate.Components.Composite.Widgets.JsonImport.Types
-open Swate.Components.Primitive.ErrorModal.Types
-open Swate.Components.Page.ArcFileEditor.Types
-open Swate.Components.Shared
+open Arcitisa.Components.Composite.Widgets.JsonImport.Types
+open Arcitisa.Components.Primitive.ErrorModal.Types
+open Arcitisa.Components.Page.ArcFileEditor.Types
+open Arcitisa.Components.Shared
 
 
 let private createAssayArcFile (tableNames: string[]) =
@@ -55,7 +55,7 @@ Vitest.describe (
                 let arcFile, _ = createAssayArcFile [| "First"; "Selected"; "Last" |]
 
                 let dragIdsBefore =
-                    Swate.Components.Page.ArcFileEditor.Helper.tableDragIds (arcFile.Tables().Count)
+                    Arcitisa.Components.Page.ArcFileEditor.Helper.tableDragIds (arcFile.Tables().Count)
                     |> Seq.toArray
 
                 let reorderedArcFile = ArcFiles.refreshRef arcFile
@@ -63,7 +63,7 @@ Vitest.describe (
                 let activeAfterReorder = ActiveView.Table 2
 
                 let dragIdsAfterReorder =
-                    Swate.Components.Page.ArcFileEditor.Helper.tableDragIds (reorderedArcFile.Tables().Count)
+                    Arcitisa.Components.Page.ArcFileEditor.Helper.tableDragIds (reorderedArcFile.Tables().Count)
                     |> Seq.toArray
 
                 Vitest.expect(ActiveView.Forward(reorderedArcFile, activeAfterReorder)).toEqual (activeAfterReorder)
@@ -293,7 +293,7 @@ Vitest.describe (
                 handleSetArcFileOutcome
                     (fun () -> reloads.Value <- reloads.Value + 1)
                     (fun title message -> messages.Add((title, message)))
-                    Swate.Electron.Shared.IPCTypes.SetArcFileOutcome.Refused
+                    Arcitisa.Electron.Shared.IPCTypes.SetArcFileOutcome.Refused
 
                 Vitest.expect(reloads.Value).toBe 1
                 Vitest.expect(messages.Count).toBe 1
@@ -309,7 +309,7 @@ Vitest.describe (
                 handleSetArcFileOutcome
                     (fun () -> reloads.Value <- reloads.Value + 1)
                     (fun title message -> messages.Add((title, message)))
-                    Swate.Electron.Shared.IPCTypes.SetArcFileOutcome.Applied
+                    Arcitisa.Electron.Shared.IPCTypes.SetArcFileOutcome.Applied
 
                 Vitest.expect(reloads.Value).toBe 0
                 Vitest.expect(messages.Count).toBe 0

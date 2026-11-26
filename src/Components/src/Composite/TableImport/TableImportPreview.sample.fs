@@ -1,9 +1,9 @@
-module internal Swate.Components.Composite.TableImport.TableImportPreviewSample
+module internal Arcitisa.Components.Composite.TableImport.TableImportPreviewSample
 
 open ARCtrl
 open Fable.Core
 open Feliz
-open Swate.Components.Composite.TableImport.Types
+open Arcitisa.Components.Composite.TableImport.Types
 
 let private cells (rows: int) (cell: int -> CompositeCell) =
     ResizeArray [ for row in 0 .. rows - 1 -> cell row ]

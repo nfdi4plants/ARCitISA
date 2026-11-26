@@ -1,0 +1,51 @@
+<Solution>
+  <Configurations>
+    <Platform Name="Any CPU" />
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Folder Name="/Solution Items/">
+    <File Path=".config/dotnet-tools.json" />
+    <File Path=".db/docker-compose.yml" />
+    <File Path=".editorconfig" />
+    <File Path=".gitignore" />
+    <File Path="build.cmd" />
+    <File Path="build/Dockerfile.publish" />
+    <File Path="build/manifest.xml" />
+    <File Path="CHANGELOG.md" />
+    <File Path="CONTRIBUTING.md" />
+    <File Path="Directory.Build.props" />
+    <File Path="Directory.Packages.props" />
+    <File Path="global.json" />
+    <File Path="package.json" />
+    <File Path="README.md" />
+  </Folder>
+  <Folder Name="/Solution Items/ISSUE_TEMPLATE/">
+    <File Path=".github/ISSUE_TEMPLATE/bug_report.yml" />
+    <File Path=".github/ISSUE_TEMPLATE/config.yml" />
+    <File Path=".github/ISSUE_TEMPLATE/feature_request.yml" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/Client/Client.fsproj" />
+    <Project Path="src/Components/src/Arcitisa.Components.fsproj" />
+    <Project Path="src/Server/Server.fsproj" />
+    <Project Path="src/Shared/Arcitisa.Components.Core.fsproj" />
+  </Folder>
+  <Folder Name="/src/Components/" />
+  <Folder Name="/src/Components/tests/" />
+  <Folder Name="/src/Electron/">
+    <Project Path="src/Electron/src/Arcitisa.Electron.fsproj" />
+    <Project Path="src/Electron/src/Arcitisa.Electron.Shared/Arcitisa.Electron.Shared.fsproj" />
+    <Project Path="src/Electron/src/Main/Main.fsproj" />
+    <Project Path="src/Electron/src/Preload/Preload.fsproj" />
+    <Project Path="src/Electron/src/Renderer/Renderer.fsproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Client/Client.Tests.fsproj" />
+    <Project Path="tests/Electron.Core/Electron.Core.Tests.fsproj" />
+    <Project Path="tests/Electron.Renderer/Electron.Renderer.Tests.fsproj" />
+    <Project Path="tests/Server/Server.Tests.fsproj" />
+    <Project Path="tests/Shared/Shared.Tests.fsproj" />
+  </Folder>
+  <Project Path="build/Build.fsproj" />
+</Solution>

@@ -1,7 +1,7 @@
-namespace Swate.Components.Page.FileExplorer
+namespace Arcitisa.Components.Page.FileExplorer
 
-open Swate.Components
-open Swate.Components.Page.FileExplorer.Types
+open Arcitisa.Components
+open Arcitisa.Components.Page.FileExplorer.Types
 open Fable.Core
 open Fable.Core.JsInterop
 open Feliz
@@ -19,8 +19,8 @@ module private FileExplorerTypes =
         OnDirectoryExpansionChange: (FileItem -> bool -> unit) option
         OnExpandedIdsChange: (Set<string> -> unit) option
         GetItemIconClass: FileItem -> string option
-        GetItemActions: FileItem -> Swate.Components.Page.FileExplorer.Types.ContextMenuItem list
-        GetItemStatusAction: FileItem -> Swate.Components.Page.FileExplorer.Types.ContextMenuItem option
+        GetItemActions: FileItem -> Arcitisa.Components.Page.FileExplorer.Types.ContextMenuItem list
+        GetItemStatusAction: FileItem -> Arcitisa.Components.Page.FileExplorer.Types.ContextMenuItem option
         CanCreateItem: FileItem -> bool
         OnCreateItem: (FileItem -> unit) option
         CanDeleteItem: FileItem -> bool
@@ -77,7 +77,7 @@ module private FileExplorerHelper =
         (getCopyRelativePath: FileItem -> string option)
         (setExpanded: FileItem -> bool -> unit)
         (onRefreshDirectory: (FileItem -> unit) option)
-        : Swate.Components.Page.FileExplorer.Types.ContextMenuItem list =
+        : Arcitisa.Components.Page.FileExplorer.Types.ContextMenuItem list =
         [
             if not item.IsDirectory then
                 ContextMenuItem.create "Open" "swt:fluent--open-24-regular" (fun () -> selectItem item)
@@ -121,7 +121,7 @@ module private FileExplorerHelper =
         (item: FileItem)
         (isExpanded: bool)
         (selectItem: FileItem -> unit)
-        (onContextMenu: (FileItem -> Swate.Components.Page.FileExplorer.Types.ContextMenuItem list) option)
+        (onContextMenu: (FileItem -> Arcitisa.Components.Page.FileExplorer.Types.ContextMenuItem list) option)
         (getCopyPath: FileItem -> string option)
         (getCopyRelativePath: FileItem -> string option)
         (includeDefaultContextMenuItems: bool)
@@ -155,11 +155,11 @@ type FileExplorer =
         (
             ?initialItems: FileItem list,
             ?onItemClick: FileItem -> unit,
-            ?onContextMenu: FileItem -> Swate.Components.Page.FileExplorer.Types.ContextMenuItem list,
+            ?onContextMenu: FileItem -> Arcitisa.Components.Page.FileExplorer.Types.ContextMenuItem list,
             ?canCreateItem: FileItem -> bool,
             ?onCreateItem: FileItem -> unit,
-            ?getItemActions: FileItem -> Swate.Components.Page.FileExplorer.Types.ContextMenuItem list,
-            ?getItemStatusAction: FileItem -> Swate.Components.Page.FileExplorer.Types.ContextMenuItem option,
+            ?getItemActions: FileItem -> Arcitisa.Components.Page.FileExplorer.Types.ContextMenuItem list,
+            ?getItemStatusAction: FileItem -> Arcitisa.Components.Page.FileExplorer.Types.ContextMenuItem option,
             ?canDeleteItem: FileItem -> bool,
             ?onDeleteItem: FileItem -> unit,
             ?selectedItemId: string option,
@@ -538,7 +538,7 @@ type FileExplorer =
                 onRefreshDirectory
 
         let contextMenu =
-            Swate.Components.Primitive.ContextMenu.ContextMenu.ContextMenu(
+            Arcitisa.Components.Primitive.ContextMenu.ContextMenu.ContextMenu(
                 (fun data ->
                     data
                     |> unbox<FileItem>

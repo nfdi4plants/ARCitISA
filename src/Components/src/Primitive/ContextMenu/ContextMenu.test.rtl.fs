@@ -1,10 +1,10 @@
-module internal Swate.Components.Primitive.ContextMenu.ContextMenuTests
+module internal Arcitisa.Components.Primitive.ContextMenu.ContextMenuTests
 
 open Browser.Dom
 open Fable.Core
 open Feliz
 open Vitest
-open Swate.Components.Primitive.ContextMenu.Types
+open Arcitisa.Components.Primitive.ContextMenu.Types
 
 [<Erase; Mangle(false)>]
 type private Harness =
@@ -134,7 +134,7 @@ type private DialogHarness =
                     ]),
                     owner
                 )
-                Swate.Components.Primitive.Dialog.Dialog.StringSubmissionDialog(
+                Arcitisa.Components.Primitive.Dialog.Dialog.StringSubmissionDialog(
                     isOpen = isOpen,
                     title = "Rename",
                     description = "Rename the item.",

@@ -1,14 +1,14 @@
 /// Ajv errors -> editor diagnostics: drop noise, pick a source span, write a readable message.
 /// The noise rules rely on the order of Ajv's errors (allErrors mode), so keep the Lint tests
 /// passing when Ajv is updated.
-module Swate.Components.Composite.TextEditor.SchemaValidation.Diagnostics
+module Arcitisa.Components.Composite.TextEditor.SchemaValidation.Diagnostics
 
 open System.Collections.Generic
 open Fable.Core
-open Swate.Components.Composite.TextEditor.Types
-open Swate.Components.Composite.TextEditor.JsBindings.Ajv
-open Swate.Components.Composite.TextEditor.SchemaValidation.Types
-open Swate.Components.Composite.TextEditor.SchemaValidation.SchemaIndex
+open Arcitisa.Components.Composite.TextEditor.Types
+open Arcitisa.Components.Composite.TextEditor.JsBindings.Ajv
+open Arcitisa.Components.Composite.TextEditor.SchemaValidation.Types
+open Arcitisa.Components.Composite.TextEditor.SchemaValidation.SchemaIndex
 
 module private Js =
 

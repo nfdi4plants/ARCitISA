@@ -1,4 +1,4 @@
-namespace Swate.Components.Page.Metadata.FormComponents
+namespace Arcitisa.Components.Page.Metadata.FormComponents
 
 open Fable.Core
 open Browser.Types

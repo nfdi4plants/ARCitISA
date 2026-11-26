@@ -1,10 +1,10 @@
-module internal Swate.Components.Page.Metadata.FormComponents.PersonsInput.LookupTests
+module internal Arcitisa.Components.Page.Metadata.FormComponents.PersonsInput.LookupTests
 
 open ARCtrl
 open Fable.Core
 open Vitest
-open Swate.Components.Page.Metadata.FormComponents.PersonsInput.Types
-open Swate.Components.Page.Metadata.FormComponents.PersonsInput.Lookup
+open Arcitisa.Components.Page.Metadata.FormComponents.PersonsInput.Types
+open Arcitisa.Components.Page.Metadata.FormComponents.PersonsInput.Lookup
 
 let private json<'T> text : 'T = JS.JSON.parse text |> unbox
 

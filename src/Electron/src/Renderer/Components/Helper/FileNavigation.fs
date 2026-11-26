@@ -5,7 +5,7 @@ module Renderer.Components.Helper.FileNavigation
 
 open Fable.Core
 open Feliz
-open Swate.Electron.Shared
+open Arcitisa.Electron.Shared
 open Renderer.Types
 
 /// What opening and closing need from the app. useFileNavigation fills it from the contexts.

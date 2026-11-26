@@ -2,8 +2,8 @@ module Renderer.Components.MainContent.Main
 
 open Feliz
 open Renderer.Types
-open Swate.Electron.Shared
-open Swate.Electron.Shared.FileIOTypes
+open Arcitisa.Electron.Shared
+open Arcitisa.Electron.Shared.FileIOTypes
 open Renderer.Components.MainContent.ArcFilePreviewTarget
 open Renderer.Components.MainContent.DataHubBrowserTarget
 open Renderer.Components.MainContent.EmptySelectionTarget
@@ -26,7 +26,7 @@ module private MainHelper =
     let loadTemplates () =
         promise {
             // let! json =
-            //     Swate.Components.Api.SwateApi.SwateTemplateApi.getTemplates ()
+            //     Arcitisa.Components.Api.ArcitisaApi.ArcitisaTemplateApi.getTemplates ()
             //     |> Async.StartAsPromise
             // return Ok(ARCtrl.Json.Templates.fromJsonString json)
 
@@ -45,14 +45,14 @@ module private MainHelper =
 
 module private LazyComponents =
 
-    open Swate.Components.Primitive
+    open Arcitisa.Components.Primitive
 
     [<ReactComponent>]
     let FullPageLoadingSpinner (text: string) =
         Html.div [
             prop.className "swt:flex-1 swt:flex swt:min-w-0 swt:min-h-0 swt:grow swt:justify-center swt:items-center"
             prop.children [
-                Swate.Components.Primitive.LoadingSpinner.LoadingSpinner.LoadingSpinner(
+                Arcitisa.Components.Primitive.LoadingSpinner.LoadingSpinner.LoadingSpinner(
                     size = DaisyuiSize.XL,
                     color = DaisyuiColors.Primary,
                     text = text
@@ -61,7 +61,7 @@ module private LazyComponents =
         ]
 
     [<ReactLazyComponent>]
-    let LazySettingPage (category: Swate.Components.PageComponents.SettingsPage.Types.SettingsCategory option) =
+    let LazySettingPage (category: Arcitisa.Components.PageComponents.SettingsPage.Types.SettingsCategory option) =
         Renderer.Components.MainContent.SettingsPageTarget.SettingsPage(category)
 
     [<ReactLazyComponent>]
@@ -84,7 +84,7 @@ module private LazyComponents =
 [<ReactMemoComponent>]
 let Main (appRootPath: ArcRootPath, pageState: PageState option) =
 
-    Swate.Components.Composite.Template.TemplateCacheProvider.TemplateCacheProvider(
+    Arcitisa.Components.Composite.Template.TemplateCacheProvider.TemplateCacheProvider(
         loadTemplates = MainHelper.loadTemplates,
         children =
             ArcSyncNotice.ArcSyncArea(

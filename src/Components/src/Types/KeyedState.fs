@@ -1,4 +1,4 @@
-namespace Swate.Components
+namespace Arcitisa.Components
 
 /// A state that is associated with a key.
 ///

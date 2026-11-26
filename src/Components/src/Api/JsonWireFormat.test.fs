@@ -1,9 +1,9 @@
-/// Wire format of the Swate API request DTOs. The generic option and list tests live with the
+/// Wire format of the ARCitISA API request DTOs. The generic option and list tests live with the
 /// SimpleJson compatibility tests, see src/Fable.SimpleJson.Compatibility/README.md.
-module internal Swate.Components.Tests.JsonWireFormat
+module internal Arcitisa.Components.Tests.JsonWireFormat
 
 open Fable.SimpleJson
-open Swate.Components.Shared.DTOs
+open Arcitisa.Components.Shared.DTOs
 open Vitest
 
 let private wire (query: TermQuery) : obj =

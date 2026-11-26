@@ -1,8 +1,8 @@
-namespace Swate.Components.Page.Landing
+namespace Arcitisa.Components.Page.Landing
 
 open Feliz
-open Swate.Components.Page.Metadata
-open Swate.Components.Page.Metadata.FormComponents
+open Arcitisa.Components.Page.Metadata
+open Arcitisa.Components.Page.Metadata.FormComponents
 
 [<RequireQualifiedAccess>]
 module AssaySection =

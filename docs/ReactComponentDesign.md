@@ -11,7 +11,7 @@ Components in `src/Components` are expected to be reusable and application-agnos
 - **Component folder**: Each component should be placed in a folder named after the component and sorted into the appropriate level folder (`Primitive`, `Composite`, `Page`).
     - e.g. `src/Components/src/Composite/TermSearch` contains `TermSearch.tsx`, `TermSearchConfigProvider.fs` and `TermSearchConfigSetter.fs`
     - e.g. `src/Components/src/Composite/Authentication` contains `Authentication.fs`, `AccountManager.fs`, `Helper.fs` and `Types.fs`
-    - e.g. higher level nested components MAY be placed in subfolders and add the subfolder name to the namespace, e.g. `Composite/Notes/NoteSearch/NoteSearchComponent.fs` with namespace `namespace Swate.Components.Composite.Notes.NoteSearch`.
+    - e.g. higher level nested components MAY be placed in subfolders and add the subfolder name to the namespace, e.g. `Composite/Notes/NoteSearch/NoteSearchComponent.fs` with namespace `namespace Arcitisa.Components.Composite.Notes.NoteSearch`.
 - **PascalCase file names**: `MyComponent.tsx` for the component "MyComponent".
 - **File namespace**: Component files MUST have a namespace that follows the folder structure and use a `type <FileName> =` declaration. Non-component files MUST follow folder structure down to the file and use module declaration.
 
@@ -20,7 +20,7 @@ Components in `src/Components` are expected to be reusable and application-agnos
     -  `src/Components/src/Composite/Authentication/Authentication.fs` is a component file and should have:
 
         ```fsharp
-        namespace Swate.Components.Composite.Authentication
+        namespace Arcitisa.Components.Composite.Authentication
 
         [<Erase; Mangle(false)>]
         type Authentication =
@@ -30,7 +30,7 @@ Components in `src/Components` are expected to be reusable and application-agnos
     - `src/Components/src/Composite/Authentication/Types.fs` is NOT a component file and should have:
 
         ```fsharp
-        module Swate.Components.Composite.Authentication.Types
+        module Arcitisa.Components.Composite.Authentication.Types
 
         // ...
         ```
@@ -38,7 +38,7 @@ Components in `src/Components` are expected to be reusable and application-agnos
     - Storybook files must be colocated with the component and named `<Component>.stories.tsx`.
     - JavaScript and TypeScript files MUST NOT import `fable-library` directly. Put F# runtime operations in F# helpers (for example, a colocated `.sample.fs` file) and import the generated wrapper functions instead. This also avoids coupling stories to versioned `fable_modules` paths.
     - Files with sample data for stories must be named `<Component>.sample.fs` and colocated with the component. (`sample` is used to place the file between the main file (`.fs`) and the `.stories` file in the alphabetic order)
-        - This file should use the namespace `Swate.Components.<level>.<Component>Sample` and be marked as `internal`.
+        - This file should use the namespace `Arcitisa.Components.<level>.<Component>Sample` and be marked as `internal`.
 - **Types**
     - Types used by multiple files MUST be placed in a separate file `Types.fs`. 
     - Types only used inside a single file can MUST be placed inside a private `module <FileName>Types` in the same file. 
@@ -67,7 +67,7 @@ Components in `src/Components` are expected to be reusable and application-agnos
             // ...
     ```
 - **React context**: If a component needs to share state or configuration with a React context. It MUST define the base context in a separate file `**/<ComponentName>/Context.fs` or `**/<ComponentName>/Contexts/<ContextName>Context.fs` or `**/<ComponentName>/<ContextName>Context.fs` if there are multiple contexts associated with the component, with the following properties.
-    - File namespace MUST follow folder structure and be named `module Swate.Components.<Path>.<ContextName>Context` or if there is a single context `module Swate.Components.<Path>.Context`.
+    - File namespace MUST follow folder structure and be named `module Arcitisa.Components.<Path>.<ContextName>Context` or if there is a single context `module Arcitisa.Components.<Path>.Context`.
     - MAY contain the relevant public types.
     - MAY contain helper functions inside a MAYBE public module. This module should be named `<ContextName>ContextHelper`.
     - It MUST NOT contain any React components.
@@ -77,7 +77,7 @@ Components in `src/Components` are expected to be reusable and application-agnos
     - Example for an context "Example" for a component "ExampleComponent":
 
         ```fsharp
-        module Swate.Components.ExampleComponent.Context
+        module Arcitisa.Components.ExampleComponent.Context
 
         // ..
 

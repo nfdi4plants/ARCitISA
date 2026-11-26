@@ -1,4 +1,4 @@
-module internal Swate.Components.Primitive.ErrorBoundary.ErrorBoundaryTests
+module internal Arcitisa.Components.Primitive.ErrorBoundary.ErrorBoundaryTests
 
 // React logs every error that a boundary catches to console.error. The tests silence that output and
 // count the calls, because the boundary logs the error as well.

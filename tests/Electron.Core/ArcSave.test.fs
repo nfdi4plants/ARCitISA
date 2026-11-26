@@ -12,7 +12,7 @@ open Main.ArcVaultState
 open Main.ArcVaultFileWatcher
 open Main.Bindings.Filesystem
 open Main.Bindings.Path
-open Swate.Components.Shared
+open Arcitisa.Components.Shared
 open Vitest
 
 let private cwl command =
@@ -34,17 +34,17 @@ let private expectOk =
     | Error errors -> failwith (String.concat "\n" errors)
 
 let private withArc seed body =
-    TestHelpers.withTempArcWith "swate-save-contracts-" "SaveContractsArc" seed body
+    TestHelpers.withTempArcWith "arcitisa-save-contracts-" "SaveContractsArc" seed body
 
 let private loadArc path = promise {
-    let! result = ARC.LoadAsyncSwate path
+    let! result = ARC.LoadAsyncArcitisa path
     let arc = expectOk result
     baselineArcStaticHashes arc
     return arc
 }
 
 Vitest.describe (
-    "Swate ARC save policy",
+    "ARCitISA ARC save policy",
     fun () ->
         Vitest.test (
             "generating write or save contracts does not commit the live saved baseline",
@@ -55,8 +55,8 @@ Vitest.describe (
                         let arc = ARC("Unwritten")
                         seedWorkflows arc
                         let originalHash = arc.StaticHash
-                        arc.GetWriteContractsSwate() |> ignore
-                        let! prepared = arc.PrepareUpdateContractsSwateAsync arcPath
+                        arc.GetWriteContractsArcitisa() |> ignore
+                        let! prepared = arc.PrepareUpdateContractsArcitisaAsync arcPath
                         expectOk prepared |> ignore
                         Vitest.expect(arc.StaticHash).toBe originalHash
                         Vitest.expect(arc.hasInMemoryChanges ()).toBe true
@@ -73,7 +73,7 @@ Vitest.describe (
                         arc.AddAssay(ArcAssay("Assay", datamap = Datamap.init ()))
                         arc.SetLicenseFulltext("license", path = "COPYING")
                         seedWorkflows arc
-                        let! prepared = arc.PrepareUpdateContractsSwateAsync arcPath
+                        let! prepared = arc.PrepareUpdateContractsArcitisaAsync arcPath
                         let contracts = expectOk prepared
                         let modelContracts = contracts |> Array.filter (fun c -> c.DTO.IsSome)
                         let defaults = contracts |> Array.filter (fun c -> c.DTO.IsNone)
@@ -99,7 +99,7 @@ Vitest.describe (
                     ignore
                     (fun arcPath -> promise {
                         let model = ARC("SaveContractsArc", title = "Unwritten title")
-                        let! created = model.TryWriteAsyncSwate arcPath
+                        let! created = model.TryWriteAsyncArcitisa arcPath
                         let paths = expectOk created |> contractWrittenPaths
                         Vitest.expect(paths |> Array.contains "isa.investigation.xlsx").toBe false
                         Vitest.expect(model.StaticHash).toBe 0
@@ -157,7 +157,7 @@ Vitest.describe (
                         let! arc = loadArc arcPath
                         arc.StaticHash <- 0
                         arc.Title <- Some "Updated"
-                        let! result = arc.TryUpdateAsyncSwate arcPath
+                        let! result = arc.TryUpdateAsyncArcitisa arcPath
                         let written = expectOk result |> contractWrittenPaths
                         Vitest.expect(written |> Array.contains "assays/Assay/README.md").toBe false
                         Vitest.expect(written |> Array.contains "assays/.gitkeep").toBe false
@@ -185,7 +185,7 @@ Vitest.describe (
                         arc.GetRun("Run").CWLDescription <- Some(cwl "cat")
                         arc.GetRun("Run").CWLInput <- inputs "after"
                         Vitest.expect(arc.hasInMemoryChanges ()).toBe true
-                        let! result = arc.TryUpdateAsyncSwate arcPath
+                        let! result = arc.TryUpdateAsyncArcitisa arcPath
                         let paths = expectOk result |> contractWrittenPaths |> Array.sort
 
                         Vitest
@@ -215,7 +215,7 @@ Vitest.describe (
                             .expect(CWL.Encode.encodeYAMLParameterFile (reloaded.GetRun("Run").CWLInput))
                             .toBe (CWL.Encode.encodeYAMLParameterFile (inputs "after"))
 
-                        let! noop = arc.TryUpdateAsyncSwate arcPath
+                        let! noop = arc.TryUpdateAsyncArcitisa arcPath
                         Vitest.expect(expectOk noop).toHaveLength 0
                     })
         )
@@ -248,7 +248,7 @@ Vitest.describe (
                         arc.GetWorkflow("Workflow").CWLDescription <- None
                         arc.GetRun("Run").CWLDescription <- None
                         arc.GetRun("Run").CWLInput.Clear()
-                        let! result = arc.TryUpdateAsyncSwate arcPath
+                        let! result = arc.TryUpdateAsyncArcitisa arcPath
                         Vitest.expect(expectOk result).toHaveLength 0
 
                         let! after =
@@ -272,12 +272,12 @@ Vitest.describe (
                         let savedHash = arc.StaticHash
                         do! rmAsync workbookPath (RmOptions())
                         let! _ = mkdirAsync workbookPath (MkdirOptions())
-                        let! failed = arc.TryUpdateAsyncSwate arcPath
+                        let! failed = arc.TryUpdateAsyncArcitisa arcPath
                         Vitest.expect(Result.isError failed).toBe true
                         Vitest.expect(arc.StaticHash).toBe savedHash
                         Vitest.expect(arc.hasInMemoryChanges ()).toBe true
                         do! rmAsync workbookPath (RmOptions(recursive = true))
-                        let! retried = arc.TryUpdateAsyncSwate arcPath
+                        let! retried = arc.TryUpdateAsyncArcitisa arcPath
                         expectOk retried |> ignore
                         Vitest.expect(arc.hasInMemoryChanges ()).toBe false
                         let! persisted = loadArc arcPath
@@ -307,7 +307,7 @@ Vitest.describe (
                         let execute path contracts = promise {
                             start ()
                             do! gate
-                            return! fulfillContractsSwateAsync path contracts
+                            return! fulfillContractsArcitisaAsync path contracts
                         }
 
                         let saving = persistArcSaveWithAsync execute arcPath arc
@@ -334,7 +334,7 @@ Vitest.describe (
                             .expect(CWL.Encode.encodeYAMLParameterFile (persisted.GetRun("Run").CWLInput))
                             .toBe (CWL.Encode.encodeYAMLParameterFile (inputs "captured"))
 
-                        let! retried = arc.TryUpdateAsyncSwate arcPath
+                        let! retried = arc.TryUpdateAsyncArcitisa arcPath
                         expectOk retried |> ignore
                         Vitest.expect(arc.hasInMemoryChanges ()).toBe false
                     })
@@ -349,7 +349,7 @@ Vitest.describe (
                         let! arc = loadArc arcPath
                         let path = join [| arcPath; "assays/Assay/README.md" |]
                         do! rmAsync path (RmOptions())
-                        let! saved = arc.TryUpdateAsyncSwate arcPath
+                        let! saved = arc.TryUpdateAsyncArcitisa arcPath
                         Vitest.expect(expectOk saved).toHaveLength 0
                         let! exists = TestHelpers.pathExistsAsync path
                         Vitest.expect(exists).toBe false
@@ -361,7 +361,7 @@ for enabled in [ false; true ] do
     Vitest.test (
         $"ARC creation applies the actual new ARC notes setting ({enabled}) before renderer follow-up",
         fun () -> promise {
-            let! root = TestHelpers.createTempDirectoryAsync "swate-create-notes-setting-"
+            let! root = TestHelpers.createTempDirectoryAsync "arcitisa-create-notes-setting-"
             let arcPath = join [| root; "arc" |]
             let vault = ArcVault(TestHelpers.testWindow ())
 
@@ -372,7 +372,7 @@ for enabled in [ false; true ] do
             }
 
             try
-                Vitest.vi.stubEnv ("SWATE_TEST_USER_DATA", Some root)
+                Vitest.vi.stubEnv ("ARCITISA_TEST_USER_DATA", Some root)
                 let settings = Main.UserDefaults.production.Effective()
 
                 match
@@ -440,7 +440,7 @@ let private hasSavedEmbeddedDataMap arcPath parentInfo = promise {
     let contract =
         Contract.createRead (saveParentPath parentInfo, saveParentDtoType parentInfo)
 
-    let! read = fulfillReadContractsSwateAsync arcPath [| contract |]
+    let! read = fulfillReadContractsArcitisaAsync arcPath [| contract |]
     let contracts = expectOk read
     let workbook = contracts.[0].DTO.Value.AsSpreadsheet()
 
@@ -466,11 +466,11 @@ let private writeLegacyAssay arcPath identifier filePath separate = promise {
     let contract =
         Contract.createUpdate (saveParentPath info, DTOType.ISA_Assay, DTO.Spreadsheet(ArcAssay.toFsWorkbook assay))
 
-    let! written = fulfillContractsSwateAsync arcPath [| contract |]
+    let! written = fulfillContractsArcitisaAsync arcPath [| contract |]
     expectOk written |> ignore
 
     if separate then
-        let! exported = fulfillContractsSwateAsync arcPath [| DataMapContract.update info dm |]
+        let! exported = fulfillContractsArcitisaAsync arcPath [| DataMapContract.update info dm |]
         expectOk exported |> ignore
     else
         do! rmAsync (join [| arcPath; saveMapPath info dm |]) (RmOptions(force = true))
@@ -500,7 +500,7 @@ for parent in
                     expectOk added |> ignore
                     let! arc = loadArc arcPath
                     saveParentDataMap arc info |> fun dm -> dm.DataContexts.[0].Name <- Some after
-                    let! saved = arc.TryUpdateAsyncSwate arcPath
+                    let! saved = arc.TryUpdateAsyncArcitisa arcPath
                     expectOk saved |> ignore
                     let! reloaded = loadArc arcPath
                     assertSavedDataMap reloaded info after
@@ -531,7 +531,7 @@ for parent in
                     | DataMapParent.Run -> arc.GetRun(info.ParentId).Title <- Some "Changed metadata"
                     | DataMapParent.Workflow -> arc.GetWorkflow(info.ParentId).Title <- Some "Changed metadata"
 
-                    let! saved = arc.TryUpdateAsyncSwate arcPath
+                    let! saved = arc.TryUpdateAsyncArcitisa arcPath
                     expectOk saved |> ignore
                     let! after = readFileBase64Async absolutePath
                     Vitest.expect(after).toBe before
@@ -578,7 +578,7 @@ Vitest.describe (
                         let! beforeB = readFileBase64Async (join [| arcPath; saveParentPath infoB |])
                         let! arc = loadArc arcPath
                         arc.GetAssay("A").Title <- Some "Migrate A"
-                        let! saved = arc.TryUpdateAsyncSwate arcPath
+                        let! saved = arc.TryUpdateAsyncArcitisa arcPath
                         expectOk saved |> ignore
                         let! afterB = readFileBase64Async (join [| arcPath; saveParentPath infoB |])
                         Vitest.expect(afterB).toBe beforeB
@@ -621,7 +621,7 @@ Vitest.describe (
                         let! arc = loadArc arcPath
                         let dm = saveParentDataMap arc info
                         dm.DataContexts.[0].Name <- Some "dataset/rule-B-first.csv"
-                        let! saved = arc.TryUpdateAsyncSwate arcPath
+                        let! saved = arc.TryUpdateAsyncArcitisa arcPath
                         expectOk saved |> ignore
                         let! embedded = hasSavedEmbeddedDataMap arcPath info
                         Vitest.expect(embedded).toBe false
@@ -629,7 +629,7 @@ Vitest.describe (
                         assertSavedDataMap firstReload info "dataset/rule-B-first.csv"
                         let! before = readFileBase64Async (join [| arcPath; saveParentPath info |])
                         dm.DataContexts.[0].Name <- Some "dataset/rule-B-second.csv"
-                        let! secondSaved = arc.TryUpdateAsyncSwate arcPath
+                        let! secondSaved = arc.TryUpdateAsyncArcitisa arcPath
                         expectOk secondSaved |> ignore
                         let! after = readFileBase64Async (join [| arcPath; saveParentPath info |])
                         Vitest.expect(after).toBe before
@@ -666,7 +666,7 @@ Vitest.describe (
                         Vitest.expect(after).toBe before
                         let! embedded = hasSavedEmbeddedDataMap arcPath info
                         Vitest.expect(embedded).toBe true
-                        let! retried = arc.TryUpdateAsyncSwate arcPath
+                        let! retried = arc.TryUpdateAsyncArcitisa arcPath
                         expectOk retried |> ignore
                         let! migrated = hasSavedEmbeddedDataMap arcPath info
                         Vitest.expect(migrated).toBe false
@@ -701,7 +701,7 @@ Vitest.describe (
 
                         let execute path contracts = promise {
                             do! gate
-                            return! fulfillContractsSwateAsync path contracts
+                            return! fulfillContractsArcitisaAsync path contracts
                         }
 
                         let saving = persistArcSaveWithAsync execute arcPath arc
@@ -714,7 +714,7 @@ Vitest.describe (
                         let! reloaded = loadArc arcPath
                         assertSavedDataMap reloaded info "dataset/capture-saved.csv"
                         Vitest.expect(reloaded.GetAssay(info.ParentId).Title).toEqual (Some "Captured metadata")
-                        let! retried = arc.TryUpdateAsyncSwate arcPath
+                        let! retried = arc.TryUpdateAsyncArcitisa arcPath
                         expectOk retried |> ignore
                         Vitest.expect(arc.hasInMemoryChanges ()).toBe false
                         let! finalReload = loadArc arcPath
@@ -726,7 +726,7 @@ Vitest.describe (
         Vitest.test (
             "full ARC writes export assay datamaps without an embedded sheet",
             fun () -> promise {
-                let! root = TestHelpers.createTempDirectoryAsync "swate-full-write-datamap-"
+                let! root = TestHelpers.createTempDirectoryAsync "arcitisa-full-write-datamap-"
                 let arcPath = join [| root; "arc" |]
 
                 try
@@ -734,7 +734,7 @@ Vitest.describe (
                     let info = DatamapParentInfo.create "FullWrite" DataMapParent.Assay
                     let dm = saveDataMap "dataset/full-write.csv"
                     arc.AddAssay(ArcAssay(info.ParentId, datamap = dm))
-                    let! written = arc.TryWriteAsyncSwate arcPath
+                    let! written = arc.TryWriteAsyncArcitisa arcPath
                     expectOk written |> ignore
                     let! exists = TestHelpers.pathExistsAsync (join [| arcPath; saveMapPath info dm |])
                     Vitest.expect(exists).toBe true

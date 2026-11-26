@@ -4,7 +4,7 @@ open Fable.Core
 open ExcelJS.Fable
 open Excel
 
-open Swate.Components.Shared
+open Arcitisa.Components.Shared
 
 open ARCtrl
 open ARCtrl.Spreadsheet

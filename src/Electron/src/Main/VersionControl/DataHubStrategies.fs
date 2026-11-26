@@ -4,7 +4,7 @@
 module Main.VersionControl.DataHubStrategies
 
 open System
-open Swate.Components.Composite.Authentication.Types
+open Arcitisa.Components.Composite.Authentication.Types
 open VersionControlService.Git.GitCredentialStrategy
 
 /// Username git sends together with a DataHUB personal access token.
@@ -45,7 +45,7 @@ let selectAccount (state: AuthStateDto) (targetHost: string option) (connectionP
         connectionProfileId
         |> Option.bind (fun profileId ->
             state.StoredAccounts
-            |> Array.tryFind (fun account -> account.User.LocalSwateAccountId = profileId)
+            |> Array.tryFind (fun account -> account.User.LocalArcitisaAccountId = profileId)
         )
         |> Option.filter (fun account ->
             match targetHost with
@@ -82,11 +82,11 @@ let resolveCredential (source: DataHubAccountSource) (host: string) (connectionP
             |> Option.bind (fun profileId ->
                 (source.GetState()).StoredAccounts
                 |> Array.tryFind (fun account ->
-                    account.User.LocalSwateAccountId = profileId
+                    account.User.LocalArcitisaAccountId = profileId
                     && hostMatches normalizedHost account
                 )
             )
-            |> Option.bind (fun account -> source.TryGetTokenForAccount account.User.LocalSwateAccountId)
+            |> Option.bind (fun account -> source.TryGetTokenForAccount account.User.LocalArcitisaAccountId)
 
         profileToken
         |> Option.orElseWith (fun () -> source.TryGetTokenForHost normalizedHost)

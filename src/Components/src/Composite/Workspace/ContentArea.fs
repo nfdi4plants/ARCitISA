@@ -1,9 +1,9 @@
-namespace Swate.Components.Composite.Workspace
+namespace Arcitisa.Components.Composite.Workspace
 
 open Fable.Core
 open Feliz
-open Swate.Components.Composite.Workspace.Types
-open Swate.Components.Composite.Workspace.Context
+open Arcitisa.Components.Composite.Workspace.Types
+open Arcitisa.Components.Composite.Workspace.Context
 
 [<Erase; Mangle(false)>]
 type ContentArea =

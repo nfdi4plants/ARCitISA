@@ -3,10 +3,10 @@ module Renderer.Components.InitState
 open Browser.Dom
 open Feliz
 open Renderer.Components.Helper.ArcVaultHelper
-open Swate.Components
-open Swate.Components.Primitive.BaseModal
-open Swate.Components.Primitive.CardGrid
-open Swate.Components.Primitive.ErrorModal.Context
+open Arcitisa.Components
+open Arcitisa.Components.Primitive.BaseModal
+open Arcitisa.Components.Primitive.CardGrid
+open Arcitisa.Components.Primitive.ErrorModal.Context
 
 [<ReactComponent>]
 let CreateNewArcModalContent (close: unit -> unit) =

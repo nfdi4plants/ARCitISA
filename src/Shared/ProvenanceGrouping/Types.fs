@@ -1,4 +1,4 @@
-module Swate.Components.Shared.ProvenanceGrouping.Types
+module Arcitisa.Components.Shared.ProvenanceGrouping.Types
 
 /// Name of a study, assay, or run table as known by the caller.
 type ProvenanceTableName = string
@@ -19,14 +19,14 @@ type ProvenanceProcessName = string
 /// Adapters should keep generated row or object IDs here instead of appending them to `ProvenanceProcessName`.
 type ProvenanceProcessId = string
 
-/// Swate-local stable ID for one loaded input or output endpoint.
+/// ARCitISA-local stable ID for one loaded input or output endpoint.
 /// The actual user-facing input/output name lives on `ProvenanceSet.Name`.
 type ProvenanceSetId = string
 
-/// Swate-local stable ID for one loaded input-to-output connection.
+/// ARCitISA-local stable ID for one loaded input-to-output connection.
 type ProvenanceConnectionId = string
 
-/// Swate-local stable ID for one normalized editable property value in the model.
+/// ARCitISA-local stable ID for one normalized editable property value in the model.
 /// Adapters may collapse exact duplicate source occurrences and track multiplicity in source-specific sidecars.
 type ProvenancePropertyValueId = string
 
@@ -137,7 +137,7 @@ module ProvenancePropertyOrigin =
 /// One concrete editable key/value in the normalized model.
 /// Distinct values must remain distinct; exact duplicate source occurrences may collapse when they are not meaningfully distinguishable in the source-agnostic core model.
 type ProvenancePropertyValue = {
-    /// Stable Swate-local ID for this occurrence.
+    /// Stable ARCitISA-local ID for this occurrence.
     Id: ProvenancePropertyValueId
     /// Property key/category for grouping and writeback.
     Header: ProvenancePropertyHeader
@@ -163,7 +163,7 @@ module ProvenancePropertyValue =
 /// One actual loaded input or output endpoint.
 /// This is the first-class UI item before grouping; it is not a collapsed graph node.
 type ProvenanceSet = {
-    /// Swate-local stable endpoint ID used by connections and display groups.
+    /// ARCitISA-local stable endpoint ID used by connections and display groups.
     Id: ProvenanceSetId
     /// Source this endpoint belongs to.
     Source: ProvenanceSourceRef
@@ -218,7 +218,7 @@ module ProvenanceSet =
 /// One exact connection between a loaded input endpoint and a loaded output endpoint.
 /// Previous-table connections are intentionally not represented here.
 type ProvenanceConnection = {
-    /// Swate-local stable connection ID.
+    /// ARCitISA-local stable connection ID.
     Id: ProvenanceConnectionId
     /// Source containing this editable connection.
     Source: ProvenanceSourceRef

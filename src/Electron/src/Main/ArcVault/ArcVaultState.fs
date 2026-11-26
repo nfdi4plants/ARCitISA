@@ -17,12 +17,12 @@ open Main.ArcVaultHelper
 open Main.ArcDiskState
 open Main.FileImportCoordinator
 open Main.Services.MarkdownResolverService
-open Swate.Components.Shared
-open Swate.Electron.Shared.IPCTypes
-open Swate.Electron.Shared.IPCTypes.IPCTypesHelper
-open Swate.Electron.Shared.IPCTypes.MainToRendererIpc
-open Swate.Electron.Shared.FileIOTypes
-open Swate.Electron.Shared.FileIOHelper
+open Arcitisa.Components.Shared
+open Arcitisa.Electron.Shared.IPCTypes
+open Arcitisa.Electron.Shared.IPCTypes.IPCTypesHelper
+open Arcitisa.Electron.Shared.IPCTypes.MainToRendererIpc
+open Arcitisa.Electron.Shared.FileIOTypes
+open Arcitisa.Electron.Shared.FileIOHelper
 open ARCtrl
 open Main.GitStateStamp
 
@@ -114,7 +114,7 @@ type ArcVault(window: BrowserWindow) =
     let fileTreeWriter =
         FileTreeWriter(
             defaultCaseInsensitive,
-            (fun message -> swatelogfn window.id "%s" message),
+            (fun message -> arcitisalogfn window.id "%s" message),
             (fun change ->
                 match arcPath with
                 | Some root ->
@@ -209,7 +209,7 @@ type ArcVault(window: BrowserWindow) =
     /// Lists the LFS objects of a repository. Tests replace it to avoid a real session.
     member val internal LargeObjectListing: string
         -> VersionControlService.Abstractions.OperationContext
-        -> Fable.Core.JS.Promise<Result<Swate.Electron.Shared.VersionControlTypes.ObjectStateDto[], string>> =
+        -> Fable.Core.JS.Promise<Result<Arcitisa.Electron.Shared.VersionControlTypes.ObjectStateDto[], string>> =
         Main.LargeObjectIndex.listObjectsFromSession with get, set
 
     /// Invalidations within this window cause one listing.
@@ -291,7 +291,7 @@ type ArcVault(window: BrowserWindow) =
 
     /// Loads the ARC for a sync. Tests replace it to gate a load or count loads.
     member val internal SnapshotLoad: string -> Fable.Core.JS.Promise<Result<ARC, string[]>> =
-        (fun arcPath -> ARC.LoadAsyncSwate arcPath) with get, set
+        (fun arcPath -> ARC.LoadAsyncArcitisa arcPath) with get, set
 
     /// The text editor of the window has unsaved edits, as the renderer last reported. A reload resets it.
     member val hasUnsavedTextChanges: bool = false with get, set
@@ -306,14 +306,14 @@ type ArcVault(window: BrowserWindow) =
         this.arc <- Some arc
 
         if not (this.window.isDestroyed ()) then
-            this.window.title <- Swate.Electron.Shared.ApplicationVersion.windowTitle (Some arc.Identifier)
+            this.window.title <- Arcitisa.Electron.Shared.ApplicationVersion.windowTitle (Some arc.Identifier)
 
     member this.ClearArc() =
         this.arc <- None
         this.hasUnsavedArcChanges <- false
 
         if not (this.window.isDestroyed ()) then
-            this.window.title <- Swate.Electron.Shared.ApplicationVersion.windowTitle None
+            this.window.title <- Arcitisa.Electron.Shared.ApplicationVersion.windowTitle None
 
     /// Sets the dirty marker for unsaved in-memory ARC mutations.
     member this.RefreshHasUnsavedArcChangesFlag() =

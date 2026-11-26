@@ -10,10 +10,10 @@
 /// In a Vite dev server, worker modules must stay out of React Fast Refresh (the exclude option of
 /// @vitejs/plugin-react). The refresh runtime needs window, so it throws inside a worker. This matters for
 /// files that Fable emits with a .jsx extension, which plugin-react wraps.
-module Swate.Components.Util.WebWorker
+module Arcitisa.Components.Util.WebWorker
 
 open Fable.Core
-open Swate.Components.JsBindings
+open Arcitisa.Components.JsBindings
 
 [<AllowNullLiteral>]
 type MessageEvent =

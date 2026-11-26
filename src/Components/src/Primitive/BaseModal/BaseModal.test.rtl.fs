@@ -1,4 +1,4 @@
-module internal Swate.Components.Primitive.BaseModal.BaseModalTests
+module internal Arcitisa.Components.Primitive.BaseModal.BaseModalTests
 
 open Browser.Dom
 open Feliz

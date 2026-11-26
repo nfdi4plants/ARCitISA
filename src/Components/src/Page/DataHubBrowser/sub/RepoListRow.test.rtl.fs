@@ -1,8 +1,8 @@
-module internal Swate.Components.Tests.DataHubBrowser.RepoListRow
+module internal Arcitisa.Components.Tests.DataHubBrowser.RepoListRow
 
 open Feliz
-open Swate.Components.Page.DataHubBrowser.sub
-open Swate.Components.Page.MockData.DataHub
+open Arcitisa.Components.Page.DataHubBrowser.sub
+open Arcitisa.Components.Page.MockData.DataHub
 open Vitest
 
 Vitest.afterEach (fun () -> RTL.cleanup ())

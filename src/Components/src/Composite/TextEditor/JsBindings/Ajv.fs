@@ -1,6 +1,6 @@
 /// Typed bindings for Ajv with JSON Schema 2020-12 (https://ajv.js.org) and ajv-formats.
 /// Ajv compiles validators with `new Function`. A Content-Security-Policy without 'unsafe-eval' blocks it.
-module Swate.Components.Composite.TextEditor.JsBindings.Ajv
+module Arcitisa.Components.Composite.TextEditor.JsBindings.Ajv
 
 open Fable.Core
 

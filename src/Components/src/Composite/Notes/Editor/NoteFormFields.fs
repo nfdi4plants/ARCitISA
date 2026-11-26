@@ -1,13 +1,13 @@
-namespace Swate.Components.Composite.Notes.Editor
+namespace Arcitisa.Components.Composite.Notes.Editor
 
 open System
 open ARCtrl
 open Feliz
-open Swate.Components
-open Swate.Components.Composite.MarkdownText
-open Swate.Components.Composite.TermSearch
-open Swate.Components.Composite.TermSearch.Types
-open Swate.Components.Primitive.LayoutComponents
+open Arcitisa.Components
+open Arcitisa.Components.Composite.MarkdownText
+open Arcitisa.Components.Composite.TermSearch
+open Arcitisa.Components.Composite.TermSearch.Types
+open Arcitisa.Components.Primitive.LayoutComponents
 
 [<RequireQualifiedAccess>]
 type NoteFormFields =

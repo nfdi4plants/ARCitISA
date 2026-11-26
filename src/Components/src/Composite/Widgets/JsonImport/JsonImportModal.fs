@@ -1,18 +1,18 @@
-namespace Swate.Components.Composite.Widgets.JsonImport
+namespace Arcitisa.Components.Composite.Widgets.JsonImport
 
 open ARCtrl
 open Fable.Core
 open Feliz
-open Swate.Components.Shared
-open Swate.Components.Primitive
-open Swate.Components.Primitive.BaseModal
-open Swate.Components.Primitive.LoadingSpinner
-open Swate.Components.Composite.TableImport
-open Swate.Components.Composite.TableImport.Types
-open Swate.Components.Composite.Widgets.JsonImport.Types
+open Arcitisa.Components.Shared
+open Arcitisa.Components.Primitive
+open Arcitisa.Components.Primitive.BaseModal
+open Arcitisa.Components.Primitive.LoadingSpinner
+open Arcitisa.Components.Composite.TableImport
+open Arcitisa.Components.Composite.TableImport.Types
+open Arcitisa.Components.Composite.Widgets.JsonImport.Types
 
-module TableHelper = Swate.Components.Composite.TableImport.Helper
-module JsonHelper = Swate.Components.Composite.Widgets.JsonImport.Helper
+module TableHelper = Arcitisa.Components.Composite.TableImport.Helper
+module JsonHelper = Arcitisa.Components.Composite.Widgets.JsonImport.Helper
 
 module private JsonImportModalHelper =
 

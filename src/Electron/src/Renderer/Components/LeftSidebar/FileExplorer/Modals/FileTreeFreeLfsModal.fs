@@ -2,7 +2,7 @@ namespace Renderer.Components.LeftSidebar.FileExplorer.Modals
 
 open Fable.Core
 open Feliz
-open Swate.Components.Primitive.BaseModal
+open Arcitisa.Components.Primitive.BaseModal
 
 [<Erase; Mangle(false)>]
 type FileTreeFreeLfsModal =

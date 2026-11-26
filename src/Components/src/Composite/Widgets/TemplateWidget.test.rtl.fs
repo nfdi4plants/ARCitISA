@@ -1,13 +1,13 @@
-module internal Swate.Components.Composite.Widgets.TemplateWidgetTests
+module internal Arcitisa.Components.Composite.Widgets.TemplateWidgetTests
 
 open ARCtrl
 open Browser.Types
 open Feliz
 open Vitest
-open Swate.Components.Shared
-open Swate.Components.Composite.Widgets
-open Swate.Components.Composite.Widgets.Context
-open Swate.Components.Composite.Widgets.Types
+open Arcitisa.Components.Shared
+open Arcitisa.Components.Composite.Widgets
+open Arcitisa.Components.Composite.Widgets.Context
+open Arcitisa.Components.Composite.Widgets.Types
 
 Vitest.afterEach (fun () -> RTL.cleanup ())
 

@@ -1,10 +1,10 @@
-namespace Swate.Components.Primitive.BaseModal
+namespace Arcitisa.Components.Primitive.BaseModal
 
 open Feliz
 open Fable.Core
-open Swate.Components
-open Swate.Components.Primitive
-open Swate.Components.Primitive.BaseModal.Context
+open Arcitisa.Components
+open Arcitisa.Components.Primitive
+open Arcitisa.Components.Primitive.BaseModal.Context
 
 module private BaseModalHelper =
 
@@ -300,7 +300,7 @@ type BaseModal =
                     prop.className "swt:whitespace-pre-wrap"
                     prop.children (
                         error.Split(
-                            Swate.Components.ClipboardContract.Contract.LineBreaks,
+                            Arcitisa.Components.ClipboardContract.Contract.LineBreaks,
                             System.StringSplitOptions.None
                         )
                         |> Array.collect (fun line -> [| Html.text line; Html.br [] |])

@@ -1,9 +1,9 @@
 namespace Renderer.Components.LeftSidebar.FileExplorer
 
-open Swate.Components.Primitive.ErrorModal.Types
-open Swate.Components.Page.FileExplorer.Types
+open Arcitisa.Components.Primitive.ErrorModal.Types
+open Arcitisa.Components.Page.FileExplorer.Types
 open Fable.Core
-open Swate.Components.Shared
+open Arcitisa.Components.Shared
 open Helper
 open FileTreeDialogWorkflow
 

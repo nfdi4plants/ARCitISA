@@ -3,7 +3,7 @@ module ElectronRenderer.FileImportProgressBarTests
 open Browser.Types
 open Feliz
 open Renderer.Components.LeftSidebar.FileImportStatus
-open Swate.Electron.Shared.FileIOTypes
+open Arcitisa.Electron.Shared.FileIOTypes
 open Vitest
 
 Vitest.afterEach (fun () -> RTL.cleanup ())

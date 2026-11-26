@@ -4,7 +4,7 @@ open System
 open Fable.Core
 open Fable.Core.JsInterop
 open Fable.Electron.Main
-open Swate.Electron.Shared.IPCTypes.MainToRendererIpc
+open Arcitisa.Electron.Shared.IPCTypes.MainToRendererIpc
 
 [<Literal>]
 let private settingsFileName = "ui-scale.json"

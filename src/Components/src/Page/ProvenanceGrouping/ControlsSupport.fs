@@ -1,21 +1,21 @@
-namespace Swate.Components.Page.ProvenanceGrouping
+namespace Arcitisa.Components.Page.ProvenanceGrouping
 
 open System
 open Fable.Core
 open Fable.Core.JsInterop
 open Feliz
-open Swate.Components
-open Swate.Components.JsBindings
-open Swate.Components.Primitive.Buttons
-open Swate.Components.Primitive.Dropdown
-open Swate.Components.Primitive.Popover
-open Swate.Components.Shared.ProvenanceGrouping.Types
-open Swate.Components.Shared.ProvenanceGrouping.Grouping
-open Swate.Components.Shared.ProvenanceGrouping.Edit
-open Swate.Components.Shared.ProvenanceGrouping.Session
-open Swate.Components.Page.ProvenanceGrouping.Types
-open Swate.Components.Composite.TermSearch
-open Swate.Components.Composite.TermSearch.Types
+open Arcitisa.Components
+open Arcitisa.Components.JsBindings
+open Arcitisa.Components.Primitive.Buttons
+open Arcitisa.Components.Primitive.Dropdown
+open Arcitisa.Components.Primitive.Popover
+open Arcitisa.Components.Shared.ProvenanceGrouping.Types
+open Arcitisa.Components.Shared.ProvenanceGrouping.Grouping
+open Arcitisa.Components.Shared.ProvenanceGrouping.Edit
+open Arcitisa.Components.Shared.ProvenanceGrouping.Session
+open Arcitisa.Components.Page.ProvenanceGrouping.Types
+open Arcitisa.Components.Composite.TermSearch
+open Arcitisa.Components.Composite.TermSearch.Types
 
 type DraftValueKind =
     | DraftText

@@ -19,11 +19,11 @@ open Fable.Core.JsInterop
 open Feliz
 open Vitest
 open ARCtrl
-open Swate.Components.Shared.ProvenanceGraph.Types
-open Swate.Components.Shared.ProvenanceGraph.BuildIndex
-open Swate.Components.Composite.GraphCanvas.Types
-open Swate.Components.Composite.GraphCanvas.Layout
-open Swate.Components.Page.ProvenanceGraph
+open Arcitisa.Components.Shared.ProvenanceGraph.Types
+open Arcitisa.Components.Shared.ProvenanceGraph.BuildIndex
+open Arcitisa.Components.Composite.GraphCanvas.Types
+open Arcitisa.Components.Composite.GraphCanvas.Layout
+open Arcitisa.Components.Page.ProvenanceGraph
 
 // The target loads the data through the IPC bridge of the arc vault. The preload is absent in tests, so the
 // bridge is a stub. It counts its calls and answers with the function a test sets. The factory runs before the

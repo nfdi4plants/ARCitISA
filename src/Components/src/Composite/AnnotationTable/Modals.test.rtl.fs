@@ -1,10 +1,10 @@
-module internal Swate.Components.Composite.AnnotationTable.ModalTests
+module internal Arcitisa.Components.Composite.AnnotationTable.ModalTests
 
 open ARCtrl
 open Browser.Types
 open Feliz
-open Swate.Components
-open Swate.Components.Composite.Table.Types
+open Arcitisa.Components
+open Arcitisa.Components.Composite.Table.Types
 open Vitest
 
 let private createTable () =

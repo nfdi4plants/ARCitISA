@@ -6,18 +6,18 @@ open DataAnnotator
 open Model
 open Messages
 open Feliz
-open Swate.Components
-open Swate.Components.Composite.Table
-open Swate.Components.Page.ArcFileEditor.Types
-open Swate.Components.Page.ArcFileEditor.Helper
-open Swate.Components.Composite.Table.Types
-open Swate.Components.Primitive
-open Swate.Components.Primitive.BaseModal
+open Arcitisa.Components
+open Arcitisa.Components.Composite.Table
+open Arcitisa.Components.Page.ArcFileEditor.Types
+open Arcitisa.Components.Page.ArcFileEditor.Helper
+open Arcitisa.Components.Composite.Table.Types
+open Arcitisa.Components.Primitive
+open Arcitisa.Components.Primitive.BaseModal
 open System
 open Components
-open Swate.Components.Composite.AnnotationTable.Context
-open Swate.Components.Composite.Widgets
-open Swate.Components.Composite.Widgets.DataAnnotator.Helper
+open Arcitisa.Components.Composite.AnnotationTable.Context
+open Arcitisa.Components.Composite.Widgets
+open Arcitisa.Components.Composite.Widgets.DataAnnotator.Helper
 
 type DataAnnotator =
 
@@ -46,7 +46,7 @@ type DataAnnotator =
 
                 let target = CellInsertion.tryGetTarget arcFile tableIndex annotationCtx.state
 
-                Swate.Components.Composite.Widgets.DataAnnotator.DataAnnotator.Main(
+                Arcitisa.Components.Composite.Widgets.DataAnnotator.DataAnnotator.Main(
                     onInsert = (fun input -> insertAnnotationIntoSelectedCells arcFile setArcFile input target),
                     canInsert = target.IsSome
                 )

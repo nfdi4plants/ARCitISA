@@ -1,8 +1,8 @@
-module internal Swate.Components.Composite.DataMapTable.HelperTests
+module internal Arcitisa.Components.Composite.DataMapTable.HelperTests
 
 open ARCtrl
 open Vitest
-open Swate.Components.Composite.DataMapTable.Helper
+open Arcitisa.Components.Composite.DataMapTable.Helper
 
 Vitest.test (
     "duplicates selected DataMap rows below each original and preserves all context metadata",

@@ -2,7 +2,7 @@ module Model.ARCitect
 
 open ARCtrl
 open Fable.Core
-open Swate.Components.Shared
+open Arcitisa.Components.Shared
 
 
 module Interop =

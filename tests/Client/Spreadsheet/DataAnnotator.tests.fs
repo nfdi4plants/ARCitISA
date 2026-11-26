@@ -2,12 +2,12 @@ module Spreadsheet.Tests.DataAnnotator
 
 open Fable.Mocha
 open ARCtrl
-open Swate.Components.Shared
+open Arcitisa.Components.Shared
 open global.Spreadsheet
 
-module ComponentDataAnnotatorTypes = Swate.Components.Composite.Widgets.DataAnnotator.Types
-module ComponentDataAnnotatorHelper = Swate.Components.Composite.Widgets.DataAnnotator.Helper
-module WidgetTypes = Swate.Components.Composite.Widgets.Types
+module ComponentDataAnnotatorTypes = Arcitisa.Components.Composite.Widgets.DataAnnotator.Types
+module ComponentDataAnnotatorHelper = Arcitisa.Components.Composite.Widgets.DataAnnotator.Helper
+module WidgetTypes = Arcitisa.Components.Composite.Widgets.Types
 
 let private createTableState rowCount =
     let table = ArcTable.init "TestTable"

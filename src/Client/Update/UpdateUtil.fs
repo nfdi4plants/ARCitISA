@@ -1,7 +1,7 @@
 module Update.UpdateUtil
 
 open ARCtrl
-open Swate.Components.Shared
+open Arcitisa.Components.Shared
 open Fable.Remoting.Client
 open OfficeInterop.Core
 
@@ -190,7 +190,7 @@ module JsonImportHelper =
                     nTable.Join(table, joinOptions = importConfig.ImportType)
                     nTable
                 )
-                |> Seq.rev // https://github.com/nfdi4plants/Swate/issues/577
+                |> Seq.rev // https://github.com/nfdi4plants/ARCitISA/issues/577
                 |> Seq.iter (fun table -> existingTables.Add table)
 
             existing

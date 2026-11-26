@@ -20,10 +20,10 @@ open ARCtrl.Contract
 open ARCtrl.Helper
 open ARCtrl.Spreadsheet
 open Fable.Core
-open Swate.Components.Shared
-open Swate.Electron.Shared.FileIOHelper
-open Swate.Electron.Shared.IPCTypes
-open Swate.Electron.Shared.RenamePathRules
+open Arcitisa.Components.Shared
+open Arcitisa.Electron.Shared.FileIOHelper
+open Arcitisa.Electron.Shared.IPCTypes
+open Arcitisa.Electron.Shared.RenamePathRules
 open Vitest
 
 let private expectSome (value: 'T option) (message: string) : 'T =
@@ -36,10 +36,10 @@ let private loadArcAsync = TestHelpers.loadArcAsync
 let private testWindow = TestHelpers.testWindow
 
 let private withTempArc =
-    TestHelpers.withTempArcWith "swate-delete-arc-file-" "DeleteArcFileArc"
+    TestHelpers.withTempArcWith "arcitisa-delete-arc-file-" "DeleteArcFileArc"
 
-let private loadSwateArcAsync arcPath = promise {
-    let! result = ARC.LoadAsyncSwate arcPath
+let private loadArcitisaArcAsync arcPath = promise {
+    let! result = ARC.LoadAsyncArcitisa arcPath
     return TestHelpers.expectLoadedArc result
 }
 
@@ -49,7 +49,7 @@ let private dataMap filePath =
     dataMap
 
 let private executeOrFail arcPath contracts = promise {
-    match! ContractExecutor.fulfillContractsSwateAsync arcPath contracts with
+    match! ContractExecutor.fulfillContractsArcitisaAsync arcPath contracts with
     | Ok _ -> return ()
     | Error errors -> return failwith (PathHelpers.formatContractErrors errors)
 }
@@ -108,7 +108,7 @@ let private executeDeleteThenFail arcPath (contracts: Contract[]) = promise {
     Vitest.expect(contracts.Length > 0).toBe true
     Vitest.expect(contracts.[0].Operation).toEqual Operation.DELETE
 
-    match! ContractExecutor.fulfillContractsSwateAsync arcPath contracts.[0..0] with
+    match! ContractExecutor.fulfillContractsArcitisaAsync arcPath contracts.[0..0] with
     | Error errors -> return failwith (PathHelpers.formatContractErrors errors)
     | Ok _ -> return Error [| "Injected metadata update failure" |]
 }
@@ -185,7 +185,7 @@ Vitest.describe (
                                 "nested payload"
                                 TextEncoding.Utf8
 
-                        let! loadResult = ARC.LoadAsyncSwate arcPath
+                        let! loadResult = ARC.LoadAsyncArcitisa arcPath
                         let arc = TestHelpers.expectLoadedArc loadResult
                         let! deletedArc = deleteEntityOrFail arcPath "assays/PayloadAssay" arc
 
@@ -922,7 +922,7 @@ Vitest.describe (
                         let parentInfo = DatamapParentInfo.create "AssayB" DataMapParent.Assay
                         let contract = newerDataMap.ToCreateContract parentInfo
 
-                        match! ContractExecutor.fulfillContractsSwateAsync arcPath [| contract |] with
+                        match! ContractExecutor.fulfillContractsArcitisaAsync arcPath [| contract |] with
                         | Error errors -> failwith (PathHelpers.formatContractErrors errors)
                         | Ok _ -> ()
 
@@ -1129,7 +1129,7 @@ Vitest.describe (
                     seedLegacyRegistrationDataMaps
                     (fun arcPath -> promise {
                         do! keepOnlyLegacyDataMapSheetsAsync arcPath
-                        let! arc = loadSwateArcAsync arcPath
+                        let! arc = loadArcitisaArcAsync arcPath
                         Vitest.expect(dataMapNames (arc.GetStudy("LegacyStudy").Datamap)).toEqual [| "study.csv" |]
 
                         let! _ = deleteEntityOrFail arcPath "assays/LegacyAssay" arc
@@ -1139,7 +1139,7 @@ Vitest.describe (
 
                         Vitest.expect(dataMapExists).toBe true
                         do! expectDataMapSheetAsync arcPath "studies/LegacyStudy/isa.study.xlsx" false
-                        let! reloaded = loadSwateArcAsync arcPath
+                        let! reloaded = loadArcitisaArcAsync arcPath
                         Vitest.expect(reloaded.GetStudy("LegacyStudy").RegisteredAssayIdentifiers.Count).toBe 0
 
                         Vitest.expect(dataMapNames (reloaded.GetStudy("LegacyStudy").Datamap)).toEqual [|
@@ -1161,7 +1161,7 @@ Vitest.describe (
                     seedLegacyRegistrationDataMaps
                     (fun arcPath -> promise {
                         do! keepOnlyLegacyDataMapSheetsAsync arcPath
-                        let! arc = loadSwateArcAsync arcPath
+                        let! arc = loadArcitisaArcAsync arcPath
 
                         match!
                             ArcRenameHelper.renameArcEntityAsync
@@ -1184,7 +1184,7 @@ Vitest.describe (
 
                         do! expectDataMapSheetAsync arcPath "assays/RenamedAssay/isa.assay.xlsx" false
                         do! expectDataMapSheetAsync arcPath "studies/LegacyStudy/isa.study.xlsx" false
-                        let! reloaded = loadSwateArcAsync arcPath
+                        let! reloaded = loadArcitisaArcAsync arcPath
 
                         Vitest.expect(dataMapNames (reloaded.GetAssay("RenamedAssay").Datamap)).toEqual [|
                             "assay.csv"
@@ -1238,13 +1238,13 @@ Vitest.describe (
                         (fun arcPath -> promise {
                             do! writeSurvivingDataMapFixtures arcPath
                             let! before = survivorFileBytes arcPath
-                            let! arc = loadSwateArcAsync arcPath
+                            let! arc = loadArcitisaArcAsync arcPath
                             let! deletedArc = deleteEntityOrFail arcPath relativePath arc
                             Vitest.expect(containsTarget deletedArc).toBe false
                             let! folderExists = pathExistsAsync (join [| arcPath; relativePath |])
                             Vitest.expect(folderExists).toBe false
                             do! assertSurvivorFilesUnchanged arcPath before
-                            let! reloaded = loadSwateArcAsync arcPath
+                            let! reloaded = loadArcitisaArcAsync arcPath
                             Vitest.expect(containsTarget reloaded).toBe false
 
                             Vitest
@@ -1273,13 +1273,13 @@ Vitest.describe (
                 withTempArc
                     seed
                     (fun arcPath -> promise {
-                        let! arc = loadSwateArcAsync arcPath
+                        let! arc = loadArcitisaArcAsync arcPath
                         baselineArcStaticHashes arc
                         arc.GetAssay("KeepAssay").Title <- Some "Unsaved local title"
 
                         match!
                             ArcDeleteHelper.deleteArcEntityWithAsync
-                                ARC.LoadAsyncSwate
+                                ARC.LoadAsyncArcitisa
                                 executeDeleteThenFail
                                 arcPath
                                 "assays/DeleteAssay"
@@ -1303,12 +1303,12 @@ Vitest.describe (
                 withTempArc
                     seed
                     (fun arcPath -> promise {
-                        let! arc = loadSwateArcAsync arcPath
+                        let! arc = loadArcitisaArcAsync arcPath
                         let execute _ _ = promise { return Error [| "Injected DELETE failure" |] }
 
                         match!
                             ArcDeleteHelper.deleteArcEntityWithAsync
-                                ARC.LoadAsyncSwate
+                                ARC.LoadAsyncArcitisa
                                 execute
                                 arcPath
                                 "assays/DeleteAssay"
@@ -1333,12 +1333,12 @@ Vitest.describe (
                         arc.RegisterAssay("StudyA", "KeepAssay")
                     )
                     (fun arcPath -> promise {
-                        let! arc = loadSwateArcAsync arcPath
+                        let! arc = loadArcitisaArcAsync arcPath
                         baselineArcStaticHashes arc
 
                         match!
                             ArcDeleteHelper.deleteArcEntityWithAsync
-                                ARC.LoadAsyncSwate
+                                ARC.LoadAsyncArcitisa
                                 executeDeleteThenFail
                                 arcPath
                                 "assays/DeleteAssay"
@@ -1349,7 +1349,7 @@ Vitest.describe (
                             ArcDeleteHelper.applyEntityDeletion deletion arc |> ignore
 
                             // The study on disk still registers the deleted assay, memory no longer does.
-                            let! diskArc = loadSwateArcAsync arcPath
+                            let! diskArc = loadArcitisaArcAsync arcPath
 
                             Vitest.expect(diskArc.GetStudy("StudyA").RegisteredAssayIdentifiers |> Seq.toArray).toEqual
                                 [| "DeleteAssay"; "KeepAssay" |]

@@ -1,4 +1,4 @@
-module Swate.Components.Shared.Database
+module Arcitisa.Components.Shared.Database
 
 type FullTextSearch =
     | Exact

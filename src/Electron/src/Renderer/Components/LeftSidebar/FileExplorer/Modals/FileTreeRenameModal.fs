@@ -2,7 +2,7 @@ namespace Renderer.Components.LeftSidebar.FileExplorer.Modals
 
 open Fable.Core
 open Feliz
-open Swate.Components.Primitive.Dialog
+open Arcitisa.Components.Primitive.Dialog
 open Renderer.Components.LeftSidebar.FileExplorer.Types
 open Renderer.Components.LeftSidebar.FileExplorer.FileTreeRenameHelper
 

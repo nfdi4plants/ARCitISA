@@ -2,7 +2,7 @@
 module Version
 
 [<Literal>]
-let AssemblyTitle = "Swate"
+let AssemblyTitle = "ARCitISA"
 
 // AssemblyVersion is updated by the release pipeline via REGEX. do not touch!
 [<Literal>]

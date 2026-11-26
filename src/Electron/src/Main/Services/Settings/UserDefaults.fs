@@ -7,18 +7,18 @@ open System
 open Fable.Core
 open Thoth.Json.Core
 open Main.VersionControl.VersionControlSettings
-open Swate.Components.Composite.Authentication.Helper
-open Swate.Electron.Shared.IPCTypes
+open Arcitisa.Components.Composite.Authentication.Helper
+open Arcitisa.Electron.Shared.IPCTypes
 
 [<Literal>]
 let userDefaultsFileName = "user-defaults.json"
 
-/// A new optional field needs no version bump. An older Swate ignores fields it does not know and
+/// A new optional field needs no version bump. An older ARCitISA ignores fields it does not know and
 /// drops them when it saves. Bump the version only for a change that older versions must not read.
 [<Literal>]
 let CurrentSchemaVersion = 1
 
-/// The values Swate ships with. The git values come from VersionControlSettings.defaults.
+/// The values ARCitISA ships with. The git values come from VersionControlSettings.defaults.
 let builtIn: UserDefaultValuesDto = {
     LfsAutoTrackThresholdMb = VersionControlSettings.defaults.AutoTrackThresholdMb
     DownloadLargeFiles = VersionControlSettings.defaults.DownloadLargeFiles
@@ -73,7 +73,7 @@ let validate (values: UserDefaultValuesDto) : Result<UserDefaultValuesDto, strin
     | Error(_, message) -> Error message
 
 type private StoredDefaults =
-    /// Written by a newer Swate. The file is ignored and never overwritten.
+    /// Written by a newer ARCitISA. The file is ignored and never overwritten.
     | NewerSchema
     | Stored of UserDefaultOverrides
 
@@ -179,7 +179,7 @@ let private overridesOf (values: UserDefaultValuesDto) : UserDefaultOverrides =
 
 type IUserDefaultsStore =
     /// The values a new session starts from. Every call reads the file, so a change that another
-    /// Swate process on the same profile saved is seen at once.
+    /// ARCitISA process on the same profile saved is seen at once.
     abstract Effective: unit -> UserDefaultValuesDto
     /// Validates the values and stores those that differ from the built-in ones. The Error names
     /// the refused setting, or says why the file could not be written. Nothing changes on an Error.

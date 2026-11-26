@@ -4,7 +4,7 @@ open Fable.Core
 open Fable.Electron
 open Fable.Electron.Main
 open Fetch
-open Swate.Electron.Shared
+open Arcitisa.Electron.Shared
 
 /// Declares the scheme. Electron accepts this call only before the app is ready.
 let registerScheme () : unit =

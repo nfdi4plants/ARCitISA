@@ -1,6 +1,6 @@
 module Components.Metadata.Investigation
 
-open Swate.Components.Shared
+open Arcitisa.Components.Shared
 open System
 open Feliz
 open ARCtrl

@@ -1,14 +1,14 @@
-namespace Swate.Components.Page.ArcFileEditor.Widgets
+namespace Arcitisa.Components.Page.ArcFileEditor.Widgets
 
 open Feliz
 open Fable.Core
 open ARCtrl
-open Swate.Components
-open Swate.Components.Primitive
-open Swate.Components.Page.ArcFileEditor
-open Swate.Components.Composite.EditorToolbar
-open Swate.Components.Composite.Widgets
-open Swate.Components.Composite.Widgets.Context
+open Arcitisa.Components
+open Arcitisa.Components.Primitive
+open Arcitisa.Components.Page.ArcFileEditor
+open Arcitisa.Components.Composite.EditorToolbar
+open Arcitisa.Components.Composite.Widgets
+open Arcitisa.Components.Composite.Widgets.Context
 
 module private WidgetsHelper =
 

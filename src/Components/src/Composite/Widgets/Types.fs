@@ -1,14 +1,14 @@
-module Swate.Components.Composite.Widgets.Types
+module Arcitisa.Components.Composite.Widgets.Types
 
 open Feliz
 open ARCtrl
 open Fable.Core
-open Swate.Components.Shared
+open Arcitisa.Components.Shared
 
 [<RequireQualifiedAccess>]
 type InsertTarget =
-    | Table of index: int * selection: Swate.Components.CellCoordinateRange
-    | DataMap of selection: Swate.Components.CellCoordinateRange
+    | Table of index: int * selection: Arcitisa.Components.CellCoordinateRange
+    | DataMap of selection: Arcitisa.Components.CellCoordinateRange
 
 [<RequireQualifiedAccess>]
 type WidgetHostView =

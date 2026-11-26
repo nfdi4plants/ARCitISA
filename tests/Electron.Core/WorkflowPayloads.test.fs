@@ -6,8 +6,8 @@ open ARCtrl.CWL
 open Main.ARCtrlExtensions
 open Main.ArcMerge
 open Main.ArcVaultHelper
-open Swate.Components.Shared
-open Swate.Electron.Shared.FileIOHelper
+open Arcitisa.Components.Shared
+open Arcitisa.Electron.Shared.FileIOHelper
 open Vitest
 
 let private description label =

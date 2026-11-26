@@ -1,7 +1,7 @@
 module Renderer.Components.LeftSidebar.FileExplorer.FileWatcherNotice
 
 open Feliz
-open Swate.Electron.Shared.IPCTypes
+open Arcitisa.Electron.Shared.IPCTypes
 
 /// A short notice above the file tree while the file watcher cannot run. The tree then changes on window focus and
 /// through Refresh folder. A watcher that works, or that is restarting by itself, shows nothing.

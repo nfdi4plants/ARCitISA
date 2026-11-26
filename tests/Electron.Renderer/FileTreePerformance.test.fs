@@ -3,12 +3,12 @@ module ElectronRenderer.FileTreePerformanceTests
 open Fable.Core
 open Renderer.Components.LeftSidebar.FileExplorer.FileTreeMaterialization
 open Renderer.Context.FileTreeStore
-open Swate.Electron.Shared.FileIOTypes
-open Swate.Electron.Shared.IPCTypes
+open Arcitisa.Electron.Shared.FileIOTypes
+open Arcitisa.Electron.Shared.IPCTypes
 open Vitest
 
-/// Timings of a folder with 7,202 files. They run when SWATE_PERF_TESTS is set and print their numbers.
-[<Emit("(typeof process !== 'undefined' && !!process.env.SWATE_PERF_TESTS)")>]
+/// Timings of a folder with 7,202 files. They run when ARCITISA_PERF_TESTS is set and print their numbers.
+[<Emit("(typeof process !== 'undefined' && !!process.env.ARCITISA_PERF_TESTS)")>]
 let private perfEnabled: bool = jsNative
 
 [<Emit("performance.now()")>]
@@ -22,7 +22,7 @@ let private files = [|
         FileEntry.create (name, "big/" + name, false)
 |]
 
-let private rootSnapshot: Swate.Electron.Shared.IPCTypes.FileTreeSnapshotDto = {|
+let private rootSnapshot: Arcitisa.Electron.Shared.IPCTypes.FileTreeSnapshotDto = {|
     treeVersion = 1
     caseInsensitive = true
     entries = [|
@@ -72,7 +72,10 @@ Vitest.describe (
                 |> ignore
 
                 let cache =
-                    Renderer.ReferenceCache.ReferenceCache<FileEntry, Swate.Components.Page.FileExplorer.Types.FileItem>()
+                    Renderer.ReferenceCache.ReferenceCache<
+                        FileEntry,
+                        Arcitisa.Components.Page.FileExplorer.Types.FileItem
+                     >()
 
                 let lookup (_: string) = None
 

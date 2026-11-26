@@ -1,4 +1,4 @@
-module Swate.Components.Composite.TextEditor.Types
+module Arcitisa.Components.Composite.TextEditor.Types
 
 open Fable.Core
 

@@ -2,11 +2,11 @@ namespace Modals.ContextMenus
 
 open ARCtrl
 open Feliz
-open Swate.Components
-open Swate.Components.Primitive
-open Swate.Components.Primitive.ContextMenu
-open Swate.Components.Primitive.ContextMenu.Types
-open Swate.Components.Shared
+open Arcitisa.Components
+open Arcitisa.Components.Primitive
+open Arcitisa.Components.Primitive.ContextMenu
+open Arcitisa.Components.Primitive.ContextMenu.Types
+open Arcitisa.Components.Shared
 
 type FooterTabs =
     static member Table(tableIndex: int, startEdit: _ -> unit, dispatch: Messages.Msg -> unit, tabRef) =

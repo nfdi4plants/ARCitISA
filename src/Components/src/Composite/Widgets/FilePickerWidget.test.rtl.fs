@@ -1,14 +1,14 @@
-module internal Swate.Components.Composite.Widgets.FilePickerWidgetTests
+module internal Arcitisa.Components.Composite.Widgets.FilePickerWidgetTests
 
 open ARCtrl
 open Browser.Types
 open Feliz
 open Fable.Core
 open Vitest
-open Swate.Components.Composite.AnnotationTable
-open Swate.Components.Composite.AnnotationTable.Context
-open Swate.Components.Composite.DataMapTable
-open Swate.Components.Shared
+open Arcitisa.Components.Composite.AnnotationTable
+open Arcitisa.Components.Composite.AnnotationTable.Context
+open Arcitisa.Components.Composite.DataMapTable
+open Arcitisa.Components.Shared
 
 [<Emit("$0.spyOn(HTMLElement.prototype, $1, 'get').mockReturnValue($2)")>]
 let private mockHTMLElementGeometry (vi: Vi) (propertyName: string) (value: int) : unit = jsNative

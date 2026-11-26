@@ -7,8 +7,8 @@ open Expecto
 #endif
 
 open ARCtrl
-open Swate.Components.Shared.ProvenanceGrouping.Types
-open Swate.Components.Shared.ProvenanceGrouping.ARCtrlConverter
+open Arcitisa.Components.Shared.ProvenanceGrouping.Types
+open Arcitisa.Components.Shared.ProvenanceGrouping.ARCtrlConverter
 
 let private oa name = OntologyAnnotation.create (name = name)
 

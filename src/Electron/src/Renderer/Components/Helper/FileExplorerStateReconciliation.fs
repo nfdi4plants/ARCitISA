@@ -1,14 +1,14 @@
 module Renderer.Components.Helper.FileExplorerStateReconciliation
 
 open Feliz
-open Swate.Components.Shared
-open Swate.Electron.Shared.FileIOTypes
-open Swate.Electron.Shared.VersionControlTypes
+open Arcitisa.Components.Shared
+open Arcitisa.Electron.Shared.FileIOTypes
+open Arcitisa.Electron.Shared.VersionControlTypes
 open Renderer.Types
 open Renderer.Context.FileStateContext
 open Renderer.Context.FileTreeHooks
 open Renderer.Context.FileTreeStore
-open Swate.Components.Page.ArcFileEditor.Types
+open Arcitisa.Components.Page.ArcFileEditor.Types
 
 /// A selection is missing only when its parent directory is loaded and does not list it. A path below a directory
 /// that is not loaded is unknown, and the selection stays.
@@ -61,7 +61,7 @@ let syncChangedOpenPage (caseInsensitive: bool) (changedPaths: string[]) (pageSt
         arcFile.TryGetRelativePath()
         |> Option.filter (fun pagePath ->
             let keyOf path =
-                PathKey.ofPath caseInsensitive (Swate.Electron.Shared.FileIOHelper.resolveArcPreviewPath path)
+                PathKey.ofPath caseInsensitive (Arcitisa.Electron.Shared.FileIOHelper.resolveArcPreviewPath path)
 
             let pageKey = keyOf pagePath
             changedPaths |> Array.exists (fun changed -> keyOf changed = pageKey)

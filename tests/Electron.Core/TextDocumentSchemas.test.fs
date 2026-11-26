@@ -1,7 +1,7 @@
 module ElectronCore.TextDocumentSchemasTests
 
-open Swate.Components.Composite.TextEditor.SchemaValidation
-open Swate.Electron.Shared.TextDocumentSchemas
+open Arcitisa.Components.Composite.TextEditor.SchemaValidation
+open Arcitisa.Electron.Shared.TextDocumentSchemas
 open Vitest
 
 let private lint (text: string) =

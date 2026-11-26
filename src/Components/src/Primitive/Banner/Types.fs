@@ -1,4 +1,4 @@
-module Swate.Components.Primitive.Banner.Types
+module Arcitisa.Components.Primitive.Banner.Types
 
 open Fable.Core
 

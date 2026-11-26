@@ -1,12 +1,12 @@
-module internal Swate.Components.Page.FileViewer.TextDocumentRtlTests
+module internal Arcitisa.Components.Page.FileViewer.TextDocumentRtlTests
 
 open Browser.Types
 open Fable.Core
 open Feliz
 open Vitest
-open Swate.Components.Composite.TextEditor.JsBindings.CodeMirror
-open Swate.Components.Page.FileViewer
-open Swate.Components.Page.FileViewer.Types
+open Arcitisa.Components.Composite.TextEditor.JsBindings.CodeMirror
+open Arcitisa.Components.Page.FileViewer
+open Arcitisa.Components.Page.FileViewer.Types
 
 type private EditorViewLookup =
     /// The view of an editor element or of its content element.

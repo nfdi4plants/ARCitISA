@@ -4,8 +4,8 @@ open ARCtrl
 open Fable.Core
 open Fable.Core.JsInterop
 open Main.Provenance
-open Swate.Electron.Shared.DTOs.ProvenanceGroupingDto
-open Swate.Components.Shared.ProvenanceGrouping.Types
+open Arcitisa.Electron.Shared.DTOs.ProvenanceGroupingDto
+open Arcitisa.Components.Shared.ProvenanceGrouping.Types
 open Vitest
 
 [<Emit("structuredClone($0)")>]

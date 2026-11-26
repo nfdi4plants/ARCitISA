@@ -3,7 +3,7 @@ module ElectronRenderer.DataHubBrowserTargetTests
 open Fable.Core.JsInterop
 open Renderer.Components.MainContent.DataHubBrowserTarget
 open Renderer.Context.GitWorkflow
-open Swate.Components.Api.GitLabApi
+open Arcitisa.Components.Api.GitLabApi
 open Vitest
 
 // Importing the target pulls in the IPC bridges, which only exist inside Electron.

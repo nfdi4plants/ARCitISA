@@ -2,7 +2,7 @@ module ElectronRenderer.FileWatcherNoticeRtlTests
 
 open Feliz
 open Renderer.Components.LeftSidebar.FileExplorer.FileWatcherNotice
-open Swate.Electron.Shared.IPCTypes
+open Arcitisa.Electron.Shared.IPCTypes
 open Vitest
 
 Vitest.afterEach (fun () -> RTL.cleanup ())

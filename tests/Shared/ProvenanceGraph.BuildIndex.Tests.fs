@@ -23,8 +23,8 @@ open Expecto
 #endif
 
 open ARCtrl
-open Swate.Components.Shared.ProvenanceGraph.Types
-open Swate.Components.Shared.ProvenanceGraph.BuildIndex
+open Arcitisa.Components.Shared.ProvenanceGraph.Types
+open Arcitisa.Components.Shared.ProvenanceGraph.BuildIndex
 
 // Table helpers
 

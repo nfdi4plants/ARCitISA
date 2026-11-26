@@ -1,8 +1,8 @@
-module internal Swate.Components.Composite.TextEditor.TextEditorTests
+module internal Arcitisa.Components.Composite.TextEditor.TextEditorTests
 
 open Fable.Core
 open Vitest
-open Swate.Components.Composite.TextEditor.Types
+open Arcitisa.Components.Composite.TextEditor.Types
 
 let private diagnostic (message: string) : LintDiagnostic = {|
     from = 0

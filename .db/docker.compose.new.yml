@@ -1,6 +1,6 @@
 version: '3.8'
 
-name: swate_release_test
+name: arcitisa_release_test
 
 services:
 
@@ -43,9 +43,9 @@ services:
       retries: 30
       start_period: 30s
 
-  swate:
-    image: swate:dev
-    container_name: swate_new
+  arcitisa:
+    image: arcitisa:dev
+    container_name: arcitisa_new
     ports:
       - 5000:5000
     extra_hosts:

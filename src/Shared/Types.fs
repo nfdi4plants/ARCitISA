@@ -1,4 +1,4 @@
-namespace Swate.Components.Shared
+namespace Arcitisa.Components.Shared
 
 
 open ARCtrl

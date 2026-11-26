@@ -1,7 +1,7 @@
-module Swate.Components.Composite.Authentication.Helper
+module Arcitisa.Components.Composite.Authentication.Helper
 
 open Types
-open Swate.Components
+open Arcitisa.Components
 
 module GitLabUrls =
 

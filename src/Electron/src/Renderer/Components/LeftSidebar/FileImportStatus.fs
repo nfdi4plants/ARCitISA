@@ -1,7 +1,7 @@
 module Renderer.Components.LeftSidebar.FileImportStatus
 
 open Feliz
-open Swate.Electron.Shared.FileIOTypes
+open Arcitisa.Electron.Shared.FileIOTypes
 
 [<ReactComponent>]
 let internal FileImportProgressBar (progress: FileImportProgress) =

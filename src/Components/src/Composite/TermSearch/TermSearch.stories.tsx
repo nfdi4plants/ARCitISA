@@ -5,7 +5,7 @@ import * as Provider from "./ConfigProvider.fs.js";
 import { TIBApi } from '../../Api/TIBApi.fs.js';
 import React from 'react';
 import {
-  Swate_Components_Api_TIBApi_TIBTypes_SearchApi__SearchApi_ToMyTerm as toMyTerm,
+  Arcitisa_Components_Api_TIBApi_TIBTypes_SearchApi__SearchApi_ToMyTerm as toMyTerm,
   type Term,
 } from './Types.fs.js';
 

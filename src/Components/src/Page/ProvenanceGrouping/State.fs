@@ -1,9 +1,9 @@
-module Swate.Components.Page.ProvenanceGrouping.State
+module Arcitisa.Components.Page.ProvenanceGrouping.State
 
-open Swate.Components.Shared.ProvenanceGrouping.Types
-open Swate.Components.Shared.ProvenanceGrouping.Grouping
-open Swate.Components.Shared.ProvenanceGrouping.Session
-open Swate.Components.Page.ProvenanceGrouping.Types
+open Arcitisa.Components.Shared.ProvenanceGrouping.Types
+open Arcitisa.Components.Shared.ProvenanceGrouping.Grouping
+open Arcitisa.Components.Shared.ProvenanceGrouping.Session
+open Arcitisa.Components.Page.ProvenanceGrouping.Types
 
 /// Shared key helpers used by the UI state maps and sets.
 module Keys =

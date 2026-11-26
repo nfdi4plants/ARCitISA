@@ -1,6 +1,6 @@
 module Renderer.Context.AppStateContext
 
-open Swate.Electron.Shared
+open Arcitisa.Electron.Shared
 
 open Feliz
 

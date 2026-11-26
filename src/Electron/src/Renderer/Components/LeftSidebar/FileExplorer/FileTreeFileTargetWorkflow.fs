@@ -2,7 +2,7 @@ module Renderer.Components.LeftSidebar.FileExplorer.FileTreeFileTargetWorkflow
 
 open Fable.Core
 open Renderer.Components.Helper.FileSystemHelper
-open Swate.Electron.Shared.FileIOTypes
+open Arcitisa.Electron.Shared.FileIOTypes
 
 type AddFileTargetConfig = {
     IsBusy: bool

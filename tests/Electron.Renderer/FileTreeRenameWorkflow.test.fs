@@ -6,9 +6,9 @@ open Feliz
 open ARCtrl
 open Renderer.Components.LeftSidebar.FileExplorer.FileTreeRenameHelper
 open Renderer.Components.LeftSidebar.FileExplorer.Types
-open Swate.Components.Page.FileExplorer.Types
-open Swate.Components.Shared
-open Swate.Electron.Shared.FileIOTypes
+open Arcitisa.Components.Page.FileExplorer.Types
+open Arcitisa.Components.Shared
+open Arcitisa.Electron.Shared.FileIOTypes
 open Vitest
 open Renderer
 
@@ -360,7 +360,7 @@ Vitest.describe (
 
                 let! container, cleanup =
                     renderToBody (
-                        Swate.Components.Page.FileExplorer.FileExplorer.FileExplorer(
+                        Arcitisa.Components.Page.FileExplorer.FileExplorer.FileExplorer(
                             initialItems = items,
                             getItemActions =
                                 FileTreeContextMenu.renameContextMenuItems
@@ -453,7 +453,7 @@ Vitest.describe (
                             Renderer.Types.PageState.TextDocumentPage {
                                 Path = "assays/AssayA/protocols/old.txt"
                                 Content = "old content"
-                                FileType = Swate.Electron.Shared.FileIOTypes.FileContentType.PlainText
+                                FileType = Arcitisa.Electron.Shared.FileIOTypes.FileContentType.PlainText
                                 Info = None
                             }
                         ))

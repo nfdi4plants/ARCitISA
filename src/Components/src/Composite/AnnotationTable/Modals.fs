@@ -1,18 +1,18 @@
-namespace Swate.Components.Composite.AnnotationTable
+namespace Arcitisa.Components.Composite.AnnotationTable
 
 open Fable.Core
 open Feliz
 open Browser.Types
-open Swate.Components
+open Arcitisa.Components
 open ARCtrl
-open Swate.Components.Composite.TermSearch
-open Swate.Components.Composite.TermSearch.Types
-open Swate.Components.Composite.Table.Types
-open Swate.Components.Composite.AnnotationTable.Types
-open Swate.Components.Shared
-open Swate.Components.Primitive.BaseModal
-open Swate.Components.Composite.SortableList
-open Swate.Components.Composite.SortableList.Types
+open Arcitisa.Components.Composite.TermSearch
+open Arcitisa.Components.Composite.TermSearch.Types
+open Arcitisa.Components.Composite.Table.Types
+open Arcitisa.Components.Composite.AnnotationTable.Types
+open Arcitisa.Components.Shared
+open Arcitisa.Components.Primitive.BaseModal
+open Arcitisa.Components.Composite.SortableList
+open Arcitisa.Components.Composite.SortableList.Types
 
 // 👀 this file is work in progress
 

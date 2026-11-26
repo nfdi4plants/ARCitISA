@@ -1,4 +1,4 @@
-module internal Swate.Components.Primitive.Dialog.DialogTests
+module internal Arcitisa.Components.Primitive.Dialog.DialogTests
 
 open Vitest
 

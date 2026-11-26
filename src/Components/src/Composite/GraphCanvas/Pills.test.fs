@@ -1,4 +1,4 @@
-module internal Swate.Components.Composite.GraphCanvas.PillsTests
+module internal Arcitisa.Components.Composite.GraphCanvas.PillsTests
 
 // Ported from graphCanvasPills.test.ts of arc-portal-ui. Every case is ported. Two assertions are
 // left out because they pin fixed UI copy: the "(empty)" value text in the null value case and the
@@ -8,9 +8,9 @@ module internal Swate.Components.Composite.GraphCanvas.PillsTests
 // TypeScript tests do. The toPillView case is new and checks the arguments that reach the measure.
 
 open Vitest
-open Swate.Components.JsBindings
-open Swate.Components.Composite.GraphCanvas.Types
-open Swate.Components.Composite.GraphCanvas.Pills
+open Arcitisa.Components.JsBindings
+open Arcitisa.Components.Composite.GraphCanvas.Types
+open Arcitisa.Components.Composite.GraphCanvas.Pills
 
 let private property (name: string) (value: string option) (unit: string option) : CanvasPill = {
     Key = name

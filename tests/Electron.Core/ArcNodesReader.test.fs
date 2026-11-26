@@ -3,8 +3,8 @@ module ElectronCore.ArcNodesReaderTests
 open ARCtrl
 open Fable.Core
 open Main
-open Swate.Components.Shared.ProvenanceGrouping.ARCtrlConverter
-open Swate.Electron.Shared.DTOs.ArcNodesDto
+open Arcitisa.Components.Shared.ProvenanceGrouping.ARCtrlConverter
+open Arcitisa.Electron.Shared.DTOs.ArcNodesDto
 open Vitest
 
 [<Emit("structuredClone($0)")>]

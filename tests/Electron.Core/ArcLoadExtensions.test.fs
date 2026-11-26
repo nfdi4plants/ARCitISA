@@ -8,8 +8,8 @@ open Fable.Core.JsInterop
 open Main.ARCtrlExtensions
 open Main.Bindings.Filesystem
 open Main.Bindings.Path
-open Swate.Components.Shared
-open Swate.Electron.Shared.FileIOHelper
+open Arcitisa.Components.Shared
+open Arcitisa.Electron.Shared.FileIOHelper
 open Vitest
 
 let private dirent name isDirectory isFile =
@@ -249,11 +249,11 @@ Vitest.describe (
             "bounded ARC loading reconstructs every entity type",
             fun () ->
                 TestHelpers.withTempArcWith
-                    "swate-bounded-arc-load-"
+                    "arcitisa-bounded-arc-load-"
                     "BoundedArc"
                     TestHelpers.addDataMapToAllEntityTypes
                     (fun arcPath -> promise {
-                        let! loadResult = ARC.LoadAsyncSwate arcPath
+                        let! loadResult = ARC.LoadAsyncArcitisa arcPath
                         let loadedArc = TestHelpers.expectLoadedArc loadResult
 
                         Vitest.expect(loadedArc.Identifier).toBe ("BoundedArc")
@@ -268,7 +268,7 @@ Vitest.describe (
             "bounded ARC loading allows missing optional structural zones",
             fun () ->
                 TestHelpers.withTempArcWith
-                    "swate-bounded-missing-zones-"
+                    "arcitisa-bounded-missing-zones-"
                     "MissingZonesArc"
                     ignore
                     (fun arcPath -> promise {
@@ -276,7 +276,7 @@ Vitest.describe (
                             let zonePath = join [| arcPath; ArcEntityPathRules.zoneFolderName zone |]
                             do! rmAsync zonePath (RmOptions(recursive = true, force = true))
 
-                        let! loadResult = ARC.LoadAsyncSwate arcPath
+                        let! loadResult = ARC.LoadAsyncArcitisa arcPath
                         let loadedArc = TestHelpers.expectLoadedArc loadResult
 
                         Vitest.expect(loadedArc.Identifier).toBe ("MissingZonesArc")
@@ -287,7 +287,7 @@ Vitest.describe (
             "bounded ARC loading migrates a legacy entity DataMap",
             fun () ->
                 TestHelpers.withTempArcWith
-                    "swate-bounded-legacy-datamap-"
+                    "arcitisa-bounded-legacy-datamap-"
                     "LegacyDataMapArc"
                     (fun arc ->
                         let assay = ArcAssay("Legacy Assay")
@@ -306,7 +306,7 @@ Vitest.describe (
                         let legacyPath = join [| assayFolder; ArcEntityPathRules.legacyDataMapFileName |]
                         do! renameAsync canonicalPath legacyPath
 
-                        let! loadResult = ARC.LoadAsyncSwate arcPath
+                        let! loadResult = ARC.LoadAsyncArcitisa arcPath
                         let loadedArc = TestHelpers.expectLoadedArc loadResult
 
                         Vitest.expect(loadedArc.GetAssay("Legacy Assay").Datamap.IsSome).toBe (true)
@@ -358,11 +358,11 @@ let private withLegacyLoadParent parent body =
     let parentInfo = DatamapParentInfo.create "Legacy" parent
 
     TestHelpers.withTempArcWith
-        "swate-separate-datamap-load-"
+        "arcitisa-separate-datamap-load-"
         "SeparateDataMapLoad"
         ignore
         (fun arcPath -> promise {
-            let! loaded = ARC.LoadAsyncSwate arcPath
+            let! loaded = ARC.LoadAsyncArcitisa arcPath
             let arc = TestHelpers.expectLoadedArc loaded
             let dm = loadDataMap $"dataset/embedded-{parent}.csv"
 
@@ -372,7 +372,7 @@ let private withLegacyLoadParent parent body =
             | DataMapParent.Run -> arc.AddRun(ArcRun(parentInfo.ParentId, datamap = dm))
             | DataMapParent.Workflow -> arc.AddWorkflow(ArcWorkflow(parentInfo.ParentId, datamap = dm))
 
-            let! saved = arc.TryUpdateAsyncSwate arcPath
+            let! saved = arc.TryUpdateAsyncArcitisa arcPath
 
             match saved with
             | Error errors -> failwith (String.concat "\n" errors)
@@ -380,7 +380,7 @@ let private withLegacyLoadParent parent body =
 
             let separatePath = (DataMapContract.create parentInfo dm).Path
             do! rmAsync (join [| arcPath; separatePath |]) (RmOptions(force = true))
-            let! written = ContractExecutor.fulfillContractsSwateAsync arcPath [| loadLegacyParent arc parentInfo |]
+            let! written = ContractExecutor.fulfillContractsArcitisaAsync arcPath [| loadLegacyParent arc parentInfo |]
 
             match written with
             | Error errors -> failwith (String.concat "\n" errors)
@@ -405,7 +405,7 @@ for parent in
                     let separate = loadDataMap $"dataset/separate-{parent}.csv"
 
                     let! written =
-                        ContractExecutor.fulfillContractsSwateAsync arcPath [|
+                        ContractExecutor.fulfillContractsArcitisaAsync arcPath [|
                             DataMapContract.update parentInfo separate
                         |]
 
@@ -413,7 +413,7 @@ for parent in
                     | Error errors -> failwith (String.concat "\n" errors)
                     | Ok _ -> ()
 
-                    let! loaded = ARC.LoadAsyncSwate arcPath
+                    let! loaded = ARC.LoadAsyncArcitisa arcPath
                     let actual = loadParentDataMap (TestHelpers.expectLoadedArc loaded) parentInfo
                     Vitest.expect(actual.DataContexts.Count).toBe 1
                     Vitest.expect(actual.DataContexts.[0].Name).toEqual (Some $"dataset/separate-{parent}.csv")
@@ -437,7 +437,7 @@ for parent in
                 parent
                 (fun arcPath parentInfo _ -> promise {
                     let! written =
-                        ContractExecutor.fulfillContractsSwateAsync arcPath [|
+                        ContractExecutor.fulfillContractsArcitisaAsync arcPath [|
                             DataMapContract.update parentInfo (Datamap.init ())
                         |]
 
@@ -445,7 +445,7 @@ for parent in
                     | Error errors -> failwith (String.concat "\n" errors)
                     | Ok _ -> ()
 
-                    let! loaded = ARC.LoadAsyncSwate arcPath
+                    let! loaded = ARC.LoadAsyncArcitisa arcPath
                     let actual = loadParentDataMap (TestHelpers.expectLoadedArc loaded) parentInfo
                     Vitest.expect(actual.DataContexts.Count).toBe 0
                 })
@@ -457,7 +457,7 @@ for parent in
             withLegacyLoadParent
                 parent
                 (fun arcPath parentInfo embedded -> promise {
-                    let! loaded = ARC.LoadAsyncSwate arcPath
+                    let! loaded = ARC.LoadAsyncArcitisa arcPath
                     let actual = loadParentDataMap (TestHelpers.expectLoadedArc loaded) parentInfo
                     Vitest.expect(actual.DataContexts.Count).toBe 1
                     Vitest.expect(actual.DataContexts.[0].Name).toEqual embedded.DataContexts.[0].Name
@@ -493,7 +493,7 @@ Vitest.describe (
             "an undecodable workflow CWL is skipped and reported while valid payloads load",
             fun () ->
                 TestHelpers.withTempArcWith
-                    "swate-undecodable-workflow-cwl-"
+                    "arcitisa-undecodable-workflow-cwl-"
                     "UndecodableWorkflowCwl"
                     (fun arc ->
                         arc.AddWorkflow(ArcWorkflow("Valid Workflow", cwlDescription = toolDescription ()))
@@ -518,7 +518,7 @@ Vitest.describe (
 
                         Vitest.expect(decodeThrows).toBe true
 
-                        let! loaded = ARC.LoadAsyncSwateWithIssues arcPath
+                        let! loaded = ARC.LoadAsyncArcitisaWithIssues arcPath
                         let arc, issues = expectSuccess loaded
 
                         Vitest.expect(issues |> Array.map _.Path).toEqual [|
@@ -529,7 +529,7 @@ Vitest.describe (
                         Vitest.expect(arc.GetWorkflow("Broken Workflow").CWLDescription.IsNone).toBe true
                         Vitest.expect(arc.GetWorkflow("Valid Workflow").CWLDescription.IsSome).toBe true
 
-                        let! plain = ARC.LoadAsyncSwate arcPath
+                        let! plain = ARC.LoadAsyncArcitisa arcPath
                         TestHelpers.expectLoadedArc plain |> ignore
                     })
         )
@@ -538,7 +538,7 @@ Vitest.describe (
             "an undecodable run input file is skipped while the run CWL loads",
             fun () ->
                 TestHelpers.withTempArcWith
-                    "swate-undecodable-run-yml-"
+                    "arcitisa-undecodable-run-yml-"
                     "UndecodableRunYml"
                     (fun arc -> arc.AddRun(ArcRun("Broken Inputs Run", cwlDescription = toolDescription ())))
                     (fun arcPath -> promise {
@@ -559,7 +559,7 @@ Vitest.describe (
 
                         Vitest.expect(decodeThrows).toBe true
 
-                        let! loaded = ARC.LoadAsyncSwateWithIssues arcPath
+                        let! loaded = ARC.LoadAsyncArcitisaWithIssues arcPath
                         let arc, issues = expectSuccess loaded
                         let run = arc.GetRun "Broken Inputs Run"
 
@@ -573,7 +573,7 @@ Vitest.describe (
             "an empty workflow CWL file does not fail the load",
             fun () ->
                 TestHelpers.withTempArcWith
-                    "swate-empty-workflow-cwl-"
+                    "arcitisa-empty-workflow-cwl-"
                     "EmptyWorkflowCwl"
                     (fun arc -> arc.AddWorkflow(ArcWorkflow("Empty Workflow")))
                     (fun arcPath -> promise {
@@ -594,7 +594,7 @@ Vitest.describe (
 
                         Vitest.expect(emptyDecodeThrows).toBe true
 
-                        let! loaded = ARC.LoadAsyncSwateWithIssues arcPath
+                        let! loaded = ARC.LoadAsyncArcitisaWithIssues arcPath
                         let arc, issues = expectSuccess loaded
 
                         Vitest.expect(issues |> Array.map _.Path).toEqual [| "workflows/Empty Workflow/workflow.cwl" |]
@@ -607,7 +607,7 @@ Vitest.describe (
             "saving after a skipped payload leaves the payload file unchanged",
             fun () ->
                 TestHelpers.withTempArcWith
-                    "swate-skipped-payload-save-"
+                    "arcitisa-skipped-payload-save-"
                     "SkippedPayloadSave"
                     (fun arc -> arc.AddWorkflow(ArcWorkflow("Broken Workflow")))
                     (fun arcPath -> promise {
@@ -620,18 +620,18 @@ Vitest.describe (
 
                         TestHelpers.writeText cwlPath brokenCwl
 
-                        let! loaded = ARC.LoadAsyncSwateWithIssues arcPath
+                        let! loaded = ARC.LoadAsyncArcitisaWithIssues arcPath
                         let arc, _ = expectSuccess loaded
                         baselineArcStaticHashes arc
                         arc.GetWorkflow("Broken Workflow").Description <- Some "Edited"
 
-                        let! prepared = arc.PrepareUpdateContractsSwateAsync arcPath
+                        let! prepared = arc.PrepareUpdateContractsArcitisaAsync arcPath
                         let paths = expectSuccess prepared |> Array.map _.Path
 
                         Vitest.expect(paths).toContain "workflows/Broken Workflow/isa.workflow.xlsx"
                         Vitest.expect(paths |> Array.contains "workflows/Broken Workflow/workflow.cwl").toBe false
 
-                        let! saved = arc.TryUpdateAsyncSwate arcPath
+                        let! saved = arc.TryUpdateAsyncArcitisa arcPath
                         expectSuccess saved |> ignore
 
                         let content = readFileSync cwlPath TextEncoding.Utf8

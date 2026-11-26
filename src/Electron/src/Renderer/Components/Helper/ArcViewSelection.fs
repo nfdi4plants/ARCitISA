@@ -1,7 +1,7 @@
 module Renderer.Components.Helper.ArcViewSelection
 
-open Swate.Components.Shared
-open Swate.Electron.Shared.FileIOHelper
+open Arcitisa.Components.Shared
+open Arcitisa.Electron.Shared.FileIOHelper
 
 // DUCK TAPE: Keep this pure transformation outside ArcViewHelper so its unit test does not eagerly initialize
 // every Electron IPC proxy through Api.fs. The preferred follow-up is an injected `openViewWith openFile path`
@@ -13,7 +13,7 @@ let applyRequestedPathView (requestedPath: string) (pageState: Renderer.Types.Pa
         ->
         Renderer.Types.PageState.ArcFilePage(
             arcFile,
-            Some Swate.Components.Page.ArcFileEditor.Types.ActiveView.DataMap,
+            Some Arcitisa.Components.Page.ArcFileEditor.Types.ActiveView.DataMap,
             revision
         )
     | _ -> pageState

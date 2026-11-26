@@ -1,11 +1,11 @@
-module Swate.Components.Shared.ProvenanceGrouping.ARCtrlConverter
+module Arcitisa.Components.Shared.ProvenanceGrouping.ARCtrlConverter
 
 open System
 open ARCtrl
 open ARCtrl.Process
 open ARCtrl.Process.ColumnIndex
 open ARCtrl.Process.Conversion
-open Swate.Components.Shared.ProvenanceGrouping.Types
+open Arcitisa.Components.Shared.ProvenanceGrouping.Types
 
 /// ARC table container that owns the selected or source table.
 /// The converter uses this with `ParentIdentifier` and `TableName` because table names alone are not unique across a full ARC.

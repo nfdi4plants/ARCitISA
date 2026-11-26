@@ -1,9 +1,9 @@
-module Swate.Components.Composite.GraphCanvas.Layout
+module Arcitisa.Components.Composite.GraphCanvas.Layout
 
 open Fable.Core
-open Swate.Components.JsBindings
-open Swate.Components.Composite.GraphCanvas.Types
-open Swate.Components.Composite.GraphCanvas.Pills
+open Arcitisa.Components.JsBindings
+open Arcitisa.Components.Composite.GraphCanvas.Types
+open Arcitisa.Components.Composite.GraphCanvas.Pills
 
 // Builds the ELK graph from the canvas data and runs ELK. The result holds everything a renderer needs
 // as plain numbers. The decision helpers at the end (sameBox, isPortrait, ...) are the pure parts of

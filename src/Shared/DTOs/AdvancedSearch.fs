@@ -1,4 +1,4 @@
-namespace Swate.Components.Shared.DTOs
+namespace Arcitisa.Components.Shared.DTOs
 
 type AdvancedSearchQuery = {
     OntologyName: string option

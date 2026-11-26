@@ -1,7 +1,7 @@
-module internal Swate.Components.Tests.FileExplorerLogic
+module internal Arcitisa.Components.Tests.FileExplorerLogic
 
 open Vitest
-open Swate.Components.Page.FileExplorer.Types
+open Arcitisa.Components.Page.FileExplorer.Types
 
 let private file (id: string) : FileItem = {
     FileTree.createFile id None FileItemIcon.Document with

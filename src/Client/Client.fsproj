@@ -13,9 +13,9 @@
     <Compile Include="Util\ElmishHelper.fs" />
     <Compile Include="Util\MessageInterop.fs" />
     <Compile Include="Util\Helper.fs" />
-    <Compile Include="Util\SwateHost.fs" />
+    <Compile Include="Util\ArcitisaHost.fs" />
     <Compile Include="LocalStorage\AutosaveConfig.fs" />
-    <Compile Include="LocalStorage\SwateSearchConfig.fs" />
+    <Compile Include="LocalStorage\ArcitisaSearchConfig.fs" />
     <Compile Include="SharedComponents\Widgets.fs" />
     <Compile Include="SharedComponents\JsBindings\DndKit.fs" />
     <Compile Include="JsBindings\Cytoscape.fs" />
@@ -128,7 +128,7 @@
     <PackageReference Include="ExcelJS.Fable" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Components\src\Swate.Components.fsproj" />
-    <ProjectReference Include="..\Shared\Swate.Components.Core.fsproj" />
+    <ProjectReference Include="..\Components\src\Arcitisa.Components.fsproj" />
+    <ProjectReference Include="..\Shared\Arcitisa.Components.Core.fsproj" />
   </ItemGroup>
 </Project>

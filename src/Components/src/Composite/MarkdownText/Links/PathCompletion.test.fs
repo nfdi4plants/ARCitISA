@@ -1,13 +1,13 @@
-module internal Swate.Components.Composite.MarkdownText.Links.PathCompletionTests
+module internal Arcitisa.Components.Composite.MarkdownText.Links.PathCompletionTests
 
 open Fable.Core
 open Vitest
-open Swate.Components.Composite.TextEditor
-open Swate.Components.Composite.TextEditor.Types
-open Swate.Components.Composite.TextEditor.JsBindings.CodeMirror
-open Swate.Components.Composite.TextEditor.JsBindings.Autocomplete
-open Swate.Components.Composite.MarkdownText.Links
-open Swate.Components.Composite.MarkdownText.Links.Types
+open Arcitisa.Components.Composite.TextEditor
+open Arcitisa.Components.Composite.TextEditor.Types
+open Arcitisa.Components.Composite.TextEditor.JsBindings.CodeMirror
+open Arcitisa.Components.Composite.TextEditor.JsBindings.Autocomplete
+open Arcitisa.Components.Composite.MarkdownText.Links
+open Arcitisa.Components.Composite.MarkdownText.Links.Types
 
 let private docs = "docs"
 

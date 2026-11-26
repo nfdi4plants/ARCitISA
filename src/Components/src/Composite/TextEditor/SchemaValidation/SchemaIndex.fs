@@ -1,7 +1,7 @@
 /// Finds the schema objects behind Ajv errors, for titles, descriptions and property names.
 /// Ajv's schemaPath restarts at every $ref'd resource, but verbose errors hand back the original
 /// schema objects, so a map from object to resource is enough.
-module Swate.Components.Composite.TextEditor.SchemaValidation.SchemaIndex
+module Arcitisa.Components.Composite.TextEditor.SchemaValidation.SchemaIndex
 
 open Fable.Core
 

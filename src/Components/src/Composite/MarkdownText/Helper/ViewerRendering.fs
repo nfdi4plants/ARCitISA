@@ -1,17 +1,17 @@
 /// The rendering of MarkdownTextViewer: the react-markdown renderers for code, links and images, the remark and
 /// rehype plugins with the sanitizer schema, and the classes of the prose container.
-module Swate.Components.Composite.MarkdownText.Helper.ViewerRendering
+module Arcitisa.Components.Composite.MarkdownText.Helper.ViewerRendering
 
 open System
 open Fable.Core
 open Fable.Core.JsInterop
 open Feliz
 
-open Swate.Components.Composite.MarkdownText
-open Swate.Components.Composite.MarkdownText.JsBindings
-open Swate.Components.Composite.MarkdownText.Links
-open Swate.Components.Composite.MarkdownText.Links.Types
-open Swate.Components.Composite.TextEditor
+open Arcitisa.Components.Composite.MarkdownText
+open Arcitisa.Components.Composite.MarkdownText.JsBindings
+open Arcitisa.Components.Composite.MarkdownText.Links
+open Arcitisa.Components.Composite.MarkdownText.Links.Types
+open Arcitisa.Components.Composite.TextEditor
 
 module private ViewerRenderingTypes =
 

@@ -1,16 +1,16 @@
-namespace Swate.Components.Composite.MarkdownToolbarSample
+namespace Arcitisa.Components.Composite.MarkdownToolbarSample
 
 open Fable.Core
 open Feliz
 
-open Swate.Components.Composite.TextEditor
-open Swate.Components.Composite.TextEditor.Types
-open Swate.Components.Composite.TermSearch.Types
-open Swate.Components.Composite.MarkdownText
-open Swate.Components.Composite.MarkdownText.Editing
-open Swate.Components.Composite.MarkdownText.Editing.Types
-open Swate.Components.Composite.MarkdownText.Links
-open Swate.Components.Composite.MarkdownText.Links.Types
+open Arcitisa.Components.Composite.TextEditor
+open Arcitisa.Components.Composite.TextEditor.Types
+open Arcitisa.Components.Composite.TermSearch.Types
+open Arcitisa.Components.Composite.MarkdownText
+open Arcitisa.Components.Composite.MarkdownText.Editing
+open Arcitisa.Components.Composite.MarkdownText.Editing.Types
+open Arcitisa.Components.Composite.MarkdownText.Links
+open Arcitisa.Components.Composite.MarkdownText.Links.Types
 
 module private MarkdownToolbarSampleHelpers =
 

@@ -1,5 +1,5 @@
 /// Typed bindings for the parts of CodeMirror 6 that the TextEditor uses.
-module Swate.Components.Composite.TextEditor.JsBindings.CodeMirror
+module Arcitisa.Components.Composite.TextEditor.JsBindings.CodeMirror
 
 open Browser.Types
 open Fable.Core

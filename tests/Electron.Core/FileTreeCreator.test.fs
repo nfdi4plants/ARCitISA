@@ -4,12 +4,12 @@ open System
 open Fable.Core
 open Fable.Core.JsInterop
 open Main
-open Swate.Components.Shared
+open Arcitisa.Components.Shared
 open Main.Bindings.Path
 open Main.VersionControl
-open Swate.Components.Composite.Authentication.Types
-open Swate.Electron.Shared.FileIOTypes
-open Swate.Electron.Shared.VersionControlTypes
+open Arcitisa.Components.Composite.Authentication.Types
+open Arcitisa.Electron.Shared.FileIOTypes
+open Arcitisa.Electron.Shared.VersionControlTypes
 open VersionControlService.Abstractions
 open Vitest
 open ElectronCore.TestHelpers
@@ -27,7 +27,7 @@ let private createTempDirectoryAsync () : Fable.Core.JS.Promise<string> =
     let prefix =
         join [|
             osDynamic?tmpdir () |> unbox<string>
-            "swate-electron-file-tree-"
+            "arcitisa-electron-file-tree-"
         |]
 
     fsPromisesDynamic?mkdtemp (prefix) |> unbox<Fable.Core.JS.Promise<string>>
@@ -57,7 +57,7 @@ Vitest.describe (
     "path keys, ignore rules and the case sensitivity probe",
     fun () ->
         let ignored name relativePath isDirectory =
-            Swate.Electron.Shared.FileIOHelper.isIgnoredInventoryEntry name relativePath isDirectory
+            Arcitisa.Electron.Shared.FileIOHelper.isIgnoredInventoryEntry name relativePath isDirectory
 
         Vitest.test (
             "PathKey normalizes separators, slashes, Unicode form and case",

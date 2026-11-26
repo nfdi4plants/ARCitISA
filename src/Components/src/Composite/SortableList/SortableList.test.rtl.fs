@@ -1,4 +1,4 @@
-module internal Swate.Components.Composite.SortableList.Tests
+module internal Arcitisa.Components.Composite.SortableList.Tests
 
 open System.Text.RegularExpressions
 open Browser.Dom
@@ -7,7 +7,7 @@ open Fable.Core
 open Fable.Core.JsInterop
 open Feliz
 open Vitest
-open Swate.Components.Composite.SortableListSample
+open Arcitisa.Components.Composite.SortableListSample
 open Types
 
 [<Import("installRowGeometry", "./SortableList.test.helpers.ts")>]

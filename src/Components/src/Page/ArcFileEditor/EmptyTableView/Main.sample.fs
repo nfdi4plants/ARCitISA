@@ -1,16 +1,16 @@
-namespace Swate.Components.Page.ArcFileEditor.EmptyTableViewSample
+namespace Arcitisa.Components.Page.ArcFileEditor.EmptyTableViewSample
 
 open ARCtrl
 open Fable.Core
 open Feliz
-open Swate.Components
-open Swate.Components.Shared
-open Swate.Components.Composite.AnnotationTable
-open Swate.Components.Composite.Template.TemplateCacheContext
-open Swate.Components.Composite.TermSearch.Context
-open Swate.Components.Composite.TermSearch.Types
-open Swate.Components.Shared.ProvenanceGrouping.ARCtrlConverter
-open Swate.Components.Page.ArcFileEditor.EmptyTableView.Types
+open Arcitisa.Components
+open Arcitisa.Components.Shared
+open Arcitisa.Components.Composite.AnnotationTable
+open Arcitisa.Components.Composite.Template.TemplateCacheContext
+open Arcitisa.Components.Composite.TermSearch.Context
+open Arcitisa.Components.Composite.TermSearch.Types
+open Arcitisa.Components.Shared.ProvenanceGrouping.ARCtrlConverter
+open Arcitisa.Components.Page.ArcFileEditor.EmptyTableView.Types
 
 [<StringEnum>]
 type WithArcNodes =
@@ -156,11 +156,11 @@ type internal Main =
             Html.div [
                 prop.className "swt:flex swt:h-screen swt:w-full swt:min-w-0 swt:flex-col swt:overflow-hidden"
                 prop.children [
-                    Swate.Components.Page.ArcFileEditor.Main.ArcFileEditor(
+                    Arcitisa.Components.Page.ArcFileEditor.Main.ArcFileEditor(
                         arcFile,
                         setArcFile,
                         (fun () -> promise { return [||] }),
-                        startingActiveView = Swate.Components.Page.ArcFileEditor.Types.ActiveView.Table 0,
+                        startingActiveView = Arcitisa.Components.Page.ArcFileEditor.Types.ActiveView.Table 0,
                         ?fetchArcNodes = fetchArcNodes
                     )
                 ]

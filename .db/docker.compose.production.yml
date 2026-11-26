@@ -1,6 +1,6 @@
 version: '3.8'
 
-name: swate_release
+name: arcitisa_release
 
 services:
 
@@ -43,9 +43,9 @@ services:
       retries: 30
       start_period: 30s
 
-  swate:
-    image: ghcr.io/nfdi4plants/swate:next
-    container_name: swate_new
+  arcitisa:
+    image: ghcr.io/nfdi4plants/arcitisa:next
+    container_name: arcitisa_new
     ports:
       - 5000:5000
     extra_hosts:

@@ -14,10 +14,10 @@ open Main.IPC.FileSystemIO
 open Main.Helper.ArcPathContainment
 open Main.IPC.Rename
 open Main.ARCtrlExtensions
-open Swate.Components.Shared
-open Swate.Electron.Shared.FileIOHelper
-open Swate.Electron.Shared.FileIOTypes
-open Swate.Electron.Shared.IPCTypes
+open Arcitisa.Components.Shared
+open Arcitisa.Electron.Shared.FileIOHelper
+open Arcitisa.Electron.Shared.FileIOTypes
+open Arcitisa.Electron.Shared.IPCTypes
 open ARCtrl
 open ARCtrl.Contract
 open ARCtrl.Helper
@@ -29,10 +29,10 @@ let private pathExistsAsync = TestHelpers.pathExistsAsync
 let private testWindow = TestHelpers.testWindow
 
 let private withTempArc =
-    TestHelpers.withTempArcWith "swate-ipc-rename-sync-" "RenameSyncArc"
+    TestHelpers.withTempArcWith "arcitisa-ipc-rename-sync-" "RenameSyncArc"
 
-let private loadSwateArcAsync arcPath = promise {
-    let! result = ARC.LoadAsyncSwate arcPath
+let private loadArcitisaArcAsync arcPath = promise {
+    let! result = ARC.LoadAsyncArcitisa arcPath
     return TestHelpers.expectLoadedArc result
 }
 
@@ -42,7 +42,7 @@ let private dataMap filePath =
     dataMap
 
 let private executeOrFail arcPath contracts = promise {
-    match! ContractExecutor.fulfillContractsSwateAsync arcPath contracts with
+    match! ContractExecutor.fulfillContractsArcitisaAsync arcPath contracts with
     | Ok _ -> return ()
     | Error errors -> return failwith (PathHelpers.formatContractErrors errors)
 }
@@ -51,7 +51,7 @@ let private assertAssayHasNoEmbeddedDatamap arcPath identifier = promise {
     let parentPath = Identifier.Assay.fileNameFromIdentifier identifier
 
     match!
-        ContractExecutor.fulfillReadContractsSwateAsync arcPath [|
+        ContractExecutor.fulfillReadContractsArcitisaAsync arcPath [|
             Contract.createRead (parentPath, DTOType.ISA_Assay)
         |]
     with
@@ -422,7 +422,7 @@ Vitest.describe (
                                 "nested payload"
                                 TextEncoding.Utf8
 
-                        let! loadResult = ARC.LoadAsyncSwate arcPath
+                        let! loadResult = ARC.LoadAsyncArcitisa arcPath
                         let loadedArc = TestHelpers.expectLoadedArc loadResult
 
                         match!
@@ -664,7 +664,7 @@ Vitest.describe (
                 with
                 | Ok _ -> failwith "Expected the invalid identifier to be rejected."
                 | Error error ->
-                    Vitest.expect(error.Message).toBe Swate.Electron.Shared.RenamePathRules.arcIdentifierError
+                    Vitest.expect(error.Message).toBe Arcitisa.Electron.Shared.RenamePathRules.arcIdentifierError
 
                 Vitest.expect(arc.Assays.[0].Identifier).toBe "OldAssay"
             }
@@ -734,7 +734,7 @@ Vitest.describe (
                             )
 
                         Vitest.expect(oldSeparateExists).toBe false
-                        let! arc = loadSwateArcAsync arcPath
+                        let! arc = loadArcitisaArcAsync arcPath
 
                         match!
                             ArcRenameHelper.renameArcEntityAsync
@@ -758,7 +758,7 @@ Vitest.describe (
 
                             Vitest.expect(newSeparateExists).toBe true
                             do! assertAssayHasNoEmbeddedDatamap arcPath "NewAssay"
-                            let! reloaded = loadSwateArcAsync arcPath
+                            let! reloaded = loadArcitisaArcAsync arcPath
 
                             Vitest
                                 .expect(reloaded.GetAssay("NewAssay").Datamap.Value.GetDataContext(0).Name)
@@ -787,7 +787,7 @@ Vitest.describe (
                                 |]
                             )
 
-                        let! contractArc = loadSwateArcAsync arcPath
+                        let! contractArc = loadArcitisaArcAsync arcPath
                         baselineArcStaticHashes contractArc
                         let dirtyBefore = ContractPolicy.captureDirtyDatamapKeys contractArc
                         let raw = contractArc.GetAssayRenameContracts("OldAssay", "NewAssay")
@@ -817,7 +817,7 @@ Vitest.describe (
                                 .toBe
                                 false
 
-                        let! arc = loadSwateArcAsync arcPath
+                        let! arc = loadArcitisaArcAsync arcPath
 
                         match!
                             ArcRenameHelper.renameArcEntityAsync
@@ -838,7 +838,7 @@ Vitest.describe (
                             Vitest.expect(after).toBe before
                             let! oldFolderExists = pathExistsAsync (join [| arcPath; "assays/OldAssay" |])
                             Vitest.expect(oldFolderExists).toBe false
-                            let! reloaded = loadSwateArcAsync arcPath
+                            let! reloaded = loadArcitisaArcAsync arcPath
 
                             Vitest
                                 .expect(reloaded.GetAssay("NewAssay").Datamap.Value.GetDataContext(0).Name)
@@ -872,7 +872,7 @@ Vitest.describe (
 
                         let! beforeDataMap = readFileBase64Async dataMapPath
                         let! beforeParent = readFileBase64Async parentPath
-                        let! arc = loadSwateArcAsync arcPath
+                        let! arc = loadArcitisaArcAsync arcPath
 
                         match!
                             ArcRenameHelper.renameArcEntityAsync
@@ -887,7 +887,7 @@ Vitest.describe (
                             let! afterParent = readFileBase64Async parentPath
                             Vitest.expect(afterDataMap).toBe beforeDataMap
                             Vitest.expect(afterParent).toBe beforeParent
-                            let! reloaded = loadSwateArcAsync arcPath
+                            let! reloaded = loadArcitisaArcAsync arcPath
                             Vitest.expect(reloaded.GetAssay("EmptyAssay").Datamap.Value.DataContexts.Count).toBe 0
                     })
         )

@@ -4,8 +4,8 @@ open System.Collections.Generic
 open Spreadsheet
 open Types
 open ARCtrl
-open Swate.Components
-open Swate.Components.Shared
+open Arcitisa.Components
+open Arcitisa.Components.Shared
 
 module ControllerTableAux =
 
@@ -40,12 +40,12 @@ let switchTable (nextIndex: int) (state: Spreadsheet.Model) : Spreadsheet.Model 
             ActiveView = ActiveView.Table nextIndex
       }
 
-/// <summary>This is the basic function to create new Tables from an array of SwateBuildingBlocks</summary>
+/// <summary>This is the basic function to create new Tables from an array of ArcitisaBuildingBlocks</summary>
 let addTable (newTable: ArcTable) (state: Spreadsheet.Model) : Spreadsheet.Model =
     state.Tables.AddTable(newTable)
     switchTable (state.Tables.TableCount - 1) state
 
-/// <summary>This is the basic function to update an existing Table from an array of SwateBuildingBlocks</summary>
+/// <summary>This is the basic function to update an existing Table from an array of ArcitisaBuildingBlocks</summary>
 let updateTable (newTable: ArcTable) (state: Spreadsheet.Model) : Spreadsheet.Model =
 
     match state.ArcFile with
@@ -60,7 +60,7 @@ let addTables (tables: ArcTable[]) (state: Spreadsheet.Model) : Spreadsheet.Mode
     switchTable (state.Tables.TableCount - 1) state
 
 
-/// <summary>Adds the most basic empty Swate table with auto generated name.</summary>
+/// <summary>Adds the most basic empty ARCitISA table with auto generated name.</summary>
 let createTable (usePrevOutput: bool) (state: Spreadsheet.Model) : Spreadsheet.Model =
     let tables = state.ArcFile.Value.ArcTables()
     let newName = createNewTableName 0 tables.TableNames
@@ -192,16 +192,16 @@ let selectRelativeCell (index: int * int) (move: int * int) (maxColumnIndex: int
 // Ui depends on main column name, maybe change this to depends on BuildingBlockType?
 // Header main column name must be updated
 
-//let editColumn (columnIndex: int, newType: SwateCell, b_type: BuildingBlockType option)  (state: Spreadsheet.Model) : Spreadsheet.Model =
+//let editColumn (columnIndex: int, newType: ArcitisaCell, b_type: BuildingBlockType option)  (state: Spreadsheet.Model) : Spreadsheet.Model =
 //    let table = state.ActiveTable
-//    let updateHeader (header: SwateCell) =
+//    let updateHeader (header: ArcitisaCell) =
 //        match newType with
 //        | IsUnit _ -> header.toUnitHeader(?b_type = b_type)
 //        | IsTerm _ -> header.toTermHeader(?b_type = b_type)
 //        | IsFreetext _ -> header.toFreetextHeader(?b_type = b_type)
 //        | IsHeader _ -> failwith "This is no viable input."
 //        |> IsHeader
-//    let updateBody (cell: SwateCell) =
+//    let updateBody (cell: ArcitisaCell) =
 //        match newType with
 //        | IsUnit _ -> cell.toUnitCell()
 //        | IsTerm _ -> cell.toTermCell()

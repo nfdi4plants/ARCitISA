@@ -1,4 +1,4 @@
-module Swate.Components.Page.ValidationPackageBrowser.Types
+module Arcitisa.Components.Page.ValidationPackageBrowser.Types
 
 // [
 //   {
