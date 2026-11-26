@@ -129,7 +129,7 @@ let main args =
                 printRedfn "No --arch provided for electron-bin target!"
                 exit 1
 
-            Release.electronBinaries latestVersion arch.Value
+            Release.electronBinaries arch.Value
             printGreenfn "Release electron-bin for arch %s!" arch.Value
             0
         | "storybook" ->
