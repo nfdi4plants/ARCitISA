@@ -298,6 +298,9 @@ jobs:
           dpkg-deb -c "$deb" > "$RUNNER_TEMP/deb-files.txt"
           grep -q ' \./opt/ARCitISA/arcitisa$' "$RUNNER_TEMP/deb-files.txt"
           grep -q ' \./usr/share/applications/arcitisa\.desktop$' "$RUNNER_TEMP/deb-files.txt"
+          # Every user must be able to open the app folder.
+          grep ' \./opt/ARCitISA/$' "$RUNNER_TEMP/deb-files.txt"
+          grep -Eq '^drwxr-xr-x .* \./opt/ARCitISA/$' "$RUNNER_TEMP/deb-files.txt"
           echo "deb checks passed"
 
       - name: "Linux: rpm metadata"
@@ -313,6 +316,8 @@ jobs:
           version=$(rpm -qp --qf '%{VERSION}' "$rpm")
           test "$version" = "$(echo "$TRIAL_VERSION" | tr '-' '~')"
           test "$(rpm --eval "%{lua: print(rpm.vercmp('$version', '${TRIAL_VERSION%%-*}'))}")" = "-1"
+          rpm -qp --scripts "$rpm" | grep -A3 'posttrans scriptlet'
+          rpm -qp --scripts "$rpm" | grep -q "update-alternatives --install '/usr/bin/arcitisa'"
           echo "rpm checks passed"
 
       - name: "Linux: pacman metadata"
@@ -325,7 +330,11 @@ jobs:
           bsdtar -xOf "$pkg" .PKGINFO | tee "$RUNNER_TEMP/PKGINFO"
           grep -qx "pkgver = ${TRIAL_VERSION//-/}-1" "$RUNNER_TEMP/PKGINFO"
           grep -qx 'depend = git' "$RUNNER_TEMP/PKGINFO"
-          grep -q '^optdepend = git-lfs' "$RUNNER_TEMP/PKGINFO"
+          bsdtar -xOf "$pkg" .INSTALL | tee "$RUNNER_TEMP/INSTALL" | grep -E '^(post|pre)_[a-z]+\(\)'
+          grep -q '^post_upgrade()' "$RUNNER_TEMP/INSTALL"
+          # Every user must be able to open the app folder.
+          bsdtar -tvf "$pkg" | grep -E ' opt/ARCitISA/?$'
+          bsdtar -tvf "$pkg" | grep -Eq '^drwxr-xr-x .* opt/ARCitISA/?$'
           result=$(docker run --rm archlinux:base vercmp "${TRIAL_VERSION//-/}" "${TRIAL_VERSION%%-*}")
           echo "vercmp ${TRIAL_VERSION//-/} ${TRIAL_VERSION%%-*} = $result"
           test "$result" = "-1"
@@ -421,8 +430,9 @@ jobs:
             pacman -U --noconfirm /new/*.pkg.tar.zst
             pacman -Q arcitisa
             pacman -Qi arcitisa | grep -E "^(Version|Depends On|Optional Deps)"
-            # The 3.x package owned /usr/bin/arcitisa. The new one creates it in its install script.
-            ls -la /opt/ARCitISA/arcitisa /usr/bin/arcitisa'
+            # The 3.x package owned /usr/bin/arcitisa. The new one sets it up again in post_upgrade.
+            ls -la /opt/ARCitISA/arcitisa /usr/bin/arcitisa
+            test "$(readlink -f /usr/bin/arcitisa)" = /opt/ARCitISA/arcitisa'
 
       - name: "Linux: the installed deb and the AppImage start"
         if: ${{ !cancelled() && steps.build.outcome == 'success' && runner.os == 'Linux' && matrix.arch == 'x64' }}
