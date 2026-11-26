@@ -40,6 +40,23 @@ const adHocSignDarwinArm64App = async (_forgeConfig, packageResult) => {
   }
 };
 
+// On Linux, the folder that `electron-forge package` writes has mode 0700, so only its owner may open
+// it. electron-builder copies it as it is, and /opt/ARCitISA in the deb could only be opened by root.
+const makeLinuxAppFolderReadable = async (_forgeConfig, packageResult) => {
+  if (packageResult.platform !== 'linux') {
+    return;
+  }
+
+  for (const outputPath of packageResult.outputPaths) {
+    await fs.chmod(outputPath, 0o755);
+  }
+};
+
+const postPackage = async (forgeConfig, packageResult) => {
+  await makeLinuxAppFolderReadable(forgeConfig, packageResult);
+  await adHocSignDarwinArm64App(forgeConfig, packageResult);
+};
+
 module.exports = {
   packagerConfig: {
     // The main process starts the text diff worker from the unpacked copy next to app.asar.
@@ -58,7 +75,7 @@ module.exports = {
   },
   rebuildConfig: {},
   hooks: {
-    postPackage: adHocSignDarwinArm64App,
+    postPackage,
   },
   makers: [
     {
