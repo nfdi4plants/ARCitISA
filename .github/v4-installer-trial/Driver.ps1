@@ -56,8 +56,27 @@ function Find-Class($el, [string]$class) { Get-Descendants $el | Where-Object { 
 # controls of NSIS. Window messages act on them instead.
 if (-not ('Win32Control' -as [type])) {
   Add-Type -TypeDefinition @"
-using System; using System.Runtime.InteropServices; using System.Text;
+using System; using System.Collections.Generic; using System.Runtime.InteropServices; using System.Text;
 public static class Win32Control {
+  delegate bool EnumProc(IntPtr h, IntPtr l);
+  [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc cb, IntPtr l);
+  [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr h);
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassName(IntPtr h, StringBuilder s, int n);
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowText(IntPtr h, StringBuilder s, int n);
+  // Visible top-level dialogs (#32770) whose title contains the text, topmost first. Unlike the
+  // children of the UI Automation root, this includes owned windows such as a message box.
+  public static List<IntPtr> FindDialogs(string titlePart) {
+    var found = new List<IntPtr>();
+    EnumWindows((h, l) => {
+      if (!IsWindowVisible(h)) return true;
+      var cls = new StringBuilder(64); GetClassName(h, cls, cls.Capacity);
+      if (cls.ToString() != "#32770") return true;
+      var title = new StringBuilder(512); GetWindowText(h, title, title.Capacity);
+      if (title.ToString().Contains(titlePart)) found.Add(h);
+      return true;
+    }, IntPtr.Zero);
+    return found;
+  }
   [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr h, uint msg, IntPtr w, IntPtr l);
   [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern IntPtr SendMessage(IntPtr h, uint msg, IntPtr w, StringBuilder l);
   [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr h, uint msg, IntPtr w, IntPtr l);
@@ -102,8 +121,11 @@ function Get-WindowText($el) {
 
 # NSIS windows are dialogs (#32770). The wizard has the Back button (3), a message box has not. On the
 # first page the button is hidden, so UI Automation does not list it; GetDlgItem finds it anyway.
+# A message box that the wizard owns is not a child of the UI Automation root, so the windows come
+# from EnumWindows.
 function Get-NsisWindows {
-  Get-TopWindows | Where-Object { $_.Current.ClassName -eq '#32770' -and $_.Current.Name -like '*ARCitISA*' -and -not $_.Current.IsOffscreen }
+  # A window that closed in between is skipped.
+  [Win32Control]::FindDialogs('ARCitISA') | ForEach-Object { try { $AE::FromHandle($_) } catch { } }
 }
 function Test-Wizard($w) { [Win32Control]::GetDlgItem((Get-Hwnd $w), 3) -ne [IntPtr]::Zero }
 
