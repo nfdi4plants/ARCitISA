@@ -298,7 +298,8 @@ jobs:
             rpm -q swate
             dnf install -y /new/*.x86_64.rpm | tee /tmp/dnf.log
             if rpm -q swate; then echo "swate is still installed"; exit 1; fi
-            rpm -q arcitisa'
+            rpm -q arcitisa
+            ls -la /opt/ARCitISA/arcitisa /usr/bin/arcitisa'
 
       - name: "Linux: Arch, pacman -U upgrades arcitisa"
         if: ${{ !cancelled() && steps.old.outcome == 'success' }}
@@ -309,7 +310,9 @@ jobs:
             pacman -Q arcitisa
             pacman -U --noconfirm /new/*.pkg.tar.zst
             pacman -Q arcitisa
-            pacman -Qi arcitisa | grep -E "^(Version|Depends On|Optional Deps)"'
+            pacman -Qi arcitisa | grep -E "^(Version|Depends On|Optional Deps)"
+            # The 3.x package owned /usr/bin/arcitisa. The new one creates it in its install script.
+            ls -la /opt/ARCitISA/arcitisa /usr/bin/arcitisa'
 
       - name: "Linux: the installed deb and the AppImage start"
         if: ${{ !cancelled() && steps.build.outcome == 'success' && runner.os == 'Linux' && matrix.arch == 'x64' }}
