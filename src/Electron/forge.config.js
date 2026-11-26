@@ -64,10 +64,12 @@ module.exports = {
     // worker in any folder. A pattern with ** skips dot folders, which include .vite and any
     // dot folder in the build path (C:\Users\x\.cache, for example).
     asar: { unpack: 'text-diff-worker.cjs' },
-    // Must match "name" in package.json. The deb and rpm makers look for the binary under that name.
+    // Must match linux.executableName in electron-builder.config.js, which names the binary in the
+    // Linux packages and the /usr/bin link after it.
     executableName: 'arcitisa',
-    // Keeps the bundle id from before the rename, so macOS treats ARCitISA as the same app.
-    appBundleId: 'com.electron.swate',
+    // Must equal appId in electron-builder.config.js. Never change it: macOS refuses an update whose
+    // bundle id differs from the installed app.
+    appBundleId: 'org.nfdi4plants.app-arc-management-core',
     icon: platformIcon,
     extraResource: [
         "./assets"
@@ -77,45 +79,7 @@ module.exports = {
   hooks: {
     postPackage,
   },
-  makers: [
-    {
-      name: '@electron-forge/maker-squirrel',
-      config: {
-        setupIcon: 'assets/icons/win/icon.ico',
-      },
-    },
-    {
-      name: '@electron-forge/maker-zip',
-      // On Linux the zip holds the unpacked app for distributions that cannot install the deb or rpm (#1433).
-      platforms: ['darwin', 'linux'],
-    },
-    {
-      name: '@reforged/maker-appimage',
-      platforms: ['linux'],
-      config: {
-        options: {
-          icon: 'assets/icons/png/512x512.png',
-          categories: ['Science'],
-          // The maker downloads the runtime from the moving "continuous" tag by default. A tagged
-          // release keeps the runtime fixed. The AppImage is built for Linux x64 only (see
-          // electronTarget in build/Actions/Release.fs).
-          runtime: 'https://github.com/AppImage/type2-runtime/releases/download/20251108/runtime-x86_64',
-        },
-      },
-    },
-    {
-      name: '@electron-forge/maker-deb',
-      config: {},
-    },
-    {
-      name: '@electron-forge/maker-rpm',
-      config: {},
-    },
-    {
-      name: '@electron-forge/maker-dmg',
-      config: { }
-    }
-  ],
+  // No makers: electron-builder makes the installers from the packaged app (scripts/make.cjs).
   plugins: [
     {
       name: '@electron-forge/plugin-vite',
