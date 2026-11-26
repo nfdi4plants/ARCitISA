@@ -13,6 +13,10 @@
   Var oldSquirrelAppDir
   Var createDesktopShortcut
   Var desktopShortcutCheckbox
+!else
+  Var userDataDir
+  Var legacyUserDataDir
+  Var userDataFolders
 !endif
 
 !macro quitBecauseOldVersionRemains MESSAGE
@@ -121,10 +125,38 @@
   ${EndIf}
 !macroend
 
+; Asks whether to delete the user data: %AppData%\ARCitISA, and %AppData%\Swate, where 3.x kept it.
+; A silent uninstall (winget, IT tools) cannot ask and deletes it. Not $APPDATA: it points to
+; ProgramData in an all-users uninstall.
+!macro askToDeleteUserData
+  ExpandEnvStrings $userDataDir "%APPDATA%\ARCitISA"
+  ExpandEnvStrings $legacyUserDataDir "%APPDATA%\Swate"
+  StrCpy $userDataFolders ""
+  ${If} ${FileExists} "$userDataDir\*.*"
+    StrCpy $userDataFolders "$userDataFolders$userDataDir$\r$\n"
+  ${EndIf}
+  ${If} ${FileExists} "$legacyUserDataDir\*.*"
+    StrCpy $userDataFolders "$userDataFolders$legacyUserDataDir$\r$\n"
+  ${EndIf}
+
+  ${If} $userDataFolders != ""
+    ${If} ${Cmd} `MessageBox MB_YESNO|MB_ICONQUESTION|MB_DEFBUTTON2 "Do you also want to delete your ARCitISA settings, signed-in accounts and list of recent ARCs?$\r$\n$\r$\nThey are stored in:$\r$\n$userDataFolders$\r$\nYes deletes them. If you install ARCitISA again, it starts with default settings and you sign in again.$\r$\nNo keeps them for a later install.$\r$\n$\r$\nYour ARCs are not deleted. They stay in their folders." /SD IDYES IDYES`
+      RMDir /r "$userDataDir"
+      RMDir /r "$legacyUserDataDir"
+      ${If} ${FileExists} "$userDataDir\*.*"
+      ${OrIf} ${FileExists} "$legacyUserDataDir\*.*"
+        MessageBox MB_OK|MB_ICONEXCLAMATION "Some of your ARCitISA data could not be deleted. Delete these folders yourself:$\r$\n$\r$\n$userDataFolders" /SD IDOK
+      ${EndIf}
+    ${EndIf}
+  ${EndIf}
+!macroend
+
 ; Setup runs the uninstaller of the installed version with --updated before it installs a new one.
+; That run keeps the desktop shortcut and the user data.
 !macro customUnInstall
   ${IfNot} ${isUpdated}
     WinShell::UninstShortcut "$newDesktopLink"
     Delete "$newDesktopLink"
+    !insertmacro askToDeleteUserData
   ${EndIf}
 !macroend
