@@ -1,0 +1,369 @@
+# Phase 0 trial build of the 4.0.0 installers (docs/maintainer/V4InstallerAndCleanupPlan.md).
+# Temporary. Delete this file before feature/v4-installers is merged.
+#
+# Builds every installer with version 4.0.0-rc.1, checks that electron-builder left the packaged app
+# alone, and tests the package metadata and the upgrade from the 3.4.0-rc.2 packages. Each check is its
+# own step, so one failure does not hide the others.
+
+name: v4 installer trial
+
+on:
+  push:
+    branches: [feature/v4-installers]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  TRIAL_VERSION: 4.0.0-rc.1
+  OLD_RELEASE: 3.4.0-rc.2
+
+jobs:
+  trial:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            arch: x64
+            platform: win
+            targets: nsis
+            app: out/ARCitISA-win32-x64
+          - os: macos-latest
+            arch: x64
+            platform: mac
+            targets: dmg zip
+            app: out/ARCitISA-darwin-x64/ARCitISA.app
+          - os: macos-latest
+            arch: arm64
+            platform: mac
+            targets: dmg zip
+            app: out/ARCitISA-darwin-arm64/ARCitISA.app
+          # Same runners as release_electron_binaries. arm64 is cross-built on the x64 runner there too.
+          - os: ubuntu-24.04
+            arch: x64
+            platform: linux
+            targets: deb rpm pacman AppImage zip
+            app: out/ARCitISA-linux-x64
+          - os: ubuntu-24.04
+            arch: arm64
+            platform: linux
+            targets: deb rpm zip
+            app: out/ARCitISA-linux-arm64
+
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: src/Electron
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.x.x
+
+      - run: dotnet tool restore
+        working-directory: .
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - run: npm install -g npm@11.5.1
+        working-directory: .
+
+      - run: npm i
+        working-directory: .
+
+      - name: Install Linux packaging and test tools
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y rpm zstd libarchive-tools xvfb
+
+      - name: Set the trial version
+        run: npm version "$TRIAL_VERSION" --no-git-tag-version
+
+      - run: npm run fable
+
+      - name: electron-forge package
+        run: npx electron-forge package --arch=${{ matrix.arch }}
+
+      - name: Hash the packaged app
+        run: |
+          (cd "${{ matrix.app }}" && find . -type f -print0 | LC_ALL=C sort -z | xargs -0 $(command -v sha256sum || echo shasum -a 256)) > "$RUNNER_TEMP/packaged.sha256"
+          wc -l "$RUNNER_TEMP/packaged.sha256"
+
+      - name: electron-builder --prepackaged
+        id: build
+        run: npx electron-builder --prepackaged "${{ matrix.app }}" --${{ matrix.platform }} ${{ matrix.targets }} --${{ matrix.arch }} --config electron-builder.config.js --publish never
+
+      - name: List the installers
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: ls -la out/installers
+
+      - name: Packaged app unchanged by electron-builder
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: |
+          (cd "${{ matrix.app }}" && find . -type f -print0 | LC_ALL=C sort -z | xargs -0 $(command -v sha256sum || echo shasum -a 256)) > "$RUNNER_TEMP/after.sha256"
+          echo "Files electron-builder added or changed (informational):"
+          diff "$RUNNER_TEMP/packaged.sha256" "$RUNNER_TEMP/after.sha256" || true
+          # Only the files that the fuses and the asar integrity check protect must stay identical.
+          changed=$(diff "$RUNNER_TEMP/packaged.sha256" "$RUNNER_TEMP/after.sha256" | grep -E '^[<>].*(app\.asar|/arcitisa(\.exe)?)$' || true)
+          if [ -n "$changed" ]; then echo "::error::electron-builder changed the app.asar or the executable: $changed"; exit 1; fi
+
+      - name: Fuses of the packaged app
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: |
+          case "${{ matrix.platform }}" in
+            win) target="${{ matrix.app }}/arcitisa.exe" ;;
+            *) target="${{ matrix.app }}" ;;
+          esac
+          npx electron-fuses read --app "$target" | tee "$RUNNER_TEMP/fuses.txt"
+          grep -q 'EnableEmbeddedAsarIntegrityValidation is Enabled' "$RUNNER_TEMP/fuses.txt"
+          grep -q 'OnlyLoadAppFromAsar is Enabled' "$RUNNER_TEMP/fuses.txt"
+          grep -q 'RunAsNode is Disabled' "$RUNNER_TEMP/fuses.txt"
+
+      # ----- Windows -------------------------------------------------------------------------------
+
+      - name: "Windows: installer payload equals the packaged app"
+        if: ${{ !cancelled() && steps.build.outcome == 'success' && runner.os == 'Windows' }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $setup = (Get-ChildItem out/installers/*.exe | Select-Object -First 1).FullName
+          & 'C:\Program Files\7-Zip\7z.exe' x $setup "-o$env:RUNNER_TEMP\setup" -y | Out-Null
+          & 'C:\Program Files\7-Zip\7z.exe' x "$env:RUNNER_TEMP\setup\`$PLUGINSDIR\app-64.7z" "-o$env:RUNNER_TEMP\payload" -y | Out-Null
+          function Get-Hashes($dir) { $full = (Resolve-Path $dir).Path; Get-ChildItem -Recurse -File $full | ForEach-Object { "{0}  {1}" -f (Get-FileHash $_.FullName).Hash, $_.FullName.Substring($full.Length + 1) } }
+          $diff = Compare-Object (Get-Hashes '${{ matrix.app }}') (Get-Hashes "$env:RUNNER_TEMP\payload")
+          $diff | Format-Table -AutoSize -Wrap
+          if ($diff) { Write-Error 'The installer payload differs from the packaged app' }
+          Get-ChildItem "$env:RUNNER_TEMP\setup\`$R0" | Select-Object Name
+
+      - name: "Windows: silent install, start, silent uninstall keeps user data"
+        if: ${{ !cancelled() && steps.build.outcome == 'success' && runner.os == 'Windows' }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $setup = (Get-ChildItem out/installers/*.exe | Select-Object -First 1).FullName
+          $guid = '716c9faf-756d-4e23-94c8-6d9e8d665a44'
+          $uninstallKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\$guid"
+          $installDir = "$env:LOCALAPPDATA\Programs\ARCitISA"
+          $startMenuLink = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\ARCitISA.lnk"
+          $desktopLink = Join-Path ([Environment]::GetFolderPath('Desktop')) 'ARCitISA.lnk'
+
+          $p = Start-Process $setup -ArgumentList '/S' -Wait -PassThru
+          "setup exit code: $($p.ExitCode)"
+          if ($p.ExitCode -ne 0) { Write-Error 'Silent setup failed' }
+          Get-ItemProperty $uninstallKey | Select-Object DisplayName, DisplayVersion, InstallLocation, UninstallString | Format-List
+          if (-not (Test-Path "$installDir\ARCitISA.exe")) { Write-Error "No app in $installDir" }
+          if (-not (Test-Path $startMenuLink)) { Write-Error 'No Start menu shortcut' }
+          if (Test-Path $desktopLink) { Write-Error 'A silent install must not create a desktop shortcut' }
+
+          npx electron-fuses read --app "$installDir\arcitisa.exe"
+
+          $ud = Join-Path $env:RUNNER_TEMP 'ud-installed'
+          New-Item -ItemType Directory $ud | Out-Null
+          $app = Start-Process "$installDir\arcitisa.exe" -ArgumentList "--user-data-dir=`"$ud`"" -PassThru
+          Start-Sleep -Seconds 25
+          $app.Refresh()
+          "installed app still running after 25 s: $(-not $app.HasExited)"
+          if ($app.HasExited) { Write-Error "The installed app exited with code $($app.ExitCode)" }
+          Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -like "$installDir\*" } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+          Start-Sleep -Seconds 3
+
+          New-Item -ItemType Directory -Force "$env:APPDATA\ARCitISA" | Out-Null
+          Set-Content "$env:APPDATA\ARCitISA\keep.txt" 'must survive the uninstall'
+          Start-Process "$installDir\Uninstall ARCitISA.exe" -ArgumentList '/S'
+          # The uninstaller restarts itself from %TEMP%, so wait for its registry entry to go away.
+          $deadline = (Get-Date).AddSeconds(120)
+          while ((Test-Path $uninstallKey) -and (Get-Date) -lt $deadline) { Start-Sleep -Seconds 2 }
+          Start-Sleep -Seconds 3
+          if (Test-Path $uninstallKey) { Write-Error 'The uninstall entry is still there' }
+          if (Test-Path "$installDir\ARCitISA.exe") { Write-Error 'The app is still installed' }
+          if (Test-Path $startMenuLink) { Write-Error 'The Start menu shortcut is still there' }
+          if (-not (Test-Path "$env:APPDATA\ARCitISA\keep.txt")) { Write-Error 'The uninstall deleted the user data folder' }
+          'install and uninstall checks passed'
+
+      - name: "Windows: silent setup stops when the old Squirrel install is found"
+        if: ${{ !cancelled() && steps.build.outcome == 'success' && runner.os == 'Windows' }}
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $setup = (Get-ChildItem out/installers/*.exe | Select-Object -First 1).FullName
+          $old = Join-Path $env:RUNNER_TEMP 'old'
+          gh release download $env:OLD_RELEASE --repo $env:GITHUB_REPOSITORY -p '*Setup.exe' -D $old
+          $oldSetup = (Get-ChildItem "$old\*Setup.exe" | Select-Object -First 1).FullName
+          "old setup: $oldSetup"
+          # Squirrel installs without asking and then starts the app.
+          Start-Process $oldSetup
+          $squirrel = "$env:LOCALAPPDATA\swate"
+          $deadline = (Get-Date).AddSeconds(180)
+          while (-not ((Test-Path "$squirrel\app-*") -and (Test-Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\swate')) -and (Get-Date) -lt $deadline) { Start-Sleep -Seconds 2 }
+          Start-Sleep -Seconds 15
+          Get-ChildItem -Force $squirrel | Select-Object Name
+          Get-Process swate -ErrorAction SilentlyContinue | Stop-Process -Force
+          Start-Sleep -Seconds 3
+
+          $p = Start-Process $setup -ArgumentList '/S' -Wait -PassThru
+          "setup exit code with the old install present: $($p.ExitCode)"
+          if ($p.ExitCode -ne 1) { Write-Error 'Expected exit code 1: silent setup answers No and quits' }
+          if (Test-Path "$env:LOCALAPPDATA\Programs\ARCitISA\ARCitISA.exe") { Write-Error 'Setup installed although it should have stopped' }
+          if (-not (Test-Path "$squirrel\app-*")) { Write-Error 'Setup removed the old install in silent mode' }
+          'old install check passed'
+
+      # ----- Linux ---------------------------------------------------------------------------------
+
+      - name: "Linux: deb metadata"
+        if: ${{ !cancelled() && steps.build.outcome == 'success' && runner.os == 'Linux' }}
+        working-directory: src/Electron/out/installers
+        run: |
+          deb=$(ls *.deb)
+          dpkg-deb -I "$deb"
+          version=$(dpkg-deb -f "$deb" Version)
+          test "$version" = "$(echo "$TRIAL_VERSION" | tr '-' '~')"
+          dpkg --compare-versions "$version" lt "${TRIAL_VERSION%%-*}"
+          dpkg-deb -f "$deb" Conflicts | grep -qw swate
+          dpkg-deb -f "$deb" Replaces | grep -qw swate
+          dpkg-deb -c "$deb" > "$RUNNER_TEMP/deb-files.txt"
+          grep -q ' \./opt/ARCitISA/arcitisa$' "$RUNNER_TEMP/deb-files.txt"
+          grep -q ' \./usr/share/applications/arcitisa\.desktop$' "$RUNNER_TEMP/deb-files.txt"
+          echo "deb checks passed"
+
+      - name: "Linux: rpm metadata"
+        if: ${{ !cancelled() && steps.build.outcome == 'success' && runner.os == 'Linux' }}
+        working-directory: src/Electron/out/installers
+        run: |
+          rpm=$(ls *.rpm)
+          rpm -qip "$rpm"
+          echo "obsoletes: $(rpm -qp --obsoletes "$rpm")"
+          echo "conflicts: $(rpm -qp --conflicts "$rpm")"
+          echo "requires:"; rpm -qp --requires "$rpm"
+          rpm -qp --obsoletes "$rpm" | grep -qw swate
+          version=$(rpm -qp --qf '%{VERSION}' "$rpm")
+          test "$version" = "$(echo "$TRIAL_VERSION" | tr '-' '~')"
+          test "$(rpm --eval "%{lua: print(rpm.vercmp('$version', '${TRIAL_VERSION%%-*}'))}")" = "-1"
+          echo "rpm checks passed"
+
+      - name: "Linux: pacman metadata"
+        if: ${{ !cancelled() && steps.build.outcome == 'success' && runner.os == 'Linux' && matrix.arch == 'x64' }}
+        working-directory: src/Electron/out/installers
+        run: |
+          pkg=$(ls *.pkg.tar.zst)
+          file "$pkg"
+          file "$pkg" | grep -q 'Zstandard'
+          bsdtar -xOf "$pkg" .PKGINFO | tee "$RUNNER_TEMP/PKGINFO"
+          grep -qx "pkgver = ${TRIAL_VERSION//-/}-1" "$RUNNER_TEMP/PKGINFO"
+          grep -qx 'depend = git' "$RUNNER_TEMP/PKGINFO"
+          grep -q '^optdepend = git-lfs' "$RUNNER_TEMP/PKGINFO"
+          result=$(docker run --rm archlinux:base vercmp "${TRIAL_VERSION//-/}" "${TRIAL_VERSION%%-*}")
+          echo "vercmp ${TRIAL_VERSION//-/} ${TRIAL_VERSION%%-*} = $result"
+          test "$result" = "-1"
+          echo "pacman checks passed"
+
+      - name: "Linux: the binary has the target architecture"
+        if: ${{ !cancelled() && steps.build.outcome == 'success' && runner.os == 'Linux' }}
+        run: file "${{ matrix.app }}/arcitisa"
+
+      - name: "Linux: download the 3.4.0-rc.2 packages"
+        id: old
+        if: ${{ !cancelled() && steps.build.outcome == 'success' && runner.os == 'Linux' && matrix.arch == 'x64' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download "$OLD_RELEASE" --repo "$GITHUB_REPOSITORY" -p '*_amd64.deb' -p '*.x86_64.rpm' -p '*.pkg.tar.zst' -D "$RUNNER_TEMP/old"
+          ls -la "$RUNNER_TEMP/old"
+
+      - name: "Linux: Ubuntu, apt replaces the swate package"
+        if: ${{ !cancelled() && steps.old.outcome == 'success' }}
+        run: |
+          docker run --rm -e DEBIAN_FRONTEND=noninteractive -v "$RUNNER_TEMP/old:/old:ro" -v "$PWD/out/installers:/new:ro" ubuntu:24.04 bash -euxc '
+            apt-get update -qq
+            apt-get install -y -qq /old/*_amd64.deb > /dev/null
+            dpkg -s swate | grep -E "^(Package|Version|Status):"
+            apt-get install -y /new/*_amd64.deb | tee /tmp/apt.log
+            grep -A2 "will be REMOVED" /tmp/apt.log | grep -qw swate
+            if dpkg -s swate 2> /dev/null | grep -q "Status: install ok installed"; then echo "swate is still installed"; exit 1; fi
+            dpkg -s arcitisa | grep -E "^(Package|Version|Status):"
+            ls -la /opt/ARCitISA/arcitisa /usr/bin/arcitisa'
+
+      - name: "Linux: Fedora, dnf replaces the swate package"
+        if: ${{ !cancelled() && steps.old.outcome == 'success' }}
+        run: |
+          docker run --rm -v "$RUNNER_TEMP/old:/old:ro" -v "$PWD/out/installers:/new:ro" fedora:latest bash -euxc '
+            dnf install -y -q /old/*.x86_64.rpm
+            rpm -q swate
+            dnf install -y /new/*.x86_64.rpm | tee /tmp/dnf.log
+            if rpm -q swate; then echo "swate is still installed"; exit 1; fi
+            rpm -q arcitisa'
+
+      - name: "Linux: Arch, pacman -U upgrades arcitisa"
+        if: ${{ !cancelled() && steps.old.outcome == 'success' }}
+        run: |
+          docker run --rm -v "$RUNNER_TEMP/old:/old:ro" -v "$PWD/out/installers:/new:ro" archlinux:base bash -euxc '
+            pacman -Sy --noconfirm > /dev/null
+            pacman -U --noconfirm /old/*.pkg.tar.zst > /dev/null
+            pacman -Q arcitisa
+            pacman -U --noconfirm /new/*.pkg.tar.zst
+            pacman -Q arcitisa
+            pacman -Qi arcitisa | grep -E "^(Version|Depends On|Optional Deps)"'
+
+      - name: "Linux: the installed deb and the AppImage start"
+        if: ${{ !cancelled() && steps.build.outcome == 'success' && runner.os == 'Linux' && matrix.arch == 'x64' }}
+        run: |
+          sudo apt-get install -y ./out/installers/*_amd64.deb
+          npx electron-fuses read --app /opt/ARCitISA/arcitisa
+          # timeout exits with 124 when the app was still running after 30 s.
+          set +e
+          xvfb-run -a timeout 30 /opt/ARCitISA/arcitisa --user-data-dir="$(mktemp -d)"
+          deb_result=$?
+          appimage=$(ls "$PWD"/out/installers/*.AppImage)
+          chmod +x "$appimage"
+          (cd "$RUNNER_TEMP" && "$appimage" --appimage-extract > /dev/null)
+          cmp "$RUNNER_TEMP/squashfs-root/resources/app.asar" "${{ matrix.app }}/resources/app.asar"
+          asar_result=$?
+          xvfb-run -a timeout 30 "$RUNNER_TEMP/squashfs-root/arcitisa" --no-sandbox --user-data-dir="$(mktemp -d)"
+          appimage_result=$?
+          set -e
+          echo "deb app: $deb_result, AppImage asar compare: $asar_result, AppImage app: $appimage_result (124 = still running)"
+          test "$deb_result" = 124 && test "$asar_result" = 0 && test "$appimage_result" = 124
+
+      # ----- macOS ---------------------------------------------------------------------------------
+
+      - name: "macOS: the app from the dmg and the zip"
+        if: ${{ !cancelled() && steps.build.outcome == 'success' && runner.os == 'macOS' }}
+        run: |
+          set -u
+          dmg=$(ls out/installers/*.dmg)
+          zip=$(ls out/installers/*.zip)
+          mkdir -p "$RUNNER_TEMP/zip"
+          hdiutil attach -nobrowse -readonly -mountpoint "$RUNNER_TEMP/dmg" "$dmg"
+          ditto -x -k "$zip" "$RUNNER_TEMP/zip"
+          status=0
+          for app in "$RUNNER_TEMP/dmg/ARCitISA.app" "$RUNNER_TEMP/zip/ARCitISA.app"; do
+            echo "== $app"
+            echo "bundle id: $(defaults read "$app/Contents/Info.plist" CFBundleIdentifier)"
+            cmp "$app/Contents/Resources/app.asar" "${{ matrix.app }}/Contents/Resources/app.asar" || status=1
+            cmp "$app/Contents/MacOS/arcitisa" "${{ matrix.app }}/Contents/MacOS/arcitisa" || status=1
+            codesign -dv "$app" 2>&1 | grep -E '^(Signature|Identifier|Format)' || true
+            if [ "${{ matrix.arch }}" = arm64 ]; then
+              codesign --verify --deep --strict --verbose=2 "$app" || status=1
+            fi
+            npx electron-fuses read --app "$app"
+            "$app/Contents/MacOS/arcitisa" --user-data-dir="$(mktemp -d)" &
+            pid=$!
+            sleep 25
+            if kill -0 "$pid" 2> /dev/null; then echo "app still running after 25 s"; kill "$pid"; else wait "$pid"; echo "app exited with $?"; status=1; fi
+          done
+          hdiutil detach "$RUNNER_TEMP/dmg"
+          exit "$status"
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        with:
+          name: v4-installer-trial-${{ runner.os }}-${{ matrix.arch }}
+          path: src/Electron/out/installers/*
+          retention-days: 7
