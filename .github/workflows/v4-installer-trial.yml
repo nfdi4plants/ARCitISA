@@ -169,7 +169,7 @@ jobs:
           path: src/Electron/out/installers-rc.2/*.exe
           retention-days: 7
 
-      - name: "Windows: silent install and start, silent update keeps user data, silent uninstall deletes it"
+      - name: "Windows: silent install and start, silent update and silent uninstall keep user data"
         if: ${{ !cancelled() && steps.build.outcome == 'success' && runner.os == 'Windows' }}
         shell: pwsh
         run: |
@@ -214,7 +214,7 @@ jobs:
           if ($version -ne '4.0.0-rc.2') { Write-Error "Installed version after the update: $version" }
           foreach ($d in $userData) { if (-not (Test-Path "$d\marker.txt")) { Write-Error "The update deleted $d" } }
 
-          # A silent uninstall cannot ask whether to delete the user data, so it deletes it.
+          # A silent uninstall cannot ask whether to delete the user data, so it keeps it.
           Start-Process "$installDir\Uninstall ARCitISA.exe" -ArgumentList '/S'
           # The uninstaller restarts itself from %TEMP%, so wait for its registry entry to go away.
           $deadline = (Get-Date).AddSeconds(120)
@@ -223,7 +223,7 @@ jobs:
           if (Test-Path $uninstallKey) { Write-Error 'The uninstall entry is still there' }
           if (Test-Path "$installDir\ARCitISA.exe") { Write-Error 'The app is still installed' }
           if (Test-Path $startMenuLink) { Write-Error 'The Start menu shortcut is still there' }
-          foreach ($d in $userData) { if (Test-Path $d) { Write-Error "The silent uninstall kept $d" } }
+          foreach ($d in $userData) { if (-not (Test-Path "$d\marker.txt")) { Write-Error "The silent uninstall deleted $d" } }
           'install, update and uninstall checks passed'
 
       - name: "Windows: silent setup stops when the old Squirrel install is found"
