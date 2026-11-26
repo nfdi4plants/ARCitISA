@@ -9,6 +9,8 @@
   Var oldSwateDir
   Var oldArcitisaDir
   Var oldSquirrelExitCode
+  Var oldSquirrelFindHandle
+  Var oldSquirrelAppDir
   Var createDesktopShortcut
   Var desktopShortcutCheckbox
 !endif
@@ -19,21 +21,35 @@
   Quit
 !macroend
 
-; Squirrel leaves Update.exe and a .dead file behind after an uninstall. Only an app-<version> folder
-; means that the old version is still installed.
+; Squirrel's uninstaller stops the old app, removes its entry in Settings > Apps and its shortcuts,
+; deletes its files and writes a .dead file. Update.exe stays, it cannot delete itself. It deletes
+; right after stopping the app, while the stopped processes may still hold their files, and leaves
+; what it could not delete. Run again, it fails (exit code -1). So setup runs it only when there is no
+; .dead file yet, and deletes the remaining app-<version> folders itself.
 !macro removeOldSquirrelInstall DIR
   ${If} ${FileExists} "${DIR}\app-*"
-    ClearErrors
-    ExecWait '"${DIR}\Update.exe" --uninstall' $oldSquirrelExitCode
-    ${If} ${Errors}
-      !insertmacro quitBecauseOldVersionRemains "Setup could not start ${DIR}\Update.exe to remove the older version of ARCitISA.$\r$\n$\r$\nDelete the folder ${DIR}, then run setup again."
+    ${IfNot} ${FileExists} "${DIR}\.dead"
+      ClearErrors
+      ExecWait '"${DIR}\Update.exe" --uninstall' $oldSquirrelExitCode
+      ${If} ${Errors}
+        !insertmacro quitBecauseOldVersionRemains "Setup could not start ${DIR}\Update.exe to remove the older version of ARCitISA.$\r$\n$\r$\nDelete the folder ${DIR}, then run setup again."
+      ${EndIf}
+      ${If} $oldSquirrelExitCode != 0
+        !insertmacro quitBecauseOldVersionRemains "The older version of ARCitISA could not be removed. Its uninstaller exited with code $oldSquirrelExitCode.$\r$\n$\r$\nClose all ARCitISA windows, then run setup again."
+      ${EndIf}
     ${EndIf}
-    ${If} $oldSquirrelExitCode != 0
-      !insertmacro quitBecauseOldVersionRemains "The older version of ARCitISA could not be removed. Its uninstaller exited with code $oldSquirrelExitCode.$\r$\n$\r$\nClose all ARCitISA windows, then run setup again."
-    ${EndIf}
-    ${If} ${FileExists} "${DIR}\app-*"
-      !insertmacro quitBecauseOldVersionRemains "The older version of ARCitISA was not removed completely. Its files are still in ${DIR}.$\r$\n$\r$\nClose all ARCitISA windows, then run setup again."
-    ${EndIf}
+
+    ${Do}
+      FindFirst $oldSquirrelFindHandle $oldSquirrelAppDir "${DIR}\app-*"
+      FindClose $oldSquirrelFindHandle
+      ${If} $oldSquirrelAppDir == ""
+        ${ExitDo}
+      ${EndIf}
+      RMDir /r "${DIR}\$oldSquirrelAppDir"
+      ${If} ${FileExists} "${DIR}\$oldSquirrelAppDir"
+        !insertmacro quitBecauseOldVersionRemains "The older version of ARCitISA was not removed completely. Its files are still in ${DIR}\$oldSquirrelAppDir.$\r$\n$\r$\nClose all ARCitISA windows, then run setup again."
+      ${EndIf}
+    ${Loop}
   ${EndIf}
 !macroend
 
