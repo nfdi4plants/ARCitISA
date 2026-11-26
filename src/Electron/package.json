@@ -42,6 +42,7 @@
     "@electron-forge/plugin-vite": "^7.10.2",
     "@electron/fuses": "^1.8.0",
     "@reforged/maker-appimage": "^5.3.1",
-    "electron": "40.10.2"
+    "electron": "40.10.2",
+    "electron-builder": "26.18.0"
   }
 }
