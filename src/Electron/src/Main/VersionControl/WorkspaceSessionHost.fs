@@ -1,6 +1,6 @@
-/// Keeps one open library session per vault root and tracks running operations so the
-/// renderer can cancel them. Resolution goes through the persisted binding first and
-/// adopts an unbound workspace that exactly one provider owns.
+/// Keeps one opened repository per vault root and tracks running operations so the
+/// renderer can cancel them. The host asks the providers which one owns a folder whenever it
+/// opens the folder's repository.
 module Main.VersionControl.WorkspaceSessionHost
 
 open System
@@ -10,13 +10,17 @@ open Main.VersionControl.VersionControlSettings
 open Arcitisa.Electron.Shared.VersionControlTypes
 open VersionControlService.Abstractions
 
+/// One opened repository of a vault with the provider that opened it, and the app-owned settings.
 type HostedSession = {
     SessionId: string
-    Binding: WorkspaceBinding
-    Session: WorkspaceSession
+    /// The folder as the app named it at the open. The host finds the entry by it, because a
+    /// provider can spell the root of its repository differently (Git resolves links).
+    WorkspaceRoot: string
+    Provider: ProviderComposition.AppProvider
+    Repository: Repository
     Settings: VersionControlSettings
     /// The "Upload right away" checkbox of the git sidebar. It lives next to the settings so it
-    /// outlives a renderer reload and ends with the session. It is not a provider setting.
+    /// outlives a renderer reload and ends with the opened repository. It is not a provider setting.
     UploadRightAway: bool
 }
 
@@ -38,16 +42,13 @@ type private RunningOperation = {
     ResolveCompletion: unit -> unit
 }
 
-let private ambiguousFailure (candidates: ProviderResolver.DetectionCandidate[]) =
-    let providers =
-        candidates
-        |> Array.map (fun candidate -> ProviderId.value candidate.ProviderId)
-        |> String.concat ", "
+let private ambiguousFailure (providerIds: ProviderId[]) =
+    let providers = providerIds |> Array.map ProviderId.value |> String.concat ", "
 
     OperationFailure.create
         Validation
         VersionControlCodes.WorkspaceAmbiguous
-        $"Several providers claim this workspace ({providers}). Bind it to one explicitly."
+        $"Several providers claim this workspace ({providers})."
 
 let private unmanagedFailure (workspaceRoot: string) (diagnostics: OperationFailure[]) = {
     OperationFailure.create
@@ -63,13 +64,13 @@ let private unmanagedFailure (workspaceRoot: string) (diagnostics: OperationFail
 let private sessionNotOpenFailure () =
     OperationFailure.create NotFound VersionControlCodes.SessionUnavailable "The workspace session is not open."
 
-let private withValue (value: 'U) (outcome: OperationOutcome<'T>) : OperationOutcome<'U> = {
+let withValue (value: 'U) (outcome: OperationOutcome<'T>) : OperationOutcome<'U> = {
     Value = value
     Effect = outcome.Effect
     Warnings = outcome.Warnings
     AffectedPaths = outcome.AffectedPaths
     ResultingRevision = outcome.ResultingRevision
-    ResultingWorkspaceVersion = outcome.ResultingWorkspaceVersion
+    ResultingRepositoryVersion = outcome.ResultingRepositoryVersion
     Publication = outcome.Publication
 }
 
@@ -88,22 +89,22 @@ type WorkspaceSessionHost(runtime: VersionControlRuntime.VersionControlRuntime) 
         | CaseInsensitive -> normalized.ToLowerInvariant()
 
     let sameRoot (left: string) (right: string) =
-        WorkspaceBindingStore.rootsEqual runtime.PathCaseSensitivity left right
+        ProviderComposition.rootsEqual runtime.PathCaseSensitivity left right
 
     let tryFindSession (workspaceRoot: string) =
         sessions.Values
-        |> Seq.tryFind (fun hosted -> sameRoot hosted.Binding.WorkspaceRoot workspaceRoot)
+        |> Seq.tryFind (fun hosted -> sameRoot hosted.WorkspaceRoot workspaceRoot)
 
     let closeHostedSession (hosted: HostedSession) = async {
         sessions.Remove hosted.SessionId |> ignore
 
         try
-            do! hosted.Session.Close()
+            do! hosted.Provider.Provider.Close hosted.Repository
         with _ ->
             ()
     }
 
-    /// Keeps a settings value only while that same session is still open. A close that
+    /// Keeps a settings value only while that same opened repository is still held. A close that
     /// lands while the provider call runs must not be undone by its continuation. The stored
     /// record is the base, because the checkbox may have changed while the call ran.
     let storeSettingsIfLive (hosted: HostedSession) (settings: VersionControlSettings) =
@@ -111,30 +112,46 @@ type WorkspaceSessionHost(runtime: VersionControlRuntime.VersionControlRuntime) 
         | true, live -> sessions[hosted.SessionId] <- { live with Settings = settings }
         | _ -> ()
 
-    let openBinding (factory: ProviderFactory) (binding: WorkspaceBinding) (context: OperationContext) = async {
-        let! opened = factory.Open binding context
+    /// Opens the folder with the provider that owns it and starts its settings from the defaults.
+    let openFolder (provider: ProviderComposition.AppProvider) (workspaceRoot: string) (context: OperationContext) = async {
+        let! opened =
+            ProviderComposition.callFunction
+                provider.Functions.Open
+                "opening a repository"
+                (fun openRepository ->
+                    openRepository
+                        {
+                            RepositoryRoot = workspaceRoot
+                            ConnectionProfileId = None
+                        }
+                        context
+                )
 
-        let initializeSettings (outcome: OperationOutcome<WorkspaceSession>) = async {
+        let initializeSettings (outcome: OperationOutcome<Repository>) = async {
             let sessionDefaults = runtime.SessionDefaults()
 
             let hosted = {
                 SessionId = Guid.NewGuid().ToString()
-                Binding = binding
-                Session = outcome.Value
+                WorkspaceRoot = workspaceRoot
+                Provider = provider
+                Repository = outcome.Value
                 Settings = sessionDefaults.InitialSettings
                 UploadRightAway = sessionDefaults.InitialUploadRightAway
             }
 
-            // The app owns these values. Every session starts from the user defaults, or from the
+            // The app owns these values. Every opened repository starts from the user defaults, or from the
             // built-in ones when the user has none. Provider repository keys only mirror them.
-            match hosted.Session.StoragePolicy with
-            | Some policy ->
-                // A provider that throws here must not lose the session it just opened,
+            match hosted.Provider.Functions.StoragePolicy.SetSettings with
+            | Implemented setSettings ->
+                // A provider that throws here must not lose the repository it just opened,
                 // so the exception becomes an ordinary failure of the settings push.
                 let! applied = async {
                     try
                         return!
-                            policy.SetSettings (VersionControlSettings.toStoragePolicySettings hosted.Settings) context
+                            setSettings
+                                hosted.Repository
+                                (VersionControlSettings.toStoragePolicySettings hosted.Settings)
+                                context
                     with error ->
                         return
                             Failed(
@@ -157,7 +174,7 @@ type WorkspaceSessionHost(runtime: VersionControlRuntime.VersionControlRuntime) 
                     | Succeeded _ -> None
 
                 return withValue hosted outcome, settingsFailure
-            | None -> return withValue hosted outcome, None
+            | Missing _ -> return withValue hosted outcome, None
         }
 
         match opened with
@@ -188,29 +205,11 @@ type WorkspaceSessionHost(runtime: VersionControlRuntime.VersionControlRuntime) 
     }
 
     let resolveAndOpen (workspaceRoot: string) (context: OperationContext) = async {
-        let! resolution =
-            ProviderComposition.resolveVault runtime.Catalog runtime.Bindings runtime.PathCaseSensitivity workspaceRoot
+        let! resolution = ProviderComposition.resolveVault runtime.Providers runtime.PathCaseSensitivity workspaceRoot
 
         match resolution with
-        | ProviderComposition.BoundVault(binding, factory) -> return! openBinding factory binding context
-        | ProviderComposition.AdoptableVault(factory, candidate) ->
-            let! adopted =
-                factory.Adopt
-                    {
-                        WorkspaceRoot = candidate.Root
-                        ConnectionProfileId = None
-                    }
-                    context
-
-            match adopted with
-            | Succeeded outcome
-            | PartiallySucceeded(outcome, _) ->
-                match runtime.Bindings.Save outcome.Value with
-                | Ok() -> return! openBinding factory outcome.Value context
-                | Error message ->
-                    return Failed(OperationFailure.create ProviderError VersionControlCodes.BindingNotPersisted message)
-            | Failed failure -> return Failed failure
-        | ProviderComposition.AmbiguousVault candidates -> return Failed(ambiguousFailure candidates)
+        | ProviderComposition.OwnedVault provider -> return! openFolder provider workspaceRoot context
+        | ProviderComposition.AmbiguousVault providerIds -> return Failed(ambiguousFailure providerIds)
         | ProviderComposition.UnmanagedVault diagnostics -> return Failed(unmanagedFailure workspaceRoot diagnostics)
     }
 
@@ -233,10 +232,13 @@ type WorkspaceSessionHost(runtime: VersionControlRuntime.VersionControlRuntime) 
                 match tryFindSession workspaceRoot with
                 | None -> return Failed(sessionNotOpenFailure ())
                 | Some hosted ->
-                    match hosted.Session.StoragePolicy with
-                    | Some policy ->
+                    match hosted.Provider.Functions.StoragePolicy.SetSettings with
+                    | Implemented setSettings ->
                         let! result =
-                            policy.SetSettings (VersionControlSettings.toStoragePolicySettings settings) context
+                            setSettings
+                                hosted.Repository
+                                (VersionControlSettings.toStoragePolicySettings settings)
+                                context
 
                         match result with
                         | Failed _ -> return result
@@ -246,7 +248,7 @@ type WorkspaceSessionHost(runtime: VersionControlRuntime.VersionControlRuntime) 
                         | PartiallySucceeded(outcome, failure) ->
                             storeSettingsIfLive hosted settings
                             return PartiallySucceeded(withValue () outcome, failure)
-                    | None ->
+                    | Missing _ ->
                         storeSettingsIfLive hosted settings
                         return OperationResult.succeeded ()
         }
@@ -267,13 +269,12 @@ type WorkspaceSessionHost(runtime: VersionControlRuntime.VersionControlRuntime) 
             OperationResult.succeeded ()
         | None -> Failed(sessionNotOpenFailure ())
 
-    /// Returns the open session for the root, or resolves the root, adopts it when
-    /// exactly one provider owns it, persists the binding and opens the session.
-    /// Concurrent callers for one root share a single open, so a vault never ends up
-    /// with two sessions. The shared open runs without cancellation, because a cancel
-    /// of one caller must not fail the others, and it reports progress and output to
-    /// the first caller only. Opening is short (a probe and a session construction), so
-    /// both limits are acceptable.
+    /// Returns the open session for the root, or asks the providers which one owns the
+    /// root and opens the repository with it. Concurrent callers for one root share a
+    /// single open, so a vault never ends up with two opened repositories. The shared
+    /// open runs without cancellation, because a cancel of one caller must not fail the
+    /// others, and it reports progress and output to the first caller only. Opening is
+    /// short (a probe and the open of one repository), so both limits are acceptable.
     member _.OpenSession(workspaceRoot: string, context: OperationContext) : Async<OperationResult<HostedSession>> = async {
         match tryFindSession workspaceRoot with
         | Some hosted -> return OperationResult.succeeded hosted
@@ -324,34 +325,23 @@ type WorkspaceSessionHost(runtime: VersionControlRuntime.VersionControlRuntime) 
 
         let matching =
             sessions.Values
-            |> Seq.filter (fun hosted -> sameRoot hosted.Binding.WorkspaceRoot workspaceRoot)
+            |> Seq.filter (fun hosted -> sameRoot hosted.WorkspaceRoot workspaceRoot)
             |> Seq.toArray
 
         for hosted in matching do
             do! closeHostedSession hosted
     }
 
-    /// Closes and reopens the session over the binding stored for the root. Used after
-    /// a successful Bind, because an open session keeps the location captured at open.
+    /// Closes and reopens the repository of the root. Used after a successful Bind, because
+    /// an opened repository keeps the location captured at open.
     member this.ReopenSession(workspaceRoot: string, context: OperationContext) = async {
         do! this.CloseSession workspaceRoot
         return! this.OpenSession(workspaceRoot, context)
     }
 
-    /// A vault folder was renamed on disk. The open session (if any) is closed and the
-    /// persisted binding follows the new root verbatim, so the next open resolves it
-    /// without probing again. The new entry is written before the old one is removed,
-    /// so a failure in between never loses the binding.
-    member this.WorkspaceRenamed(previousRoot: string, newRoot: string) : Async<Result<unit, string>> = async {
-        do! this.CloseSession previousRoot
-
-        match runtime.Bindings.TryFind previousRoot with
-        | None -> return Ok()
-        | Some binding ->
-            match runtime.Bindings.Save { binding with WorkspaceRoot = newRoot } with
-            | Error message -> return Error message
-            | Ok() -> return runtime.Bindings.Remove previousRoot
-    }
+    /// A vault folder was renamed on disk. The host closes the opened repository of the old root
+    /// (if any), and the next open of the new root asks the providers again.
+    member this.WorkspaceRenamed(previousRoot: string) : Async<unit> = this.CloseSession previousRoot
 
     member _.CloseAll() : Async<unit> = async {
         let open' = sessions.Values |> Seq.toArray
@@ -359,7 +349,7 @@ type WorkspaceSessionHost(runtime: VersionControlRuntime.VersionControlRuntime) 
 
         for hosted in open' do
             try
-                do! hosted.Session.Close()
+                do! hosted.Provider.Provider.Close hosted.Repository
             with _ ->
                 ()
     }

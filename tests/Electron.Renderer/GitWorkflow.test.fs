@@ -5154,65 +5154,6 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "A binding persistence partial clone completes CloneSuccess",
-            fun () -> promise {
-                let failure =
-                    makeFailure
-                        ProviderError
-                        VersionControlCodes.BindingNotPersisted
-                        "The binding could not be saved."
-                        (Some {
-                            Code = VersionControlCodes.Recovery.ReopenWorkspace
-                            Instructions = Some "Open the workspace again so it is bound."
-                        })
-                        [||]
-
-                let failure = {
-                    failure with
-                        StateChanged = true
-                        Retryable = true
-                }
-
-                let mutable replyResult = None
-                let reply result = replyResult <- Some result
-
-                let cloneRequest = {
-                    OperationId = "clone-op"
-                    ProviderLocation = "https://gitlab.example/carol/my-arc.git"
-                    DisplayName = Some "my-arc"
-                    TargetPath = "C:/clone-target"
-                    TargetRef = None
-                    MaterializeAllObjects = true
-                }
-
-                let deps = {
-                    defaultDependencies with
-                        cloneWorkspace =
-                            fun _ -> promise {
-                                return Ok(OperationResultDto.PartiallySucceeded(operation "C:/clone-target", failure))
-                            }
-                }
-
-                let stateAfterRequest, requestCmd =
-                    update deps ignore (WriteRequested(Clone(cloneRequest, reply))) GitState.Empty
-
-                let! completionMessages = collectMessages requestCmd
-
-                let _, finishCmd =
-                    match completionMessages with
-                    | [| WriteCompleted(_, _, Clone _, Ok(Completed(CloneSuccess root))) |] ->
-                        Vitest.expect(root).toBe ("C:/clone-target")
-                        update deps ignore completionMessages[0] stateAfterRequest
-                    | _ -> failwith "Expected a binding persistence partial clone to complete successfully."
-
-                let! finishMessages = collectMessages finishCmd
-
-                Vitest.expect(finishMessages).toEqual ([||])
-                Vitest.expect(replyResult).toEqual (Some(Ok "C:/clone-target"))
-            }
-        )
-
-        Vitest.test (
             "A clone runs under the operation id allocated for cancellation",
             fun () -> promise {
                 let mutable capturedRequest = None

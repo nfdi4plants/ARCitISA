@@ -101,7 +101,7 @@ Vitest.describe (
                     |]
                     AffectedPaths = [| "a.txt" |]
                     ResultingRevision = Some(revision "abc")
-                    ResultingWorkspaceVersion = Some "v2"
+                    ResultingRepositoryVersion = Some "v2"
                     Publication = LocalOnly
                 }
 
@@ -141,9 +141,9 @@ Vitest.describe (
         Vitest.test (
             "a no-op keeps its reason",
             fun () ->
-                match Mappings.result id (OperationResult.noOp (Some "nothing to publish") ()) with
+                match Mappings.result id (OperationResult.unchanged (Some "nothing to publish") ()) with
                 | OperationResultDto.Succeeded outcome ->
-                    Vitest.expect(outcome.Effect).toEqual (OperationEffectDto.NoOp(Some "nothing to publish"))
+                    Vitest.expect(outcome.Effect).toEqual (OperationEffectDto.Unchanged(Some "nothing to publish"))
                 | other -> failwith $"Expected a success, got {other}"
         )
 
@@ -236,7 +236,7 @@ Vitest.describe (
                             Ok(
                                 OperationResultDto.Succeeded {
                                     outcome with
-                                        Effect = OperationEffectDto.NoOp None
+                                        Effect = OperationEffectDto.Unchanged None
                                 }
                             )
                         )
@@ -270,7 +270,7 @@ Vitest.describe (
                 let providerRef =
                     ProviderRef.tryCreate "refs/heads/main" |> Result.defaultWith failwith
 
-                let status: WorkspaceStatus = {
+                let status: RepositoryStatus = {
                     CurrentRef =
                         Some {
                             Name = "main"
@@ -278,7 +278,7 @@ Vitest.describe (
                             Kind = LocalRef
                             IsCurrent = true
                         }
-                    WorkspaceVersion = "v1"
+                    RepositoryVersion = "v1"
                     Changes = [|
                         {
                             Path = path "b.txt"
@@ -325,7 +325,7 @@ Vitest.describe (
                     Synchronization =
                         Some {
                             BaseRevision = None
-                            WorkspaceRevision = Some(revision "abc")
+                            LocalRevision = Some(revision "abc")
                             TargetRevision = None
                             TargetRef = None
                             LocalRevisionCount = Some 1

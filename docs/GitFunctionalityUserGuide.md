@@ -6,9 +6,9 @@ This guide describes how ARCitISA Electron talks to a version control provider. 
 
 Version control operations run in the Electron main process through the VersionControlService NuGet package and reach the renderer through the typed IPC bridge.
 
-- Library: the `VersionControlService` package (Abstractions, Git and lakeFS providers). Its `WorkspaceSession` record exposes the core service plus optional services (synchronization, text diff, conflict resolution, object materialization, storage policy, maintenance, repository browser).
-- Composition root: `src/Electron/src/Main/VersionControl/ProviderComposition.fs` builds the Git factory (credentials and commit identity from the DataHub accounts, see `DataHubStrategies.fs`) and the lakeFS factory, and `VersionControlRuntime.fs` holds the catalog, the binding store and the resolver. This folder is the only place that knows provider ids or provider types.
-- Session host: `src/Electron/src/Main/VersionControl/WorkspaceSessionHost.fs` keeps one open session per vault root, adopts unbound repositories on first open, persists the workspace binding, owns the registry of running operations for cancellation, and holds the per-session settings.
+- Library: the `VersionControlService` package (Abstractions, Git and lakeFS providers). Its `IVersionControl` interface has the core functions and the groups synchronization, text diff, conflict resolution, object materialization, storage policy, maintenance and repository browser. A provider says for every function whether it has it.
+- Composition root: `src/Electron/src/Main/VersionControl/ProviderComposition.fs` builds the Git provider (credentials and commit identity from the DataHub accounts, see `DataHubStrategies.fs`) and the lakeFS provider, and subscribes to everything each of them has. The same module finds the provider that owns a folder by asking each one, and `VersionControlRuntime.fs` holds the table of providers. This folder is the only place that knows provider ids or provider types.
+- Session host: `src/Electron/src/Main/VersionControl/WorkspaceSessionHost.fs` keeps one opened repository per vault root and opens it with the provider that owns the folder on first open. It owns the registry of running operations for cancellation and holds the per-session settings.
 - IPC handler: `src/Electron/src/Main/IPC/IVersionControlApi.fs` implements `IVersionControlApi` from `src/Electron/src/Arcitisa.Electron.Shared/IPCTypes.fs` over the DTOs in `VersionControlTypes.fs`. `Mappings.fs` translates every library type to its DTO and validates paths, refs and revisions before a provider call.
 - Renderer calls: the renderer calls `Api.ipcVersionControlApi` (the `IVersionControlApi` bridge) directly. The renderer picks the operation ids itself (a new GUID per call), and the transport error stays an `exn`.
 - Renderer workflow: `src/Electron/src/Renderer/Context/GitWorkflow.fs` is the Elmish state machine behind the Git sidebar, wired in `GitStateContext.fs`. Feature code reaches it through `GitWorkflow.GitDependencies`.
@@ -52,13 +52,13 @@ type OperationResultDto<'T> =
     | Failed of OperationFailureDto
 ```
 
-`OperationOutcomeDto` carries the value, the effect (`Performed` or `NoOp` with a reason), warnings, affected paths and the resulting revision and workspace version. `OperationFailureDto` carries `Category`, `Code`, `Message`, `StateChanged`, `Retryable`, `AffectedPaths`, `RecoveryAction` (a code plus optional instructions), `Details` and `RevisionEvidence`.
+`OperationOutcomeDto` carries the value, the effect (`Performed` or `Unchanged` with a reason), warnings, affected paths and the resulting revision and workspace version. `OperationFailureDto` carries `Category`, `Code`, `Message`, `StateChanged`, `Retryable`, `AffectedPaths`, `RecoveryAction` (a code plus optional instructions), `Details` and `RevisionEvidence`.
 
 Routing is structural. Code that decides what to do next keys on `Category`, `Code`, `RecoveryAction.Code`, `StateChanged` or `AffectedPaths`. Never classify a failure by its message text.
 
 Categories: `Validation`, `NotFound`, `Concurrency`, `Authentication`, `Authorization`, `DependencyMissing`, `Network`, `Timeout`, `Canceled`, `Conflict`, `Unsupported`, `ProviderError`.
 
-Codes the renderer handles are literals in `VersionControlCodes` (`VersionControlTypes.fs`). Library codes include `identity_missing`, `publish_target_missing`, `target_unreachable`, `precondition_failed`, `conflicts_detected`, `conflict_session_active`, `operation_in_progress` (a rebase, cherry-pick, revert, bisect or unmerged paths block the workspace), `publish_rejected` (the remote refused the push, the message carries its reason), `inspection_timeout` (the state read after an applied update exceeded its deadline), `target_not_empty` and `operation_canceled`. The three codes in the middle reach the user through the generic error modal with the library's message. ARCitISA host codes include `service_unavailable` (the provider has no such optional service), `session_unavailable`, `workspace_unmanaged`, `workspace_ambiguous`, `location_unsupported`, `lock_removal_refused`, `binding_not_persisted`, `transport_error` (the IPC call failed before a structured result existed) and `storage_policy_blocked` (the DataHub ruleset refused a manual storage policy change, see section 8). A threshold outside 1 to 100 MiB is refused with the library's `invalid_lfs_threshold`.
+Codes the renderer handles are literals in `VersionControlCodes` (`VersionControlTypes.fs`). Library codes include `identity_missing`, `publish_target_missing`, `target_unreachable`, `precondition_failed`, `conflicts_detected`, `conflict_session_active`, `operation_in_progress` (a rebase, cherry-pick, revert, bisect or unmerged paths block the workspace), `publish_rejected` (the remote refused the push, the message carries its reason), `inspection_timeout` (the state read after an applied update exceeded its deadline), `target_not_empty` and `operation_canceled`. The three codes in the middle reach the user through the generic error modal with the library's message. ARCitISA host codes include `service_unavailable` (the provider does not have that function), `session_unavailable`, `workspace_unmanaged`, `workspace_ambiguous`, `location_unsupported`, `lock_removal_refused`, `transport_error` (the IPC call failed before a structured result existed) and `storage_policy_blocked` (the DataHub ruleset refused a manual storage policy change, see section 8). A threshold outside 1 to 100 MiB is refused with the library's `invalid_lfs_threshold`.
 
 Recovery codes (`VersionControlCodes.Recovery`) tell the renderer which dialog to open after a canceled or partial operation: `remove_index_lock`, `restore_workspace`, `refresh_workspace`, `inspect_workspace`, `abort_merge`, `retry_materialization`, `resolve_conflict_session`, `refresh_conflict_session`, `remove_clone_target`.
 When a failure that is not canceled reports a state change, the renderer refreshes the workspace before it shows the error. If that refresh fails too, the error names both failures and the sidebar keeps its old snapshot. A failed clone skips the refresh, because no workspace is open yet.
@@ -95,14 +95,13 @@ Primary save in the sidebar is `createRevision` with the exact selected paths, a
 `src/Electron/src/Main/VersionControl`:
 
 - `DataHubStrategies.fs`: the credential strategy (token of the account matching the target host, the active account when no host is known, `None` when nobody is signed in) and the identity strategy (commit name and email of that account). Strategies are cheap and side effect free.
-- `WorkspaceBindingStore.fs`: the persisted `WorkspaceBinding` per vault root in the app settings, with tolerant decoding.
-- `ProviderComposition.fs`: factories, catalog, provider ids, location parsing (`https://` and `ssh://` locations belong to Git, `lakefs://` to lakeFS), the stale lock paths, and `dataHubRevisionPolicy`, the DataHub ruleset as the library's revision policy handed to both factories.
-- `VersionControlRuntime.fs`: the process wide runtime (catalog, binding store, resolver).
+- `ProviderComposition.fs`: the providers with their subscribed functions, provider ids, the lookup of the provider that owns a folder, location parsing (`https://` and `ssh://` locations belong to Git, `lakefs://` to lakeFS), the stale lock paths, and `dataHubRevisionPolicy`, the DataHub ruleset as the library's revision policy handed to the Git provider.
+- `VersionControlRuntime.fs`: the process wide runtime. It holds the table of providers and the path case sensitivity that the host compares vault roots with. Every new session starts from its session defaults.
 - `Mappings.fs`: library types to DTOs and back, plus path, ref and revision validation.
-- `WorkspaceSessionHost.fs`: sessions, the operation registry, and the per-session settings (threshold and download preference) pushed into the provider when a session opens.
+- `WorkspaceSessionHost.fs`: opened repositories, the operation registry, and the per-session settings (threshold and download preference) pushed into the provider when a session opens.
 - `VersionControlSettings.fs`: the settings record, its defaults (1 MiB, no download) and the 1 to 100 MiB bound.
 
-`src/Electron/src/Main/IPC/IVersionControlApi.fs` wraps every call: `withSession` registers the operation before the session is opened and sends the started event, `withMutatingSession` also marks the vault busy and refreshes the file tree when the result reports a change, `withService` returns `service_unavailable` when the provider has no such optional service.
+`src/Electron/src/Main/IPC/IVersionControlApi.fs` wraps every call: `withSession` registers the operation before the session is opened and sends the started event, `withMutatingSession` also marks the vault busy and refreshes the file tree when the result reports a change, `withFunction` returns `service_unavailable` when the provider does not have the function.
 
 ## 6. Validation and security rules
 
@@ -118,7 +117,7 @@ Keep validation in the main process even when the renderer already validates. Re
 
 ## 7. Authentication
 
-The Git factory receives a `GitCredentialStrategy` and a `GitIdentityStrategy` built over the DataHub accounts (`DataHubStrategies.fs`). A `RevisionIdentityRequest` names the target host and an optional connection profile. The account is selected by profile when one is present, otherwise by host with the active account preferred, otherwise the active account when no host is known. When no account matches, the strategy returns `None` and the library fails the operation with `identity_missing` or an `Authentication` failure. Tokens are read from `AuthService` at call time, so signing in or switching accounts needs no re-registration.
+The Git provider receives a `GitCredentialStrategy` and a `GitIdentityStrategy` built over the DataHub accounts (`DataHubStrategies.fs`). A `RevisionIdentityRequest` names the target host and an optional connection profile. The account is selected by profile when one is present, otherwise by host with the active account preferred, otherwise the active account when no host is known. When no account matches, the strategy returns `None` and the library fails the operation with `identity_missing` or an `Authentication` failure. Tokens are read from `AuthService` at call time, so signing in or switching accounts needs no re-registration.
 
 ## 8. Large objects and Git LFS
 
@@ -130,7 +129,7 @@ Renderer state starts with `DownloadLargeFiles = false` until the settings are l
 
 Manual marking follows the DataHub ruleset in `src/Shared/GitLfsRules.fs`:
 
-- `isa.*.xlsx` metadata files must never be tracked with Git LFS. They cannot be marked manually, and a save never turns them into pointers: the composition root hands every provider factory one `RevisionPolicyStrategy` built from the ruleset (`Inline` for metadata files, `LargeObject` for files below a `dataset` folder and for files above 25 MB, `Automatic` otherwise). The Git provider applies it inside its revision transaction and writes the attribute rules it needs. The lakeFS provider accepts the strategy and ignores it. A metadata file that still holds a Git LFS pointer is refused with `inline_content_not_materialized` and the recovery `retry_materialization` until it is downloaded.
+- `isa.*.xlsx` metadata files must never be tracked with Git LFS. They cannot be marked manually, and a save never turns them into pointers: the composition root hands the Git provider one `RevisionPolicyStrategy` built from the ruleset (`Inline` for metadata files, `LargeObject` for files below a `dataset` folder and for files above 25 MB, `Automatic` otherwise). The Git provider applies it inside its revision transaction and writes the attribute rules it needs. A metadata file that still holds a Git LFS pointer is refused with `inline_content_not_materialized` and the recovery `retry_materialization` until it is downloaded.
 - Files below a `dataset` folder must stay tracked and cannot be unmarked.
 - Files larger than 25 MB must stay tracked and cannot be unmarked.
 

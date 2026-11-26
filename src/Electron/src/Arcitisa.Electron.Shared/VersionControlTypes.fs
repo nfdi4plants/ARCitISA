@@ -189,7 +189,6 @@ type DiffBlockerDto =
     | LocalContentUnavailable of side: DiffSideDto * objectId: string option
     | EncodingRequired of side: DiffSideDto * token: PreparationTokenDto * candidates: EncodingCandidateDto[]
     | NotRegularFile of side: DiffSideDto
-    | ProviderUnsupported
     /// A committed side is larger than the share of the memory budget that holds it. The sizes are
     /// in bytes as decimal strings.
     | BlobTooLargeForMemory of side: DiffSideDto * blobBytes: string * limitBytes: string * cause: MemoryCauseDto
@@ -329,7 +328,7 @@ type OperationWarningDto = { Code: string; Message: string }
 [<RequireQualifiedAccess>]
 type OperationEffectDto =
     | Performed
-    | NoOp of reason: string option
+    | Unchanged of reason: string option
 
 [<StringEnum(CaseRules.None)>]
 type PublicationStateDto =
@@ -490,9 +489,6 @@ module VersionControlCodes =
     [<Literal>]
     let InvalidRevision = "invalid_revision"
 
-    [<Literal>]
-    let BindingNotPersisted = "binding_not_persisted"
-
     /// A text diff request with an overlong id or a number that is negative or not a decimal integer.
     [<Literal>]
     let InvalidDiffRequest = "invalid_diff_request"
@@ -532,12 +528,6 @@ module VersionControlCodes =
 
         [<Literal>]
         let InspectWorkspace = "inspect_workspace"
-
-        [<Literal>]
-        let ReopenWorkspace = "reopen_workspace"
-
-        [<Literal>]
-        let CheckDependencies = "check_dependencies"
 
         [<Literal>]
         let AbortMerge = "abort_merge"

@@ -1,17 +1,20 @@
 /// The one place in ARCitISA that knows which version control providers exist. It builds
-/// the Git factory over the DataHUB account store and the lakeFS factory over an
-/// application-owned state root, and it resolves the factory for a vault from the
-/// persisted binding. Everything above this module works with the neutral SPI only.
+/// the Git provider over the DataHUB account store and the lakeFS provider over an
+/// application-owned state root, and subscribes to everything each of them has. It also finds
+/// the provider that owns a vault folder. Everything above this module works with the
+/// neutral interface only.
 module Main.VersionControl.ProviderComposition
 
 open Main.Bindings.Path
 open Fable.Core
+open Arcitisa.Electron.Shared.VersionControlTypes
 open VersionControlService.Abstractions
 
+module GitProvider = VersionControlService.Git.GitProvider
 module GitWorkspaceSession = VersionControlService.Git.GitWorkspaceSession
 module LakeFsCredentials = VersionControlService.LakeFs.LakeFsCredentials
+module LakeFsProvider = VersionControlService.LakeFs.LakeFsProvider
 module LakeFsProviderOptions = VersionControlService.LakeFs.LakeFsProviderOptions
-module LakeFsWorkspaceSession = VersionControlService.LakeFs.LakeFsWorkspaceSession
 
 /// Folder below the application settings root that holds provider state which must
 /// never live inside a vault (lakeFS indexes and transactions).
@@ -27,6 +30,77 @@ let pathCaseSensitivityForPlatform (platform: string) : PathCaseSensitivity =
 
 let currentPathCaseSensitivity () =
     pathCaseSensitivityForPlatform (Main.Bindings.Node.processPlatform ())
+
+/// Whether two vault roots name the same folder, ignoring the spelling of the separators.
+let rootsEqual (sensitivity: PathCaseSensitivity) (left: string) (right: string) =
+    let comparison =
+        match sensitivity with
+        | CaseSensitive -> System.StringComparison.Ordinal
+        | CaseInsensitive -> System.StringComparison.OrdinalIgnoreCase
+
+    System.String.Equals(ProviderResolver.normalizePath left, ProviderResolver.normalizePath right, comparison)
+
+let gitProviderId =
+    match ProviderId.tryCreate WellKnownProviderIds.Git with
+    | Ok providerId -> providerId
+    | Error message -> failwith message
+
+let lakeFsProviderId =
+    match ProviderId.tryCreate WellKnownProviderIds.LakeFs with
+    | Ok providerId -> providerId
+    | Error message -> failwith message
+
+/// The provider new vaults are initialized with. ARCitISA only provisions Git today.
+let defaultProviderId = gitProviderId
+
+/// One provider of the app with what the app subscribed to on it.
+type AppProvider = {
+    Id: ProviderId
+    /// For Probe and Close, which are not entries of the list.
+    Provider: IVersionControl
+    /// Everything the provider has, from Subscribe.all.
+    Functions: ProviderFunctions
+}
+
+/// Subscribes to everything the provider has. The Git and lakeFS providers always allow it, so
+/// an error stops the start of the app.
+let createAppProvider (id: ProviderId) (provider: IVersionControl) : AppProvider =
+    match Subscribe.all provider with
+    | Ok functions -> {
+        Id = id
+        Provider = provider
+        Functions = functions
+      }
+    | Error message -> failwith message
+
+/// The provider with this id, if the app has one.
+let tryFindProvider (providers: AppProvider[]) (providerId: ProviderId) : AppProvider option =
+    providers |> Array.tryFind (fun provider -> provider.Id = providerId)
+
+/// The provider that creates the repository of a new ARC. The dependency check and the install ask it too.
+let defaultProvider (providers: AppProvider[]) : AppProvider =
+    tryFindProvider providers defaultProviderId
+    |> Option.defaultWith (fun () -> failwith "The default version control provider is not registered.")
+
+/// The answer for a function the provider does not have.
+let private serviceUnavailable (service: string) : OperationResult<'T> =
+    Failed(
+        OperationFailure.create
+            Unsupported
+            VersionControlCodes.ServiceUnavailable
+            $"The workspace provider does not offer {service}."
+    )
+
+/// Calls an entry of the subscribed functions. An entry that is `Missing` gets the failure the
+/// renderer knows for a function the provider does not have, with the service name in the message.
+let callFunction
+    (entry: Entry<'call>)
+    (serviceName: string)
+    (call: 'call -> Async<OperationResult<'T>>)
+    : Async<OperationResult<'T>> =
+    match entry with
+    | Implemented implemented -> call implemented
+    | Missing _ -> async { return serviceUnavailable serviceName }
 
 let dataHubAccountSource: DataHubStrategies.DataHubAccountSource = {
     GetState = Main.Auth.AuthService.peekState
@@ -53,26 +127,27 @@ let dataHubRevisionPolicy: RevisionPolicyStrategy = {
                 RevisionPathPolicy.Automatic
 }
 
-/// The Git factory whose sessions diff text in the shared worker pool. A session asks for the
-/// pool on each diff Open until the pool is set up, so a failed setup fails only that Open
-/// with diff_worker_failed and the next Open tries the setup again. `windowOwnerOf` names the
+/// The Git provider, whose opened repositories diff text in the shared worker pool. A repository
+/// asks for the pool on each diff Open until the pool is set up, so a failed setup fails only that
+/// Open with diff_worker_failed and the next Open tries the setup again. `windowOwnerOf` names the
 /// window that started an operation, and the pool keeps each window's diff handles apart.
-let createGitFactory
+let createGitProvider
     (source: DataHubStrategies.DataHubAccountSource)
     (windowOwnerOf: OperationContext -> string)
-    : ProviderFactory =
-    GitWorkspaceSession.createFactoryWithOptions
-        {
-            Hooks = GitWorkspaceSession.GitSessionHooks.none
-            TextDiff =
-                Some {
-                    Pool = TextDiffWorkers.pool
-                    WindowOwnerOf = windowOwnerOf
-                }
-        }
-        (DataHubStrategies.createCredentialStrategy source)
-        (DataHubStrategies.createIdentityStrategy source)
-        dataHubRevisionPolicy
+    : AppProvider =
+    let options: VersionControlService.Git.GitProviderOptions = {
+        Hooks = GitWorkspaceSession.GitSessionHooks.none
+        Credentials = DataHubStrategies.createCredentialStrategy source
+        RevisionIdentity = DataHubStrategies.createIdentityStrategy source
+        RevisionPolicy = dataHubRevisionPolicy
+        TextDiff =
+            Some {
+                Pool = TextDiffWorkers.pool
+                WindowOwnerOf = windowOwnerOf
+            }
+    }
+
+    createAppProvider gitProviderId (GitProvider.create options)
 
 let lakeFsOptions
     (settingsRoot: string)
@@ -81,45 +156,26 @@ let lakeFsOptions
     {
         StateRoot = join [| settingsRoot; providerStateFolderName |]
         PathCaseSensitivity = sensitivity
+        Hooks = LakeFsProviderOptions.LakeFsSessionHooks.none
+        Credentials = LakeFsCredentials.unconfigured
     }
 
-let createLakeFsFactory
-    (options: LakeFsProviderOptions.LakeFsProviderOptions)
-    (credentials: LakeFsCredentials.LakeFsCredentialStrategy)
-    : ProviderFactory =
-    LakeFsWorkspaceSession.createFactoryWithPolicy options credentials dataHubRevisionPolicy
+let createLakeFsProvider (options: LakeFsProviderOptions.LakeFsProviderOptions) : AppProvider =
+    createAppProvider lakeFsProviderId (LakeFsProvider.create options)
 
-let createCatalog (factories: ProviderFactory list) : ProviderResolver.ProviderCatalog =
-    match ProviderResolver.tryCreateCatalog factories with
-    | Ok catalog -> catalog
-    | Error message -> failwith message
-
-/// The production catalog: Git over the DataHUB accounts, lakeFS without any
+/// The production providers: Git over the DataHUB accounts, lakeFS without any
 /// configured connection until lakeFS accounts exist in ARCitISA. The caller passes the
-/// path case sensitivity it also hands to the resolver and the binding store.
-let createProductionCatalog
+/// path case sensitivity it also hands to the session host.
+let createProductionProviders
     (sensitivity: PathCaseSensitivity)
     (windowOwnerOf: OperationContext -> string)
-    : ProviderResolver.ProviderCatalog =
+    : AppProvider[] =
     let settingsRoot = Main.SettingsStore.getSettingsRootPath ()
 
-    createCatalog [
-        createGitFactory dataHubAccountSource windowOwnerOf
-        createLakeFsFactory (lakeFsOptions settingsRoot sensitivity) LakeFsCredentials.unconfigured
-    ]
-
-let gitProviderId =
-    match ProviderId.tryCreate WellKnownProviderIds.Git with
-    | Ok providerId -> providerId
-    | Error message -> failwith message
-
-let lakeFsProviderId =
-    match ProviderId.tryCreate WellKnownProviderIds.LakeFs with
-    | Ok providerId -> providerId
-    | Error message -> failwith message
-
-/// The provider new vaults are initialized with. ARCitISA only provisions Git today.
-let defaultProviderId = gitProviderId
+    [|
+        createGitProvider dataHubAccountSource windowOwnerOf
+        createLakeFsProvider (lakeFsOptions settingsRoot sensitivity)
+    |]
 
 /// Turns the location text the renderer sends into a repository location for the
 /// provider that understands it. Git takes https and ssh URLs, lakeFS takes its own
@@ -202,35 +258,51 @@ let recentLockPaths (providerId: ProviderId) (workspaceRoot: string) : string[] 
         |> Option.exists (fun ageSeconds -> ageSeconds < staleLockMinimumAgeSeconds)
     )
 
-/// Resolution outcome for one vault root, as the session host consumes it.
+/// What the providers answered about a vault folder.
 type VaultResolution =
-    /// A persisted binding selected its factory.
-    | BoundVault of WorkspaceBinding * ProviderFactory
-    /// No binding is stored, but exactly one provider owns the root and can adopt it.
-    | AdoptableVault of ProviderFactory * ProviderResolver.DetectionCandidate
-    /// Several providers claim the root. The host has to bind explicitly.
-    | AmbiguousVault of ProviderResolver.DetectionCandidate[]
-    /// No provider owns the root.
+    /// Exactly one provider detects the folder as its repository root.
+    | OwnedVault of AppProvider
+    /// Several providers detect the folder as their repository root.
+    | AmbiguousVault of ProviderId[]
+    /// No provider detects the folder as its repository root. The diagnostics are the failures of
+    /// the probes that did not answer.
     | UnmanagedVault of diagnostics: OperationFailure[]
 
+/// Asks Probe of every provider about the folder. A probe that answers ProbeFailed or
+/// Invalid adds a diagnostic and detects nothing. Only a detection whose root is the folder itself
+/// counts, so a folder that lies inside another repository is not opened.
 let resolveVault
-    (catalog: ProviderResolver.ProviderCatalog)
-    (bindings: WorkspaceBindingStore.IWorkspaceBindingStore)
+    (providers: AppProvider[])
     (sensitivity: PathCaseSensitivity)
-    (workspaceRoot: string)
+    (folder: string)
     : Async<VaultResolution> =
     async {
-        let! report =
-            ProviderResolver.resolve catalog {
-                WorkspacePath = workspaceRoot
-                ExplicitBinding = bindings.TryFind workspaceRoot
-                PathCaseSensitivity = sensitivity
-            }
+        let path = ProviderResolver.normalizePath folder
+        let owners = ResizeArray<AppProvider>()
+        let diagnostics = ResizeArray<OperationFailure>()
+
+        for provider in providers do
+            let providerName = ProviderId.value provider.Id
+
+            let! probed = provider.Provider.Probe path
+
+            match probed with
+            | NotDetected -> ()
+            | Detected(root, _, _) ->
+                if rootsEqual sensitivity root path then
+                    owners.Add provider
+            | Invalid message ->
+                diagnostics.Add(
+                    OperationFailure.createRedacted
+                        Validation
+                        "probe_invalid"
+                        $"Provider '{providerName}' reported an invalid workspace: {message}"
+                )
+            | ProbeFailed failure -> diagnostics.Add failure
 
         return
-            match report.Resolution with
-            | ProviderResolver.Bound(binding, factory) -> BoundVault(binding, factory)
-            | ProviderResolver.ProbedWorkspace(factory, candidate) -> AdoptableVault(factory, candidate)
-            | ProviderResolver.AmbiguousWorkspace candidates -> AmbiguousVault candidates
-            | ProviderResolver.UnmanagedWorkspace -> UnmanagedVault report.Diagnostics
+            match owners.Count with
+            | 0 -> UnmanagedVault(diagnostics.ToArray())
+            | 1 -> OwnedVault owners[0]
+            | _ -> AmbiguousVault(owners |> Seq.map _.Id |> Seq.toArray)
     }

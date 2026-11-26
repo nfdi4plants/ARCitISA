@@ -1912,7 +1912,7 @@ module GitDiffPageLoader =
         | SourceChanged, _ -> GitDiffPageStatus.SourceChanged
         | DiffWorkerFailed, _ -> GitDiffPageStatus.WorkerFailed(failureMessage failure)
         | DiffEncodingMismatch, Some detail -> GitDiffPageStatus.EncodingChoice(detail.Side, None, mismatchCandidates)
-        // A session without a text diff service answers every diff call this way.
+        // A provider without a text diff answers every diff call this way.
         | VersionControlCodes.ServiceUnavailable, _ ->
             GitDiffPageStatus.Blocked(None, GitDiffBlockReason.ProviderUnsupported)
         | _ -> GitDiffPageStatus.Failed(failureMessage failure)
@@ -1941,7 +1941,6 @@ module GitDiffPageLoader =
         | DiffBlockerDto.LocalContentUnavailable(side, objectId) ->
             GitDiffPageStatus.Blocked(Some side, GitDiffBlockReason.LocalContentUnavailable objectId)
         | DiffBlockerDto.NotRegularFile side -> GitDiffPageStatus.Blocked(Some side, GitDiffBlockReason.NotRegularFile)
-        | DiffBlockerDto.ProviderUnsupported -> GitDiffPageStatus.Blocked(None, GitDiffBlockReason.ProviderUnsupported)
         | DiffBlockerDto.BlobTooLargeForMemory(side, blobBytes, limitBytes, cause) ->
             GitDiffPageStatus.Blocked(
                 Some side,

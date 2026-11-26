@@ -46,7 +46,6 @@
     <Compile Include="Auth\GitLabApi.fs" />
     <Compile Include="Auth\AuthService.fs" />
     <Compile Include="VersionControl\DataHubStrategies.fs" />
-    <Compile Include="VersionControl\WorkspaceBindingStore.fs" />
     <Compile Include="VersionControl\TextDiffWorkers.fs" />
     <Compile Include="VersionControl\ProviderComposition.fs" />
     <Compile Include="VersionControl\VersionControlSettings.fs" />

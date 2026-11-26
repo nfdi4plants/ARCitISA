@@ -16,7 +16,7 @@ open ElectronCore.TestHelpers
 module LakeFsApi = VersionControlService.LakeFs.LakeFsApi
 module LakeFsCredentials = VersionControlService.LakeFs.LakeFsCredentials
 module LakeFsTypes = VersionControlService.LakeFs.LakeFsTypes
-module LakeFsWorkspaceSession = VersionControlService.LakeFs.LakeFsWorkspaceSession
+module LakeFsProviderOptions = VersionControlService.LakeFs.LakeFsProviderOptions
 module RuntimeNodeInterop = VersionControlService.Runtime.Node.Interop
 
 [<Emit("process.env[$0] ?? null")>]
@@ -46,36 +46,23 @@ let private lakeFsConnection () : LakeFsTypes.LakeFsConnection = {
         |> Option.defaultValue "integration-secret"
 }
 
-let private createRuntimeWithFactory
-    (bindings: WorkspaceBindingStore.IWorkspaceBindingStore)
-    (lakeFsFactory: ProviderFactory)
-    : VersionControlRuntime.VersionControlRuntime =
-    {
-        Catalog =
-            ProviderComposition.createCatalog [
-                ProviderComposition.createGitFactory noAccounts WorkspaceSessionHost.windowOwnerOf
-                lakeFsFactory
-            ]
-        Bindings = bindings
-        PathCaseSensitivity = CaseInsensitive
-        SessionDefaults = UserDefaults.builtInSessionDefaults
-    }
-
 let private createRuntimeWithHooks
     (settingsRoot: string)
     (connection: LakeFsTypes.LakeFsConnection)
-    (bindings: WorkspaceBindingStore.IWorkspaceBindingStore)
-    (hooks: LakeFsWorkspaceSession.LakeFsSessionHooks)
+    (hooks: LakeFsProviderOptions.LakeFsSessionHooks)
     : VersionControlRuntime.VersionControlRuntime =
-    createRuntimeWithFactory
-        bindings
-        // The hooks constructor is the one place this file bypasses ProviderComposition.
-        // The composition root exposes no hooks overload for this fixture.
-        (LakeFsWorkspaceSession.createFactoryWithHooksAndPolicy
-            (ProviderComposition.lakeFsOptions settingsRoot CaseInsensitive)
-            hooks
-            (LakeFsCredentials.fixedConnection connection)
-            ProviderComposition.dataHubRevisionPolicy)
+    {
+        Providers = [|
+            ProviderComposition.createGitProvider noAccounts WorkspaceSessionHost.windowOwnerOf
+            ProviderComposition.createLakeFsProvider {
+                ProviderComposition.lakeFsOptions settingsRoot CaseInsensitive with
+                    Hooks = hooks
+                    Credentials = LakeFsCredentials.fixedConnection connection
+            }
+        |]
+        PathCaseSensitivity = CaseInsensitive
+        SessionDefaults = UserDefaults.builtInSessionDefaults
+    }
 
 let private expectDtoSucceeded (operation: string) (result: Result<OperationResultDto<'T>, exn>) =
     match result with
@@ -108,7 +95,6 @@ type private Fixture = {
     Scratch: string
     Settings: string
     Repository: string
-    Bindings: WorkspaceBindingStore.IWorkspaceBindingStore
     Runtime: VersionControlRuntime.VersionControlRuntime
     Host: WorkspaceSessionHost.WorkspaceSessionHost
 }
@@ -138,11 +124,7 @@ let private createRepository (connection: LakeFsTypes.LakeFsConnection) (reposit
 }
 
 let private createFixtureWithRuntime
-    (makeRuntime:
-        string
-            -> LakeFsTypes.LakeFsConnection
-            -> WorkspaceBindingStore.IWorkspaceBindingStore
-            -> VersionControlRuntime.VersionControlRuntime)
+    (makeRuntime: string -> LakeFsTypes.LakeFsConnection -> VersionControlRuntime.VersionControlRuntime)
     =
     promise {
         let! root = createTempDirectoryAsync "arcitisa-vc-lakefs-"
@@ -154,8 +136,7 @@ let private createFixtureWithRuntime
         for folder in [ workspace; scratch; settings ] do
             Main.Bindings.Filesystem.mkdirSync folder (Main.Bindings.Filesystem.MkdirOptions(recursive = true))
 
-        let bindings = memoryBindings ()
-        let runtime = makeRuntime settings connection bindings
+        let runtime = makeRuntime settings connection
         let host = WorkspaceSessionHost.WorkspaceSessionHost(runtime)
 
         let repositoryToken =
@@ -174,7 +155,6 @@ let private createFixtureWithRuntime
                 Scratch = scratch
                 Settings = settings
                 Repository = repository
-                Bindings = bindings
                 Runtime = runtime
                 Host = host
             }
@@ -184,14 +164,12 @@ let private createFixtureWithRuntime
     }
 
 let private createFixture () =
-    createFixtureWithRuntime (fun settings connection bindings ->
-        ElectronCore.TestHelpers.createRuntime settings (LakeFsCredentials.fixedConnection connection) bindings
+    createFixtureWithRuntime (fun settings connection ->
+        ElectronCore.TestHelpers.createRuntime settings (LakeFsCredentials.fixedConnection connection)
     )
 
 let private createHookFixture hooks =
-    createFixtureWithRuntime (fun settings connection bindings ->
-        createRuntimeWithHooks settings connection bindings hooks
-    )
+    createFixtureWithRuntime (fun settings connection -> createRuntimeWithHooks settings connection hooks)
 
 let private deleteRepository (fixture: Fixture) = promise {
     let! result =
@@ -400,25 +378,20 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "initializes a lakeFS workspace, persists the binding and reopens the same session",
+            "initializes a lakeFS workspace and reopens the same session",
             TestOptions(timeout = 120000, skip = not (integrationEnabled ())),
             fun () -> promise {
                 return!
                     withFixture (fun fixture -> promise {
                         let! _ = bindWorkspaceViaClone fixture 61 "lakefs-clone"
 
-                        let persisted =
-                            fixture.Runtime.Bindings.TryFind fixture.Workspace
-                            |> Option.defaultWith (fun () -> failwith "Binding was not persisted.")
-
-                        Vitest.expect(ProviderId.value persisted.ProviderId).toBe "lakefs"
-
                         let! first =
                             fixture.Host.OpenSession(fixture.Workspace, detached "lakefs-open-1")
                             |> Async.StartAsPromise
 
                         let hosted = expectValue "first lakeFS open" first
-                        Vitest.expect(ProviderId.value hosted.Session.Descriptor.ProviderId).toBe "lakefs"
+                        Vitest.expect(ProviderId.value hosted.Provider.Id).toBe "lakefs"
+                        Vitest.expect(ProviderId.value hosted.Repository.Descriptor.ProviderId).toBe "lakefs"
 
                         let! second =
                             fixture.Host.OpenSession(fixture.Workspace, detached "lakefs-open-2")
@@ -544,7 +517,7 @@ Vitest.describe (
                         let! api = bindWorkspaceViaClone fixture 69 "lakefs-stale-lock-clone"
                         let! cleared = api.clearStaleLock (request "lakefs-clear-stale-lock")
                         let outcome = expectDtoSucceeded "clear lakeFS stale lock" cleared
-                        Vitest.expect(outcome.Effect).toEqual (OperationEffectDto.NoOp(Some "no stale lock"))
+                        Vitest.expect(outcome.Effect).toEqual (OperationEffectDto.Unchanged(Some "no stale lock"))
                         Vitest.expect(outcome.Warnings).toEqual [||]
                         Vitest.expect(outcome.AffectedPaths).toEqual [||]
                         Vitest.expect(outcome.Value.ActiveConflictSession).toEqual None
@@ -923,10 +896,7 @@ Vitest.describe (
                         }
 
                         let badRuntime =
-                            createRuntime
-                                fixture.Settings
-                                (LakeFsCredentials.fixedConnection badConnection)
-                                fixture.Bindings
+                            createRuntime fixture.Settings (LakeFsCredentials.fixedConnection badConnection)
 
                         let badHost = WorkspaceSessionHost.WorkspaceSessionHost(badRuntime)
                         WorkspaceSessionHost.initialize badHost
@@ -935,8 +905,8 @@ Vitest.describe (
                         try
                             registerVault 66 fixture.Workspace |> ignore
                             let api = Main.IPC.IVersionControlApi.api (ipcEvent 66)
-                            let! info = api.getSessionInfo (request "lakefs-unreachable-info")
-                            let failure = expectDtoFailure "unreachable session info" info
+                            let! refreshed = api.refreshSynchronization (request "lakefs-unreachable-refresh")
+                            let failure = expectDtoFailure "unreachable refresh" refreshed
                             Vitest.expect(failure.Category).toEqual FailureCategoryDto.Network
                             Vitest.expect(failure.Code).toBe VersionControlCodes.NetworkFailure
                             Vitest.expect(failure.StateChanged).toBe false
@@ -959,7 +929,7 @@ Vitest.describe (
                 let gate, releaseGate = deferred ()
                 let mutable barrierHits = 0
 
-                let hooks: LakeFsWorkspaceSession.LakeFsSessionHooks = {
+                let hooks: LakeFsProviderOptions.LakeFsSessionHooks = {
                     Barrier =
                         Some(fun _ point context -> async {
                             // Only the publish under test waits at the barrier. The publish that

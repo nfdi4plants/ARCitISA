@@ -24,7 +24,7 @@ type LargeObjectIndexState =
     | Ready of ReadyIndex
     | Unavailable of reason: string
 
-/// Lists the LFS objects of a repository through its version-control session. The session is opened when
+/// Lists the LFS objects of a repository through the provider that opened it. The host opens the repository when
 /// it is not hosted yet.
 let listObjectsFromSession
     (repoRoot: string)
@@ -39,10 +39,12 @@ let listObjectsFromSession
             | Failed failure -> return Error failure.Message
             | Succeeded outcome
             | PartiallySucceeded(outcome, _) ->
-                match outcome.Value.Session.ObjectMaterialization with
-                | None -> return Error "Object materialization is not available for this repository."
-                | Some materialization ->
-                    let! listed = materialization.ListObjects context |> Async.StartAsPromise
+                let hosted = outcome.Value
+
+                match hosted.Provider.Functions.ObjectMaterialization.ListObjects with
+                | Missing _ -> return Error "Object materialization is not available for this repository."
+                | Implemented listObjects ->
+                    let! listed = listObjects hosted.Repository context |> Async.StartAsPromise
 
                     match listed with
                     | Succeeded listing

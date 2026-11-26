@@ -26,44 +26,48 @@ let mutable isWindowAlive: int -> bool =
 
 let remove (handleId: string) = handles.Remove handleId |> ignore
 
+/// Closes one diff handle through the entry `TextDiff.Close` of the provider that opened the
+/// repository. A provider without it has nothing to close.
 let private closeInBackground
     (host: WorkspaceSessionHost.WorkspaceSessionHost)
-    (service: TextDiffService)
+    (hosted: WorkspaceSessionHost.HostedSession)
     (windowId: int)
-    (workspaceRoot: string)
     (handle: DiffHandle)
     =
-    // The library binds a handle to the window of the operation that opened it, so the
-    // close runs as an operation of that window. The registration happens before the
-    // first await, which keeps the session open until the close is done.
-    let tracked =
-        host.BeginOperation(Guid.NewGuid().ToString(), Some workspaceRoot, Some windowId, false, ignore)
+    match hosted.Provider.Functions.TextDiff.Close with
+    | Implemented close ->
+        // The library binds a handle to the window of the operation that opened it, so the
+        // close runs as an operation of that window. The registration happens before the
+        // first await, which keeps the session open until the close is done.
+        let tracked =
+            host.BeginOperation(Guid.NewGuid().ToString(), Some hosted.WorkspaceRoot, Some windowId, false, ignore)
 
-    promise {
-        try
+        promise {
             try
-                let! _ = service.Close handle tracked.Context |> Async.StartAsPromise
-                ()
-            with error ->
-                Browser.Dom.console.error ("A text diff handle could not be closed.", error.Message)
-        finally
-            tracked.Complete()
-    }
-    |> Promise.start
+                try
+                    let! _ = close hosted.Repository handle tracked.Context |> Async.StartAsPromise
+                    ()
+                with error ->
+                    Browser.Dom.console.error ("A text diff handle could not be closed.", error.Message)
+            finally
+                tracked.Complete()
+        }
+        |> Promise.start
+    | Missing _ -> ()
 
 /// Records the handle of a finished open. When the window closed while the open ran,
 /// nobody can use the handle any more, and this function closes it right away.
-let recordOrClose (windowId: int option) (workspaceRoot: string) (service: TextDiffService) (handle: DiffHandle) =
+let recordOrClose (windowId: int option) (hosted: WorkspaceSessionHost.HostedSession) (handle: DiffHandle) =
     match windowId with
     | Some id when not (isWindowAlive id) ->
         match WorkspaceSessionHost.tryCurrent () with
-        | Some host -> closeInBackground host service id workspaceRoot handle
+        | Some host -> closeInBackground host hosted id handle
         | None -> ()
     | _ ->
         handles[handle.Id] <- {
             Handle = handle
             WindowId = windowId
-            WorkspaceRoot = workspaceRoot
+            WorkspaceRoot = hosted.WorkspaceRoot
         }
 
 let private closeHandlesOf (windowId: int) =
@@ -78,8 +82,8 @@ let private closeHandlesOf (windowId: int) =
     match WorkspaceSessionHost.tryCurrent () with
     | Some host ->
         for entry in owned do
-            match host.TryGetSession entry.WorkspaceRoot |> Option.bind _.Session.TextDiff with
-            | Some service -> closeInBackground host service windowId entry.WorkspaceRoot entry.Handle
+            match host.TryGetSession entry.WorkspaceRoot with
+            | Some hosted -> closeInBackground host hosted windowId entry.Handle
             | None -> ()
     | None -> ()
 

@@ -495,8 +495,6 @@ Vitest.describe (
                     )
                     DiffBlockerDto.NotRegularFile DiffSideDto.Current,
                     GitDiffPageStatus.Blocked(Some DiffSideDto.Current, GitDiffBlockReason.NotRegularFile)
-                    DiffBlockerDto.ProviderUnsupported,
-                    GitDiffPageStatus.Blocked(None, GitDiffBlockReason.ProviderUnsupported)
                 ]
 
                 for blocker, expected in cases do
