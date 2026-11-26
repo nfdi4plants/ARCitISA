@@ -1,12 +1,12 @@
-namespace Swate.Components.Page.DataHubBrowser.sub
+namespace Arcitisa.Components.Page.DataHubBrowser.sub
 
 open Fable.Core
 open Feliz
-open Swate.Components
-open Swate.Components.Api.GitLabApi
-open Swate.Components.Composite.Actionbar
-open Swate.Components.Composite.Actionbar.Types
-open Swate.Components.Primitive
+open Arcitisa.Components
+open Arcitisa.Components.Api.GitLabApi
+open Arcitisa.Components.Composite.Actionbar
+open Arcitisa.Components.Composite.Actionbar.Types
+open Arcitisa.Components.Primitive
 
 module private RepoListRowHelper =
 

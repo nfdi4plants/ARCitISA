@@ -1,9 +1,9 @@
-module internal Swate.Components.Composite.TextEditor.SchemaValidation.LintTests
+module internal Arcitisa.Components.Composite.TextEditor.SchemaValidation.LintTests
 
 open Fable.Core
 open Vitest
-open Swate.Components.Composite.TextEditor.Types
-open Swate.Components.Composite.TextEditor.SchemaValidation
+open Arcitisa.Components.Composite.TextEditor.Types
+open Arcitisa.Components.Composite.TextEditor.SchemaValidation
 
 let private personSchema () =
     JS.JSON.parse

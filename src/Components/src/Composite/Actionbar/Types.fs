@@ -1,4 +1,4 @@
-module Swate.Components.Composite.Actionbar.Types
+module Arcitisa.Components.Composite.Actionbar.Types
 
 open Fable.Core
 

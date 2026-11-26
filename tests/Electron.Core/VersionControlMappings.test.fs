@@ -1,7 +1,7 @@
 module ElectronCore.VersionControlMappingsTests
 
 open Main.VersionControl
-open Swate.Electron.Shared.VersionControlTypes
+open Arcitisa.Electron.Shared.VersionControlTypes
 open VersionControlService.Abstractions
 open Vitest
 

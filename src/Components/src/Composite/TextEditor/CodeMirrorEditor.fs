@@ -1,15 +1,15 @@
-namespace Swate.Components.Composite.TextEditor
+namespace Arcitisa.Components.Composite.TextEditor
 
 open Browser.Types
 open Fable.Core
 open Fable.Core.JsInterop
 open Feliz
 
-open Swate.Components.Composite.TextEditor.JsBindings.CodeMirror
-open Swate.Components.Composite.TextEditor.Types
-open Swate.Components.Composite.TextEditor.LanguageDetection
-open Swate.Components.Composite.TextEditor.Theme
-open Swate.Components.Util
+open Arcitisa.Components.Composite.TextEditor.JsBindings.CodeMirror
+open Arcitisa.Components.Composite.TextEditor.Types
+open Arcitisa.Components.Composite.TextEditor.LanguageDetection
+open Arcitisa.Components.Composite.TextEditor.Theme
+open Arcitisa.Components.Util
 
 module private CodeMirrorEditorHelpers =
 

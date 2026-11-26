@@ -4,10 +4,10 @@ open Browser.Dom
 open Fable.Core
 open Fable.Core.JsInterop
 open Feliz
-open Swate.Components.Page.FileExplorer.Types
+open Arcitisa.Components.Page.FileExplorer.Types
 open Renderer.Context.LfsActivityContext
-open Swate.Components.Shared
-open Swate.Electron.Shared.FileIOTypes
+open Arcitisa.Components.Shared
+open Arcitisa.Electron.Shared.FileIOTypes
 open Vitest
 
 let rec private waitUntil (predicate: unit -> bool, attempts: int) = promise {
@@ -66,8 +66,8 @@ let private deferred () =
 
 let private versionControlBridgeName = "FABLE_REMOTING_IVersionControlRendererApi"
 
-type private VersionControlProgress = Swate.Electron.Shared.VersionControlTypes.VersionControlProgressDto
-type private VersionControlOutput = Swate.Electron.Shared.VersionControlTypes.VersionControlOutputDto
+type private VersionControlProgress = Arcitisa.Electron.Shared.VersionControlTypes.VersionControlProgressDto
+type private VersionControlOutput = Arcitisa.Electron.Shared.VersionControlTypes.VersionControlOutputDto
 
 /// The provider listens for version control progress on the IPC bridge, which only exists inside Electron.
 /// `onListener` receives the listener that the provider registers.
@@ -175,7 +175,7 @@ Vitest.describe (
                     |]
                     loadedDirectories = [| ""; decomposedFolder |]
                     fileWatcher = {|
-                        state = Swate.Electron.Shared.IPCTypes.FileWatcherStatus.Running
+                        state = Arcitisa.Electron.Shared.IPCTypes.FileWatcherStatus.Running
                         reason = ""
                     |}
                 |}
@@ -661,7 +661,7 @@ let private outputFor (operationId: string) (lines: string list) : VersionContro
     Entries =
         lines
         |> List.map (fun text ->
-            let entry: Swate.Electron.Shared.VersionControlTypes.VersionControlOutputEntryDto = {
+            let entry: Arcitisa.Electron.Shared.VersionControlTypes.VersionControlOutputEntryDto = {
                 CommandId = "cmd-1"
                 Kind = "stdout"
                 Text = text

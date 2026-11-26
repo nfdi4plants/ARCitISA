@@ -1,8 +1,8 @@
-namespace Swate.Components.Primitive.Dialog
+namespace Arcitisa.Components.Primitive.Dialog
 
 open Feliz
 open Fable.Core
-open Swate.Components.Primitive.BaseModal
+open Arcitisa.Components.Primitive.BaseModal
 
 [<Erase; Mangle(false)>]
 type Dialog =

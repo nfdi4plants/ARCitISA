@@ -6,9 +6,9 @@ module Renderer.Context.FileTreeExpansionContext
 
 open Fable.Core
 open Feliz
-open Swate.Components.Shared
-open Swate.Electron.Shared.FileIOTypes
-open Swate.Electron.Shared.IPCTypes
+open Arcitisa.Components.Shared
+open Arcitisa.Electron.Shared.FileIOTypes
+open Arcitisa.Electron.Shared.IPCTypes
 open Renderer.Context.FileStateContext
 open Renderer.Context.FileTreeStore
 
@@ -100,9 +100,9 @@ type FileTreeExpansionController = {
     /// Reveals one path like revealPaths and asks the tree to scroll to its row and focus it. The selection stays.
     revealAndFocus: string -> unit
     /// The open request of revealAndFocus, for the file explorer.
-    focusRequest: Swate.Components.Page.FileExplorer.Types.FileExplorerRevealRequest option
+    focusRequest: Arcitisa.Components.Page.FileExplorer.Types.FileExplorerRevealRequest option
     /// The file explorer focused the row of the request, which drops it. A newer request stays.
-    completeFocusRequest: Swate.Components.Page.FileExplorer.Types.FileExplorerRevealRequest -> unit
+    completeFocusRequest: Arcitisa.Components.Page.FileExplorer.Types.FileExplorerRevealRequest -> unit
 }
 
 let FileTreeExpansionCtx =
@@ -193,7 +193,7 @@ let FileTreeExpansionCtxProvider (api: FileTreeExpansionApi, children: ReactElem
     let contentStamp, setContentStamp = React.useState (None: FileContentStamp option)
 
     let focusRequest, setFocusRequest =
-        React.useStateWithUpdater<Swate.Components.Page.FileExplorer.Types.FileExplorerRevealRequest option> None
+        React.useStateWithUpdater<Arcitisa.Components.Page.FileExplorer.Types.FileExplorerRevealRequest option> None
 
     // The handlers below run outside renders and read the latest values through refs.
     let expandedRef = React.useRef expandedIds
@@ -259,8 +259,8 @@ let FileTreeExpansionCtxProvider (api: FileTreeExpansionApi, children: ReactElem
         setFocusRequest (fun current ->
             match current with
             | Some request when
-                Swate.Electron.Shared.TextDocumentHelper.isPathOrAncestor path request.ItemId
-                && not (Swate.Electron.Shared.TextDocumentHelper.isSameDocumentPath path request.ItemId)
+                Arcitisa.Electron.Shared.TextDocumentHelper.isPathOrAncestor path request.ItemId
+                && not (Arcitisa.Electron.Shared.TextDocumentHelper.isSameDocumentPath path request.ItemId)
                 ->
                 None
             | other -> other
@@ -647,7 +647,7 @@ let FileTreeExpansionCtxProvider (api: FileTreeExpansionApi, children: ReactElem
 
     let completeFocusRequest =
         React.useCallback (
-            (fun (request: Swate.Components.Page.FileExplorer.Types.FileExplorerRevealRequest) ->
+            (fun (request: Arcitisa.Components.Page.FileExplorer.Types.FileExplorerRevealRequest) ->
                 setFocusRequest (fun current -> if current = Some request then None else current)
             ),
             [||]

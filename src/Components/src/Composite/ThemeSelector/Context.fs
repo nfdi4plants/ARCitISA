@@ -1,8 +1,8 @@
-module Swate.Components.Composite.ThemeSelector.Context
+module Arcitisa.Components.Composite.ThemeSelector.Context
 
 open Feliz
-open Swate.Components
-open Swate.Components.Composite.ThemeSelector.Types
+open Arcitisa.Components
+open Arcitisa.Components.Composite.ThemeSelector.Types
 
 let ThemeCtx = React.createContext<StateContext<Theme>> ()
 

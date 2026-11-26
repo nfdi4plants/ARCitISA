@@ -1,7 +1,7 @@
 module Renderer.Context.FileTreeHooks
 
 open Feliz
-open Swate.Electron.Shared.FileIOTypes
+open Arcitisa.Electron.Shared.FileIOTypes
 open Renderer.Context.FileStateContext
 open Renderer.Context.FileTreeStore
 

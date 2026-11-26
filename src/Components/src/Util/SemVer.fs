@@ -1,4 +1,4 @@
-module Swate.Components.Util.SemVer
+module Arcitisa.Components.Util.SemVer
 
 open ARCtrl.Helper.Regex
 open ARCtrl.Helper.Regex.ActivePatterns

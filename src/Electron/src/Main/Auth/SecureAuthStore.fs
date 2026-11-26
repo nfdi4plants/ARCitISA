@@ -6,14 +6,24 @@ open Fable.Electron.Main
 open Main.Bindings.Filesystem
 open Main.Bindings.Path
 open Thoth.Json.Core
-open Swate.Components.Composite.Authentication.Types
+open Arcitisa.Components.Composite.Authentication.Types
 
 [<Literal>]
 let private activeAccountFileName = "active-account.json"
 
+/// JSON key of the account id in the active account file and in the meta files.
+[<Literal>]
+let private accountIdJsonKey = "localArcitisaAccountId"
+
+/// JSON key of the account id from the time the app was called Swate. It is still written next to
+/// accountIdJsonKey and read when that key is missing, so files from older versions keep working and
+/// older versions can read new files. Listed in docs/maintainer/ObsoleteRemoveOnNextMajor.md.
+[<Literal>]
+let private legacyAccountIdJsonKey = "localSwateAccountId"
+
 /// Non-secret metadata stored in plaintext JSON alongside the encrypted blob.
 type AuthMetadata = {
-    LocalSwateAccountId: string
+    LocalArcitisaAccountId: string
     Id: int
     Username: string
     Name: string
@@ -68,22 +78,22 @@ let private getAuthDir () =
     mkdirSync dir (MkdirOptions(recursive = true))
     dir
 
-let private encryptedFilePath (localSwateAccountId: string) =
+let private encryptedFilePath (localArcitisaAccountId: string) =
     join [|
         getAuthDir ()
-        $"{localSwateAccountId}-credentials.enc"
+        $"{localArcitisaAccountId}-credentials.enc"
     |]
 
-let private metaFilePath (localSwateAccountId: string) =
-    join [| getAuthDir (); $"{localSwateAccountId}-meta.json" |]
+let private metaFilePath (localArcitisaAccountId: string) =
+    join [| getAuthDir (); $"{localArcitisaAccountId}-meta.json" |]
 
 let private activeAccountFilePath () =
     join [| getAuthDir (); activeAccountFileName |]
 
-let private isSafeLocalSwateAccountId (localSwateAccountId: string) : bool =
-    not (System.String.IsNullOrWhiteSpace localSwateAccountId)
-    && localSwateAccountId.Length <= 256
-    && localSwateAccountId
+let private isSafeLocalArcitisaAccountId (localArcitisaAccountId: string) : bool =
+    not (System.String.IsNullOrWhiteSpace localArcitisaAccountId)
+    && localArcitisaAccountId.Length <= 256
+    && localArcitisaAccountId
        |> Seq.forall (fun c -> System.Char.IsLetterOrDigit c || c = '_' || c = '-')
 
 let private parseTokenStatus (raw: string) : TokenStatus option =
@@ -99,14 +109,14 @@ let private tokenStatusToString (status: TokenStatus) : string =
     | TokenStatus.Expiring -> "expiring"
     | TokenStatus.Invalid -> "invalid"
 
-let private authMetadataDecoder (localSwateAccountId: string) : Decoder<AuthMetadata> =
+let private authMetadataDecoder (localArcitisaAccountId: string) : Decoder<AuthMetadata> =
     Decode.object (fun get ->
         let tokenStatusFromLegacyFlag =
             get.Optional.Field "tokenInvalid" Decode.bool
             |> Option.map (fun tokenInvalid -> if tokenInvalid then TokenStatus.Invalid else TokenStatus.Ok)
 
         {
-            LocalSwateAccountId = localSwateAccountId
+            LocalArcitisaAccountId = localArcitisaAccountId
             Id = get.Required.Field "id" Decode.int
             // Optional: metadata written before commit identities were stored has no username.
             Username = get.Optional.Field "username" Decode.string |> Option.defaultValue ""
@@ -120,7 +130,7 @@ let private authMetadataDecoder (localSwateAccountId: string) : Decoder<AuthMeta
             DateAdded =
                 get.Optional.Field "dateAdded" Decode.string
                 |> Option.filter (String.IsNullOrWhiteSpace >> not)
-                |> Option.defaultWith Swate.Components.DateTimeExtensions.getUtcNowISO
+                |> Option.defaultWith Arcitisa.Components.DateTimeExtensions.getUtcNowISO
             TokenStatus =
                 get.Optional.Field "tokenStatus" Decode.string
                 |> Option.bind parseTokenStatus
@@ -132,32 +142,33 @@ let private authMetadataDecoder (localSwateAccountId: string) : Decoder<AuthMeta
         }
     )
 
-let private activeLocalSwateAccountIdDecoder: Decoder<string option> =
+let private activeLocalArcitisaAccountIdDecoder: Decoder<string option> =
     Decode.object (fun get ->
-        get.Optional.Field "localSwateAccountId" Decode.string
-        |> Option.filter isSafeLocalSwateAccountId
+        get.Optional.Field accountIdJsonKey Decode.string
+        |> Option.orElse (get.Optional.Field legacyAccountIdJsonKey Decode.string)
+        |> Option.filter isSafeLocalArcitisaAccountId
     )
 
-let private tryDecodeAuthMetadata (localSwateAccountId: string) (raw: string) : AuthMetadata option =
+let private tryDecodeAuthMetadata (localArcitisaAccountId: string) (raw: string) : AuthMetadata option =
     try
-        if not (isSafeLocalSwateAccountId localSwateAccountId) then
+        if not (isSafeLocalArcitisaAccountId localArcitisaAccountId) then
             None
         else
-            ARCtrl.Json.Decode.fromJsonString (authMetadataDecoder localSwateAccountId) raw
+            ARCtrl.Json.Decode.fromJsonString (authMetadataDecoder localArcitisaAccountId) raw
             |> Some
             |> Option.filter (fun metadata -> metadata.Id > 0)
     with _ ->
         None
 
-let private tryDecodeActiveLocalSwateAccountId (raw: string) : string option =
+let private tryDecodeActiveLocalArcitisaAccountId (raw: string) : string option =
     try
-        ARCtrl.Json.Decode.fromJsonString activeLocalSwateAccountIdDecoder raw
+        ARCtrl.Json.Decode.fromJsonString activeLocalArcitisaAccountIdDecoder raw
     with _ ->
         None
 
-let private tryGetAccountPaths (localSwateAccountId: string) : (string * string) option =
-    if isSafeLocalSwateAccountId localSwateAccountId then
-        Some(encryptedFilePath localSwateAccountId, metaFilePath localSwateAccountId)
+let private tryGetAccountPaths (localArcitisaAccountId: string) : (string * string) option =
+    if isSafeLocalArcitisaAccountId localArcitisaAccountId then
+        Some(encryptedFilePath localArcitisaAccountId, metaFilePath localArcitisaAccountId)
     else
         None
 
@@ -167,7 +178,7 @@ let private normalizeAccountIdentity (targetDataHub: string) (email: string) : s
     $"{host}|{normalizedEmail}"
 
 /// Generate a deterministic filesystem-safe local account key from host and email.
-let generateLocalSwateAccountId (targetDataHub: string) (email: string) : string =
+let generateLocalArcitisaAccountId (targetDataHub: string) (email: string) : string =
     normalizeAccountIdentity targetDataHub email |> sha256Hex
 
 // ── public API ───────────────────────────────────────────────────────
@@ -182,19 +193,20 @@ let store (credential: StoredCredential) : Result<unit, string> =
     try
         if not (isAvailable ()) then
             Error "ARCitISA safe storage is not available on this system."
-        elif not (isSafeLocalSwateAccountId credential.Metadata.LocalSwateAccountId) then
+        elif not (isSafeLocalArcitisaAccountId credential.Metadata.LocalArcitisaAccountId) then
             Error "Invalid account identifier format."
         else
-            let localSwateAccountId = credential.Metadata.LocalSwateAccountId
+            let localArcitisaAccountId = credential.Metadata.LocalArcitisaAccountId
             let encrypted: Node.Buffer.Buffer = safeStorage.encryptString credential.Token
             let base64 = bufferToBase64 encrypted
-            let tmpEnc = encryptedFilePath localSwateAccountId + ".tmp"
+            let tmpEnc = encryptedFilePath localArcitisaAccountId + ".tmp"
             writeFileSync tmpEnc base64 TextEncoding.Utf8
-            renameSync tmpEnc (encryptedFilePath localSwateAccountId)
+            renameSync tmpEnc (encryptedFilePath localArcitisaAccountId)
 
             let metaJson =
                 JS.JSON.stringify {|
-                    localSwateAccountId = credential.Metadata.LocalSwateAccountId
+                    localArcitisaAccountId = credential.Metadata.LocalArcitisaAccountId
+                    localSwateAccountId = credential.Metadata.LocalArcitisaAccountId
                     id = credential.Metadata.Id
                     username = credential.Metadata.Username
                     name = credential.Metadata.Name
@@ -208,19 +220,19 @@ let store (credential: StoredCredential) : Result<unit, string> =
                     tokenInvalid = credential.Metadata.TokenStatus = TokenStatus.Invalid
                 |}
 
-            let tmpMeta = metaFilePath localSwateAccountId + ".tmp"
+            let tmpMeta = metaFilePath localArcitisaAccountId + ".tmp"
             writeFileSync tmpMeta metaJson TextEncoding.Utf8
-            renameSync tmpMeta (metaFilePath localSwateAccountId)
+            renameSync tmpMeta (metaFilePath localArcitisaAccountId)
             Ok()
     with ex ->
         Error $"Failed to store auth credentials: {ex.Message}"
 
-let tryLoad (localSwateAccountId: string) : StoredCredential option =
+let tryLoad (localArcitisaAccountId: string) : StoredCredential option =
     try
         if not (isAvailable ()) then
             None
         else
-            match tryGetAccountPaths localSwateAccountId with
+            match tryGetAccountPaths localArcitisaAccountId with
             | None -> None
             | Some(enc, metaPath) ->
                 if not (existsSync enc) then
@@ -233,7 +245,7 @@ let tryLoad (localSwateAccountId: string) : StoredCredential option =
                     let token = safeStorage.decryptString buffer
                     let metaRaw = readFileSync metaPath TextEncoding.Utf8
 
-                    tryDecodeAuthMetadata localSwateAccountId metaRaw
+                    tryDecodeAuthMetadata localArcitisaAccountId metaRaw
                     |> Option.map (fun metadata -> { Metadata = metadata; Token = token })
     with _ ->
         None
@@ -250,17 +262,17 @@ let loadAll () : StoredCredential list =
             files
             |> Array.choose (fun f ->
                 if f.EndsWith("-meta.json") then
-                    let localSwateAccountId = f.Replace("-meta.json", "")
-                    tryLoad localSwateAccountId
+                    let localArcitisaAccountId = f.Replace("-meta.json", "")
+                    tryLoad localArcitisaAccountId
                 else
                     None
             )
             |> Array.toList
     with _ -> []
 
-let remove (localSwateAccountId: string) : unit =
+let remove (localArcitisaAccountId: string) : unit =
     try
-        match tryGetAccountPaths localSwateAccountId with
+        match tryGetAccountPaths localArcitisaAccountId with
         | None -> ()
         | Some(enc, metaPath) ->
             if existsSync enc then
@@ -282,25 +294,30 @@ let clearAll () : unit =
     with _ ->
         ()
 
-let getActiveLocalSwateAccountId () : string option =
+let getActiveLocalArcitisaAccountId () : string option =
     try
         let path = activeAccountFilePath ()
 
         if existsSync path then
             let raw = readFileSync path TextEncoding.Utf8
-            tryDecodeActiveLocalSwateAccountId raw
+            tryDecodeActiveLocalArcitisaAccountId raw
         else
             None
     with _ ->
         None
 
-let setActiveLocalSwateAccountId (localSwateAccountId: string option) : unit =
+let setActiveLocalArcitisaAccountId (localArcitisaAccountId: string option) : unit =
     try
         let path = activeAccountFilePath ()
 
-        match localSwateAccountId with
-        | Some id when isSafeLocalSwateAccountId id ->
-            let json = JS.JSON.stringify {| localSwateAccountId = id |}
+        match localArcitisaAccountId with
+        | Some id when isSafeLocalArcitisaAccountId id ->
+            let json =
+                JS.JSON.stringify {|
+                    localArcitisaAccountId = id
+                    localSwateAccountId = id
+                |}
+
             let tmp = path + ".tmp"
             writeFileSync tmp json TextEncoding.Utf8
             renameSync tmp path

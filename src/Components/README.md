@@ -31,7 +31,7 @@ Can be references like this in a react test repo after moving the `.tgz` file to
 
 ```json
 "dependencies": {
-    "@nfdi4plants/swate-components": "file:./nfdi4plants-swate-components-2.0.2.tgz",
+    "@nfdi4plants/arcitisa-components": "file:./nfdi4plants-arcitisa-components-2.0.2.tgz",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },
@@ -54,7 +54,7 @@ Can be references like this in a react test repo after moving the `.tgz` file to
 0. Release normally and copy `<new_version>` from console output.
 1. `npm version <new_version> --no-git-tag-version`
 2. `npm run build` (transpiles with fable, creates tsc types, and bundles with rollup)
-3. (Due to [#701](https://github.com/nfdi4plants/ARCitISA/issues/701)) replace `@layer base` with `@layer swt-base` in `dist/swate-components.css`
+3. (Due to [#701](https://github.com/nfdi4plants/ARCitISA/issues/701)) replace `@layer base` with `@layer swt-base` in `dist/arcitisa-components.css`
 4. `npm publish --access public [--tag next]` (Use `--tag next` for prerelease)
 
 ##### Background info:
@@ -72,7 +72,7 @@ Can be references like this in a react test repo after moving the `.tgz` file to
 
 > **Question:** Why transpile to `src/dist`, instead of using the fable transpiled files next to the f# files? 
 >
-> **Answer:** Because otherwise the vite tsc compiler cannot find the f# code from Swate.Components.Shared. By giving fable a specific output dir `src/dist`, all code, including the f# code from Swate.Components.Shared, is in one place and tsc can find it.
+> **Answer:** Because otherwise the vite tsc compiler cannot find the f# code from Arcitisa.Components.Shared. By giving fable a specific output dir `src/dist`, all code, including the f# code from Arcitisa.Components.Shared, is in one place and tsc can find it.
 
 > **Question:** Why use a bundler, instead of uploading raw files.
 >

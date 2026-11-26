@@ -3,12 +3,12 @@
 ///
 /// Every ordered output comes from explicit insertion-ordered arrays. A Dictionary
 /// or HashSet only answers lookups by string key and is never enumerated for order.
-module Swate.Components.Shared.ProvenanceGraph.BuildIndex
+module Arcitisa.Components.Shared.ProvenanceGraph.BuildIndex
 
 open System
 open System.Collections.Generic
 open ARCtrl
-open Swate.Components.Shared.ProvenanceGraph.Types
+open Arcitisa.Components.Shared.ProvenanceGraph.Types
 
 [<NoEquality; NoComparison>]
 type private DatasetEntry = {

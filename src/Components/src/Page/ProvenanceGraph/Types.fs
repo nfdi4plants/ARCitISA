@@ -1,8 +1,8 @@
-module Swate.Components.Page.ProvenanceGraph.Types
+module Arcitisa.Components.Page.ProvenanceGraph.Types
 
 open System.Text.RegularExpressions
-open Swate.Components.Shared.ProvenanceGraph.Types
-open Swate.Components.Composite.GraphCanvas.Types
+open Arcitisa.Components.Shared.ProvenanceGraph.Types
+open Arcitisa.Components.Composite.GraphCanvas.Types
 
 /// The level of the explorer together with the selections that lead to it.
 /// Each deeper level keeps the ids of the shallower ones, so a view alone says where the user is.

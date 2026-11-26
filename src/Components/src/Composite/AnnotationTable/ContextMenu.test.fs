@@ -1,10 +1,10 @@
-module internal Swate.Components.Composite.AnnotationTable.ContextMenuUnitTests
+module internal Arcitisa.Components.Composite.AnnotationTable.ContextMenuUnitTests
 
 open ARCtrl
 open Vitest
-open Swate.Components
-open Swate.Components.Composite.Table.Types
-open Swate.Components.Composite.AnnotationTable.Types.AnnotationTableContextMenu
+open Arcitisa.Components
+open Arcitisa.Components.Composite.Table.Types
+open Arcitisa.Components.Composite.AnnotationTable.Types.AnnotationTableContextMenu
 
 let private coordinate x y : CellCoordinate = {| x = x; y = y |}
 

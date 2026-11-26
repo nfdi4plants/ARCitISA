@@ -1,8 +1,8 @@
-namespace Swate.Components.Primitive.Banner
+namespace Arcitisa.Components.Primitive.Banner
 
 open Fable.Core
 open Feliz
-open Swate.Components.Primitive.Banner.Types
+open Arcitisa.Components.Primitive.Banner.Types
 
 module private BannerHelper =
 

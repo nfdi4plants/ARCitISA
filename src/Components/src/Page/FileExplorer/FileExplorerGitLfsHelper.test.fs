@@ -1,8 +1,8 @@
-module internal Swate.Components.Tests.FileExplorerGitLfsHelper
+module internal Arcitisa.Components.Tests.FileExplorerGitLfsHelper
 
 open Vitest
-open Swate.Components.Page.FileExplorer.Types
-open Swate.Components.Page.FileExplorer.FileExplorerGitLfsHelper
+open Arcitisa.Components.Page.FileExplorer.Types
+open Arcitisa.Components.Page.FileExplorer.FileExplorerGitLfsHelper
 
 let private lfsFile (isPointer: bool) : FileItem = {
     FileTree.createFile "data.bin" (Some "data.bin") FileItemIcon.Document with

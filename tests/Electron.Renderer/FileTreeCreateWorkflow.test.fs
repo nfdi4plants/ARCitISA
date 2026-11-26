@@ -4,9 +4,9 @@ open Fable.Core
 open Fable.Core.JsInterop
 open ARCtrl
 open Renderer.Components.LeftSidebar.FileExplorer
-open Swate.Components.Shared
-open Swate.Components.Page.FileExplorer.Types
-open Swate.Electron.Shared.FileIOTypes
+open Arcitisa.Components.Shared
+open Arcitisa.Components.Page.FileExplorer.Types
+open Arcitisa.Electron.Shared.FileIOTypes
 open Vitest
 
 // The workflow module reaches Api.js, whose IPC bridges are absent without the preload. No test calls them.

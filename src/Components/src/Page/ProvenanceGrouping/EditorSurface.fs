@@ -1,18 +1,18 @@
-namespace Swate.Components.Page.ProvenanceGrouping
+namespace Arcitisa.Components.Page.ProvenanceGrouping
 
 open System
 open System.Globalization
 open Fable.Core
 open Fable.Core.JsInterop
 open Feliz
-open Swate.Components.Composite.FolderedDraggableList
-open Swate.Components.Composite.FolderedDraggableList.Types
-open Swate.Components.JsBindings
-open Swate.Components.Shared.ProvenanceGrouping.Types
-open Swate.Components.Shared.ProvenanceGrouping.Grouping
-open Swate.Components.Shared.ProvenanceGrouping.Edit
-open Swate.Components.Shared.ProvenanceGrouping.Session
-open Swate.Components.Page.ProvenanceGrouping.Types
+open Arcitisa.Components.Composite.FolderedDraggableList
+open Arcitisa.Components.Composite.FolderedDraggableList.Types
+open Arcitisa.Components.JsBindings
+open Arcitisa.Components.Shared.ProvenanceGrouping.Types
+open Arcitisa.Components.Shared.ProvenanceGrouping.Grouping
+open Arcitisa.Components.Shared.ProvenanceGrouping.Edit
+open Arcitisa.Components.Shared.ProvenanceGrouping.Session
+open Arcitisa.Components.Page.ProvenanceGrouping.Types
 
 /// Render helpers for side rails, group columns, and drag overlays.
 module EditorSurface =
@@ -68,9 +68,9 @@ module EditorSurface =
         addPaletteValue
         setPropertyColor
         sourceInfoForValue
-        (isUnassignedValue: Swate.Components.Shared.ProvenanceGrouping.Types.ProvenancePropertyValue -> bool)
+        (isUnassignedValue: Arcitisa.Components.Shared.ProvenanceGrouping.Types.ProvenancePropertyValue -> bool)
         (onApplyValueToSelection:
-            (Swate.Components.Shared.ProvenanceGrouping.Types.ProvenancePropertyValue -> unit) option)
+            (Arcitisa.Components.Shared.ProvenanceGrouping.Types.ProvenancePropertyValue -> unit) option)
         (applySelectionLabel: string)
         isDropRejected
         isDropAvailable

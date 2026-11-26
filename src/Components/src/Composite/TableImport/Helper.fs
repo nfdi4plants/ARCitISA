@@ -1,10 +1,10 @@
-module Swate.Components.Composite.TableImport.Helper
+module Arcitisa.Components.Composite.TableImport.Helper
 
 open System
 open ARCtrl
-open Swate.Components.Shared
-open Swate.Components.Shared.ARCtrlHelper
-open Swate.Components.Composite.TableImport.Types
+open Arcitisa.Components.Shared
+open Arcitisa.Components.Shared.ARCtrlHelper
+open Arcitisa.Components.Composite.TableImport.Types
 
 let private tryTrimmed (value: string) =
     if String.IsNullOrWhiteSpace value then

@@ -1,7 +1,7 @@
-module Swate.Components.Page.ArcFileEditor.EmptyTableView.Types
+module Arcitisa.Components.Page.ArcFileEditor.EmptyTableView.Types
 
 open ARCtrl
-open Swate.Components.Shared.ProvenanceGrouping.ARCtrlConverter
+open Arcitisa.Components.Shared.ProvenanceGrouping.ARCtrlConverter
 
 /// A table from anywhere in the ARC whose input and output columns can start a new table.
 type ArcNodeTable = {

@@ -1,11 +1,11 @@
-module internal Swate.Components.Tests.GitSidebarNotices
+module internal Arcitisa.Components.Tests.GitSidebarNotices
 
 open Browser.Types
 open Fable.Core
 open Fable.Core.JsInterop
 open Feliz
-open Swate.Components.Page
-open Swate.Components.Page.GitSidebarTypes
+open Arcitisa.Components.Page
+open Arcitisa.Components.Page.GitSidebarTypes
 open Vitest
 
 let private callbacks: GitSidebarCallbacks = {

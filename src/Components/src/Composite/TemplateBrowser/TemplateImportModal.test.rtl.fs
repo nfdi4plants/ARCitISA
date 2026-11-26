@@ -1,13 +1,13 @@
-module internal Swate.Components.Composite.Template.TemplateImportModalTests
+module internal Arcitisa.Components.Composite.Template.TemplateImportModalTests
 
 open ARCtrl
-open Swate.Components.Shared
+open Arcitisa.Components.Shared
 open Browser.Types
 open Fable.Core
 open Vitest
-open Swate.Components.Tests.TableFiles
-open Swate.Components.Composite.Template
-open Swate.Components.Composite.TableImport.Types
+open Arcitisa.Components.Tests.TableFiles
+open Arcitisa.Components.Composite.Template
+open Arcitisa.Components.Composite.TableImport.Types
 
 Vitest.afterEach (fun () -> RTL.cleanup ())
 

@@ -1,11 +1,11 @@
-module internal Swate.Components.Composite.EditorToolbar.EditorToolbarTests
+module internal Arcitisa.Components.Composite.EditorToolbar.EditorToolbarTests
 
 open Browser.Types
 open Feliz
 open Vitest
-open Swate.Components.Composite.TextEditor
-open Swate.Components.Util
-open Swate.Components.Composite.EditorToolbar
+open Arcitisa.Components.Composite.TextEditor
+open Arcitisa.Components.Util
+open Arcitisa.Components.Composite.EditorToolbar
 
 let private history canUndo canRedo = {|
     canUndo = canUndo

@@ -1,9 +1,9 @@
-namespace Swate.Components.Page.ProvenanceGrouping
+namespace Arcitisa.Components.Page.ProvenanceGrouping
 
 /// Derives endpoint defaults, identities, and display headers for empty-side creation.
 module Endpoints =
 
-    open Swate.Components.Shared.ProvenanceGrouping.Types
+    open Arcitisa.Components.Shared.ProvenanceGrouping.Types
 
     let fallbackKind: ProvenanceKind =
         ProvenanceKind.create "editor:endpoint" "Endpoint"
@@ -32,11 +32,11 @@ module Endpoints =
 /// Plans how dropped property values should be added or overwritten across a target group.
 module ValueAssignment =
 
-    open Swate.Components.Shared.ProvenanceGrouping.Types
-    open Swate.Components.Shared.ProvenanceGrouping.Edit
-    open Swate.Components.Shared.ProvenanceGrouping.Grouping
-    open Swate.Components.Shared.ProvenanceGrouping.Session
-    open Swate.Components.Page.ProvenanceGrouping.Types
+    open Arcitisa.Components.Shared.ProvenanceGrouping.Types
+    open Arcitisa.Components.Shared.ProvenanceGrouping.Edit
+    open Arcitisa.Components.Shared.ProvenanceGrouping.Grouping
+    open Arcitisa.Components.Shared.ProvenanceGrouping.Session
+    open Arcitisa.Components.Page.ProvenanceGrouping.Types
 
     let private targetForGroup side (group: DisplayGroup) =
         let ids = group.Members |> List.map (fun m -> m.SetId)

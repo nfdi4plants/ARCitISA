@@ -1,6 +1,6 @@
 module Main.VersionControl.VersionControlSettings
 
-open Swate.Electron.Shared.VersionControlTypes
+open Arcitisa.Electron.Shared.VersionControlTypes
 open VersionControlService.Abstractions
 
 type VersionControlSettings = {
@@ -36,7 +36,7 @@ module VersionControlSettings =
     [<Literal>]
     let DefaultDiffIndexingLimitMb = 1024
 
-    /// The free space in MiB that Swate keeps on the temp drive for the data of a diff.
+    /// The free space in MiB that ARCitISA keeps on the temp drive for the data of a diff.
     [<Literal>]
     let FreeSpaceReserveMb = 1024
 

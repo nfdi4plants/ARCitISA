@@ -1,11 +1,11 @@
-namespace Swate.Components.Page.ProvenanceGraph
+namespace Arcitisa.Components.Page.ProvenanceGraph
 
 open Browser.Types
 open Fable.Core
 open Feliz
-open Swate.Components
-open Swate.Components.Composite.GraphCanvas.Types
-open Swate.Components.Page.ProvenanceGraph.Types
+open Arcitisa.Components
+open Arcitisa.Components.Composite.GraphCanvas.Types
+open Arcitisa.Components.Page.ProvenanceGraph.Types
 
 module private OverviewNavHelper =
 

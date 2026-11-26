@@ -2,7 +2,7 @@ module ElectronCore.AppMenuTests
 
 open Fable.Core
 open Fable.Electron.Main
-open Swate.Electron.Shared.IPCTypes
+open Arcitisa.Electron.Shared.IPCTypes
 open Vitest
 
 type private ElectronMock =
@@ -39,7 +39,7 @@ Vitest.test (
         let menu = Menu.getApplicationMenu().Value
         Vitest.expect(menu.items.Length).toBe 3
         Vitest.expect(menu.items.[0].id).toBe "original-file"
-        let help = menu.getMenuItemById("swate-help").Value
+        let help = menu.getMenuItemById("arcitisa-help").Value
 
         Vitest.expect(help.submenu.items |> Array.map _.label).toEqual [|
             "Check for updates ..."
@@ -51,8 +51,8 @@ Vitest.test (
 Vitest.test (
     "About uses a native dialog with the application name and current version",
     fun () -> promise {
-        let! settingsRoot = ElectronCore.TestHelpers.createTempDirectoryAsync "swate-help-version-"
-        Vitest.vi.stubEnv ("SWATE_TEST_USER_DATA", Some settingsRoot)
+        let! settingsRoot = ElectronCore.TestHelpers.createTempDirectoryAsync "arcitisa-help-version-"
+        Vitest.vi.stubEnv ("ARCITISA_TEST_USER_DATA", Some settingsRoot)
         Main.Settings.AppVersion.initialize ()
         Vitest.vi.unstubAllEnvs ()
         do! ElectronCore.TestHelpers.removeDirectoryAsync settingsRoot
@@ -77,7 +77,7 @@ Vitest.test (
             )
 
         Main.AppMenu.install ()
-        let about = Menu.getApplicationMenu().Value.getMenuItemById("swate-about").Value
+        let about = Menu.getApplicationMenu().Value.getMenuItemById("arcitisa-about").Value
         clickMenuItem about window
         do! Promise.sleep 1
         Vitest.expect(shown).toBe true
@@ -135,7 +135,7 @@ Vitest.test (
         Main.AppMenu.install ()
 
         let notes =
-            Menu.getApplicationMenu().Value.getMenuItemById("swate-release-notes").Value
+            Menu.getApplicationMenu().Value.getMenuItemById("arcitisa-release-notes").Value
 
         clickMenuItem notes window
         clickMenuItem notes window

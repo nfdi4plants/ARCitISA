@@ -4,7 +4,7 @@ open Fable.Core
 open Main
 open Main.VersionControl
 open Main.VersionControl.DependencyState
-open Swate.Electron.Shared.VersionControlTypes
+open Arcitisa.Electron.Shared.VersionControlTypes
 open VersionControlService.Abstractions
 open Vitest
 

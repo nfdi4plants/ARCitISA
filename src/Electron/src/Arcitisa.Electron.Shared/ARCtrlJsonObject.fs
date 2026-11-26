@@ -1,6 +1,6 @@
-module Swate.Electron.Shared.ARCtrlJsonObject
+module Arcitisa.Electron.Shared.ARCtrlJsonObject
 
-open Swate.Components.Shared
+open Arcitisa.Components.Shared
 
 
 type ARCDatasets =

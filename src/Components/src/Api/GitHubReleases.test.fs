@@ -1,7 +1,7 @@
-module internal Swate.Components.Tests.GitHubReleases
+module internal Arcitisa.Components.Tests.GitHubReleases
 
 open Vitest
-open Swate.Components.Api.GitHubReleases
+open Arcitisa.Components.Api.GitHubReleases
 
 let private release tag prerelease draft = {
     tag_name = tag

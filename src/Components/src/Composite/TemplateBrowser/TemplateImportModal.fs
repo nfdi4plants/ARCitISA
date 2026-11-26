@@ -1,15 +1,15 @@
-namespace Swate.Components.Composite.Template
+namespace Arcitisa.Components.Composite.Template
 
 open Fable.Core
 open Feliz
 open ARCtrl
-open Swate.Components.Shared
-open Swate.Components
-open Swate.Components.Primitive.BaseModal
-open Swate.Components.Composite.TableImport
-open Swate.Components.Composite.TableImport.Types
+open Arcitisa.Components.Shared
+open Arcitisa.Components
+open Arcitisa.Components.Primitive.BaseModal
+open Arcitisa.Components.Composite.TableImport
+open Arcitisa.Components.Composite.TableImport.Types
 
-module TableHelper = Swate.Components.Composite.TableImport.Helper
+module TableHelper = Arcitisa.Components.Composite.TableImport.Helper
 
 [<Erase; Mangle(false)>]
 type TemplateImportModal =

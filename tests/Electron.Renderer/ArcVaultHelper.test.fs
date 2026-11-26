@@ -5,8 +5,8 @@ open Fable.Core
 open Fable.Core.JsInterop
 open Renderer.Components.Helper.ArcVaultHelper
 open Renderer.Context.GitWorkflow
-open Swate.Components.PageComponents.SettingsPage
-open Swate.Electron.Shared.IPCTypes
+open Arcitisa.Components.PageComponents.SettingsPage
+open Arcitisa.Electron.Shared.IPCTypes
 open Vitest
 
 let mutable private createArcResult: Result<CreateArcOutcome, exn> =

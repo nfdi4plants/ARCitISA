@@ -2,13 +2,13 @@ module Database.Ontology
 
 open Neo4j.Driver
 open Helper
-open Swate.Components.Shared.Database
+open Arcitisa.Components.Shared.Database
 
 type Ontology(credentials: Neo4JCredentials) =
 
-    static member private asOntology: IRecord -> Swate.Components.Shared.Database.Ontology =
+    static member private asOntology: IRecord -> Arcitisa.Components.Shared.Database.Ontology =
         fun (record: IRecord) ->
-            let (ontology: Swate.Components.Shared.Database.Ontology) = {
+            let (ontology: Arcitisa.Components.Shared.Database.Ontology) = {
                 Name = record.["o.name"].As<string>()
                 Version = record.["o.version"] |> defaultOutputWith<string> ""
                 LastUpdated = record.["o.lastUpdated"].As<string>() |> System.DateTime.Parse

@@ -1,12 +1,12 @@
-namespace Swate.Components.Primitive.ContextMenu
+namespace Arcitisa.Components.Primitive.ContextMenu
 
 open Feliz
 open Fable.Core
 open Fable.Core.JsInterop
 open Browser.Types
-open Swate.Components
-open Swate.Components.Primitive
-open Swate.Components.Primitive.ContextMenu.Types
+open Arcitisa.Components
+open Arcitisa.Components.Primitive
+open Arcitisa.Components.Primitive.ContextMenu.Types
 
 module private ContextMenuDom =
 

@@ -11,7 +11,7 @@
   </PropertyGroup>
 
   <PropertyGroup>
-    <PackageId>Swate.Components</PackageId>
+    <PackageId>ARCitISA.Components</PackageId>
     <PackageVersion>2.0.0</PackageVersion>
     <Authors>Kevin Frey</Authors>
     <Description>ARCitISA React components</Description>
@@ -61,13 +61,13 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\Shared\Swate.Components.Core.fsproj" />
+    <ProjectReference Include="..\..\Shared\Arcitisa.Components.Core.fsproj" />
     <ProjectReference Include="..\..\Fable.Remoting.Client.Compatibility\Fable.Remoting.Client.fsproj" />
   </ItemGroup>
 
   <ItemGroup>
     <None Include="..\README.md" Pack="true" PackagePath="\" />
-    <None Include="swate-components.css" Pack="true" PackagePath="fable/" />
+    <None Include="arcitisa-components.css" Pack="true" PackagePath="fable/" />
     <Compile Include="Types\KeyedState.fs" />
     <Compile Include="Types\StateContext.fs" />
     <Compile Include="Types\CellCoordinate.fs" />
@@ -131,7 +131,7 @@
     <Compile Include="ARCtrl\Extensions\DataMap.fs" />
     <Compile Include="ARCtrl\Extensions\Template.fs" />
     <Compile Include="Api\Helper.fs" />
-    <Compile Include="Api\SwateApi.fs" />
+    <Compile Include="Api\ArcitisaApi.fs" />
     <Compile Include="Api\JsonWireFormat.test.fs" />
     <Compile Include="Api\GitLabApi.fs" />
     <Compile Include="Api\TIBApi.fs" />

@@ -1,12 +1,12 @@
-namespace Swate.Components.Page.TextDocumentSample
+namespace Arcitisa.Components.Page.TextDocumentSample
 
 open Fable.Core
 open Feliz
 
-open Swate.Components.Composite.TextEditor.Types
-open Swate.Components.Composite.MarkdownText.Links.Types
-open Swate.Components.Page.FileViewer
-open Swate.Components.Page.FileViewer.Types
+open Arcitisa.Components.Composite.TextEditor.Types
+open Arcitisa.Components.Composite.MarkdownText.Links.Types
+open Arcitisa.Components.Page.FileViewer
+open Arcitisa.Components.Page.FileViewer.Types
 
 module private TextDocumentSampleHelpers =
 

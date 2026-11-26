@@ -1,10 +1,10 @@
-module internal Swate.Components.Composite.Widgets.DataAnnotatorTests
+module internal Arcitisa.Components.Composite.Widgets.DataAnnotatorTests
 
 open System.Text.RegularExpressions
 open Browser.Types
 open Fable.Core
 open Vitest
-open Swate.Components.Composite.Widgets.DataAnnotator.Types
+open Arcitisa.Components.Composite.Widgets.DataAnnotator.Types
 
 module TestHelpers =
 
@@ -82,7 +82,7 @@ Vitest.test (
 
         let rendered =
             RTL.render (
-                Swate.Components.Composite.Widgets.DataAnnotator.DataAnnotator.Main(
+                Arcitisa.Components.Composite.Widgets.DataAnnotator.DataAnnotator.Main(
                     onInsert = onInsert,
                     canInsert = false
                 )
@@ -96,7 +96,10 @@ Vitest.test (
         RTL.screen.getByText "Select table cells" |> ignore
 
         rendered.rerender (
-            Swate.Components.Composite.Widgets.DataAnnotator.DataAnnotator.Main(onInsert = onInsert, canInsert = true)
+            Arcitisa.Components.Composite.Widgets.DataAnnotator.DataAnnotator.Main(
+                onInsert = onInsert,
+                canInsert = true
+            )
         )
 
         Vitest.expect(RTL.screen.queryByText("Select table cells").IsNone).toBe true
@@ -126,7 +129,7 @@ Vitest.test (
 Vitest.test (
     "removing a highlighted selector clears its selection and a new file resets the list",
     fun () -> promise {
-        RTL.render (Swate.Components.Composite.Widgets.DataAnnotator.DataAnnotator.Main())
+        RTL.render (Arcitisa.Components.Composite.Widgets.DataAnnotator.DataAnnotator.Main())
         |> ignore
 
         do! TestHelpers.upload "data.csv"
@@ -163,7 +166,7 @@ Vitest.test (
     "shows an insertion error and leaves selectors available for retry",
     fun () -> promise {
         RTL.render (
-            Swate.Components.Composite.Widgets.DataAnnotator.DataAnnotator.Main(
+            Arcitisa.Components.Composite.Widgets.DataAnnotator.DataAnnotator.Main(
                 onInsert = (fun _ -> Error "Select a destination cell.")
             )
         )
@@ -181,7 +184,7 @@ Vitest.test (
 Vitest.test (
     "adding targets again appends unique selectors and preserves their existing order",
     fun () -> promise {
-        RTL.render (Swate.Components.Composite.Widgets.DataAnnotator.DataAnnotator.Main())
+        RTL.render (Arcitisa.Components.Composite.Widgets.DataAnnotator.DataAnnotator.Main())
         |> ignore
 
         do! TestHelpers.upload "data.csv"

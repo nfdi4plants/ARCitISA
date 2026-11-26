@@ -2,17 +2,17 @@ namespace Renderer.Components
 
 open Feliz
 open Renderer.Components.Helper.ArcVaultHelper
-open Swate.Components
-open Swate.Components.Shared
-open Swate.Components.Composite.Layout
-open Swate.Components.Composite.Authentication.Types
-open Swate.Components.Composite.Actionbar
-open Swate.Components.Composite.Actionbar.Types
-open Swate.Components.Primitive.BaseModal
-open Swate.Components.Primitive.ErrorModal.Context
-open Swate.Components.Primitive.ErrorModal.Types
-open Swate.Electron.Shared.IPCTypes.MainToRendererIpc
-open Swate.Electron.Shared.IPCTypes
+open Arcitisa.Components
+open Arcitisa.Components.Shared
+open Arcitisa.Components.Composite.Layout
+open Arcitisa.Components.Composite.Authentication.Types
+open Arcitisa.Components.Composite.Actionbar
+open Arcitisa.Components.Composite.Actionbar.Types
+open Arcitisa.Components.Primitive.BaseModal
+open Arcitisa.Components.Primitive.ErrorModal.Context
+open Arcitisa.Components.Primitive.ErrorModal.Types
+open Arcitisa.Electron.Shared.IPCTypes.MainToRendererIpc
+open Arcitisa.Electron.Shared.IPCTypes
 open Renderer.Types
 
 type private Selector =
@@ -84,7 +84,7 @@ type private Selector =
             }
             |> Promise.start
 
-        Swate.Components.Composite.ArcSelector.ArcSelector.Main(
+        Arcitisa.Components.Composite.ArcSelector.ArcSelector.Main(
             recentArcs.state,
             (fun clickedARC -> openArcByPath onArcError clickedARC.path |> Promise.start),
             selectorIsOpen,
@@ -97,8 +97,8 @@ type private Selector =
 
 module private Authentication =
 
-    open Swate.Components.Composite.Authentication.Types
-    open Swate.Electron.Shared.AuthTypes
+    open Arcitisa.Components.Composite.Authentication.Types
+    open Arcitisa.Electron.Shared.AuthTypes
 
     [<ReactComponent>]
     let UserAvatar () =
@@ -109,7 +109,7 @@ module private Authentication =
 
         let dataHubUrls =
             Renderer.MainSyncedState.useMainSyncedState {
-                initial = Swate.Components.Composite.Authentication.Helper.Default_DataHub_Urls
+                initial = Arcitisa.Components.Composite.Authentication.Helper.Default_DataHub_Urls
                 load =
                     fun () -> promise {
                         let! defaults = Api.ipcUserDefaultsApi.getUserDefaults ()
@@ -146,9 +146,9 @@ module private Authentication =
             }
             |> Promise.start
 
-        let onSwitchAccount (localSwateAccountId: string) =
+        let onSwitchAccount (localArcitisaAccountId: string) =
             promise {
-                match! Api.ipcAuthApi.setActiveAccount localSwateAccountId with
+                match! Api.ipcAuthApi.setActiveAccount localArcitisaAccountId with
                 | Ok _ ->
                     match! Api.ipcAuthApi.revalidate () with
                     | Ok _ -> ()
@@ -166,7 +166,7 @@ module private Authentication =
                 match! Api.ipcAuthApi.removeAccounts request with
                 | Ok(TokenDeletionOutcome.Failed reason) ->
                     let title =
-                        if request.LocalSwateAccountIds.Length = 1 then
+                        if request.LocalArcitisaAccountIds.Length = 1 then
                             "Could not delete the token"
                         else
                             "Could not delete all tokens"
@@ -178,16 +178,16 @@ module private Authentication =
             }
             |> Promise.start
 
-        let onRotateToken (localSwateAccountId: string) =
+        let onRotateToken (localArcitisaAccountId: string) =
             promise {
-                match! Api.ipcAuthApi.rotatePersonalAccessToken localSwateAccountId with
-                | Ok _ -> Browser.Dom.console.log $"Token rotation successful for account {localSwateAccountId}"
+                match! Api.ipcAuthApi.rotatePersonalAccessToken localArcitisaAccountId with
+                | Ok _ -> Browser.Dom.console.log $"Token rotation successful for account {localArcitisaAccountId}"
                 | Error ex ->
                     errorModalCtx.enqueue (ErrorModalRequest.create (ex.Message, title = "Error rotating token"))
             }
             |> Promise.start
 
-        Swate.Components.Composite.Authentication.Authentication.UserAvatar(
+        Arcitisa.Components.Composite.Authentication.Authentication.UserAvatar(
             authStateCtx,
             onSignIn,
             isLoading = isLoading,
@@ -201,7 +201,7 @@ module private Authentication =
                     pageStateCtx.setState (
                         Some(
                             PageState.SettingsPage(
-                                Some Swate.Components.PageComponents.SettingsPage.Types.SettingsCategory.DataHub,
+                                Some Arcitisa.Components.PageComponents.SettingsPage.Types.SettingsCategory.DataHub,
                                 System.Guid.NewGuid().ToString()
                             )
                         )
@@ -472,5 +472,5 @@ type Navbar =
                 setNewArcModalIsOpen,
                 Renderer.Components.InitState.CreateNewArcModalContent(fun () -> setNewArcModalIsOpen false)
             )
-            Swate.Components.Primitive.Navbar.Navbar.Main(left = left, right = right)
+            Arcitisa.Components.Primitive.Navbar.Navbar.Main(left = left, right = right)
         ]

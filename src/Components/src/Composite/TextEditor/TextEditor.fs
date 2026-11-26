@@ -1,11 +1,11 @@
-namespace Swate.Components.Composite.TextEditor
+namespace Arcitisa.Components.Composite.TextEditor
 
 open Fable.Core
 open Feliz
 
-open Swate.Components.Composite.TextEditor.Types
-open Swate.Components.Composite.TextEditor.LanguageDetection
-open Swate.Components.Composite.TextEditor.SchemaValidation
+open Arcitisa.Components.Composite.TextEditor.Types
+open Arcitisa.Components.Composite.TextEditor.LanguageDetection
+open Arcitisa.Components.Composite.TextEditor.SchemaValidation
 
 module internal TextEditorHelpers =
 

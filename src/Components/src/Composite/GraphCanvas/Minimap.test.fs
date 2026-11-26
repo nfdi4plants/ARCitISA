@@ -1,8 +1,8 @@
-module internal Swate.Components.Composite.GraphCanvas.MinimapTests
+module internal Arcitisa.Components.Composite.GraphCanvas.MinimapTests
 
 open Vitest
-open Swate.Components.Composite.GraphCanvas.Types
-open Swate.Components.Composite.GraphCanvas.Minimap
+open Arcitisa.Components.Composite.GraphCanvas.Types
+open Arcitisa.Components.Composite.GraphCanvas.Minimap
 
 // A root of 400 by 300 px that shows a drawing at zoom 1 without any scroll or offset.
 let private geometry: ScrollGeometry = {

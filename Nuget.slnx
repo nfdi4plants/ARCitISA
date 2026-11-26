@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Shared/Arcitisa.Components.Core.fsproj" />
+  </Folder>
+  <Folder Name="/src/Components/">
+    <Project Path="src/Components/src/Arcitisa.Components.fsproj" />
+  </Folder>
+</Solution>

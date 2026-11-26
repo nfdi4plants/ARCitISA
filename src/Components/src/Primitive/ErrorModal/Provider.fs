@@ -1,10 +1,10 @@
-namespace Swate.Components.Primitive.ErrorModal
+namespace Arcitisa.Components.Primitive.ErrorModal
 
 open Feliz
 open Fable.Core
 open Context
 
-open Swate.Components.Primitive.ErrorModal.Types
+open Arcitisa.Components.Primitive.ErrorModal.Types
 
 [<Erase; Mangle(false)>]
 type ErrorModalProvider =

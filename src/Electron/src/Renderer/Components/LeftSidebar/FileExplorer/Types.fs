@@ -1,10 +1,10 @@
 module Renderer.Components.LeftSidebar.FileExplorer.Types
 
 open Fable.Core
-open Swate.Components.Page.FileExplorer.Types
-open Swate.Components.Primitive.ErrorModal.Types
-open Swate.Components.Shared
-open Swate.Electron.Shared.FileIOTypes
+open Arcitisa.Components.Page.FileExplorer.Types
+open Arcitisa.Components.Primitive.ErrorModal.Types
+open Arcitisa.Components.Shared
+open Arcitisa.Electron.Shared.FileIOTypes
 
 type PathActionConfig = {
     openPathInFileExplorer: string -> JS.Promise<Result<unit, exn>>

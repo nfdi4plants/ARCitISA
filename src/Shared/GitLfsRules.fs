@@ -1,8 +1,8 @@
-namespace Swate.Components.Shared
+namespace Arcitisa.Components.Shared
 
 open System
 
-/// DataHub ruleset for Git LFS tracking (nfdi4plants/Swate#1316):
+/// DataHub ruleset for Git LFS tracking (nfdi4plants/ARCitISA#1316):
 /// isa.*.xlsx metadata files must never be LFS, files inside a dataset folder
 /// and files larger than 25 MB must stay LFS.
 [<RequireQualifiedAccess>]

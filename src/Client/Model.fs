@@ -1,6 +1,6 @@
 namespace Model
 
-open Swate.Components.Shared
+open Arcitisa.Components.Shared
 open Feliz
 open Routing
 open Database
@@ -114,19 +114,19 @@ type DevState = {
 
 type PersistentStorageState = {
     AppVersion: string
-    Host: Swatehost option
+    Host: Arcitisahost option
     Autosave: bool
 } with
 
     static member init() = {
-        Host = Some Swatehost.Browser
+        Host = Some Arcitisahost.Browser
         AppVersion = ""
         Autosave = true
     }
 
     member this.IsARCitect =
         match this.Host with
-        | Some Swatehost.ARCitect -> true
+        | Some Arcitisahost.ARCitect -> true
         | _ -> false
 
 type PageState = {

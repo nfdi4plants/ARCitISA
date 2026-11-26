@@ -1,12 +1,12 @@
-module internal Swate.Components.Composite.Widgets.JsonImport.JsonImportTests
+module internal Arcitisa.Components.Composite.Widgets.JsonImport.JsonImportTests
 
 open ARCtrl
 open Browser.Dom
 open Browser.Types
 open Fable.Core
 open Vitest
-open Swate.Components.Shared
-open Swate.Components.Composite.Widgets.JsonImport.Types
+open Arcitisa.Components.Shared
+open Arcitisa.Components.Composite.Widgets.JsonImport.Types
 
 Vitest.afterEach (fun () -> RTL.cleanup ())
 

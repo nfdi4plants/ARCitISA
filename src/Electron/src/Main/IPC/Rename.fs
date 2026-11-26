@@ -13,9 +13,9 @@ open Main.ArcVaultHelper
 open Main.IPC.Delete
 open Main.IPC.FileSystemIO
 open Main.Helper.ArcPathContainment
-open Swate.Components.Shared
-open Swate.Electron.Shared.FileIOTypes
-open Swate.Electron.Shared.RenamePathRules
+open Arcitisa.Components.Shared
+open Arcitisa.Electron.Shared.FileIOTypes
+open Arcitisa.Electron.Shared.RenamePathRules
 
 /// What a finished rename produced.
 type ArcEntityRename = {
@@ -153,7 +153,7 @@ module ArcRenameHelper =
                                     $"Cannot rename '{sourcePath}' to '{targetPath}' because the destination already exists."
                             )
                     else
-                        match! ARC.LoadAsyncSwate arcPath with
+                        match! ARC.LoadAsyncArcitisa arcPath with
                         | Error errors ->
                             return
                                 Error(
@@ -209,7 +209,7 @@ module ArcRenameHelper =
                                                 $"Could not rename ARC entity from '{sourcePath}' to '{targetPath}': {message}"
                                         )
                                 | Ok contracts ->
-                                    match! ContractExecutor.fulfillContractsSwateAsync arcPath contracts with
+                                    match! ContractExecutor.fulfillContractsArcitisaAsync arcPath contracts with
                                     | Error errors ->
                                         return
                                             Error(

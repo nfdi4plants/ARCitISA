@@ -1,9 +1,9 @@
 module ElectronCore.ProvenanceGroupingStateTests
 
-open Swate.Components.Shared.ProvenanceGrouping.Fixtures
-open Swate.Components.Shared.ProvenanceGrouping.Session
-open Swate.Components.Shared.ProvenanceGrouping.Types
-open Swate.Components.Page.ProvenanceGrouping
+open Arcitisa.Components.Shared.ProvenanceGrouping.Fixtures
+open Arcitisa.Components.Shared.ProvenanceGrouping.Session
+open Arcitisa.Components.Shared.ProvenanceGrouping.Types
+open Arcitisa.Components.Page.ProvenanceGrouping
 open Vitest
 
 // Deactivated for now: ProvenanceGrouping is outdated.

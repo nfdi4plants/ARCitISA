@@ -1,9 +1,9 @@
 [<RequireQualifiedAccess>]
-module Swate.Components.Composite.MarkdownText.Links.LinkDiagnostics
+module Arcitisa.Components.Composite.MarkdownText.Links.LinkDiagnostics
 
 open Fable.Core
-open Swate.Components.Composite.TextEditor.Types
-open Swate.Components.Composite.MarkdownText.Links.Types
+open Arcitisa.Components.Composite.TextEditor.Types
+open Arcitisa.Components.Composite.MarkdownText.Links.Types
 
 [<Literal>]
 let Source = "links"

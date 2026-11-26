@@ -1,7 +1,7 @@
-module internal Swate.Components.Composite.MarkdownText.Links.LinkCollectionTests
+module internal Arcitisa.Components.Composite.MarkdownText.Links.LinkCollectionTests
 
 open Vitest
-open Swate.Components.Composite.MarkdownText.Links
+open Arcitisa.Components.Composite.MarkdownText.Links
 
 let private urls (text: string) =
     LinkCollection.collect text |> Array.map (fun l -> l.Url)

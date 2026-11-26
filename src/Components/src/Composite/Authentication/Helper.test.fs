@@ -1,7 +1,7 @@
-module internal Swate.Components.Composite.Authentication.HelperTests
+module internal Arcitisa.Components.Composite.Authentication.HelperTests
 
 open Vitest
-open Swate.Components.Composite.Authentication.Helper
+open Arcitisa.Components.Composite.Authentication.Helper
 
 let private supportedUrls (collection: DataHubCollection) =
     collection.Supported |> List.map _.Url |> Array.ofList

@@ -3,7 +3,7 @@ module Renderer.Components.LeftSidebar.Git.GitSidebarPanel
 open Browser.Dom
 open Feliz
 open Renderer.Components.Helper.ArcVaultHelper
-open Swate.Components.Primitive.ErrorModal.Context
+open Arcitisa.Components.Primitive.ErrorModal.Context
 
 /// The version control provider answers once per opened ARC whether deduplication can work. On a no, the sidebar disables the button and its tooltip says why.
 let private lfsDedupUnavailableReason (canDeduplicate: bool option) =
@@ -28,10 +28,10 @@ let private isCancellableBusyOperation (busyOperation: Renderer.Context.GitWorkf
 let backgroundActivityItems
     (actions: Renderer.Context.LfsActivityContext.LfsRunningAction[])
     (logs: Renderer.Context.LfsActivityContext.LfsRunningLogs)
-    : Swate.Components.Page.GitSidebarTypes.GitSidebarBackgroundActivity[] =
+    : Arcitisa.Components.Page.GitSidebarTypes.GitSidebarBackgroundActivity[] =
     actions
     |> Array.map (fun action ->
-        let item: Swate.Components.Page.GitSidebarTypes.GitSidebarBackgroundActivity = {
+        let item: Arcitisa.Components.Page.GitSidebarTypes.GitSidebarBackgroundActivity = {
             Label = Renderer.Context.LfsActivityContext.LfsRunningAction.label action
             Detail = Renderer.Context.LfsActivityContext.LfsRunningAction.progressText action
             ProgressPercent = Renderer.Context.LfsActivityContext.LfsRunningAction.progressPercent action
@@ -92,7 +92,7 @@ let Main () =
     let gitStateCtx = Renderer.Context.GitStateContext.useGitStateCtx ()
 
     let leftSidebarCtx =
-        Swate.Components.Composite.Layout.LeftSidebarContext.useLeftSidebarCtx ()
+        Arcitisa.Components.Composite.Layout.LeftSidebarContext.useLeftSidebarCtx ()
 
     let authState = Renderer.Context.AuthStateContext.useAuthStateCtx ()
     let pageStateCtx = Renderer.Context.PageStateContext.usePageStateCtx ()
@@ -128,7 +128,7 @@ let Main () =
             (fun () ->
                 gitStateCtx.state.PendingPublishRename
                 |> Option.map (fun prompt ->
-                    let mapped: Swate.Components.Page.GitSidebarTypes.GitSidebarPublishRenamePrompt = {
+                    let mapped: Arcitisa.Components.Page.GitSidebarTypes.GitSidebarPublishRenamePrompt = {
                         CurrentName = prompt.CurrentName
                         Message = prompt.Message
                         Owners =
@@ -214,7 +214,7 @@ let Main () =
         let canCancelOperation =
             gitStateCtx.state.BusyOperation |> Option.exists isCancellableBusyOperation
 
-        Swate.Components.Page.GitSidebar.Main(
+        Arcitisa.Components.Page.GitSidebar.Main(
             status = gitStateCtx.state.Status,
             changedFiles = gitStateCtx.state.ChangedFiles,
             branchOptions = gitStateCtx.state.BranchOptions,

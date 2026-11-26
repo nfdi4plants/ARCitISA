@@ -1,9 +1,9 @@
-module internal Swate.Components.Composite.MarkdownText.Links.LinkDiagnosticsTests
+module internal Arcitisa.Components.Composite.MarkdownText.Links.LinkDiagnosticsTests
 
 open Fable.Core
 open Vitest
-open Swate.Components.Composite.MarkdownText.Links
-open Swate.Components.Composite.MarkdownText.Links.Types
+open Arcitisa.Components.Composite.MarkdownText.Links
+open Arcitisa.Components.Composite.MarkdownText.Links.Types
 
 /// A fake host that answers with the given state for every path and records each call.
 let private fakeHost (stateOf: string -> LinkTargetState) =

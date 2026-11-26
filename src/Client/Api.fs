@@ -1,6 +1,6 @@
 module Api
 
-open Swate.Components.Shared
+open Arcitisa.Components.Shared
 open Fable.Remoting.Client
 
 /// A proxy you can use to talk to server directly

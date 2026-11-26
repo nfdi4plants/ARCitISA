@@ -1,7 +1,7 @@
-module internal Swate.Components.Composite.TextEditor.LanguageDetectionTests
+module internal Arcitisa.Components.Composite.TextEditor.LanguageDetectionTests
 
 open Vitest
-open Swate.Components.Composite.TextEditor.LanguageDetection
+open Arcitisa.Components.Composite.TextEditor.LanguageDetection
 
 let private entry (id: string) (extensions: string[]) (fileNames: string[]) : LanguageEntry = {|
     id = id

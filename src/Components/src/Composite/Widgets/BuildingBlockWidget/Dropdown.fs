@@ -1,12 +1,12 @@
-namespace Swate.Components.Composite.Widgets.BuildingBlockWidget
+namespace Arcitisa.Components.Composite.Widgets.BuildingBlockWidget
 
 open ARCtrl
 open Fable.Core
 open Feliz
-open Swate.Components
-open Swate.Components.JsBindings
-open Swate.Components.Primitive.Popover
-open Swate.Components.Shared
+open Arcitisa.Components
+open Arcitisa.Components.JsBindings
+open Arcitisa.Components.Primitive.Popover
+open Arcitisa.Components.Shared
 
 module private BuildingBlockDropdownHelper =
 

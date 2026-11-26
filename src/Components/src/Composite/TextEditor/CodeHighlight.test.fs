@@ -1,9 +1,9 @@
-module internal Swate.Components.Composite.TextEditor.CodeHighlightTests
+module internal Arcitisa.Components.Composite.TextEditor.CodeHighlightTests
 
 open Fable.Core
 open Vitest
-open Swate.Components.Composite.TextEditor.JsBindings.CodeMirror
-open Swate.Components.Composite.TextEditor.CodeHighlight
+open Arcitisa.Components.Composite.TextEditor.JsBindings.CodeMirror
+open Arcitisa.Components.Composite.TextEditor.CodeHighlight
 
 let private nameOf (fenceName: string) =
     findLanguage languages fenceName |> Option.map _.name |> Option.defaultValue ""

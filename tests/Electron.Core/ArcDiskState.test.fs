@@ -4,11 +4,11 @@ open ARCtrl
 open Main.ArcDiskState
 open Main.Bindings.Filesystem
 open Main.Bindings.Path
-open Swate.Components.Shared
+open Arcitisa.Components.Shared
 open Vitest
 
 let private withTempArc =
-    TestHelpers.withTempArcWith "swate-arc-disk-state-" "ArcDiskStateArc"
+    TestHelpers.withTempArcWith "arcitisa-arc-disk-state-" "ArcDiskStateArc"
 
 let private snapshotOf caseInsensitive (files: (string * float * float) list) : ArcDiskSnapshot =
     files

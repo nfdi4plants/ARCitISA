@@ -1,7 +1,7 @@
-module Swate.Components.Composite.TermSearch.Types
+module Arcitisa.Components.Composite.TermSearch.Types
 
-open Swate.Components
-open Swate.Components.Shared.Extensions
+open Arcitisa.Components
+open Arcitisa.Components.Shared.Extensions
 open Fable.Core
 open Feliz
 
@@ -67,7 +67,7 @@ module Term =
         [<Literal>]
         let IsObsolete = "isObsolete"
 
-    open Swate.Components.Shared
+    open Arcitisa.Components.Shared
     open Fable.SimpleJson
 
     open ARCtrl
@@ -187,7 +187,7 @@ module ARCtrlExtension =
 module TIBTypesExtensions =
 
     type Api.TIBApi.TIBTypes.SearchApi with
-        /// This function is used to transform TIB term type into the Swate compatible Term type.
+        /// This function is used to transform TIB term type into the ARCitISA compatible Term type.
         member this.ToMyTerm() =
             this.response.docs
             |> Array.map (fun t ->

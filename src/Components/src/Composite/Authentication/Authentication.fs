@@ -1,10 +1,10 @@
-namespace Swate.Components.Composite.Authentication
+namespace Arcitisa.Components.Composite.Authentication
 
 open Fable.Core
 open Feliz
-open Swate.Components
-open Swate.Components.Primitive.BaseModal
-open Swate.Components.Primitive.Dropdown
+open Arcitisa.Components
+open Arcitisa.Components.Primitive.BaseModal
+open Arcitisa.Components.Primitive.Dropdown
 open Types
 open Helper
 
@@ -471,7 +471,7 @@ type Authentication =
 
     static member ExmpUserInformation = {
         Id = 1
-        LocalSwateAccountId = "acc-1"
+        LocalArcitisaAccountId = "acc-1"
         Username = "john-doe"
         Name = "John Doe"
         Email = "john-doe@mail.com"
@@ -542,7 +542,7 @@ type Authentication =
                             {
                                 User = {
                                     Id = 2
-                                    LocalSwateAccountId = "acc-2"
+                                    LocalArcitisaAccountId = "acc-2"
                                     Username = "max-mustermann"
                                     Name = "Max Mustermann"
                                     Email = "max@example.org"
@@ -558,7 +558,7 @@ type Authentication =
                             {
                                 User = {
                                     Id = 3
-                                    LocalSwateAccountId = "acc-3"
+                                    LocalArcitisaAccountId = "acc-3"
                                     Username = "mr-lazy"
                                     Name = "Mr Lazy"
                                     Email = "lazy@example.org"
@@ -580,10 +580,10 @@ type Authentication =
 
         let deletedTokens, setDeletedTokens = React.useState 0
 
-        let onSwitchAccount (localSwateAccountId: string) =
+        let onSwitchAccount (localArcitisaAccountId: string) =
             let nextActive =
                 accounts.StoredAccounts
-                |> Array.tryFind (fun account -> account.User.LocalSwateAccountId = localSwateAccountId)
+                |> Array.tryFind (fun account -> account.User.LocalArcitisaAccountId = localArcitisaAccountId)
                 |> Option.orElse accounts.ActiveAccount
                 |> Option.orElse (accounts.StoredAccounts |> Array.tryHead)
 
@@ -595,22 +595,22 @@ type Authentication =
             setAccounts next
 
         let onRemoveAccounts (request: RemoveAccountsRequest) =
-            let isRemoved (localSwateAccountId: string) =
-                request.LocalSwateAccountIds |> Array.contains localSwateAccountId
+            let isRemoved (localArcitisaAccountId: string) =
+                request.LocalArcitisaAccountIds |> Array.contains localArcitisaAccountId
 
             if request.DeleteTokensOnDataHub then
-                setDeletedTokens (deletedTokens + request.LocalSwateAccountIds.Length)
+                setDeletedTokens (deletedTokens + request.LocalArcitisaAccountIds.Length)
 
             let filteredAccounts =
                 accounts.StoredAccounts
-                |> Array.filter (fun account -> not (isRemoved account.User.LocalSwateAccountId))
+                |> Array.filter (fun account -> not (isRemoved account.User.LocalArcitisaAccountId))
 
             let nextActive =
                 match accounts.ActiveAccount with
-                | Some activeAccount when not (isRemoved activeAccount.User.LocalSwateAccountId) ->
+                | Some activeAccount when not (isRemoved activeAccount.User.LocalArcitisaAccountId) ->
                     filteredAccounts
                     |> Array.tryFind (fun account ->
-                        account.User.LocalSwateAccountId = activeAccount.User.LocalSwateAccountId
+                        account.User.LocalArcitisaAccountId = activeAccount.User.LocalArcitisaAccountId
                     )
                 | _ -> filteredAccounts |> Array.tryHead
 
@@ -621,12 +621,12 @@ type Authentication =
 
             setAccounts next
 
-        let onRotateToken (localSwateAccountId: string) =
+        let onRotateToken (localArcitisaAccountId: string) =
             // For testing, we just set the token status to Ok and update the expiration date. In a real implementation, this should trigger the token rotation flow and update the account information accordingly.
             let nextAccounts =
                 accounts.StoredAccounts
                 |> Array.map (fun account ->
-                    if account.User.LocalSwateAccountId = localSwateAccountId then
+                    if account.User.LocalArcitisaAccountId = localArcitisaAccountId then
                         {
                             account with
                                 TokenStatus = TokenStatus.Ok
@@ -638,10 +638,10 @@ type Authentication =
 
             let nextActive =
                 match accounts.ActiveAccount with
-                | Some activeAccount when activeAccount.User.LocalSwateAccountId = localSwateAccountId ->
+                | Some activeAccount when activeAccount.User.LocalArcitisaAccountId = localArcitisaAccountId ->
                     nextAccounts
                     |> Array.tryFind (fun account ->
-                        account.User.LocalSwateAccountId = activeAccount.User.LocalSwateAccountId
+                        account.User.LocalArcitisaAccountId = activeAccount.User.LocalArcitisaAccountId
                     )
                 | other -> other
 

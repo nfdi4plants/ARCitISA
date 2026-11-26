@@ -1,7 +1,7 @@
 module ElectronRenderer.OperationLogTests
 
 open Renderer.Context.OperationLog
-open Swate.Electron.Shared.VersionControlTypes
+open Arcitisa.Electron.Shared.VersionControlTypes
 open Vitest
 
 let private entry (commandId: string) (kind: string) (text: string) (isPartial: bool) : VersionControlOutputEntryDto = {

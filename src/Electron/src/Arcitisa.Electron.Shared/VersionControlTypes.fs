@@ -2,7 +2,7 @@
 /// library's abstractions with plain strings and serializable unions and carry no
 /// provider-specific type. Every request names the operation it belongs to so the
 /// renderer can cancel it before the first progress event arrives.
-module Swate.Electron.Shared.VersionControlTypes
+module Arcitisa.Electron.Shared.VersionControlTypes
 
 open Fable.Core
 
@@ -171,7 +171,7 @@ type EncodingCandidateDto = { Encoding: string; Preview: string }
 type PreparationTokenDto = { Id: string }
 
 /// Why a diff keeps its data in memory. The indexing limit setting asks for it (1 to 63 MB), or
-/// the temp drive had less free space than Swate keeps free and the library chose memory.
+/// the temp drive had less free space than ARCitISA keeps free and the library chose memory.
 [<StringEnum(CaseRules.None); RequireQualifiedAccess>]
 type MemoryCauseDto =
     | BySetting
@@ -444,11 +444,11 @@ module VersionControlCodes =
     [<Literal>]
     let InvalidLfsThreshold = "invalid_lfs_threshold"
 
-    /// Produced by the Swate main process when the background indexing limit is out of range.
+    /// Produced by the ARCitISA main process when the background indexing limit is out of range.
     [<Literal>]
     let InvalidDiffIndexingLimit = "invalid_diff_indexing_limit"
 
-    // Produced by the Swate main process (session host and IPC handler).
+    // Produced by the ARCitISA main process (session host and IPC handler).
     [<Literal>]
     let ServiceUnavailable = "service_unavailable"
 

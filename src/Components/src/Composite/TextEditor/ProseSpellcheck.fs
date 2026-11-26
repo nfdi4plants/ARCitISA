@@ -1,13 +1,13 @@
 /// Keeps the browser's spellcheck off the parts of a prose document that are code, markup or addresses, such as
 /// <img src="...">, `code` and link URLs in Markdown. Prose keeps its spellcheck. The language's prose rules name the
 /// syntax nodes to skip, so a language without a syntax tree, such as plain text, gets none.
-module Swate.Components.Composite.TextEditor.ProseSpellcheck
+module Arcitisa.Components.Composite.TextEditor.ProseSpellcheck
 
 open System.Text.RegularExpressions
 open Fable.Core.JsInterop
-open Swate.Components.Composite.TextEditor.JsBindings.CodeMirror
-open Swate.Components.Composite.TextEditor.JsBindings.Lezer
-open Swate.Components.Composite.TextEditor.LanguageDetection
+open Arcitisa.Components.Composite.TextEditor.JsBindings.CodeMirror
+open Arcitisa.Components.Composite.TextEditor.JsBindings.Lezer
+open Arcitisa.Components.Composite.TextEditor.LanguageDetection
 
 /// A node of skippedTagsIn can hold prose between its tags, so only its tags are skipped.
 let private htmlTag = Regex(@"<[^>]*>")

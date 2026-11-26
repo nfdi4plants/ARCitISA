@@ -3,15 +3,15 @@ module Spreadsheet.Controller.BuildingBlocks
 open Spreadsheet
 open Types
 open ARCtrl
-open Swate.Components.Shared
+open Arcitisa.Components.Shared
 
 open ExcelJS.Fable
 open Excel
 open GlobalBindings
 
 open Regex
-open Swate.Components
-open Swate.Components.Shared
+open Arcitisa.Components
+open Arcitisa.Components.Shared
 
 
 module SidebarControllerAux =
@@ -148,7 +148,7 @@ let addDataAnnotation
                 d.FilePath <- Some data.fileName
                 d.Selector <- Some selector
                 d.Format <- Some data.fileType
-                d.SelectorFormat <- Some Swate.Components.Shared.URLs.Data.SelectorFormat.csv
+                d.SelectorFormat <- Some Arcitisa.Components.Shared.URLs.Data.SelectorFormat.csv
                 CompositeCell.createData d
             else
                 mkEmptyDataCell ()

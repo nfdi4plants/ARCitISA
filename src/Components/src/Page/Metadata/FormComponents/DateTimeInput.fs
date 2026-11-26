@@ -1,10 +1,10 @@
-namespace Swate.Components.Page.Metadata.FormComponents
+namespace Arcitisa.Components.Page.Metadata.FormComponents
 
 open Fable.Core
 open System
-open Swate.Components
+open Arcitisa.Components
 open Feliz
-open Swate.Components.Primitive.LayoutComponents
+open Arcitisa.Components.Primitive.LayoutComponents
 
 [<Erase; Mangle(false)>]
 type DateTimeInput =

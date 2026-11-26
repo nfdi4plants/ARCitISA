@@ -1,8 +1,8 @@
-module Swate.Components.Composite.MarkdownText.Editing.MarkdownCommands
+module Arcitisa.Components.Composite.MarkdownText.Editing.MarkdownCommands
 
-open Swate.Components.Composite.TextEditor.Types
-open Swate.Components.Composite.MarkdownText.Editing.Types
-open Swate.Components.Composite.MarkdownText.Editing.MarkdownEdits
+open Arcitisa.Components.Composite.TextEditor.Types
+open Arcitisa.Components.Composite.MarkdownText.Editing.Types
+open Arcitisa.Components.Composite.MarkdownText.Editing.MarkdownEdits
 
 let private command id label icon key run = {
     Id = id

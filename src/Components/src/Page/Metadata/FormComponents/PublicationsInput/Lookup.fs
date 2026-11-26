@@ -1,12 +1,12 @@
-module Swate.Components.Page.Metadata.FormComponents.PublicationsInput.Lookup
+module Arcitisa.Components.Page.Metadata.FormComponents.PublicationsInput.Lookup
 
 open System
 open System.Text.RegularExpressions
 open ARCtrl
 open Fable.Core
 open Fetch
-open Swate.Components.Page.Metadata.FormComponents.Helpers
-open Swate.Components.Page.Metadata.FormComponents.PublicationsInput.Types
+open Arcitisa.Components.Page.Metadata.FormComponents.Helpers
+open Arcitisa.Components.Page.Metadata.FormComponents.PublicationsInput.Types
 
 let normalizeDoi (query: string) : Result<string, string> =
     let value = if isNull query then "" else query.Trim()

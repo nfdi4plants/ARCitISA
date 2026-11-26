@@ -1,9 +1,9 @@
 /// JSON Schemas for ARC files that the text editor checks, and which file each one belongs to.
 /// The rules follow the ISA-ARC Workspace specification (3.0.0-draft.2, "The validation_packages.yml file").
-module Swate.Electron.Shared.TextDocumentSchemas
+module Arcitisa.Electron.Shared.TextDocumentSchemas
 
 open Fable.Core
-open Swate.Components.Composite.TextEditor.SchemaValidation
+open Arcitisa.Components.Composite.TextEditor.SchemaValidation
 
 /// The ARC-relative path of the validation packages file.
 let validationPackagesPath = ".arc/validation_packages.yml"

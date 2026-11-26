@@ -4,13 +4,13 @@ open Fable.Core
 open Feliz
 open ARCtrl.ValidationPackages
 open ARCtrl.Yaml
-open Swate.Components
-open Swate.Components.Page.ValidationPackageBrowser
-open Swate.Components.Page.ValidationPackageBrowser.Helper
-open Swate.Components.Page.ValidationPackageBrowser.Types
-open Swate.Components.Primitive.ErrorModal.Context
-open Swate.Electron.Shared.FileIOHelper
-open Swate.Electron.Shared.FileIOTypes
+open Arcitisa.Components
+open Arcitisa.Components.Page.ValidationPackageBrowser
+open Arcitisa.Components.Page.ValidationPackageBrowser.Helper
+open Arcitisa.Components.Page.ValidationPackageBrowser.Types
+open Arcitisa.Components.Primitive.ErrorModal.Context
+open Arcitisa.Electron.Shared.FileIOHelper
+open Arcitisa.Electron.Shared.FileIOTypes
 open Renderer.Components.Helper.ArcVaultHelper
 
 module private ValidationPackageBrowserHelper =

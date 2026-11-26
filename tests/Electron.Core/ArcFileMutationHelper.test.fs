@@ -3,9 +3,9 @@ module ElectronCore.ArcFileMutationHelperTests
 open ARCtrl
 open Main.ARCtrlExtensions
 open Main.ArcVaultHelper
-open Swate.Components.Shared
-open Swate.Electron.Shared.FileIOHelper
-open Swate.Electron.Shared.FileIOTypes
+open Arcitisa.Components.Shared
+open Arcitisa.Electron.Shared.FileIOHelper
+open Arcitisa.Electron.Shared.FileIOTypes
 open Vitest
 
 let private expectOk (result: Result<'T, exn>) : 'T =
@@ -31,7 +31,7 @@ Vitest.describe (
                         @"assays\assay_1\isa.assay.xlsx\"
 
                 let normalized =
-                    Swate.Electron.Shared.FileIOHelper.FileContentDTO.normalizeArcFileRequestPath request
+                    Arcitisa.Electron.Shared.FileIOHelper.FileContentDTO.normalizeArcFileRequestPath request
 
                 Vitest.expect(normalized.path).toBe ("assays/assay_1/isa.assay.xlsx")
         )

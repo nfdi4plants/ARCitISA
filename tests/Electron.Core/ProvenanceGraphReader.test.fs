@@ -2,9 +2,9 @@ module ElectronCore.ProvenanceGraphReaderTests
 
 open ARCtrl
 open Fable.Core
-open Swate.Components.Shared.ProvenanceGraph.Types
-open Swate.Components.Shared.ProvenanceGraph.BuildIndex
-open Swate.Components.Shared.ProvenanceGraph.Queries
+open Arcitisa.Components.Shared.ProvenanceGraph.Types
+open Arcitisa.Components.Shared.ProvenanceGraph.BuildIndex
+open Arcitisa.Components.Shared.ProvenanceGraph.Queries
 open Vitest
 
 // The main process builds ProvenanceGraphData and sends it over IPC. The renderer

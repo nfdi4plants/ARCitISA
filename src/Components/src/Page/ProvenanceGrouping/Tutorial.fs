@@ -1,13 +1,13 @@
-namespace Swate.Components.Page.ProvenanceGrouping
+namespace Arcitisa.Components.Page.ProvenanceGrouping
 
 open Fable.Core
 open Feliz
-open Swate.Components.Composite.TutorialOverlay
-open Swate.Components.Composite.TutorialOverlay.Types
-open Swate.Components.Shared.ProvenanceGrouping
-open Swate.Components.Shared.ProvenanceGrouping.Types
-open Swate.Components.Shared.ProvenanceGrouping.Session
-open Swate.Components.Page.ProvenanceGrouping.Types
+open Arcitisa.Components.Composite.TutorialOverlay
+open Arcitisa.Components.Composite.TutorialOverlay.Types
+open Arcitisa.Components.Shared.ProvenanceGrouping
+open Arcitisa.Components.Shared.ProvenanceGrouping.Types
+open Arcitisa.Components.Shared.ProvenanceGrouping.Session
+open Arcitisa.Components.Page.ProvenanceGrouping.Types
 
 /// How the tutorial sandbox should be seeded when a checkpoint is (re)entered:
 /// the sample model to load, the UI state the editor starts from, and which

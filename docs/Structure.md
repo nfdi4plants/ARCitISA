@@ -47,7 +47,7 @@ Reuses code from `src/Components`. If UI logic is needed in both Client and Rend
 
 Node.js preload process code. Exposes native functionality to renderer via context bridge and registers IPC channels.
 
-### `src/Electron/src/Swate.Electron.Shared`
+### `src/Electron/src/Arcitisa.Electron.Shared`
 
 Shared types/utilities for main-renderer-preload communication.
 

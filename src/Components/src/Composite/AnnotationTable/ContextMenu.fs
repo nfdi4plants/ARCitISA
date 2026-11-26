@@ -1,4 +1,4 @@
-namespace Swate.Components.Composite.AnnotationTable
+namespace Arcitisa.Components.Composite.AnnotationTable
 
 open System
 open System.Text.RegularExpressions
@@ -6,17 +6,17 @@ open Fable.Core
 open ARCtrl
 open Feliz
 
-open Swate.Components
+open Arcitisa.Components
 open Types.AnnotationTableContextMenu
-open Swate.Components.Primitive
-open Swate.Components.Primitive.ContextMenu.Types
-open Swate.Components.Composite.AnnotationTable.Types
-open Swate.Components.Composite.Table
-open Swate.Components.Composite.Table.Types
-open Swate.Components.Composite.Table.Helper
-open Swate.Components.ClipboardCodec
+open Arcitisa.Components.Primitive
+open Arcitisa.Components.Primitive.ContextMenu.Types
+open Arcitisa.Components.Composite.AnnotationTable.Types
+open Arcitisa.Components.Composite.Table
+open Arcitisa.Components.Composite.Table.Types
+open Arcitisa.Components.Composite.Table.Helper
+open Arcitisa.Components.ClipboardCodec
 
-module AnnotationTableHelper = Swate.Components.Composite.AnnotationTable.Helper
+module AnnotationTableHelper = Arcitisa.Components.Composite.AnnotationTable.Helper
 
 type AnnotationTableContextMenuUtil =
 
@@ -39,7 +39,7 @@ type AnnotationTableContextMenuUtil =
         if selectHandle.contains tableIndex then
             let rowCoordinates =
                 selectHandle.getSelectedCells ()
-                |> Swate.Components.Composite.Table.Helper.selectedRowIndices table.RowCount
+                |> Arcitisa.Components.Composite.Table.Helper.selectedRowIndices table.RowCount
 
             table.RemoveRows(rowCoordinates)
         else
@@ -144,11 +144,11 @@ type AnnotationTableContextMenuUtil =
                     None
                 else
                     let cells =
-                        Swate.Components.ClipboardContract.Contract.Capture.matrix
+                        Arcitisa.Components.ClipboardContract.Contract.Capture.matrix
                             (fun coordinate -> table.GetCellAt(coordinate.x - 1, coordinate.y - 1))
                             (cellCoordinates |> Array.collect snd)
 
-                    Swate.Components.ClipboardContract.Contract.Capture.toPlainText cells, Some cells
+                    Arcitisa.Components.ClipboardContract.Contract.Capture.toPlainText cells, Some cells
             else if cellIndex.y - 1 < 0 then
                 let column = table.GetColumn(cellIndex.x - 1)
                 let table = ArcTable.init ("placeholder")
@@ -160,7 +160,9 @@ type AnnotationTableContextMenuUtil =
                 None
             else
                 let cell = table.GetCellAt((cellIndex.x - 1, cellIndex.y - 1))
-                Swate.Components.ClipboardContract.Contract.Capture.toPlainText [| [| cell |] |], Some [| [| cell |] |]
+
+                Arcitisa.Components.ClipboardContract.Contract.Capture.toPlainText [| [| cell |] |],
+                Some [| [| cell |] |]
 
         {
             PlainText = plainText
@@ -171,14 +173,14 @@ type AnnotationTableContextMenuUtil =
         let content =
             AnnotationTableContextMenuUtil.getCopyContent (cellIndex, table, selectHandle)
 
-        Swate.Components.ClipboardCodec.write content.PlainText content.Cells
+        Arcitisa.Components.ClipboardCodec.write content.PlainText content.Cells
 
     static member cut(cellIndex: CellCoordinate, table: ArcTable, setTable, selectHandle: SelectHandle) = promise {
         let content =
             AnnotationTableContextMenuUtil.getCopyContent (cellIndex, table, selectHandle)
 
         return!
-            Swate.Components.ClipboardContract.Actions.cut
+            Arcitisa.Components.ClipboardContract.Actions.cut
                 content
                 (fun () ->
                     AnnotationTableContextMenuUtil.clear (cellIndex, table, selectHandle)
@@ -196,7 +198,7 @@ type AnnotationTableContextMenuUtil =
     static member parseCopiedCells(copiedValue: string) =
         copiedValue
         |> fun text ->
-            text.Split(Swate.Components.ClipboardContract.Contract.LineBreaks, System.StringSplitOptions.None)
+            text.Split(Arcitisa.Components.ClipboardContract.Contract.LineBreaks, System.StringSplitOptions.None)
         |> Array.map (fun row -> row.Split([| '\t' |], System.StringSplitOptions.None))
         |> Array.filter (fun row -> row |> Array.exists (String.IsNullOrEmpty >> not))
         |> Array.map (Array.map _.Trim())
@@ -409,7 +411,7 @@ type AnnotationTableContextMenuUtil =
         let nextTable = targetTable.Copy()
 
         let mapped =
-            Swate.Components.ClipboardContract.Contract.Mapping.map cells cellIndex coordinates
+            Arcitisa.Components.ClipboardContract.Contract.Mapping.map cells cellIndex coordinates
             |> Array.filter (fun mapped ->
                 mapped.Target.x > 0
                 && mapped.Target.x <= nextTable.ColumnCount
@@ -471,7 +473,7 @@ type AnnotationTableContextMenuUtil =
             cellIndex,
             targetTable,
             selectHandle,
-            Swate.Components.ClipboardContract.Contract.PlainText.parseRows text,
+            Arcitisa.Components.ClipboardContract.Contract.PlainText.parseRows text,
             convert,
             setTable
         )
@@ -663,7 +665,7 @@ type AnnotationTableContextMenuUtil =
             setArcTable: ArcTable -> unit
         ) =
         promise {
-            let! content = Swate.Components.ClipboardCodec.read ()
+            let! content = Arcitisa.Components.ClipboardCodec.read ()
 
             try
                 let targetCoordinates =
@@ -702,7 +704,7 @@ type AnnotationTableContextMenuUtil =
                     )
                 | _ ->
                     let rows =
-                        Swate.Components.ClipboardContract.Contract.PlainText.parseRows content.PlainText
+                        Arcitisa.Components.ClipboardContract.Contract.PlainText.parseRows content.PlainText
 
                     let isHeaderOriented =
                         targetCoordinates |> Array.exists (fun coordinate -> coordinate.y <= 0)
@@ -741,7 +743,7 @@ type AnnotationTableContextMenuUtil =
 type AnnotationTableContextMenu =
 
     static member private ModifierKey =
-        Swate.Components.Util.Shortcuts.modLabel (Swate.Components.Util.Shortcuts.isMac ())
+        Arcitisa.Components.Util.Shortcuts.modLabel (Arcitisa.Components.Util.Shortcuts.isMac ())
 
     static member private DuplicateRowItem
         (index: CellCoordinate, table: ArcTable, setTable: ArcTable -> unit, selectHandle: SelectHandle)
@@ -824,7 +826,7 @@ type AnnotationTableContextMenu =
                     fun _ ->
                         let nextTable = arcTable.Copy()
 
-                        Swate.Components.Composite.Table.Helper.fillColumn
+                        Arcitisa.Components.Composite.Table.Helper.fillColumn
                             arcTable.RowCount
                             cellIndex
                             (fun coordinate -> arcTable.GetCellAt(coordinate.x - 1, coordinate.y - 1))

@@ -1,4 +1,4 @@
-module Swate.Components.Composite.MarkdownText.JsBindings.HastFromHtml
+module Arcitisa.Components.Composite.MarkdownText.JsBindings.HastFromHtml
 
 open Fable.Core
 

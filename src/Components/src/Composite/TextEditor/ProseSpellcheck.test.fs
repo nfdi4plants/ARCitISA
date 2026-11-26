@@ -1,10 +1,10 @@
-module internal Swate.Components.Composite.TextEditor.ProseSpellcheckTests
+module internal Arcitisa.Components.Composite.TextEditor.ProseSpellcheckTests
 
 open Fable.Core
 open Vitest
-open Swate.Components.Composite.TextEditor.JsBindings.CodeMirror
-open Swate.Components.Composite.TextEditor.JsBindings.Lezer
-open Swate.Components.Composite.TextEditor.LanguageDetection
+open Arcitisa.Components.Composite.TextEditor.JsBindings.CodeMirror
+open Arcitisa.Components.Composite.TextEditor.JsBindings.Lezer
+open Arcitisa.Components.Composite.TextEditor.LanguageDetection
 
 let private markdownRules = (proseOf registry "markdown").Value
 

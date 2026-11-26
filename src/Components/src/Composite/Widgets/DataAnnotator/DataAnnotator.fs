@@ -1,20 +1,20 @@
-namespace Swate.Components.Composite.Widgets.DataAnnotator
+namespace Arcitisa.Components.Composite.Widgets.DataAnnotator
 
 open System
 open ARCtrl
 open Fable.Core
 open Feliz
-open Swate.Components
-open Swate.Components.Shared
-open Swate.Components.Primitive.BaseModal
-open Swate.Components.Composite.Table
-open Swate.Components.Composite.Table.Types
-open Swate.Components.Primitive.Dropdown
-open Swate.Components.Composite.Widgets.Context
-open Swate.Components.Composite.Widgets.DataAnnotator.Types
-open Swate.Components.Composite.Widgets.DataAnnotator.Helper
-open Swate.Components.Composite.SortableList
-open Swate.Components.Composite.SortableList.Types
+open Arcitisa.Components
+open Arcitisa.Components.Shared
+open Arcitisa.Components.Primitive.BaseModal
+open Arcitisa.Components.Composite.Table
+open Arcitisa.Components.Composite.Table.Types
+open Arcitisa.Components.Primitive.Dropdown
+open Arcitisa.Components.Composite.Widgets.Context
+open Arcitisa.Components.Composite.Widgets.DataAnnotator.Types
+open Arcitisa.Components.Composite.Widgets.DataAnnotator.Helper
+open Arcitisa.Components.Composite.SortableList
+open Arcitisa.Components.Composite.SortableList.Types
 
 [<Erase; Mangle(false)>]
 type DataAnnotator =

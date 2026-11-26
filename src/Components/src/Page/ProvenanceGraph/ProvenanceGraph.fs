@@ -1,19 +1,19 @@
-namespace Swate.Components.Page.ProvenanceGraph
+namespace Arcitisa.Components.Page.ProvenanceGraph
 
 open Browser.Types
 open Fable.Core
 open Fable.Core.JsInterop
 open Feliz
-open Swate.Components
-open Swate.Components.JsBindings
-open Swate.Components.Primitive.ErrorBoundary
-open Swate.Components.Composite.GraphCanvas
-open Swate.Components.Composite.GraphCanvas.Types
-open Swate.Components.Shared.ProvenanceGraph.Types
-open Swate.Components.Shared.ProvenanceGraph.Queries
-open Swate.Components.Page.ProvenanceGraph.Types
-open Swate.Components.Page.ProvenanceGraph.ToCanvas
-open Swate.Components.Page.ProvenanceGraph.Header
+open Arcitisa.Components
+open Arcitisa.Components.JsBindings
+open Arcitisa.Components.Primitive.ErrorBoundary
+open Arcitisa.Components.Composite.GraphCanvas
+open Arcitisa.Components.Composite.GraphCanvas.Types
+open Arcitisa.Components.Shared.ProvenanceGraph.Types
+open Arcitisa.Components.Shared.ProvenanceGraph.Queries
+open Arcitisa.Components.Page.ProvenanceGraph.Types
+open Arcitisa.Components.Page.ProvenanceGraph.ToCanvas
+open Arcitisa.Components.Page.ProvenanceGraph.Header
 
 module private ProvenanceGraphTypes =
 
@@ -280,7 +280,7 @@ type ProvenanceGraph =
                     toggleRef.current |> Option.iter (fun button -> button.focus ())
             )
             prop.children [
-                Swate.Components.Primitive.Dropdown.Dropdown.Main(isOpen, setIsOpen, toggle, items)
+                Arcitisa.Components.Primitive.Dropdown.Dropdown.Main(isOpen, setIsOpen, toggle, items)
             ]
         ]
 

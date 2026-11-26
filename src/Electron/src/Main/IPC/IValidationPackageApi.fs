@@ -2,8 +2,8 @@ module Main.IPC.ValidationPackageApi
 
 open Fable.Core
 open Fetch
-open Swate.Electron.Shared.IPCTypes
-open Swate.Components.Page.ValidationPackageBrowser.Types
+open Arcitisa.Electron.Shared.IPCTypes
+open Arcitisa.Components.Page.ValidationPackageBrowser.Types
 
 /// The package registry serves package content as base64. The DTO intentionally omits it to
 /// avoid moving large payloads over IPC. The renderer only needs package metadata.

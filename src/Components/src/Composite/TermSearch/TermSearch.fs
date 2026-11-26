@@ -1,15 +1,15 @@
-namespace Swate.Components.Composite.TermSearch
+namespace Arcitisa.Components.Composite.TermSearch
 
-open Swate.Components.Shared
-open Swate.Components
-open Swate.Components.Composite.TermSearch.Types
-open Swate.Components.Primitive
-open Swate.Components.Primitive.ComboBox
-open Swate.Components.Primitive.ComboBox.Types
-open Swate.Components.Primitive.BaseModal
+open Arcitisa.Components.Shared
+open Arcitisa.Components
+open Arcitisa.Components.Composite.TermSearch.Types
+open Arcitisa.Components.Primitive
+open Arcitisa.Components.Primitive.ComboBox
+open Arcitisa.Components.Primitive.ComboBox.Types
+open Arcitisa.Components.Primitive.BaseModal
 open Fable.Core
 open Feliz
-open Swate.Components.Composite.TermSearch.Context.ConfigContext
+open Arcitisa.Components.Composite.TermSearch.Context.ConfigContext
 
 
 module private APIExtentions =
@@ -17,7 +17,7 @@ module private APIExtentions =
     let private optionOfString (str: string) =
         Option.whereNot System.String.IsNullOrWhiteSpace str
 
-    type Swate.Components.Shared.Database.Term with
+    type Arcitisa.Components.Shared.Database.Term with
         member this.ToComponentTerm() =
             Term(
                 ?name = optionOfString this.Name,
@@ -136,7 +136,7 @@ module private API =
 
     let callSearch =
         fun (query: string) ->
-            Api.SwateApi.SwateApi.searchTerm (Swate.Components.Shared.DTOs.TermQuery.create (query, 10))
+            Api.ArcitisaApi.ArcitisaApi.searchTerm (Arcitisa.Components.Shared.DTOs.TermQuery.create (query, 10))
             |> Async.StartAsPromise
             |> Promise.map (fun results -> results |> Array.map (fun t0 -> t0.ToComponentTerm()) |> ResizeArray)
             |> Promise.catch (fun exn ->
@@ -146,8 +146,8 @@ module private API =
 
     let callParentSearch =
         fun (parent: string, query: string) ->
-            Api.SwateApi.SwateApi.searchTerm (
-                Swate.Components.Shared.DTOs.TermQuery.create (query, 10, parentTermId = parent)
+            Api.ArcitisaApi.ArcitisaApi.searchTerm (
+                Arcitisa.Components.Shared.DTOs.TermQuery.create (query, 10, parentTermId = parent)
             )
             |> Async.StartAsPromise
             |> Promise.map (fun results -> results |> Array.map (fun t0 -> t0.ToComponentTerm()) |> ResizeArray)
@@ -158,7 +158,9 @@ module private API =
 
     let callAllChildSearch =
         fun (parent: string) ->
-            Api.SwateApi.SwateApi.searchChildTerms (Swate.Components.Shared.DTOs.ParentTermQuery.create (parent, 300))
+            Api.ArcitisaApi.ArcitisaApi.searchChildTerms (
+                Arcitisa.Components.Shared.DTOs.ParentTermQuery.create (parent, 300)
+            )
             |> Async.StartAsPromise
             |> Promise.map (fun results -> results.results |> Array.map (fun t0 -> t0.ToComponentTerm()) |> ResizeArray)
             |> Promise.catch (fun exn ->
@@ -168,7 +170,7 @@ module private API =
 
     let callAdvancedSearch =
         fun dto ->
-            Api.SwateApi.SwateApi.searchTermAdvanced dto
+            Api.ArcitisaApi.ArcitisaApi.searchTermAdvanced dto
             |> Async.StartAsPromise
             |> Promise.map (fun results -> results |> Array.map (fun t0 -> t0.ToComponentTerm()) |> ResizeArray)
             |> Promise.catch (fun exn ->
@@ -297,7 +299,7 @@ type TermSearch =
         =
 
         let advancedSearchState, setAdvancedSearchState =
-            React.useState (Swate.Components.Shared.DTOs.AdvancedSearchQuery.init)
+            React.useState (Arcitisa.Components.Shared.DTOs.AdvancedSearchQuery.init)
 
         let startSearch =
             fun () ->
@@ -762,9 +764,9 @@ type TermSearch =
 
 
     ///
-    /// Customizable react component for term search. Utilizing SwateDB search by default.
+    /// Customizable react component for term search. Utilizing ArcitisaDB search by default.
     //
-    // #if SWATE_ENVIRONMENT
+    // #if ARCITISA_ENVIRONMENT
     // [<ReactComponent>]
     // #else
     // [<ExportDefaultAttribute; NamedParams>]

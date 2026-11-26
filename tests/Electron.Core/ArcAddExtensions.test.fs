@@ -8,8 +8,8 @@ open Main.ArcVaultFileTree
 open Main.ArcVaultFileWatcher
 open Main.ARCtrlExtensions
 open Main.Bindings.Path
-open Swate.Components.Shared
-open Swate.Electron.Shared.FileIOHelper
+open Arcitisa.Components.Shared
+open Arcitisa.Electron.Shared.FileIOHelper
 open ARCtrl
 open FsSpreadsheet.Js
 open Vitest
@@ -22,7 +22,7 @@ let private expectSome (value: 'T option) (message: string) : 'T =
 let private pathExistsAsync = TestHelpers.pathExistsAsync
 
 let private loadArcAsync arcPath = promise {
-    match! ARC.LoadAsyncSwate arcPath with
+    match! ARC.LoadAsyncArcitisa arcPath with
     | Ok arc -> return arc
     | Error errors -> return failwith (PathHelpers.formatContractErrors errors)
 }
@@ -30,7 +30,7 @@ let private loadArcAsync arcPath = promise {
 let private testWindow = TestHelpers.testWindow
 
 let private withTempArc =
-    TestHelpers.withTempArcWith "swate-add-arc-file-" "AddArcFileArc"
+    TestHelpers.withTempArcWith "arcitisa-add-arc-file-" "AddArcFileArc"
 
 let private expectBasicAnnotationTable (tables: ResizeArray<ArcTable>) (name: string) =
     Vitest.expect(tables.Count).toBe (1)
@@ -56,7 +56,7 @@ Vitest.describe (
                         do!
                             arc.AddArcFileAsync(
                                 arcPath,
-                                Swate.Components.Shared.ARCtrlHelper.ArcFileDefaults.createDefaultArcFile
+                                Arcitisa.Components.Shared.ARCtrlHelper.ArcFileDefaults.createDefaultArcFile
                                     ArcFilesDiscriminate.Assay
                                     "NewAssay"
                             )
@@ -90,7 +90,7 @@ Vitest.describe (
                         let longAssayId = "Sugar_extraction_assay_day_2_replicate_3"
 
                         let createDefaultArcFile =
-                            Swate.Components.Shared.ARCtrlHelper.ArcFileDefaults.createDefaultArcFile
+                            Arcitisa.Components.Shared.ARCtrlHelper.ArcFileDefaults.createDefaultArcFile
 
                         let! arc = loadArcAsync arcPath
                         do! arc.AddArcFileAsync(arcPath, createDefaultArcFile ArcFilesDiscriminate.Assay assayId)
@@ -271,7 +271,7 @@ Vitest.describe (
                     ignore
                     (fun arcPath -> promise {
                         let arcFile =
-                            Swate.Components.Shared.ARCtrlHelper.ArcFileDefaults.createDefaultArcFile
+                            Arcitisa.Components.Shared.ARCtrlHelper.ArcFileDefaults.createDefaultArcFile
                                 ArcFilesDiscriminate.Assay
                                 "New Assay"
 
@@ -394,7 +394,7 @@ Vitest.describe (
                         do!
                             arc.AddArcFileAsync(
                                 arcPath,
-                                Swate.Components.Shared.ARCtrlHelper.ArcFileDefaults.createDefaultArcFile
+                                Arcitisa.Components.Shared.ARCtrlHelper.ArcFileDefaults.createDefaultArcFile
                                     ArcFilesDiscriminate.Study
                                     "NewStudy"
                             )
@@ -425,7 +425,7 @@ Vitest.describe (
                         do!
                             arc.AddArcFileAsync(
                                 arcPath,
-                                Swate.Components.Shared.ARCtrlHelper.ArcFileDefaults.createDefaultArcFile
+                                Arcitisa.Components.Shared.ARCtrlHelper.ArcFileDefaults.createDefaultArcFile
                                     ArcFilesDiscriminate.Run
                                     "NewRun"
                             )

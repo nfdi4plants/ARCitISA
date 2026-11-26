@@ -9,7 +9,7 @@
   </ItemGroup>
   
   <ItemGroup>
-    <ProjectReference Include="..\Swate.Electron.Shared\Swate.Electron.Shared.fsproj"/>
+    <ProjectReference Include="..\Arcitisa.Electron.Shared\Arcitisa.Electron.Shared.fsproj"/>
   </ItemGroup>
 
 </Project>

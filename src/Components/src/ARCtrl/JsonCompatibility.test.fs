@@ -1,8 +1,8 @@
-module internal Swate.Components.Tests.JsonCompatibility
+module internal Arcitisa.Components.Tests.JsonCompatibility
 
 open ARCtrl
 open ARCtrl.Json
-open Swate.Components.Shared
+open Arcitisa.Components.Shared
 open Vitest
 
 let private datamap () =

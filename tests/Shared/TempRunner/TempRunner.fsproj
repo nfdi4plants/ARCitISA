@@ -7,8 +7,8 @@
     <Compile Include="TestRunner.fs" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\..\src\Components\src\Swate.Components.fsproj" />
-    <ProjectReference Include="..\..\..\src\Shared\Swate.Components.Core.fsproj" />
+    <ProjectReference Include="..\..\..\src\Components\src\Arcitisa.Components.fsproj" />
+    <ProjectReference Include="..\..\..\src\Shared\Arcitisa.Components.Core.fsproj" />
     <ProjectReference Include="..\Shared.Tests.fsproj" />
   </ItemGroup>
   <ItemGroup>

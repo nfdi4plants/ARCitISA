@@ -1,17 +1,17 @@
-namespace Swate.Components.Composite.MarkdownText
+namespace Arcitisa.Components.Composite.MarkdownText
 
 open Browser.Types
 open Fable.Core
 open Feliz
 
-open Swate.Components
-open Swate.Components.Composite.TextEditor
-open Swate.Components.Composite.TextEditor.Types
-open Swate.Components.Composite.MarkdownText.Types
-open Swate.Components.Composite.MarkdownText.Editing
-open Swate.Components.Composite.MarkdownText.Editing.Types
-open Swate.Components.Composite.MarkdownText.Links.Types
-open Swate.Components.Primitive.LayoutComponents
+open Arcitisa.Components
+open Arcitisa.Components.Composite.TextEditor
+open Arcitisa.Components.Composite.TextEditor.Types
+open Arcitisa.Components.Composite.MarkdownText.Types
+open Arcitisa.Components.Composite.MarkdownText.Editing
+open Arcitisa.Components.Composite.MarkdownText.Editing.Types
+open Arcitisa.Components.Composite.MarkdownText.Links.Types
+open Arcitisa.Components.Primitive.LayoutComponents
 
 module private MarkdownTextEditorHelpers =
 

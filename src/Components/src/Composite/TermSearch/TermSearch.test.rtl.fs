@@ -1,14 +1,14 @@
-module internal Swate.Components.Composite.TermSearch.RtlTests
+module internal Arcitisa.Components.Composite.TermSearch.RtlTests
 
 open Fable.Core
 open Feliz
 open Vitest
-open Swate.Components
-open Swate.Components.Shared
-open Swate.Components.Composite.AnnotationTable
-open Swate.Components.Composite.TermSearch.Types
+open Arcitisa.Components
+open Arcitisa.Components.Shared
+open Arcitisa.Components.Composite.AnnotationTable
+open Arcitisa.Components.Composite.TermSearch.Types
 
-// These tests replace the TermSearch and AnnotationTable stories that call the live services (the Swate API and
+// These tests replace the TermSearch and AnnotationTable stories that call the live services (the ARCitISA API and
 // the TIB terminology API). Both are stubbed here, so a test run never leaves the machine.
 
 type private Reply = { status: int; body: string }
@@ -20,7 +20,7 @@ let private ok (body: obj) = {
 
 /// Fable.Remoting sends the arguments of an API call as a JSON array. For the calls used here, the first element
 /// is a TermQuery or a ParentTermQuery.
-type private SwateRequest =
+type private ArcitisaRequest =
     abstract query: string
     abstract parentTermId: string
     abstract limit: int
@@ -78,15 +78,15 @@ module private Fixtures =
             && words |> Array.forall (fun word -> t.Name.ToLower().Contains word)
         )
 
-module private SwateApi =
+module private ArcitisaApi =
     let private prefix = $"{URLs.PRODUCTION_URL}/api/IOntologyAPIv3/"
 
-    /// The reply of the Swate API, or None when the URL is not one of the calls TermSearch makes.
+    /// The reply of the ARCitISA API, or None when the URL is not one of the calls TermSearch makes.
     let answer (url: string) (body: string) : Reply option =
         if not (url.StartsWith prefix) then
             None
         else
-            let request = (JS.JSON.parse body |> unbox<SwateRequest[]>).[0]
+            let request = (JS.JSON.parse body |> unbox<ArcitisaRequest[]>).[0]
 
             match url.Substring prefix.Length with
             | "searchTerm" ->
@@ -224,7 +224,7 @@ module private Network =
     [<Emit("new Response($0, {status: $1, headers: {'Content-Type': 'application/json'}})")>]
     let private response (_body: string) (_status: int) : Fetch.Types.Response = jsNative
 
-    // Fable.Remoting talks to the Swate API through XMLHttpRequest. The class answers every request from the handler.
+    // Fable.Remoting talks to the ARCitISA API through XMLHttpRequest. The class answers every request from the handler.
     [<Emit("""(handler => class {
         open(method, url) { this.requestUrl = url; }
         setRequestHeader() {}
@@ -252,7 +252,7 @@ module private Network =
                 System.Func<string, string, Reply>(fun url body ->
                     requests.Add url
 
-                    match SwateApi.answer url body with
+                    match ArcitisaApi.answer url body with
                     | Some reply -> reply
                     | None ->
                         unexpected.Add url

@@ -1,7 +1,7 @@
 module Renderer.Context.ArcSyncContext
 
 open Feliz
-open Swate.Electron.Shared.IPCTypes
+open Arcitisa.Electron.Shared.IPCTypes
 
 type ArcSyncState = {
     IsSyncing: bool

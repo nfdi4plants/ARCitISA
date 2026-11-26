@@ -2,7 +2,7 @@ module Server.Tests
 
 open Expecto
 
-open Swate.Components.Shared
+open Arcitisa.Components.Shared
 open Server
 
 let server =

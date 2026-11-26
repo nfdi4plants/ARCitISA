@@ -1,4 +1,4 @@
-module internal Swate.Components.Page.ProvenanceGraph.HeaderTests
+module internal Arcitisa.Components.Page.ProvenanceGraph.HeaderTests
 
 // Ported from the header cases of ProvenanceExplorer.test.tsx of arc-portal-ui, as far as they test a
 // rule. The widths are the pairs of setHeaderWidths(available, natural) in that file.
@@ -10,8 +10,8 @@ module internal Swate.Components.Page.ProvenanceGraph.HeaderTests
 // is checked in ToCanvas.test.fs.
 
 open Vitest
-open Swate.Components.Page.ProvenanceGraph.Types
-open Swate.Components.Page.ProvenanceGraph.Header
+open Arcitisa.Components.Page.ProvenanceGraph.Types
+open Arcitisa.Components.Page.ProvenanceGraph.Header
 
 let private crumbsOf (labels: string list) : Crumb[] =
     labels

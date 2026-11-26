@@ -23,7 +23,7 @@ let main args =
                 Bundle.Client(true)
                 0
         | _ ->
-            run "dotnet" [ "restore"; "./Swate.sln" ] "."
+            run "dotnet" [ "restore"; "./Arcitisa.slnx" ] "."
             Bundle.All()
             0
     | "run" :: a ->
@@ -117,12 +117,6 @@ let main args =
             Release.docker user.Value key latestVersion isDryRun
 
             printGreenfn ("Release docker!")
-            0
-        // electron-web builds the prebundled web client frontend,
-        // historically used as an iframe in an external Electron app.
-        | "electron-web" ->
-            Release.electron ()
-            printGreenfn ("Release electron-web!")
             0
         | "electron-bin" ->
 

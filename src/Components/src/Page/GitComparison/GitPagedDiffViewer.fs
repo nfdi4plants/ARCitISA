@@ -1,14 +1,14 @@
-namespace Swate.Components.Page.GitComparison
+namespace Arcitisa.Components.Page.GitComparison
 
 open System
 open System.Collections.Generic
 open Browser.Types
 open Fable.Core
 open Feliz
-open Swate.Components
-open Swate.Components.Page
-open Swate.Components.Page.GitComparison.GitPagedDiffTypes
-open Swate.Components.Primitive.SplitResizer
+open Arcitisa.Components
+open Arcitisa.Components.Page
+open Arcitisa.Components.Page.GitComparison.GitPagedDiffTypes
+open Arcitisa.Components.Primitive.SplitResizer
 
 module internal GitPagedDiffDisplay =
 

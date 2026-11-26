@@ -1,15 +1,15 @@
-namespace Swate.Components.Composite.MarkdownText
+namespace Arcitisa.Components.Composite.MarkdownText
 
 open Fable.Core
 open Feliz
 
-open Swate.Components
-open Swate.Components.Primitive.BaseModal
-open Swate.Components.Primitive.ComboBox.Types
-open Swate.Components.Composite.TermSearch
-open Swate.Components.Composite.TermSearch.Types
-open Swate.Components.Composite.MarkdownText.Editing
-open Swate.Components.Composite.MarkdownText.Editing.Types
+open Arcitisa.Components
+open Arcitisa.Components.Primitive.BaseModal
+open Arcitisa.Components.Primitive.ComboBox.Types
+open Arcitisa.Components.Composite.TermSearch
+open Arcitisa.Components.Composite.TermSearch.Types
+open Arcitisa.Components.Composite.MarkdownText.Editing
+open Arcitisa.Components.Composite.MarkdownText.Editing.Types
 
 module private OntologyReferenceDialogTypes =
 

@@ -16,12 +16,12 @@ open Main.Bindings.Path
 open Main.ArcMerge
 open Main.ArcVaultHelper
 open Main.FileImportCoordinator
-open Swate.Components.Shared
-open Swate.Electron.Shared.IPCTypes
-open Swate.Electron.Shared.IPCTypes.IPCTypesHelper
-open Swate.Electron.Shared.IPCTypes.MainToRendererIpc
-open Swate.Electron.Shared.FileIOTypes
-open Swate.Electron.Shared.FileIOHelper
+open Arcitisa.Components.Shared
+open Arcitisa.Electron.Shared.IPCTypes
+open Arcitisa.Electron.Shared.IPCTypes.IPCTypesHelper
+open Arcitisa.Electron.Shared.IPCTypes.MainToRendererIpc
+open Arcitisa.Electron.Shared.FileIOTypes
+open Arcitisa.Electron.Shared.FileIOHelper
 open ARCtrl
 open Main.ArcVaultState
 
@@ -44,7 +44,7 @@ type ArcVault with
                     arcPath
                     tree
                     (fun directory error ->
-                        swatelogfn
+                        arcitisalogfn
                             this.window.id
                             "Unable to reconcile file tree directory '%s': %s"
                             directory
@@ -71,7 +71,7 @@ type ArcVault with
                         arcPath
                         tree
                         (fun directory error ->
-                            swatelogfn
+                            arcitisalogfn
                                 this.window.id
                                 "Unable to revalidate file tree directory '%s': %s"
                                 directory
@@ -107,7 +107,7 @@ type ArcVault with
                             arcPath
                             tree
                             (fun directory error ->
-                                swatelogfn
+                                arcitisalogfn
                                     this.window.id
                                     "Unable to revalidate file tree directory '%s': %s"
                                     directory
@@ -118,7 +118,7 @@ type ArcVault with
 
                 this.CheckLfsContentOf relativeDirectories
                 |> Promise.catch (fun error ->
-                    swatelogfn this.window.id "The lfs content check failed: %s" error.Message
+                    arcitisalogfn this.window.id "The lfs content check failed: %s" error.Message
                 )
                 |> Promise.start
             }

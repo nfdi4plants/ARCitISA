@@ -1,13 +1,13 @@
 module Database.Term
 
 open Neo4j.Driver
-open Swate.Components.Shared.Database
+open Arcitisa.Components.Shared.Database
 open Helper
 open System.Text
 open System
 open System.Collections.Generic
-open Swate.Components.Shared.DTOs
-open Swate.Components.Shared
+open Arcitisa.Components.Shared.DTOs
+open Arcitisa.Components.Shared
 
 /// <summary> This type is used to allow searching through only one ontology or multiple ontologies </summary>
 [<RequireQualifiedAccess>]
@@ -91,7 +91,7 @@ type Term(?credentials: Neo4JCredentials, ?session: IAsyncSession) =
         fun (record: IRecord) ->
             let accession = record.[$"{termParamName}.accession"].As<string>()
 
-            let (term: Swate.Components.Shared.Database.Term) = {
+            let (term: Arcitisa.Components.Shared.Database.Term) = {
                 Accession = accession
                 FK_Ontology = Term.parseAccessionToOntologyName accession
                 Name = record.[$"{termParamName}.name"] |> defaultOutputWith<string> ""
@@ -391,7 +391,7 @@ type Term(?credentials: Neo4JCredentials, ?session: IAsyncSession) =
         Neo4j.runQuery (query, param, (Term.asTerm ("child")), ?session = session, ?credentials = credentials)
 
     /// This function uses only the parent term accession
-    member this.getAllByParent(parentAccession: SwateObsolete.TermMinimal, ?limit: int) =
+    member this.getAllByParent(parentAccession: ArcitisaObsolete.TermMinimal, ?limit: int) =
         let query =
             sprintf
                 """MATCH (child)-[*1..]->(:Term {accession: $Accession})
@@ -447,7 +447,7 @@ type Term(?credentials: Neo4JCredentials, ?session: IAsyncSession) =
 
     /// Searchtype defaults to "get child term suggestions with auto complete"
     member this.getByNameAndParent
-        (term: SwateObsolete.TermMinimal, parent: SwateObsolete.TermMinimal, ?searchType: FullTextSearch)
+        (term: ArcitisaObsolete.TermMinimal, parent: ArcitisaObsolete.TermMinimal, ?searchType: FullTextSearch)
         =
         let _, fulltextSearchStr =
             if searchType.IsSome then
@@ -469,7 +469,7 @@ type Term(?credentials: Neo4JCredentials, ?session: IAsyncSession) =
 
     // Searchtype defaults to "get child term suggestions with auto complete"
     member this.getByNameAndParent
-        (termName: string, parentAccession: SwateObsolete.TermMinimal, ?searchType: FullTextSearch)
+        (termName: string, parentAccession: ArcitisaObsolete.TermMinimal, ?searchType: FullTextSearch)
         =
         let _, fulltextSearchStr =
             if searchType.IsSome then
@@ -514,7 +514,7 @@ type Term(?credentials: Neo4JCredentials, ?session: IAsyncSession) =
             Neo4j.runQuery (query, param, (Term.asTerm ("node")), credentials.Value)
 
     /// This function uses only the parent term accession
-    member this.getAllByChild(childAccession: SwateObsolete.TermMinimal) =
+    member this.getAllByChild(childAccession: ArcitisaObsolete.TermMinimal) =
         let query =
             """MATCH (n:Term {accession: $Accession})
             CALL apoc.path.subgraphNodes(n, {minLevel: 1, relationshipFilter:'>', labelFilter: "+Term"}) YIELD node as parent

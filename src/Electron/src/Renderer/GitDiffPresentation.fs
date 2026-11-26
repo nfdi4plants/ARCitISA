@@ -3,8 +3,8 @@
 module Renderer.GitDiffPresentation
 
 open System
-open Swate.Electron.Shared.VersionControlTypes
-open Swate.Components.Page.GitComparison.GitPagedDiffTypes
+open Arcitisa.Electron.Shared.VersionControlTypes
+open Arcitisa.Components.Page.GitComparison.GitPagedDiffTypes
 
 /// The library sends every int64 as a decimal string. A float holds it exactly up to 2^53.
 let number (value: string) : float =

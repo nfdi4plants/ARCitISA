@@ -1,8 +1,8 @@
-module internal Swate.Components.Tests.JsonParse
+module internal Arcitisa.Components.Tests.JsonParse
 
 open ARCtrl
 open ARCtrl.Json
-open Swate.Components.Shared
+open Arcitisa.Components.Shared
 open Vitest
 
 let private errorMessage (result: Result<ArcFiles, exn>) =

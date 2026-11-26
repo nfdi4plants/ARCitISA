@@ -1,6 +1,6 @@
 module Spreadsheet.KeyboardShortcuts
 
-open Swate.Components
+open Arcitisa.Components
 
 let x = 0
 

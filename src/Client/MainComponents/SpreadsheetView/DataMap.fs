@@ -5,10 +5,10 @@ open Feliz
 open Model
 open SpreadsheetInterface
 open Messages
-open Swate.Components.Shared
+open Arcitisa.Components.Shared
 
-open Swate.Components
-open Swate.Components.Composite.DataMapTable
+open Arcitisa.Components
+open Arcitisa.Components.Composite.DataMapTable
 
 let Main (model: Model, dispatch: Msg -> unit) =
 

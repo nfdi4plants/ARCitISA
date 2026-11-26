@@ -1,4 +1,4 @@
-module internal Swate.Components.Page.Metadata.FormComponents.PublicationsInputSample
+module internal Arcitisa.Components.Page.Metadata.FormComponents.PublicationsInputSample
 
 open ARCtrl
 

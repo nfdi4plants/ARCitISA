@@ -1,8 +1,8 @@
 /// Typed bindings for the Lezer syntax tree, the JSON parser of @lezer/json and the highlighting of @lezer/highlight.
-module Swate.Components.Composite.TextEditor.JsBindings.Lezer
+module Arcitisa.Components.Composite.TextEditor.JsBindings.Lezer
 
 open Fable.Core
-open Swate.Components.Composite.TextEditor.JsBindings.CodeMirror
+open Arcitisa.Components.Composite.TextEditor.JsBindings.CodeMirror
 
 [<AllowNullLiteral>]
 type NodeType =

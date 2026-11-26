@@ -4,7 +4,7 @@ module Main.ArcDiskState
 open Main.ARCtrlExtensions
 open Main.Bindings.Filesystem
 open Main.Bindings.Path
-open Swate.Components.Shared
+open Arcitisa.Components.Shared
 
 /// The stat data that tells two versions of a file apart. Reading it needs no workbook parsing.
 type FileFingerprint = { SizeBytes: float; MtimeMs: float }

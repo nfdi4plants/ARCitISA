@@ -14,11 +14,11 @@ release.cmd
 release.sh
 *.orig
 *.DotSettings.user
-.assets/swate.zip
+.assets/arcitisa.zip
 /.db/data
 /.db/plugins
 /.db/import
-/.assets/swate-b-quickstart.zip
+/.assets/arcitisa-b-quickstart.zip
 /.db/cache
 /.db/neo4j
 /src/Client/output
@@ -36,9 +36,8 @@ playwright-report/
 storybook-static/
 nupkgs/
 artifacts/
-./SwateClient.zip
-!.idea/.idea.Swate/.idea/workspace.xml
-!.idea/.idea.Swate/.idea/tailwindcss.xml
+!.idea/.idea.Arcitisa/.idea/workspace.xml
+!.idea/.idea.Arcitisa/.idea/tailwindcss.xml
 opencode.json
 docs/superpowers/
 .opencode/

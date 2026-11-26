@@ -1,7 +1,7 @@
 /// The image types that the Markdown preview shows. The main process serves only these, and the path completion of
 /// image targets offers only these. Plain functions without imports, so the main process can use them.
 [<RequireQualifiedAccess>]
-module Swate.Components.Composite.MarkdownText.Links.ImageTypes
+module Arcitisa.Components.Composite.MarkdownText.Links.ImageTypes
 
 /// The extension of the last path segment, lowercased with its dot, or "" when it has none.
 let extensionOf (path: string) : string =

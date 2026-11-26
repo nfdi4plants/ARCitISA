@@ -1,4 +1,4 @@
-module internal Swate.Components.Page.ProvenanceGraph.ProvenanceGraphTests
+module internal Arcitisa.Components.Page.ProvenanceGraph.ProvenanceGraphTests
 
 // Ported from ProvenanceExplorer.test.tsx of arc-portal-ui, on the example ARC of the sample file and on small
 // ARCs built in the tests. The real ELK runs in jsdom with the 7px text estimate.
@@ -35,13 +35,13 @@ open Fable.Core
 open Feliz
 open Vitest
 open ARCtrl
-open Swate.Components.Shared.ProvenanceGraph.Types
-open Swate.Components.Shared.ProvenanceGraph.BuildIndex
-open Swate.Components.Composite.GraphCanvas.Types
-open Swate.Components.Composite.GraphCanvas.Layout
-open Swate.Components.Page.ProvenanceGraph.Types
+open Arcitisa.Components.Shared.ProvenanceGraph.Types
+open Arcitisa.Components.Shared.ProvenanceGraph.BuildIndex
+open Arcitisa.Components.Composite.GraphCanvas.Types
+open Arcitisa.Components.Composite.GraphCanvas.Layout
+open Arcitisa.Components.Page.ProvenanceGraph.Types
 
-module Sample = Swate.Components.Page.ProvenanceGraphSample
+module Sample = Arcitisa.Components.Page.ProvenanceGraphSample
 
 // jsdom has no ResizeObserver. The stub keeps the observers and reports the widths a test sets. A frame runs at
 // once, because the header applies a measurement in the next animation frame.

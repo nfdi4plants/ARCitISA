@@ -1,8 +1,8 @@
-module internal Swate.Components.Util.WebWorkerTests
+module internal Arcitisa.Components.Util.WebWorkerTests
 
 open Fable.Core
 open Vitest
-open Swate.Components.Util.WebWorker
+open Arcitisa.Components.Util.WebWorker
 
 // Node (unit project) and jsdom (Electron renderer tests) have no Worker.
 let private neverCreated: unit -> WorkerInstance =

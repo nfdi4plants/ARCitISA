@@ -16,12 +16,12 @@ open Main.Bindings.Path
 open Main.ArcMerge
 open Main.ArcVaultHelper
 open Main.FileImportCoordinator
-open Swate.Components.Shared
-open Swate.Electron.Shared.IPCTypes
-open Swate.Electron.Shared.IPCTypes.IPCTypesHelper
-open Swate.Electron.Shared.IPCTypes.MainToRendererIpc
-open Swate.Electron.Shared.FileIOTypes
-open Swate.Electron.Shared.FileIOHelper
+open Arcitisa.Components.Shared
+open Arcitisa.Electron.Shared.IPCTypes
+open Arcitisa.Electron.Shared.IPCTypes.IPCTypesHelper
+open Arcitisa.Electron.Shared.IPCTypes.MainToRendererIpc
+open Arcitisa.Electron.Shared.FileIOTypes
+open Arcitisa.Electron.Shared.FileIOHelper
 open ARCtrl
 open Main.ArcVaultState
 open Main.GitStateStamp
@@ -91,7 +91,7 @@ type ArcVault with
                 Main.LargeObjectIndex.LargeObjectIndex(
                     (fun context -> this.LargeObjectListing root context),
                     (fun () -> this.isCaseInsensitive),
-                    (fun message -> swatelogfn this.window.id "%s" message),
+                    (fun message -> arcitisalogfn this.window.id "%s" message),
                     Main.LargeObjectIndex.DefaultTimeLimitMs,
                     (match seed with
                      | Some ready -> ready.Version
@@ -220,7 +220,7 @@ type ArcVault with
                                 ]
                                 |> String.concat " and "
 
-                            swatelogfn
+                            arcitisalogfn
                                 this.window.id
                                 "The Git state changed after window focus (%s), so the large object index is rebuilt."
                                 signals
@@ -231,7 +231,7 @@ type ArcVault with
             with error ->
                 if not this.GitStateCheckErrorLogged then
                     this.GitStateCheckErrorLogged <- true
-                    swatelogfn this.window.id "Unable to check the Git state after window focus: %s" error.Message
+                    arcitisalogfn this.window.id "Unable to check the Git state after window focus: %s" error.Message
         | _ -> ()
     }
 
@@ -310,7 +310,7 @@ type ArcVault with
                         | _ -> false
 
                     if mismatch && sameReadyState then
-                        swatelogfn
+                        arcitisalogfn
                             this.window.id
                             "A Git LFS file no longer matches the large object index after window focus, so the index is rebuilt."
 

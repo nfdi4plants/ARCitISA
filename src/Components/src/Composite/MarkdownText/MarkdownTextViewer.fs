@@ -1,11 +1,11 @@
-namespace Swate.Components.Composite.MarkdownText
+namespace Arcitisa.Components.Composite.MarkdownText
 
 open Fable.Core
 open Feliz
 
-open Swate.Components.Composite.MarkdownText.JsBindings
-open Swate.Components.Composite.MarkdownText.Helper
-open Swate.Components.Composite.MarkdownText.Links.Types
+open Arcitisa.Components.Composite.MarkdownText.JsBindings
+open Arcitisa.Components.Composite.MarkdownText.Helper
+open Arcitisa.Components.Composite.MarkdownText.Links.Types
 
 [<Erase; Mangle(false)>]
 type MarkdownTextViewer =

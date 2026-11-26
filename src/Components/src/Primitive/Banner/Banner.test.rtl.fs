@@ -1,8 +1,8 @@
-module internal Swate.Components.Primitive.Banner.BannerTests
+module internal Arcitisa.Components.Primitive.Banner.BannerTests
 
 open Browser.Types
 open Vitest
-open Swate.Components.Primitive.Banner.Types
+open Arcitisa.Components.Primitive.Banner.Types
 
 Vitest.afterEach (fun () -> RTL.cleanup ())
 

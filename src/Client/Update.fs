@@ -3,22 +3,22 @@ module Update.Update
 
 open Elmish
 
-open Swate.Components.Shared
+open Arcitisa.Components.Shared
 open Routing
 open Messages
 open Model
-open Swate.Components
+open Arcitisa.Components
 
 open LocalStorage.AutosaveConfig
 
 let urlUpdate (route: Route option) (model: Model) : Model * Cmd<Messages.Msg> =
-    let cmd (host: Swatehost) =
+    let cmd (host: Arcitisahost) =
         SpreadsheetInterface.Initialize host |> InterfaceMsg |> Cmd.ofMsg
 
     let host =
         match route with
-        | Some(Routing.Route.Home queryIntegerOption) -> Swatehost.ofQueryParam queryIntegerOption
-        | None -> Swatehost.Browser
+        | Some(Routing.Route.Home queryIntegerOption) -> Arcitisahost.ofQueryParam queryIntegerOption
+        | None -> Arcitisahost.Browser
 
     {
         model with
@@ -230,7 +230,7 @@ module History =
         (spreadsheetState: Spreadsheet.Model)
         (historyState: LocalHistory.Model)
         (isAutosave: bool)
-        (host: Swatehost option)
+        (host: Arcitisahost option)
         =
 
         let snapshotJsonString = if isAutosave then spreadsheetState.ToJsonString() else ""
@@ -262,7 +262,7 @@ module History =
                 |> Promise.catch (fun e -> console.error ("Error saving session snapshot to IndexedDB: " + e.Message))
                 |> Promise.start
 
-            if host = Some Swatehost.ARCitect then
+            if host = Some Arcitisahost.ARCitect then
                 match spreadsheetState.ArcFile with // model is not yet updated at this position.
                 | Some(ArcFiles.Assay assay) ->
                     ARCitect.api.Save(ArcFilesDiscriminate.Assay, ArcAssay.toJsonString 0 assay, None)

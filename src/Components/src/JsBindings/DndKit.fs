@@ -1,4 +1,4 @@
-namespace Swate.Components.JsBindings
+namespace Arcitisa.Components.JsBindings
 
 open Browser.Types
 open Fable.Core

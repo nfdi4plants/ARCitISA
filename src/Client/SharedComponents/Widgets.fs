@@ -3,7 +3,7 @@ module LocalStorage.Widgets
 open Feliz
 open Fable.Core.JsInterop
 
-open Swate.Components.Composite.Widgets.Types
+open Arcitisa.Components.Composite.Widgets.Types
 
 open Fable.SimpleJson
 

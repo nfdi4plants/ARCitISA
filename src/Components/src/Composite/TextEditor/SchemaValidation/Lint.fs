@@ -1,15 +1,15 @@
 /// One lint pass over a JSON or YAML text: parse, validate, map errors to source spans.
 /// Text in, diagnostics out, so a Web Worker can run it unchanged later.
-module Swate.Components.Composite.TextEditor.SchemaValidation.Lint
+module Arcitisa.Components.Composite.TextEditor.SchemaValidation.Lint
 
 open System.Text.RegularExpressions
 open Fable.Core
-open Swate.Components.Composite.TextEditor.Types
-open Swate.Components.Composite.TextEditor.JsBindings.Ajv
-open Swate.Components.Composite.TextEditor.JsBindings.Lezer
-open Swate.Components.Composite.TextEditor.JsBindings.Yaml
-open Swate.Components.Composite.TextEditor.SchemaValidation.Types
-open Swate.Components.Composite.TextEditor.SchemaValidation.Validator
+open Arcitisa.Components.Composite.TextEditor.Types
+open Arcitisa.Components.Composite.TextEditor.JsBindings.Ajv
+open Arcitisa.Components.Composite.TextEditor.JsBindings.Lezer
+open Arcitisa.Components.Composite.TextEditor.JsBindings.Yaml
+open Arcitisa.Components.Composite.TextEditor.SchemaValidation.Types
+open Arcitisa.Components.Composite.TextEditor.SchemaValidation.Validator
 
 let private syntaxDiagnostic (text: string) (from: int) (``to``: int) (message: string) : LintDiagnostic = {|
     from = min from text.Length

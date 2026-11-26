@@ -3,7 +3,7 @@ module ElectronRenderer.VersionControlDependencyBannerTests
 open Fable.Core.JsInterop
 open Renderer.Components.VersionControlDependencyBanner
 open Renderer.Context.VersionControlDependencyContext
-open Swate.Electron.Shared.VersionControlTypes
+open Arcitisa.Electron.Shared.VersionControlTypes
 open Vitest
 
 // The context module reaches the IPC bridges through the Api module. The preload is absent in tests,

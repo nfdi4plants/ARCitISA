@@ -1,14 +1,14 @@
-namespace Swate.Components.Composite.Template
+namespace Arcitisa.Components.Composite.Template
 
 open ARCtrl
 open Fable.Core
 open Feliz
-open Swate.Components
-open Swate.Components.Primitive
-open Swate.Components.Primitive.LoadingSpinner
+open Arcitisa.Components
+open Arcitisa.Components.Primitive
+open Arcitisa.Components.Primitive.LoadingSpinner
 
 
-module TemplateHelper = Swate.Components.Composite.Template.Helper
+module TemplateHelper = Arcitisa.Components.Composite.Template.Helper
 
 module private TemplatesDisplayHelper =
 

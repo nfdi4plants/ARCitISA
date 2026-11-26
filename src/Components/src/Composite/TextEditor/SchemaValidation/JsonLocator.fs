@@ -1,10 +1,10 @@
 /// Maps JSON pointers to source spans in a Lezer JSON tree, the same tree @codemirror/lang-json builds.
-module Swate.Components.Composite.TextEditor.SchemaValidation.JsonLocator
+module Arcitisa.Components.Composite.TextEditor.SchemaValidation.JsonLocator
 
 open System.Collections.Generic
 open Fable.Core
-open Swate.Components.Composite.TextEditor.JsBindings.Lezer
-open Swate.Components.Composite.TextEditor.SchemaValidation.Types
+open Arcitisa.Components.Composite.TextEditor.JsBindings.Lezer
+open Arcitisa.Components.Composite.TextEditor.SchemaValidation.Types
 
 let private valueNames =
     set [

@@ -42,7 +42,6 @@ flowchart TD
         r-nuget["nuget"]
         r-npm["npm"]
         r-docker["docker"]
-        r-web["electron-web"]
         r-story["storybook"]
     end
 
@@ -53,13 +52,12 @@ flowchart TD
         b-linux["linux x64"]
     end
 
-    rel-fork --> r-nuget & r-npm & r-docker & r-web & r-story
+    rel-fork --> r-nuget & r-npm & r-docker & r-story
     rel-fork --> b-win & b-mac-x64 & b-mac-arm & b-linux
 
-    r-web --> art-client["upload-artifact: SwateClient.zip"]
     b-win & b-mac-x64 & b-mac-arm & b-linux --> art-bin["upload-artifact: release-assets-electron-* (fails if nothing was built)"]
 
-    r-nuget & r-npm & r-docker & art-client & r-story --> rel-join{{"join"}}
+    r-nuget & r-npm & r-docker & r-story --> rel-join{{"join"}}
     art-bin --> bin-join{{"join"}}
 
     rel-join --> post
@@ -106,10 +104,6 @@ flowchart LR
         n6["docker build"] --> n7["docker push ghcr.io"]
         n7 --> n8[":next, :latest, :vX.Y.Z"]
     end
-    subgraph electron-web["electron-web"]
-        direction TB
-        n9["Bundle.Client + Vite build"] --> n10["zip deploy/public → SwateClient.zip"]
-    end
     subgraph electron-bin["electron-bin (per OS/arch)"]
         direction TB
         n11["npm run fable"] --> n12["node scripts/forge-make.cjs --arch"] --> n12b["check out/make for fresh installers"]
@@ -122,11 +116,12 @@ flowchart LR
     style nuget fill:#C8E6C9
     style npm fill:#C8E6C9
     style docker fill:#C8E6C9
-    style electron-web fill:#C8E6C9
     style electron-bin fill:#B3E5FC
     style storybook fill:#C8E6C9
 ```
 
-> **Note:** `electron-web` builds the prebundled web client frontend, historically used as an iframe in an external Electron app. It is unrelated to the `electron-bin` target which builds the ARCitISA desktop application via `electron-forge make`.
-
 If a desktop build is missing, its release_electron_binaries job fails. post_release then does not run, and the GitHub release stays a draft. post_release also checks the downloaded artifacts and stops before it uploads anything when one is incomplete. `Release.verifyReleaseAssets` in `build/Actions/Release.fs` lists the expected artifacts. Update that list when the `release_electron_binaries` matrix changes.
+
+## Obsolete names
+
+[ObsoleteRemoveOnNextMajor.md](ObsoleteRemoveOnNextMajor.md) lists names from the time ARCitISA was called Swate that are kept for compatibility, with what breaks when they are removed. Check it before a major release.

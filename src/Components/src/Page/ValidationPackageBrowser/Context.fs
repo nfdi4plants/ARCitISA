@@ -1,4 +1,4 @@
-module Swate.Components.Page.ValidationPackageBrowser.Context
+module Arcitisa.Components.Page.ValidationPackageBrowser.Context
 
 open Feliz
 open Types

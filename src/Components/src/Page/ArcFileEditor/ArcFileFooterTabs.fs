@@ -1,13 +1,13 @@
-namespace Swate.Components.Page.ArcFileEditor
+namespace Arcitisa.Components.Page.ArcFileEditor
 
 open Feliz
 open Fable.Core
 open ARCtrl
-open Swate.Components
-open Swate.Components.Page.ArcFileEditor.Types
-open Swate.Components.Shared
-open Swate.Components.JsBindings
-open Swate.Components.Primitive.ContextMenu.Types
+open Arcitisa.Components
+open Arcitisa.Components.Page.ArcFileEditor.Types
+open Arcitisa.Components.Shared
+open Arcitisa.Components.JsBindings
+open Arcitisa.Components.Primitive.ContextMenu.Types
 open Fable.Core.JsInterop
 
 module private ArcFileFooterTabsHelper =
@@ -33,8 +33,8 @@ module private ArcFileFooterTabsHelper =
 
             if isNull idObj then None else Some(string idObj)
 
-    let dndObjectProps (obj: Swate.Components.JsBindings.IObject) = [
-        for key in Swate.Components.JsBindings.Object.keys obj do
+    let dndObjectProps (obj: Arcitisa.Components.JsBindings.IObject) = [
+        for key in Arcitisa.Components.JsBindings.Object.keys obj do
             prop.custom (key, obj.get key)
     ]
 
@@ -296,7 +296,7 @@ type ArcFileFooterTabs =
                 | _ -> []
 
 
-        Swate.Components.Primitive.ContextMenu.ContextMenu.ContextMenu(
+        Arcitisa.Components.Primitive.ContextMenu.ContextMenu.ContextMenu(
             children,
             ref = elementRef,
             onSpawn = ContextMenu.onSpawn elementRef

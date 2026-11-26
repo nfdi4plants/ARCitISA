@@ -1,11 +1,11 @@
-module Swate.Components.Composite.Widgets.CellInsertion
+module Arcitisa.Components.Composite.Widgets.CellInsertion
 
 open ARCtrl
-open Swate.Components
-open Swate.Components.Shared
-open Swate.Components.Composite.AnnotationTable.Context
-open Swate.Components.Composite.DataMapTable
-open Swate.Components.Composite.Widgets.Types
+open Arcitisa.Components
+open Arcitisa.Components.Shared
+open Arcitisa.Components.Composite.AnnotationTable.Context
+open Arcitisa.Components.Composite.DataMapTable
+open Arcitisa.Components.Composite.Widgets.Types
 
 /// Annotation tables use zero-based model coordinates; DataMap clipboard operations
 /// accept the one-based view coordinates (including the header offset).

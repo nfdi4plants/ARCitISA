@@ -13,8 +13,8 @@ open Main.ArcVaultSync
 open Fable.Electron
 open Main.Bindings.Filesystem
 open Main.Bindings.Path
-open Swate.Electron.Shared.IPCTypes
-open Swate.Electron.Shared.VersionControlTypes
+open Arcitisa.Electron.Shared.IPCTypes
+open Arcitisa.Electron.Shared.VersionControlTypes
 open VersionControlService.Abstractions
 open Vitest
 
@@ -113,7 +113,7 @@ let private countingStat (stats: ResizeArray<string>) (path: string) : JS.Promis
 }
 
 let private withTempDirectory (testBody: string -> JS.Promise<unit>) = promise {
-    let! root = TestHelpers.createTempDirectoryAsync "swate-lfs-vault-"
+    let! root = TestHelpers.createTempDirectoryAsync "arcitisa-lfs-vault-"
 
     try
         do! testBody root

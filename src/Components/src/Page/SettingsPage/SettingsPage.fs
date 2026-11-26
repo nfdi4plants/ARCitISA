@@ -1,19 +1,19 @@
-namespace Swate.Components.PageComponents.SettingsPage
+namespace Arcitisa.Components.PageComponents.SettingsPage
 
 open System
 open Feliz
 open Fable.Core
 open Fable.Core.JsInterop
-open Swate.Components
-open Swate.Components.Page.GitSidebarTypes
-open Swate.Components.Primitive.LayoutComponents
-open Swate.Components.JsBindings
-open Swate.Components.Composite.Authentication.Helper
-open Swate.Components.Composite.ThemeSelector
-open Swate.Components.Composite.ThemeSelector.Context
-open Swate.Components.Composite.TermSearch
-open Swate.Components.PageComponents.SettingsPage.Types
-open Swate.Components.Util.UserOS
+open Arcitisa.Components
+open Arcitisa.Components.Page.GitSidebarTypes
+open Arcitisa.Components.Primitive.LayoutComponents
+open Arcitisa.Components.JsBindings
+open Arcitisa.Components.Composite.Authentication.Helper
+open Arcitisa.Components.Composite.ThemeSelector
+open Arcitisa.Components.Composite.ThemeSelector.Context
+open Arcitisa.Components.Composite.TermSearch
+open Arcitisa.Components.PageComponents.SettingsPage.Types
+open Arcitisa.Components.Util.UserOS
 
 module SettingsPageDefaults =
     [<Literal>]
@@ -296,7 +296,7 @@ type SettingsPage =
     [<ReactComponent>]
     static member private UIScalingDescription() =
         let modifierKey =
-            Swate.Components.Util.Shortcuts.modLabel (Swate.Components.Util.Shortcuts.isMac ())
+            Arcitisa.Components.Util.Shortcuts.modLabel (Arcitisa.Components.Util.Shortcuts.isMac ())
 
         Html.div [
             SettingsPageHelper.description

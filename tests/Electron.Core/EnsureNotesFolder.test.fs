@@ -8,7 +8,7 @@ open Main.Notes.NoteScaffolding
 open Vitest
 
 let private withTempArcPath (testBody: string -> JS.Promise<unit>) = promise {
-    let! rootPath = TestHelpers.createTempDirectoryAsync "swate-notes-folder-"
+    let! rootPath = TestHelpers.createTempDirectoryAsync "arcitisa-notes-folder-"
 
     try
         let arcPath = join [| rootPath; "arc" |]

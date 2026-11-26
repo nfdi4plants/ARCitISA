@@ -1,8 +1,8 @@
 module Main.ArcNodesReader
 
 open ARCtrl
-open Swate.Electron.Shared.DTOs.ProvenanceGroupingDto
-open Swate.Electron.Shared.DTOs.ArcNodesDto
+open Arcitisa.Electron.Shared.DTOs.ProvenanceGroupingDto
+open Arcitisa.Electron.Shared.DTOs.ArcNodesDto
 
 /// Keeps only the input and output columns, so IPC does not carry columns the renderer never reads.
 let private tryCreateNodeTable (table: ArcTable) =

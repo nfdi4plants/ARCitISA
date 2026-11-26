@@ -10,7 +10,7 @@ open Main.Bindings.Path
 open Vitest
 
 let private withTempDirectory (testBody: string -> JS.Promise<unit>) = promise {
-    let! arcPath = TestHelpers.createTempDirectoryAsync "swate-contract-executor-"
+    let! arcPath = TestHelpers.createTempDirectoryAsync "arcitisa-contract-executor-"
 
     try
         do! testBody arcPath
@@ -38,7 +38,7 @@ let private readAssayIdentifierAsync path = promise {
 }
 
 Vitest.describe (
-    "fulfillContractsSwateAsync",
+    "fulfillContractsArcitisaAsync",
     fun () ->
         Vitest.test (
             "creates missing text and empty files and reports only the paths it created",
@@ -61,7 +61,7 @@ Vitest.describe (
                         Contract.createCreate ("assays/.gitkeep", DTOType.PlainText)
                     |]
 
-                    let! result = fulfillContractsSwateAsync arcPath contracts
+                    let! result = fulfillContractsArcitisaAsync arcPath contracts
                     let completed = expectSucceeded result
                     Vitest.expect(completed |> Array.map _.Path).toEqual [| "notes/README.md"; "assays/.gitkeep" |]
 
@@ -74,7 +74,7 @@ Vitest.describe (
                     Vitest.expect(createdContent).toBe "requested note payload"
                     Vitest.expect(emptyContent).toBe ""
 
-                    let! repeatedResult = fulfillContractsSwateAsync arcPath contracts
+                    let! repeatedResult = fulfillContractsArcitisaAsync arcPath contracts
                     Vitest.expect(expectSucceeded repeatedResult).toEqual [||]
                 })
         )
@@ -84,7 +84,7 @@ Vitest.describe (
             fun () ->
                 withTempDirectory (fun arcPath -> promise {
                     let relativePath = "assays/NewAssay/isa.assay.xlsx"
-                    let! result = fulfillContractsSwateAsync arcPath [| assayCreate relativePath "CustomAssay" |]
+                    let! result = fulfillContractsArcitisaAsync arcPath [| assayCreate relativePath "CustomAssay" |]
                     Vitest.expect(expectSucceeded result |> Array.map _.Path).toEqual [| relativePath |]
 
                     let! identifier = readAssayIdentifierAsync (join [| arcPath; relativePath |])
@@ -100,12 +100,14 @@ Vitest.describe (
                     let absolutePath = join [| arcPath; relativePath |]
 
                     let! initialResult =
-                        fulfillContractsSwateAsync arcPath [| assayCreate relativePath "OriginalAssay" |]
+                        fulfillContractsArcitisaAsync arcPath [| assayCreate relativePath "OriginalAssay" |]
 
                     expectSucceeded initialResult |> ignore
                     let! initialBytes = readFileBase64Async absolutePath
 
-                    let! result = fulfillContractsSwateAsync arcPath [| assayCreate relativePath "ReplacementAssay" |]
+                    let! result =
+                        fulfillContractsArcitisaAsync arcPath [| assayCreate relativePath "ReplacementAssay" |]
+
                     Vitest.expect(expectSucceeded result).toEqual [||]
                     let! finalBytes = readFileBase64Async absolutePath
                     Vitest.expect(finalBytes).toBe initialBytes
@@ -123,7 +125,7 @@ Vitest.describe (
                     do! writeFileAsync (join [| arcPath; "existing.txt" |]) "before" TextEncoding.Utf8
 
                     let! seedResult =
-                        fulfillContractsSwateAsync arcPath [| assayCreate existingWorkbookPath "BeforeUpdate" |]
+                        fulfillContractsArcitisaAsync arcPath [| assayCreate existingWorkbookPath "BeforeUpdate" |]
 
                     expectSucceeded seedResult |> ignore
 
@@ -142,7 +144,7 @@ Vitest.describe (
                         updatedWorkbookContract missingWorkbookPath "CreatedByUpdate"
                     |]
 
-                    let! result = fulfillContractsSwateAsync arcPath updates
+                    let! result = fulfillContractsArcitisaAsync arcPath updates
                     Vitest.expect(expectSucceeded result |> Array.map _.Path).toEqual (updates |> Array.map _.Path)
                     let! existingContent = readFileAsync (join [| arcPath; "existing.txt" |]) TextEncoding.Utf8
                     let! missingContent = readFileAsync (join [| arcPath; "nested"; "missing.txt" |]) TextEncoding.Utf8
@@ -166,7 +168,7 @@ Vitest.describe (
 
                     let! results =
                         contracts
-                        |> Array.map (fun contract -> fulfillContractsSwateAsync arcPath [| contract |])
+                        |> Array.map (fun contract -> fulfillContractsArcitisaAsync arcPath [| contract |])
                         |> Promise.all
 
                     let completed = results |> Array.collect expectSucceeded
@@ -186,8 +188,8 @@ Vitest.describe (
 
                     let! results =
                         [|
-                            fulfillContractsSwateAsync arcPath [| first |]
-                            fulfillContractsSwateAsync arcPath [| second |]
+                            fulfillContractsArcitisaAsync arcPath [| first |]
+                            fulfillContractsArcitisaAsync arcPath [| second |]
                         |]
                         |> Promise.all
 
@@ -218,7 +220,7 @@ Vitest.describe (
                         Contract.createDelete "after.txt"
                     |]
 
-                    let! result = fulfillContractsSwateAsync arcPath contracts
+                    let! result = fulfillContractsArcitisaAsync arcPath contracts
                     let completed = expectSucceeded result
                     Vitest.expect(completed.Length).toBe contracts.Length
                     Vitest.expect(completed.[2].DTO.Value.AsText()).toBe "updated"
@@ -244,7 +246,7 @@ Vitest.describe (
                         textCreate "blocker/x.txt" "cannot create"
                     |]
 
-                    match! fulfillContractsSwateAsync arcPath contracts with
+                    match! fulfillContractsArcitisaAsync arcPath contracts with
                     | Ok _ -> failwith "Expected invalid create paths to return errors."
                     | Error errors ->
                         Vitest.expect(errors.Length).toBe 1
@@ -267,7 +269,7 @@ Vitest.describe (
                         Contract.createRead ("missing-last.txt", DTOType.PlainText)
                     |]
 
-                    match! fulfillReadContractsSwateAsync arcPath contracts with
+                    match! fulfillReadContractsArcitisaAsync arcPath contracts with
                     | Ok _ -> failwith "Expected both missing files to be reported."
                     | Error errors ->
                         Vitest.expect(errors.Length).toBe 2
@@ -282,7 +284,7 @@ Vitest.describe (
                 withTempDirectory (fun arcPath -> promise {
                     let contracts = [| textCreate "must-not-exist.txt" "content" |]
 
-                    match! fulfillReadContractsSwateAsync arcPath contracts with
+                    match! fulfillReadContractsArcitisaAsync arcPath contracts with
                     | Ok _ -> failwith "Expected a CREATE contract to be rejected."
                     | Error errors ->
                         Vitest.expect(errors).toEqual [| "Contract must-not-exist.txt is not a READ contract." |]

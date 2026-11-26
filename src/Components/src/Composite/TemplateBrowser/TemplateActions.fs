@@ -1,8 +1,8 @@
-module Swate.Components.Composite.Template.TemplateActions
+module Arcitisa.Components.Composite.Template.TemplateActions
 
 open ARCtrl
-open Swate.Components.Shared
-open Swate.Components.Composite.TableImport.Types
+open Arcitisa.Components.Shared
+open Arcitisa.Components.Composite.TableImport.Types
 
 /// Syncs the selected template IDs with the currently loaded templates, removing any IDs that no longer exist in the loaded templates.
 let syncSelectedTemplateIds
@@ -68,5 +68,5 @@ let importIntoCopy
     (templates: Template[])
     (decisions: TableImportDecisions)
     : Result<ArcFiles, exn> =
-    Swate.Components.Composite.TableImport.Helper.applyImport arcFile (importSources templates) decisions
+    Arcitisa.Components.Composite.TableImport.Helper.applyImport arcFile (importSources templates) decisions
     |> Result.map _.ArcFile

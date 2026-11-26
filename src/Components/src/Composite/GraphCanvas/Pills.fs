@@ -1,6 +1,6 @@
-module Swate.Components.Composite.GraphCanvas.Pills
+module Arcitisa.Components.Composite.GraphCanvas.Pills
 
-open Swate.Components.Composite.GraphCanvas.Types
+open Arcitisa.Components.Composite.GraphCanvas.Types
 
 // Pure text and size logic of the pills. Nothing here touches the DOM. Widths come from a measure
 // function that maps a text to its width in px.

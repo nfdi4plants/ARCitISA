@@ -3,9 +3,9 @@ module Main.IPC.FileSystemIO
 open System
 open Fable.Core
 open Fable.Core.JsInterop
-open Swate.Components.Shared
-open Swate.Electron.Shared.FileIOTypes
-open Swate.Electron.Shared.RenamePathRules
+open Arcitisa.Components.Shared
+open Arcitisa.Electron.Shared.FileIOTypes
+open Arcitisa.Electron.Shared.RenamePathRules
 open Main.Bindings.Filesystem
 open Main.Bindings.Path
 open Main.Helper.ArcPathContainment
@@ -725,7 +725,7 @@ module ArcFileSystemHelper =
         let sourceParentAbsolutePath =
             pathDynamic?dirname (sourceAbsolutePath) |> unbox<string>
 
-        let tempFileName = ".swate-move-" + Guid.NewGuid().ToString("N") + ".tmp"
+        let tempFileName = ".arcitisa-move-" + Guid.NewGuid().ToString("N") + ".tmp"
 
         let tempAbsolutePath =
             pathDynamic?join (sourceParentAbsolutePath, tempFileName) |> unbox<string>

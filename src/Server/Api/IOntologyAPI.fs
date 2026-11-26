@@ -1,9 +1,9 @@
 module API.IOntologyAPI
 
-open Swate.Components.Shared
+open Arcitisa.Components.Shared
 open Database
 
-open Swate.Components.Shared.DTOs
+open Arcitisa.Components.Shared.DTOs
 open Fable.Remoting.Server
 open Fable.Remoting.Giraffe
 open ARCtrl
@@ -91,11 +91,11 @@ module V3 =
         |> OpenApi.withTitle "ARCitISA Ontology API"
         |> OpenApi.withServers [
             {
-                Url = Swate.Components.Shared.URLs.PRODUCTION_URL
+                Url = Arcitisa.Components.Shared.URLs.PRODUCTION_URL
                 Description = Some "Production server"
             }
             {
-                Url = Swate.Components.Shared.URLs.PRODUCTION_URL_ALPHA
+                Url = Arcitisa.Components.Shared.URLs.PRODUCTION_URL_ALPHA
                 Description = Some "Nightly server"
             }
             {
@@ -287,14 +287,14 @@ module V3 =
         |> Remoting.withErrorHandler Helper.errorHandler
         |> Remoting.OpenAPI.withDocs docs
 
-open Swate.Components.Shared
+open Arcitisa.Components.Shared
 
 [<RequireQualifiedAccess>]
 module V1 =
 
     /// <summary>Deprecated</summary>
     let ontologyApi (credentials: Helper.Neo4JCredentials) : IOntologyAPIv1 =
-        /// We use sorensen dice to avoid scoring mutliple occassions of the same word (Issue https://github.com/nfdi4plants/Swate/issues/247)
+        /// We use sorensen dice to avoid scoring mutliple occassions of the same word (Issue https://github.com/nfdi4plants/ARCitISA/issues/247)
         let sorensenDiceSortTerms (searchStr: string) (terms: Term[]) =
             terms |> SorensenDice.sortBySimilarity searchStr (fun term -> term.Name)
 
@@ -342,7 +342,7 @@ module V1 =
                 }
 
             getTermSuggestionsByParentTerm =
-                fun (max: int, typedSoFar: string, parentTerm: SwateObsolete.TermMinimal) -> async {
+                fun (max: int, typedSoFar: string, parentTerm: ArcitisaObsolete.TermMinimal) -> async {
                     let dbSearchRes =
                         match typedSoFar with
                         | Regex Regex.Pattern.TermAnnotationShortPattern foundAccession ->
@@ -370,7 +370,7 @@ module V1 =
                 }
 
             getAllTermsByParentTerm =
-                fun (parentTerm: SwateObsolete.TermMinimal) -> async {
+                fun (parentTerm: ArcitisaObsolete.TermMinimal) -> async {
                     let searchRes =
                         Database.Term.Term(credentials).getAllByParent (parentTerm, limit = 500)
                         |> Array.ofSeq
@@ -379,7 +379,7 @@ module V1 =
                 }
 
             getTermSuggestionsByChildTerm =
-                fun (max: int, typedSoFar: string, childTerm: SwateObsolete.TermMinimal) -> async {
+                fun (max: int, typedSoFar: string, childTerm: ArcitisaObsolete.TermMinimal) -> async {
 
                     let dbSearchRes =
                         match typedSoFar with
@@ -414,7 +414,7 @@ module V1 =
                 }
 
             getAllTermsByChildTerm =
-                fun (childTerm: SwateObsolete.TermMinimal) -> async {
+                fun (childTerm: ArcitisaObsolete.TermMinimal) -> async {
                     let searchRes = Term.Term(credentials).getAllByChild (childTerm) |> Array.ofSeq
                     return searchRes
                 }
@@ -483,7 +483,7 @@ module V1 =
                     let result =
                         Helper.Neo4j.runQueries (queries, credentials)
                         |> Array.map2
-                            (fun (termSearchable: SwateObsolete.TermSearchable) dbResults ->
+                            (fun (termSearchable: ArcitisaObsolete.TermSearchable) dbResults ->
                                 // replicate if..elif..else conditions from 'queries'
                                 if termSearchable.Term.TermAccession <> "" then
                                     let result =
@@ -552,7 +552,7 @@ module V1 =
 module V2 =
 
     let ontologyApi (credentials: Helper.Neo4JCredentials) : IOntologyAPIv2 =
-        /// <summary>We use sorensen dice to avoid scoring mutliple occassions of the same word (Issue https://github.com/nfdi4plants/Swate/issues/247)</summary>
+        /// <summary>We use sorensen dice to avoid scoring mutliple occassions of the same word (Issue https://github.com/nfdi4plants/ARCitISA/issues/247)</summary>
         let sorensenDiceSortTerms (searchStr: string) (terms: Term[]) =
             terms |> SorensenDice.sortBySimilarity searchStr (fun term -> term.Name)
 
@@ -648,7 +648,7 @@ module V2 =
                     }
 
             getAllTermsByParentTerm =
-                fun (parentTerm: SwateObsolete.TermMinimal) -> async {
+                fun (parentTerm: ArcitisaObsolete.TermMinimal) -> async {
                     let searchRes =
                         Database.Term.Term(credentials).getAllByParent (parentTerm, limit = 500)
                         |> Array.ofSeq
@@ -691,7 +691,7 @@ module V2 =
                 }
 
             getAllTermsByChildTerm =
-                fun (childTerm: SwateObsolete.TermMinimal) -> async {
+                fun (childTerm: ArcitisaObsolete.TermMinimal) -> async {
                     let searchRes = Term.Term(credentials).getAllByChild (childTerm) |> Array.ofSeq
                     return searchRes
                 }
@@ -763,7 +763,7 @@ module V2 =
                     let result =
                         Helper.Neo4j.runQueries (queries, credentials)
                         |> Array.map2
-                            (fun (termSearchable: SwateObsolete.TermSearchable) dbResults ->
+                            (fun (termSearchable: ArcitisaObsolete.TermSearchable) dbResults ->
                                 // replicate if..elif..else conditions from 'queries'
                                 if termSearchable.Term.TermAccession <> "" then
                                     let result =

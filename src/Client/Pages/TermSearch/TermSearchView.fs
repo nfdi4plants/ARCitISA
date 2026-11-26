@@ -2,7 +2,7 @@ module TermSearch
 
 
 open Messages
-open Swate.Components.Composite.AnnotationTable
+open Arcitisa.Components.Composite.AnnotationTable
 open Elmish
 open Model
 
@@ -15,8 +15,8 @@ let update (termSearchMsg: TermSearch.Msg) (currentState: TermSearch.Model) : Te
 open Feliz
 open ARCtrl
 open Fable.Core.JsInterop
-open Swate.Components.Composite.AnnotationTable.Context
-open Swate.Components.Composite.TermSearch.Types
+open Arcitisa.Components.Composite.AnnotationTable.Context
+open Arcitisa.Components.Composite.TermSearch.Types
 
 /// "Fill selected cells with this term" - button //
 [<ReactComponent>]
@@ -33,7 +33,7 @@ let private AddButton (model: Model, dispatch) =
             yStart = x.yStart - 1
             yEnd = x.yEnd - 1
         |})
-        |> unbox<Swate.Components.CellCoordinateRange option>
+        |> unbox<Arcitisa.Components.CellCoordinateRange option>
 
     Html.div [
         prop.className "swt:flex swt:flex-row swt:justify-center"
@@ -72,7 +72,7 @@ let Main (model: Model, dispatch) =
 
     let excelGetParentTerm =
         match model.PersistentStorageState.Host with
-        | Some Swatehost.Excel ->
+        | Some Arcitisahost.Excel ->
             fun _ ->
                 promise {
                     let! parent = OfficeInterop.Core.Main.getParentTerm ()
@@ -88,7 +88,7 @@ let Main (model: Model, dispatch) =
         SidebarComponents.SidebarLayout.Description "Search for an ontology term to fill into the selected field(s)"
 
         SidebarComponents.SidebarLayout.LogicContainer [
-            Swate.Components.Composite.TermSearch.TermSearch.TermSearch(
+            Arcitisa.Components.Composite.TermSearch.TermSearch.TermSearch(
                 (model.TermSearchState.SelectedTerm |> Option.map _.ToTerm()),
                 setTerm,
                 autoFocus = true,

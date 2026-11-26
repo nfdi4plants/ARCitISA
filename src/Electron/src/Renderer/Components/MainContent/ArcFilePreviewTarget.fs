@@ -4,16 +4,16 @@ open Feliz
 open Renderer.Components.MainContent
 open Renderer.Components.MainContent.ArcFilePreviewTargetHelper
 open Renderer.Components.Helper
-open Swate.Components.Page.ArcFileEditor.Types
-open Swate.Components.Composite.Widgets.JsonImport.Types
-open Swate.Components
-open Swate.Components.Shared
-open Swate.Components.Primitive.ErrorModal.Context
-open Swate.Components.Primitive.ErrorModal.Types
+open Arcitisa.Components.Page.ArcFileEditor.Types
+open Arcitisa.Components.Composite.Widgets.JsonImport.Types
+open Arcitisa.Components
+open Arcitisa.Components.Shared
+open Arcitisa.Components.Primitive.ErrorModal.Context
+open Arcitisa.Components.Primitive.ErrorModal.Types
 open ARCtrl
 open ARCtrl.Json
-open Swate.Components.Page.ArcFileEditor.EmptyTableView.Types
-open Swate.Electron.Shared.DTOs.ArcNodesDto
+open Arcitisa.Components.Page.ArcFileEditor.EmptyTableView.Types
+open Arcitisa.Electron.Shared.DTOs.ArcNodesDto
 
 [<ReactComponent>]
 let ArcFilePreviewTarget (arcFile: ArcFiles, requestedView: ActiveView option, revision: int) =
@@ -187,7 +187,7 @@ let ArcFilePreviewTarget (arcFile: ArcFiles, requestedView: ActiveView option, r
         prop.key (string (editorKey arcFile requestedView))
         prop.className "swt:contents"
         prop.children [
-            Swate.Components.Page.ArcFileEditor.Main.ArcFileEditor(
+            Arcitisa.Components.Page.ArcFileEditor.Main.ArcFileEditor(
                 arcFile,
                 setArcFile,
                 pickFilePaths,

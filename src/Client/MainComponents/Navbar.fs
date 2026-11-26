@@ -7,11 +7,11 @@ open Messages
 open Components
 open MainComponents
 open Model
-open Swate.Components
-open Swate.Components.Primitive
-open Swate.Components.Primitive.Buttons
+open Arcitisa.Components
+open Arcitisa.Components.Primitive
+open Arcitisa.Components.Primitive.Buttons
 open ARCtrl
-open Swate.Components.Shared
+open Arcitisa.Components.Shared
 
 open LocalStorage.AutosaveConfig
 
@@ -84,17 +84,17 @@ let private QuickAccessButtonListEnd (model: Model) dispatch =
     React.Fragment [
         Modals.ResetTable.Main(isOpen = openReset, setIsOpen = setOpenReset, dispatch = dispatch)
         match model.PersistentStorageState.Host with
-        | Some Swatehost.Browser ->
+        | Some Arcitisahost.Browser ->
             Buttons.QuickAccessButton(
                 Icons.Save(),
                 "Save",
                 (fun _ ->
                     match model.PersistentStorageState.Host with
-                    | Some(Swatehost.Browser) ->
+                    | Some(Arcitisahost.Browser) ->
                         Spreadsheet.ExportXlsx model.SpreadsheetModel.ArcFile.Value
                         |> SpreadsheetMsg
                         |> dispatch
-                    | Some(Swatehost.ARCitect) ->
+                    | Some(Arcitisahost.ARCitect) ->
                         ARCitect.Save model.SpreadsheetModel.ArcFile.Value |> ARCitectMsg |> dispatch
                     | _ -> ()
                 ),
@@ -109,25 +109,25 @@ let private QuickAccessButtonListEnd (model: Model) dispatch =
             )
 
             NavbarBurger.Main(model, dispatch)
-        | Some Swatehost.ARCitect ->
+        | Some Arcitisahost.ARCitect ->
             if autoSaveConfig.IsSome && not autoSaveConfig.Value then
                 Buttons.QuickAccessButton(
                     Icons.Save(),
                     "Save",
                     (fun _ ->
                         match model.PersistentStorageState.Host with
-                        | Some(Swatehost.Browser) ->
+                        | Some(Arcitisahost.Browser) ->
                             Spreadsheet.ExportXlsx model.SpreadsheetModel.ArcFile.Value
                             |> SpreadsheetMsg
                             |> dispatch
-                        | Some(Swatehost.ARCitect) ->
+                        | Some(Arcitisahost.ARCitect) ->
                             ARCitect.Save model.SpreadsheetModel.ArcFile.Value |> ARCitectMsg |> dispatch
                         | _ -> ()
                     ),
                     isDisabled = model.SpreadsheetModel.ArcFile.IsNone
                 )
 
-            NavbarBurger.Main(model, dispatch, host = Swatehost.ARCitect)
+            NavbarBurger.Main(model, dispatch, host = Arcitisahost.ARCitect)
         | _ -> Html.none
     ]
 
@@ -186,7 +186,7 @@ let Main (model: Model, dispatch, widgets, setWidgets) =
             ]
         ]
         // match model.PersistentStorageState.Host with
-        // | Some (Swatehost.ARCitect) ->
+        // | Some (Arcitisahost.ARCitect) ->
         //     Html.none
         // | Some _ ->
         //     Html.div [

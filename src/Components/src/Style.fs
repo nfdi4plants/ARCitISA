@@ -1,8 +1,8 @@
-namespace Swate.Components
+namespace Arcitisa.Components
 
 open Fable.Core
 open Fable.Core.JsInterop
 
 [<Erase>]
-type SwateStyle =
-    static member import = importSideEffects "./swate-components.css"
+type ArcitisaStyle =
+    static member import = importSideEffects "./arcitisa-components.css"

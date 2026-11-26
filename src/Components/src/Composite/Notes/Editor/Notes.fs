@@ -1,10 +1,10 @@
-namespace Swate.Components.Composite.Notes.Editor
+namespace Arcitisa.Components.Composite.Notes.Editor
 
 open Fable.Core
 open Feliz
 open Browser.Dom
-open Swate.Components.Shared
-open Swate.Components.Primitive.BaseModal
+open Arcitisa.Components.Shared
+open Arcitisa.Components.Primitive.BaseModal
 
 
 [<Erase; Mangle(false)>]

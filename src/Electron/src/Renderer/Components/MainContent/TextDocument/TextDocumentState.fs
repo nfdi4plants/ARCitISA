@@ -3,7 +3,7 @@
 /// drift apart. The functions are pure, and TextDocumentSync applies them.
 module Renderer.Components.MainContent.TextDocument.TextDocumentState
 
-open Swate.Electron.Shared.FileIOTypes
+open Arcitisa.Electron.Shared.FileIOTypes
 
 /// Why the file on disk and the editor no longer agree.
 type DiskNotice =

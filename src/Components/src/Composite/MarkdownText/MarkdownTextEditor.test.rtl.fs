@@ -1,11 +1,11 @@
-module internal Swate.Components.Composite.MarkdownText.MarkdownTextEditorRtlTests
+module internal Arcitisa.Components.Composite.MarkdownText.MarkdownTextEditorRtlTests
 
 open Browser.Types
 open Fable.Core
 open Feliz
 open Vitest
-open Swate.Components.Composite.TextEditor.JsBindings.CodeMirror
-open Swate.Components.Composite.MarkdownText
+open Arcitisa.Components.Composite.TextEditor.JsBindings.CodeMirror
+open Arcitisa.Components.Composite.MarkdownText
 
 type private EditorViewLookup =
     /// The view of an editor element or of its content element.

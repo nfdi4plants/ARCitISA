@@ -2,10 +2,10 @@ module ElectronCore.FileTreeCompactionTests
 
 module FileTreeCreator = Main.FileTreeCreator
 
-open Swate.Electron.Shared.FileIOHelper
-open Swate.Electron.Shared.FileIOTypes
-open Swate.Electron.Shared.VersionControlTypes
-open Swate.Components.Shared
+open Arcitisa.Electron.Shared.FileIOHelper
+open Arcitisa.Electron.Shared.FileIOTypes
+open Arcitisa.Electron.Shared.VersionControlTypes
+open Arcitisa.Components.Shared
 open Vitest
 
 Vitest.describe (

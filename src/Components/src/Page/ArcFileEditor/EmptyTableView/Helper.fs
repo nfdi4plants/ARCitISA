@@ -1,10 +1,10 @@
-module Swate.Components.Page.ArcFileEditor.EmptyTableView.Helper
+module Arcitisa.Components.Page.ArcFileEditor.EmptyTableView.Helper
 
 open ARCtrl
-open Swate.Components
-open Swate.Components.Shared
-open Swate.Components.Shared.ProvenanceGrouping.ARCtrlConverter
-open Swate.Components.Page.ArcFileEditor.EmptyTableView.Types
+open Arcitisa.Components
+open Arcitisa.Components.Shared
+open Arcitisa.Components.Shared.ProvenanceGrouping.ARCtrlConverter
+open Arcitisa.Components.Page.ArcFileEditor.EmptyTableView.Types
 
 let tryGetActiveTable (arcFile: ArcFiles) (activeTableIndex: int option) =
     arcFile.TryGetActiveTable(activeTableIndex)

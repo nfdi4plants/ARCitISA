@@ -1,14 +1,14 @@
-namespace Swate.Components.Page.Metadata.FormComponents
+namespace Arcitisa.Components.Page.Metadata.FormComponents
 
 open Browser.Types
 open Fable.Core
 open Feliz
 open ARCtrl
 
-open Swate.Components
-open Swate.Components.Composite.TermSearch
-open Swate.Components.Composite.TermSearch.Types
-open Swate.Components.Primitive.LayoutComponents
+open Arcitisa.Components
+open Arcitisa.Components.Composite.TermSearch
+open Arcitisa.Components.Composite.TermSearch.Types
+open Arcitisa.Components.Primitive.LayoutComponents
 
 [<Erase; Mangle(false)>]
 type OntologyAnnotationInput =

@@ -11,7 +11,7 @@ let ClientArgs = [
     "-s"
     "-e"
     "fs.js"
-    yield! DEFINE_SWATE_ENVIRONMENT_FABLE
+    yield! DEFINE_ARCITISA_ENVIRONMENT_FABLE
     "--run"
     "npx"
     "vite"

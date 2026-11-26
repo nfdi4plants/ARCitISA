@@ -1,4 +1,4 @@
-namespace Swate.Components.Composite.Authentication
+namespace Arcitisa.Components.Composite.Authentication
 
 open Fable.Core
 open Feliz
@@ -8,7 +8,7 @@ open Types
 /// The removal waiting for an answer. Regenerate means a new token is generated for the account afterwards.
 [<RequireQualifiedAccess>]
 type internal PendingRemoval =
-    | Account of localSwateAccountId: string * regenerate: bool
+    | Account of localArcitisaAccountId: string * regenerate: bool
     | AllAccounts
 
 [<Erase; Mangle(false)>]
@@ -29,8 +29,8 @@ type AccountManager =
         let isExpiring = account.TokenStatus = TokenStatus.Expiring
 
         Html.div [
-            prop.key account.User.LocalSwateAccountId
-            prop.testId $"AccountRow-{account.User.LocalSwateAccountId}"
+            prop.key account.User.LocalArcitisaAccountId
+            prop.testId $"AccountRow-{account.User.LocalArcitisaAccountId}"
             prop.className [
                 "swt:flex swt:items-center swt:justify-between swt:gap-2 swt:p-1.5 swt:rounded swt:text-sm"
                 if isActive then
@@ -45,7 +45,7 @@ type AccountManager =
                     prop.className "swt:flex swt:items-center swt:gap-2 swt:overflow-hidden"
                     prop.children [
                         Html.a [
-                            prop.testId $"AccountProfileLink-{account.User.LocalSwateAccountId}"
+                            prop.testId $"AccountProfileLink-{account.User.LocalArcitisaAccountId}"
                             prop.className "swt:shrink-0 swt:btn swt:btn-square swt:btn-ghost"
                             prop.href (Helper.GitLabUrls.profileUrl account.User)
                             prop.target.blank
@@ -87,7 +87,7 @@ type AccountManager =
                                             ]
                                             Html.span [ prop.text "Token invalid" ]
                                             Html.a [
-                                                prop.testId $"RegenerateTokenLink-{account.User.LocalSwateAccountId}"
+                                                prop.testId $"RegenerateTokenLink-{account.User.LocalArcitisaAccountId}"
                                                 prop.className "swt:link swt:link-error"
                                                 prop.href (
                                                     Helper.GitLabUrls.prefillGitLabPATScopes account.User.TargetDataHub
@@ -126,11 +126,12 @@ type AccountManager =
                                                 Html.button [
                                                     prop.title "Refresh token to extend expiration."
                                                     prop.ariaLabel "Refresh token to extend expiration."
-                                                    prop.testId $"RotateTokenButton-{account.User.LocalSwateAccountId}"
+                                                    prop.testId
+                                                        $"RotateTokenButton-{account.User.LocalArcitisaAccountId}"
                                                     prop.className "swt:link swt:link-warning"
                                                     prop.onClick (fun e ->
                                                         e.stopPropagation ()
-                                                        rotateToken account.User.LocalSwateAccountId
+                                                        rotateToken account.User.LocalArcitisaAccountId
                                                     )
                                                     prop.text "Refresh token"
                                                 ]
@@ -147,17 +148,17 @@ type AccountManager =
                         match onSwitch with
                         | Some switchFn when not isActive ->
                             Html.button [
-                                prop.testId $"UseAccountButton-{account.User.LocalSwateAccountId}"
+                                prop.testId $"UseAccountButton-{account.User.LocalArcitisaAccountId}"
                                 prop.className "swt:btn swt:btn-xs swt:btn-ghost"
                                 prop.title "Switch to this account"
                                 prop.text "Use"
-                                prop.onClick (fun _ -> switchFn account.User.LocalSwateAccountId)
+                                prop.onClick (fun _ -> switchFn account.User.LocalArcitisaAccountId)
                             ]
                         | _ -> ()
                         match askRemoval with
                         | Some ask ->
                             Html.button [
-                                prop.testId $"RemoveAccountButton-{account.User.LocalSwateAccountId}"
+                                prop.testId $"RemoveAccountButton-{account.User.LocalArcitisaAccountId}"
                                 prop.className "swt:btn swt:btn-xs swt:btn-ghost swt:text-error"
                                 prop.title "Remove this account"
                                 prop.text "✕"
@@ -224,14 +225,14 @@ type AccountManager =
             ?onSwitchAccount: string -> unit,
             ?onRemoveAccounts: RemoveAccountsRequest -> unit
         ) =
-        let activeLocalSwateAccountId =
+        let activeLocalArcitisaAccountId =
             accounts.ActiveAccount
-            |> Option.map (fun account -> account.User.LocalSwateAccountId)
+            |> Option.map (fun account -> account.User.LocalArcitisaAccountId)
 
         let pendingRemoval, setPendingRemoval = React.useState (None: PendingRemoval option)
 
         let askRemoval (account: AccountSummary) (regenerate: bool) =
-            setPendingRemoval (Some(PendingRemoval.Account(account.User.LocalSwateAccountId, regenerate)))
+            setPendingRemoval (Some(PendingRemoval.Account(account.User.LocalArcitisaAccountId, regenerate)))
 
         let cancel () = setPendingRemoval None
 
@@ -241,7 +242,7 @@ type AccountManager =
             onRemoveAccounts
             |> Option.iter (fun removeFn ->
                 removeFn {
-                    LocalSwateAccountIds = removedAccounts |> Array.map _.User.LocalSwateAccountId
+                    LocalArcitisaAccountIds = removedAccounts |> Array.map _.User.LocalArcitisaAccountId
                     DeleteTokensOnDataHub = deleteTokensOnDataHub
                 }
             )
@@ -269,12 +270,12 @@ type AccountManager =
 
                 for acct in accounts.StoredAccounts do
                     match pendingRemoval with
-                    | Some(PendingRemoval.Account(localSwateAccountId, regenerate)) when
-                        localSwateAccountId = acct.User.LocalSwateAccountId
+                    | Some(PendingRemoval.Account(localArcitisaAccountId, regenerate)) when
+                        localArcitisaAccountId = acct.User.LocalArcitisaAccountId
                         ->
                         AccountManager.RemovalPrompt([| acct |], removeAccount acct regenerate, cancel)
                     | _ ->
-                        let isActive = activeLocalSwateAccountId = Some acct.User.LocalSwateAccountId
+                        let isActive = activeLocalArcitisaAccountId = Some acct.User.LocalArcitisaAccountId
 
                         AccountManager.AccountRow(
                             acct,

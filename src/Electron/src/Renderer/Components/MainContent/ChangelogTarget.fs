@@ -3,7 +3,7 @@ module Renderer.Components.MainContent.ChangelogTarget
 open Feliz
 
 let private fetchReleases () =
-    Swate.Components.Api.GitHubReleases.loadAll Swate.Electron.Shared.IPCTypes.swateReleaseRepository
+    Arcitisa.Components.Api.GitHubReleases.loadAll Arcitisa.Electron.Shared.IPCTypes.arcitisaReleaseRepository
 
 [<ReactComponent(true)>]
 let ChangelogTarget (version: string) =
@@ -34,7 +34,7 @@ let ChangelogTarget (version: string) =
             Html.div [
                 prop.className "swt:flex swt:flex-1 swt:min-h-0 swt:min-w-0"
                 prop.children [
-                    Swate.Components.Page.Changelog.Changelog.Changelog(fetchReleases, version)
+                    Arcitisa.Components.Page.Changelog.Changelog.Changelog(fetchReleases, version)
                 ]
             ]
         ]

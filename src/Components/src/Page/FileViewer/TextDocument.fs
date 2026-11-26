@@ -1,20 +1,20 @@
-namespace Swate.Components.Page.FileViewer
+namespace Arcitisa.Components.Page.FileViewer
 
 open Fable.Core
 open Feliz
-open Swate.Components
-open Swate.Components.Util
-open Swate.Components.Composite.TextEditor
-open Swate.Components.Composite.TextEditor.Types
-open Swate.Components.Composite.TextEditor.SchemaValidation
-open Swate.Components.Composite.EditorToolbar
-open Swate.Components.Composite.MarkdownText
-open Swate.Components.Composite.MarkdownText.Editing
-open Swate.Components.Composite.MarkdownText.Editing.Types
-open Swate.Components.Composite.MarkdownText.Links
-open Swate.Components.Composite.MarkdownText.Links.Types
-open Swate.Components.Page.FileViewer.Helper
-open Swate.Components.Page.FileViewer.Types
+open Arcitisa.Components
+open Arcitisa.Components.Util
+open Arcitisa.Components.Composite.TextEditor
+open Arcitisa.Components.Composite.TextEditor.Types
+open Arcitisa.Components.Composite.TextEditor.SchemaValidation
+open Arcitisa.Components.Composite.EditorToolbar
+open Arcitisa.Components.Composite.MarkdownText
+open Arcitisa.Components.Composite.MarkdownText.Editing
+open Arcitisa.Components.Composite.MarkdownText.Editing.Types
+open Arcitisa.Components.Composite.MarkdownText.Links
+open Arcitisa.Components.Composite.MarkdownText.Links.Types
+open Arcitisa.Components.Page.FileViewer.Helper
+open Arcitisa.Components.Page.FileViewer.Types
 
 [<Erase; Mangle(false)>]
 type TextDocument =

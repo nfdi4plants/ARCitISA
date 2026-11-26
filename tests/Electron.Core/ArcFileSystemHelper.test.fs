@@ -6,9 +6,9 @@ open Fable.Core.JsInterop
 open Main.Bindings.Path
 open Main.IPC.FileSystemIO
 open Main.Helper.ArcPathContainment
-open Swate.Components.Shared
-open Swate.Electron.Shared.FileIOTypes
-open Swate.Electron.Shared.RenamePathRules
+open Arcitisa.Components.Shared
+open Arcitisa.Electron.Shared.FileIOTypes
+open Arcitisa.Electron.Shared.RenamePathRules
 open Vitest
 
 let private fsPromisesDynamic: obj = importAll "fs/promises"
@@ -26,7 +26,7 @@ let private skipOnWindowsOrRoot () =
 
 let private withAssayArc =
     TestHelpers.withTempArcWith
-        "swate-generic-fs-"
+        "arcitisa-generic-fs-"
         "GenericFileSystemArc"
         (fun arc -> arc.InitAssay("AssayA") |> ignore)
 
@@ -2573,7 +2573,7 @@ Vitest.describe (
             "retries transient recursive remove errors",
             fun () -> promise {
                 let mutable attempts = 0
-                let targetPath = "/tmp/swate-retry-target"
+                let targetPath = "/tmp/arcitisa-retry-target"
 
                 let removePathAsync path = promise {
                     attempts <- attempts + 1

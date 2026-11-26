@@ -1,10 +1,10 @@
-module Swate.Electron.Shared.FileIOHelper
+module Arcitisa.Electron.Shared.FileIOHelper
 
 open System
 open System.Collections.Generic
 open ARCtrl
-open Swate.Components.Shared
-open Swate.Electron.Shared.FileIOTypes
+open Arcitisa.Components.Shared
+open Arcitisa.Electron.Shared.FileIOTypes
 
 let getNonEmptyPathParts (path: string) =
     PathHelpers.normalizePath path
@@ -121,7 +121,7 @@ let tryGetPathSegmentAfterFolder (folderName: string) (path: string) =
     | _ -> None
 
 let resolveArcPreviewPath (path: string) =
-    Swate.Components.Shared.PathHelpers.resolveArcViewPath path
+    Arcitisa.Components.Shared.PathHelpers.resolveArcViewPath path
 
 let private tryGetExistingArcEntityTargetMatch
     (targetSources: seq<string * string * (string -> 'Target)>)

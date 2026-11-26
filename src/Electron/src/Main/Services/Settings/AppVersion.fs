@@ -4,10 +4,10 @@ open Main
 open Fable.Core
 open Fable.Core.JsInterop
 open Fable.Electron.Main
-open Swate.Components.Api.GitHubReleases
-open Swate.Components.Util.SemVer
-open Swate.Electron.Shared.IPCTypes
-open Swate.Electron.Shared.IPCTypes.MainToRendererIpc
+open Arcitisa.Components.Api.GitHubReleases
+open Arcitisa.Components.Util.SemVer
+open Arcitisa.Electron.Shared.IPCTypes
+open Arcitisa.Electron.Shared.IPCTypes.MainToRendererIpc
 open ARCtrl.Helper.SemVer
 
 let private settingsFileName = "app-version.json"
@@ -22,7 +22,7 @@ let getState () = state
 
 /// Called once after app.whenReady, before creating any windows.
 let initialize () =
-    let current = Swate.Electron.Shared.ApplicationVersion.current
+    let current = Arcitisa.Electron.Shared.ApplicationVersion.current
 
     let previous =
         try
@@ -54,7 +54,7 @@ let initialize () =
 
 let checkForUpdateWithResult () = promise {
     try
-        let! releases = loadAll swateReleaseRepository
+        let! releases = loadAll arcitisaReleaseRepository
 
         state <- {
             state with

@@ -1,9 +1,9 @@
 /// Maps JSON pointers to source spans in a yaml Document.
-module Swate.Components.Composite.TextEditor.SchemaValidation.YamlLocator
+module Arcitisa.Components.Composite.TextEditor.SchemaValidation.YamlLocator
 
 open Fable.Core
-open Swate.Components.Composite.TextEditor.JsBindings.Yaml
-open Swate.Components.Composite.TextEditor.SchemaValidation.Types
+open Arcitisa.Components.Composite.TextEditor.JsBindings.Yaml
+open Arcitisa.Components.Composite.TextEditor.SchemaValidation.Types
 
 [<Emit("String($0)")>]
 let private text (x: obj) : string = jsNative

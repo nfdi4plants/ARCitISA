@@ -1,10 +1,10 @@
-namespace Swate.Components.Page.FileViewer
+namespace Arcitisa.Components.Page.FileViewer
 
 open Feliz
 open Fable.Core.JsInterop
 open Fable.Core
-open Swate.Components.Primitive
-open Swate.Components.Primitive.LoadingSpinner
+open Arcitisa.Components.Primitive
+open Arcitisa.Components.Primitive.LoadingSpinner
 
 module private PDFData =
 

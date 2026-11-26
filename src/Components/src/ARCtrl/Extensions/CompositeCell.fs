@@ -8,7 +8,7 @@ type CompositeCell with
     /// <summary>
     /// This is an override of an existing ARCtrl version which does not return what i want 😤
     /// </summary>
-    member this.GetContentSwate() =
+    member this.GetContentArcitisa() =
         match this with
         | CompositeCell.FreeText s -> [| s |]
         | CompositeCell.Term oa -> [|
@@ -85,7 +85,7 @@ type CompositeCell with
             | anyElse -> failwithf "Invalid content to parse to CompositeCell: %A" anyElse
 
     member this.ToTabStr() =
-        this.GetContentSwate() |> String.concat "\t"
+        this.GetContentArcitisa() |> String.concat "\t"
 
     /// Serialize one displayed grid cell for the clipboard. Data cells keep their
     /// selector in the compact `path#selector` representation used by the table UI.

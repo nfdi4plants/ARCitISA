@@ -4,8 +4,8 @@ open ARCtrl
 open ARCtrl.Contract
 open Main.Bindings.Filesystem
 open Main.Bindings.Path
-open Swate.Components.Shared
-open Swate.Electron.Shared.FileIOHelper
+open Arcitisa.Components.Shared
+open Arcitisa.Electron.Shared.FileIOHelper
 
 
 [<AutoOpen>]
@@ -28,7 +28,7 @@ module DataMapExtensions =
             let persistedArc = ARC.fromFilePaths paths
             let contracts = persistedArc.GetReadContracts()
 
-            match! ContractExecutor.fulfillReadContractsSwateAsync arcPath contracts with
+            match! ContractExecutor.fulfillReadContractsArcitisaAsync arcPath contracts with
             | Error errors -> return Error errors
             | Ok fulfilledContracts ->
                 persistedArc.SetISAFromContracts fulfilledContracts
@@ -109,7 +109,7 @@ module DataMapExtensions =
                                     $"The DataMap could not be deleted because parent '{parentPath}' was not found on disk. Refresh the File Explorer and try again."
                             )
                     | Some parentUpdateContract ->
-                        match! ContractExecutor.fulfillContractsSwateAsync arcPath [| parentUpdateContract |] with
+                        match! ContractExecutor.fulfillContractsArcitisaAsync arcPath [| parentUpdateContract |] with
                         | Error errors ->
                             return
                                 Error(
@@ -119,7 +119,7 @@ module DataMapExtensions =
                         | Ok _ ->
                             let deleteContract = dataMap.ToDeleteContract(parentInfo)
 
-                            match! ContractExecutor.fulfillContractsSwateAsync arcPath [| deleteContract |] with
+                            match! ContractExecutor.fulfillContractsArcitisaAsync arcPath [| deleteContract |] with
                             | Error errors ->
                                 return
                                     Error(

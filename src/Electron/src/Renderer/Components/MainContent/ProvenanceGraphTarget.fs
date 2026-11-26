@@ -1,9 +1,9 @@
 module Renderer.Components.MainContent.ProvenanceGraphTarget
 
 open Feliz
-open Swate.Components.Primitive
-open Swate.Components.Shared.ProvenanceGraph.Types
-open Swate.Components.Shared.ProvenanceGraph.BuildIndex
+open Arcitisa.Components.Primitive
+open Arcitisa.Components.Shared.ProvenanceGraph.Types
+open Arcitisa.Components.Shared.ProvenanceGraph.BuildIndex
 
 /// What the page shows. The index is built from the IPC data once, when the data arrives, because the IPC
 /// copy has no lookups.
@@ -49,7 +49,7 @@ let ProvenanceGraphTarget () =
             Html.div [
                 prop.className "swt:flex swt:size-full swt:items-center swt:justify-center"
                 prop.children [
-                    Swate.Components.Primitive.LoadingSpinner.LoadingSpinner.LoadingSpinner(
+                    Arcitisa.Components.Primitive.LoadingSpinner.LoadingSpinner.LoadingSpinner(
                         size = DaisyuiSize.XL,
                         color = DaisyuiColors.Primary,
                         text = "Loading provenance graph..."
@@ -57,7 +57,7 @@ let ProvenanceGraphTarget () =
                 ]
             ]
         | LoadState.Failed message -> ProvenanceGraphArea.ErrorAlert message
-        | LoadState.Loaded index -> Swate.Components.Page.ProvenanceGraph.ProvenanceGraph.ProvenanceGraph(index)
+        | LoadState.Loaded index -> Arcitisa.Components.Page.ProvenanceGraph.ProvenanceGraph.ProvenanceGraph(index)
 
     Html.div [
         prop.className "swt:size-full swt:min-w-0 swt:min-h-0 swt:overflow-hidden"

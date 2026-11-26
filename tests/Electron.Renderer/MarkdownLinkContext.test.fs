@@ -4,9 +4,9 @@ open Fable.Core
 open Fable.Core.JsInterop
 open Renderer.Types
 open Renderer.Components.Helper.MarkdownLinkContext
-open Swate.Components.Composite.MarkdownText.Links
-open Swate.Components.Composite.MarkdownText.Links.Types
-open Swate.Electron.Shared.DTOs.MarkdownResolverDto
+open Arcitisa.Components.Composite.MarkdownText.Links
+open Arcitisa.Components.Composite.MarkdownText.Links.Types
+open Arcitisa.Electron.Shared.DTOs.MarkdownResolverDto
 open Vitest
 
 // The module reaches Api.js, whose IPC bridges are absent without the preload. No test calls them.

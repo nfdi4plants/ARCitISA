@@ -1,9 +1,9 @@
-module internal Swate.Components.Composite.Table.KeyboardNavigationTests
+module internal Arcitisa.Components.Composite.Table.KeyboardNavigationTests
 
 open Browser.Types
 open Fable.Core
 open Vitest
-open Swate.Components
+open Arcitisa.Components
 
 let private selectedCells row : GridSelect.GridSelectHandle = {|
     SelectOrigin = Some {| x = 1; y = row |}

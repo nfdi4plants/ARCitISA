@@ -1,12 +1,12 @@
 [<AutoOpenAttribute>]
 module Renderer.Types
 
-open Swate.Components.Shared
-open Swate.Electron.Shared.FileIOTypes
-open Swate.Electron.Shared.FileIOHelper
-open Swate.Electron.Shared.VersionControlTypes
-open Swate.Components.Page.ArcFileEditor.Types
-open Swate.Components.Page.GitComparison.GitPagedDiffTypes
+open Arcitisa.Components.Shared
+open Arcitisa.Electron.Shared.FileIOTypes
+open Arcitisa.Electron.Shared.FileIOHelper
+open Arcitisa.Electron.Shared.VersionControlTypes
+open Arcitisa.Components.Page.ArcFileEditor.Types
+open Arcitisa.Components.Page.GitComparison.GitPagedDiffTypes
 
 [<RequireQualifiedAccess>]
 type LeftSidebarPage =
@@ -247,7 +247,7 @@ type PageState =
     | Changelog of version: string * requestId: string
     /// With a category the page opens at it. A new requestId opens it again, also when it is open already.
     | SettingsPage of
-        category: Swate.Components.PageComponents.SettingsPage.Types.SettingsCategory option *
+        category: Arcitisa.Components.PageComponents.SettingsPage.Types.SettingsCategory option *
         requestId: string
 
     /// text is the text metadata of the read, None when the caller only has the DTO.

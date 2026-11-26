@@ -1,23 +1,23 @@
-namespace Swate.Components.Composite.NoteSearch.FilterComponent
+namespace Arcitisa.Components.Composite.NoteSearch.FilterComponent
 
 open Feliz
-open Swate.Components
-open Swate.Components.Primitive
-open Swate.Components.Primitive.Select
-open Swate.Components.Primitive.Select.Types
-open Swate.Components.Composite.Notes.Types
+open Arcitisa.Components
+open Arcitisa.Components.Primitive
+open Arcitisa.Components.Primitive.Select
+open Arcitisa.Components.Primitive.Select.Types
+open Arcitisa.Components.Composite.Notes.Types
 
 
 module Main =
     let noteSuggestionsList (searchTerm: string, selectedIndices: Set<int>, notes: Note list) =
         let notesFilteredAfterTitle =
             if Set.contains 0 selectedIndices || Set.isEmpty selectedIndices then
-                Swate.Components.Composite.NoteSearch.FilterLogic.FuzzySearch.search (searchTerm, "Title", notes)
+                Arcitisa.Components.Composite.NoteSearch.FilterLogic.FuzzySearch.search (searchTerm, "Title", notes)
             else
                 []
 
         let notesFilteredAfterRest =
-            Swate.Components.Composite.NoteSearch.FilterLogic.ExactMatchSearch.search (
+            Arcitisa.Components.Composite.NoteSearch.FilterLogic.ExactMatchSearch.search (
                 searchTerm,
                 selectedIndices,
                 notes

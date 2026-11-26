@@ -1,4 +1,4 @@
-module Swate.Components.Page.GitComparison.GitPagedDiffTypes
+module Arcitisa.Components.Page.GitComparison.GitPagedDiffTypes
 
 open Fable.Core
 

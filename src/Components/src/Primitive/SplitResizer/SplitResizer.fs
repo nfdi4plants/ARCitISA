@@ -1,9 +1,9 @@
-namespace Swate.Components.Primitive.SplitResizer
+namespace Arcitisa.Components.Primitive.SplitResizer
 
 open Fable.Core
 open Browser.Types
 open Feliz
-open Swate.Components
+open Arcitisa.Components
 
 [<Erase; Mangle(false)>]
 type SplitResizer =

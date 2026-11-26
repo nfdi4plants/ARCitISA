@@ -57,12 +57,12 @@ let createWith (actions: Actions) =
         )
 
     MenuItem.Options(
-        id = "swate-arc",
+        id = "arcitisa-arc",
         label = "ARC",
         submenu =
             U2.Case1 [|
                 item
-                    "swate-open-arc-in-vscode"
+                    "arcitisa-open-arc-in-vscode"
                     "Open ARC in Visual Studio Code"
                     (fun path -> promise {
                         let! available = actions.IsVSCodeAvailable()
@@ -73,8 +73,8 @@ let createWith (actions: Actions) =
                             failwith "Visual Studio Code is not installed or its URL handler is unavailable."
                     })
                     false
-                item "swate-open-terminal-in-arc" "Open Terminal in ARC" actions.OpenTerminal true
-                item "swate-open-arc-in-file-manager" "Open ARC in File Manager" actions.OpenInFileManager true
+                item "arcitisa-open-terminal-in-arc" "Open Terminal in ARC" actions.OpenTerminal true
+                item "arcitisa-open-arc-in-file-manager" "Open ARC in File Manager" actions.OpenInFileManager true
             |]
     )
 
@@ -83,7 +83,7 @@ let create () = createWith productionActions
 let refreshAvailabilityWith check (menu: Menu) = promise {
     let! available = check ()
 
-    menu.getMenuItemById "swate-open-arc-in-vscode"
+    menu.getMenuItemById "arcitisa-open-arc-in-vscode"
     |> Option.iter (fun item -> item.enabled <- available)
 }
 

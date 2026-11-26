@@ -5,7 +5,7 @@ open Fable.Core
 open Fable.Core.JsInterop
 open Feliz
 open Renderer.IpcReceiver
-open Swate.Electron.Shared.IPCTypes.MainToRendererIpc
+open Arcitisa.Electron.Shared.IPCTypes.MainToRendererIpc
 open Vitest
 
 let private bridgeName typeName = $"FABLE_REMOTING_{typeName}"

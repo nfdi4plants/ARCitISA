@@ -1,7 +1,7 @@
 module ARCtrl.Json
 
-open Swate.Components.Shared
-open Swate.Components.Composite.TableImport.Types
+open Arcitisa.Components.Shared
+open Arcitisa.Components.Composite.TableImport.Types
 
 open ARCtrl
 open System
@@ -160,10 +160,10 @@ module Import =
                             Table = table
                         })
 
-                    Swate.Components.Composite.TableImport.Helper.applyImport
+                    Arcitisa.Components.Composite.TableImport.Helper.applyImport
                         currentArcFile
                         sources
-                        Swate.Components.Composite.TableImport.Helper.defaultJsonDecisions
+                        Arcitisa.Components.Composite.TableImport.Helper.defaultJsonDecisions
                     |> Result.map (fun result -> result.ArcFile)
             // The file keeps its identifier so its path stays the same.
             | ArcFiles.Workflow currentWorkflow, ArcFiles.Workflow importedWorkflow ->

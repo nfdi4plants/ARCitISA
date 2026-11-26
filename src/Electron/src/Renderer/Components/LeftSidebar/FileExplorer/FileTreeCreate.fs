@@ -2,9 +2,9 @@ namespace Renderer.Components.LeftSidebar.FileExplorer
 
 open Fable.Core
 open ARCtrl
-open Swate.Components.Shared
-open Swate.Components.Page.FileExplorer.Types
-open Swate.Electron.Shared.FileIOTypes
+open Arcitisa.Components.Shared
+open Arcitisa.Components.Page.FileExplorer.Types
+open Arcitisa.Electron.Shared.FileIOTypes
 open Renderer.Components.Helper
 open Renderer.Components.LeftSidebar.FileExplorer.Types
 

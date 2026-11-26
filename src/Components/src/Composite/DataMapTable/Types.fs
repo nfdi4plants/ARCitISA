@@ -1,7 +1,7 @@
-module Swate.Components.Composite.DataMapTable.Types
+module Arcitisa.Components.Composite.DataMapTable.Types
 
-open Swate.Components
-open Swate.Components.Composite.Table.Types
+open Arcitisa.Components
+open Arcitisa.Components.Composite.Table.Types
 
 [<RequireQualifiedAccess>]
 type Modal = Details of CellCoordinate
@@ -10,7 +10,7 @@ type Modal = Details of CellCoordinate
 module ARCtrlExtensions =
 
     open ARCtrl
-    open Swate.Components
+    open Arcitisa.Components
     open Helper
     open ArcTableAux
 

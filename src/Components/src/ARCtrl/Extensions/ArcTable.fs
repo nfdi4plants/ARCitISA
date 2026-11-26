@@ -3,7 +3,7 @@ module ARCtrl.ArcTableExtensions
 
 open ARCtrl
 open ArcTableAux
-open Swate.Components
+open Arcitisa.Components
 open ARCtrl.Spreadsheet
 
 type ArcTable with

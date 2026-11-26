@@ -1,5 +1,5 @@
 {
-  "name": "@nfdi4plants/swate-components",
+  "name": "@nfdi4plants/arcitisa-components",
   "version": "0.0.0",
   "description": "Customizable React components for ontology annotation, based on ARCitISA and the ARC.",
   "main": "./dist/index.js",
@@ -15,11 +15,11 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
-    "./style.css": "./dist/assets/swate-components.css"
+    "./style.css": "./dist/assets/arcitisa-components.css"
   },
   "scripts": {
     "clean": "dotnet fable clean -e fs.ts --yes",
-    "fable": "dotnet fable ./src/Swate.Components.fsproj --lang ts",
+    "fable": "dotnet fable ./src/Arcitisa.Components.fsproj --lang ts",
     "start": "npm run fable -- --watch --run vite",
     "dev": "npm run start",
     "test": "npm run clean && npm run fable -- --noCache && npx vitest run",
@@ -31,9 +31,9 @@
     "prelink": "npm run build",
     "storybook": "npm run fable -- --watch --run storybook dev -p 6006",
     "storybook:no-compile": "storybook dev -p 6006",
-    "prebuild:net": "npx @tailwindcss/cli -i ./tailwind.css -o ./src/swate-components.css -m",
+    "prebuild:net": "npx @tailwindcss/cli -i ./tailwind.css -o ./src/arcitisa-components.css -m",
     "build": "npm run clean && npm run fable -- --fableLib @fable-org/fable-library-ts --noCache -e fs.ts -o ./src/dist && vite build",
-    "build:net": "dotnet pack ./src/Swate.Components.fsproj",
+    "build:net": "dotnet pack ./src/Arcitisa.Components.fsproj",
     "prebuild:storybook": "npm run fable -- --noCache",
     "build:storybook": "storybook build"
   },

@@ -1,8 +1,8 @@
 module ElectronRenderer.FileTreeFileTargetWorkflowTests
 
 open Renderer.Components.LeftSidebar.FileExplorer.FileTreeFileTargetWorkflow
-open Swate.Electron.Shared.FileIOHelper
-open Swate.Electron.Shared.FileIOTypes
+open Arcitisa.Electron.Shared.FileIOHelper
+open Arcitisa.Electron.Shared.FileIOTypes
 open Vitest
 
 let private createRequest path =

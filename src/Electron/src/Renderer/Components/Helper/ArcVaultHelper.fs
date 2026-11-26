@@ -2,9 +2,9 @@ module Renderer.Components.Helper.ArcVaultHelper
 
 open Browser.Dom
 open Fable.Core
-open Swate.Components.PageComponents.SettingsPage
-open Swate.Components.Primitive.ErrorModal.Types
-open Swate.Electron.Shared.IPCTypes
+open Arcitisa.Components.PageComponents.SettingsPage
+open Arcitisa.Components.Primitive.ErrorModal.Types
+open Arcitisa.Electron.Shared.IPCTypes
 
 /// What the one-time move of the old localStorage value does with its key.
 [<RequireQualifiedAccess>]

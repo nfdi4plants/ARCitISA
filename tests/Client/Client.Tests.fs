@@ -13,7 +13,7 @@ let client =
 let all =
     testList "All" [
 #if FABLE_COMPILER // This preprocessor directive makes editor happy
-        Swate.Components.Shared.Tests.shared
+        Arcitisa.Components.Shared.Tests.shared
 #endif
         client
     ]

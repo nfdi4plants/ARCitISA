@@ -16,12 +16,12 @@ open Main.Bindings.Path
 open Main.ArcMerge
 open Main.ArcVaultHelper
 open Main.FileImportCoordinator
-open Swate.Components.Shared
-open Swate.Electron.Shared.IPCTypes
-open Swate.Electron.Shared.IPCTypes.IPCTypesHelper
-open Swate.Electron.Shared.IPCTypes.MainToRendererIpc
-open Swate.Electron.Shared.FileIOTypes
-open Swate.Electron.Shared.FileIOHelper
+open Arcitisa.Components.Shared
+open Arcitisa.Electron.Shared.IPCTypes
+open Arcitisa.Electron.Shared.IPCTypes.IPCTypesHelper
+open Arcitisa.Electron.Shared.IPCTypes.MainToRendererIpc
+open Arcitisa.Electron.Shared.FileIOTypes
+open Arcitisa.Electron.Shared.FileIOHelper
 open ARCtrl
 open Main.ArcVaultState
 
@@ -54,7 +54,7 @@ type ArcVault with
                                 arcPath
                                 tree
                                 (fun directory error ->
-                                    swatelogfn
+                                    arcitisalogfn
                                         this.window.id
                                         "Unable to update file tree directory '%s': %s"
                                         directory
@@ -93,7 +93,7 @@ type ArcVault with
 
             promise {
                 try
-                    swatelogfn this.window.id "Scheduled ARC sync triggered by file watcher."
+                    arcitisalogfn this.window.id "Scheduled ARC sync triggered by file watcher."
                     // Resolves at once while a write runs, so the tree is published immediately then.
                     do! this.RequestSync true
 
@@ -104,14 +104,14 @@ type ArcVault with
                     if capturedRootToken = this.RootToken then
                         do! this.ApplyWatcherFileTreeEvents events
                 with ex ->
-                    swatelogfn this.window.id "Scheduled ARC sync failed: %s" ex.Message
+                    arcitisalogfn this.window.id "Scheduled ARC sync failed: %s" ex.Message
 
                 finishFlush ()
             }
             |> Promise.start
 
         fun (eventName: string) (path: string) ->
-            swatelogfn this.window.id "File change detected: %s on %s" eventName path
+            arcitisalogfn this.window.id "File change detected: %s on %s" eventName path
 
             this.path
             |> Option.iter (fun rootPath ->
@@ -260,7 +260,7 @@ type ArcVault with
                         match previousState with
                         | FileWatcherState.Unavailable _ -> this.fileWatcherState <- previousState
                         | _ ->
-                            swatelogfn this.window.id "Structural file watcher did not start: %s" reason
+                            arcitisalogfn this.window.id "Structural file watcher did not start: %s" reason
                             this.fileWatcherState <- FileWatcherState.Degraded reason
 
                 return result
@@ -271,7 +271,7 @@ type ArcVault with
         let key = code + "|" + (tryGetNodeErrorPath error |> Option.defaultValue "")
 
         if this.ReportedFileWatcherPermissionErrors.Add key then
-            swatelogfn this.window.id "Structural file watcher cannot read a path (%s): %s" code error.Message
+            arcitisalogfn this.window.id "Structural file watcher cannot read a path (%s): %s" code error.Message
 
     /// Starts the watcher without waiting for it. The outcome is recorded in fileWatcherState.
     member this.StartFileWatcher(?usePolling: bool) =
@@ -302,7 +302,7 @@ type ArcVault with
     /// earlier ready signal arrives here.
     member internal this.OnFileWatcherError(token: int, error: exn) =
         if this.FileWatcherToken = token then
-            swatelogfn this.window.id "Structural file watcher error: %s" error.Message
+            arcitisalogfn this.window.id "Structural file watcher error: %s" error.Message
             this.FileWatcherToken <- token + 1
             this.CancelFileWatcherRestart()
             let failedWatcher = this.watcher
@@ -347,7 +347,7 @@ type ArcVault with
             match this.fileWatcherState with
             | FileWatcherState.Unavailable _ -> ()
             | _ ->
-                swatelogfn
+                arcitisalogfn
                     this.window.id
                     "File watching is unavailable (%s). On Linux, raise fs.inotify.max_user_watches. On macOS, raise the open file limit."
                     reason
@@ -387,7 +387,7 @@ type ArcVault with
                 | FileWatcherStartOutcome.Stopped -> ()
         }
         |> Promise.catch (fun restartError ->
-            swatelogfn this.window.id "Unable to restart the structural file watcher: %s" restartError.Message
+            arcitisalogfn this.window.id "Unable to restart the structural file watcher: %s" restartError.Message
         )
         |> Promise.start
 

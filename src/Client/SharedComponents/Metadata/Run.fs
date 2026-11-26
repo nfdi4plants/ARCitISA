@@ -1,9 +1,9 @@
 module Components.Metadata.Run
 
-open Swate.Components.Shared
+open Arcitisa.Components.Shared
 open Feliz
 open ARCtrl
-open Swate.Components.Shared
+open Arcitisa.Components.Shared
 open Components
 open Components.Forms
 

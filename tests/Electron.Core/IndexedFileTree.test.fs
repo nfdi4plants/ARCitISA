@@ -12,8 +12,8 @@ open Main.ArcVaultSync
 open Main.ArcVaultTypes
 open Main.Bindings.Filesystem
 open Main.Bindings.Path
-open Swate.Components.Shared
-open Swate.Electron.Shared.FileIOTypes
+open Arcitisa.Components.Shared
+open Arcitisa.Electron.Shared.FileIOTypes
 open Vitest
 
 module FileTreeCreator = Main.FileTreeCreator
@@ -32,7 +32,7 @@ let private writeAsync (path: string) =
     writeFileAsync path "x" TextEncoding.Utf8
 
 let private withTempFolder (body: string -> JS.Promise<unit>) = promise {
-    let! created = TestHelpers.createTempDirectoryAsync "swate-indexed-tree-"
+    let! created = TestHelpers.createTempDirectoryAsync "arcitisa-indexed-tree-"
     let root = FileTreeCreator.normalizeRootPath created
 
     try
@@ -360,7 +360,8 @@ Vitest.describe (
 Vitest.describe (
     "SaveArc and EnqueueFileTreeRevalidateLoaded",
     fun () ->
-        let withTempArc = TestHelpers.withTempArcWith "swate-indexed-save-" "IndexedSaveArc"
+        let withTempArc =
+            TestHelpers.withTempArcWith "arcitisa-indexed-save-" "IndexedSaveArc"
 
         let openVault (arcPath: string) = promise {
             let vault = ArcVault(TestHelpers.testWindow ())
@@ -569,7 +570,7 @@ Vitest.describe (
     fun () ->
         let withRegisteredVault (windowId: int) (body: ArcVault -> JS.Promise<unit>) =
             TestHelpers.withTempArcWith
-                "swate-ipc-tree-"
+                "arcitisa-ipc-tree-"
                 "IpcTreeArc"
                 (fun arc -> arc.AddAssay(ARCtrl.ArcAssay("A1")))
                 (fun arcPath -> promise {
@@ -790,7 +791,7 @@ Vitest.describe (
     fun () ->
         let withRegisteredArc (windowId: int) (body: ArcVault -> JS.Promise<unit>) =
             TestHelpers.withTempArcWith
-                "swate-lazy-tree-"
+                "arcitisa-lazy-tree-"
                 "LazyTreeArc"
                 (fun arc -> arc.AddAssay(ARCtrl.ArcAssay("A1")))
                 (fun arcPath -> promise {
@@ -841,7 +842,7 @@ Vitest.describe (
                         let publishedUpdates = ResizeArray<FileTreeChange>()
                         vault.FileTreeWriter.Publish <- publishedUpdates.Add
 
-                        let names (update: Swate.Electron.Shared.IPCTypes.FileTreeDirectoryUpdateDto) =
+                        let names (update: Arcitisa.Electron.Shared.IPCTypes.FileTreeDirectoryUpdateDto) =
                             update.directories
                             |> Array.collect (fun directory -> directory.children |> Array.map _.path)
 
@@ -1200,7 +1201,7 @@ Vitest.describe (
         Vitest.test (
             "LoadDirectory refuses a path that differs from the root only by case on a case-sensitive volume",
             fun () -> promise {
-                let! parent = TestHelpers.createTempDirectoryAsync "swate-case-root-"
+                let! parent = TestHelpers.createTempDirectoryAsync "arcitisa-case-root-"
 
                 try
                     let root = join [| parent; "ARC" |]
@@ -1228,7 +1229,7 @@ Vitest.describe (
     fun () ->
         let withRegisteredArc (windowId: int) (body: ArcVault -> JS.Promise<unit>) =
             TestHelpers.withTempArcWith
-                "swate-final-tree-"
+                "arcitisa-final-tree-"
                 "FinalTreeArc"
                 (fun arc -> arc.AddAssay(ARCtrl.ArcAssay("A1")))
                 (fun arcPath -> promise {
@@ -1253,8 +1254,8 @@ Vitest.describe (
                         vault.FileTreeWriter.Publish <- published.Add
 
                         let request =
-                            Swate.Electron.Shared.FileIOHelper.FileContentDTO.fromArcFile (
-                                Swate.Components.Shared.ARCtrlHelper.ArcFiles.Assay(ARCtrl.ArcAssay.init "Added")
+                            Arcitisa.Electron.Shared.FileIOHelper.FileContentDTO.fromArcFile (
+                                Arcitisa.Components.Shared.ARCtrlHelper.ArcFiles.Assay(ARCtrl.ArcAssay.init "Added")
                             )
                             |> Option.get
 

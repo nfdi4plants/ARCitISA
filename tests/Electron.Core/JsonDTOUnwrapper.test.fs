@@ -1,7 +1,7 @@
 module ElectronCore.JsonDTOUnwrapperTests
 
-open Swate.Components.Shared
-open Swate.Electron.Shared.ARCtrlJsonObject
+open Arcitisa.Components.Shared
+open Arcitisa.Electron.Shared.ARCtrlJsonObject
 open Vitest
 
 let private expectSome value errorMessage =

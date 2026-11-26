@@ -1,11 +1,11 @@
-module internal Swate.Components.Page.FileExplorer.Tests
+module internal Arcitisa.Components.Page.FileExplorer.Tests
 
 open Fable.Core
 open Feliz
 open Fable.Core.JsInterop
 open Vitest
-open Swate.Components.Page.FileExplorer
-open Swate.Components.Page.FileExplorer.Types
+open Arcitisa.Components.Page.FileExplorer
+open Arcitisa.Components.Page.FileExplorer.Types
 
 let private file (id: string) : FileItem = {
     FileTree.createFile id None FileItemIcon.Document with

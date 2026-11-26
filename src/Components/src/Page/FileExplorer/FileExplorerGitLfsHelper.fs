@@ -1,10 +1,10 @@
-module Swate.Components.Page.FileExplorer.FileExplorerGitLfsHelper
+module Arcitisa.Components.Page.FileExplorer.FileExplorerGitLfsHelper
 
 open Fable.Core
-open Swate.Components.Page.FileExplorer.Types
-open Swate.Components.Shared
+open Arcitisa.Components.Page.FileExplorer.Types
+open Arcitisa.Components.Shared
 
-module FileItemHelper = Swate.Components.Page.FileExplorer.Helper
+module FileItemHelper = Arcitisa.Components.Page.FileExplorer.Helper
 
 let private downloadLabel = "Download LFS file"
 let private downloadIcon = "swt:fluent--cloud-arrow-down-24-regular"

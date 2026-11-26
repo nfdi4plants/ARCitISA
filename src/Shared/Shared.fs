@@ -1,4 +1,4 @@
-namespace Swate.Components.Shared
+namespace Arcitisa.Components.Shared
 
 open System
 open Database
@@ -21,7 +21,7 @@ module Route =
             // -> We want to keep fable-remoting's flexible for development and production.
             //      When we publish the components, we want to use the production URL.
             //      Both for npm and nuget packages.
-#if SWATE_ENVIRONMENT || !FABLE_COMPILER
+#if ARCITISA_ENVIRONMENT || !FABLE_COMPILER
             ""
 #else
             URLs.PRODUCTION_URL
@@ -51,7 +51,7 @@ module SorensenDice =
             calculateDistance resultSet searchSet
         )
 
-open Swate.Components.Shared.DTOs
+open Arcitisa.Components.Shared.DTOs
 
 type IOntologyAPIv3 = {
     // Development
@@ -81,7 +81,7 @@ type ITemplateAPIv1 = {
 
 /// This module is obsolete, use ARCtrl instead. I only did not add the Obsolete attribute to the module to avoid annoying warnings everywhere.
 [<RequireQualifiedAccess>]
-module SwateObsolete =
+module ArcitisaObsolete =
 
     /// This module is obsolete, use ARCtrl instead. I only did not add the Obsolete attribute to the module to avoid annoying warnings everywhere.
     [<RequireQualifiedAccess>]
@@ -176,7 +176,7 @@ module SwateObsolete =
         //    | _ ->
         //        None
 
-        /// <summary>This function can be used to extract `IDSPACE:LOCALID` (or: `Term Accession` from Swate header strings or obofoundry conform URI strings.</summary>
+        /// <summary>This function can be used to extract `IDSPACE:LOCALID` (or: `Term Accession` from ARCitISA header strings or obofoundry conform URI strings.</summary>
         let parseTermAccession (headerStr: string) =
             match headerStr.Trim() with
             | Regex TermAnnotationShortPattern value -> value.Value.Trim() |> Some
@@ -234,14 +234,14 @@ type IOntologyAPIv1 = {
     ///
     getTermSuggestions: (int * string) -> Async<Term[]>
     /// (nOfReturnedResults*queryString*parentOntology). If parentOntology = "" then isNull -> Error.
-    getTermSuggestionsByParentTerm: (int * string * SwateObsolete.TermMinimal) -> Async<Term[]>
-    getAllTermsByParentTerm: SwateObsolete.TermMinimal -> Async<Term[]>
+    getTermSuggestionsByParentTerm: (int * string * ArcitisaObsolete.TermMinimal) -> Async<Term[]>
+    getAllTermsByParentTerm: ArcitisaObsolete.TermMinimal -> Async<Term[]>
     /// (nOfReturnedResults*queryString*parentOntology). If parentOntology = "" then isNull -> Error.
-    getTermSuggestionsByChildTerm: (int * string * SwateObsolete.TermMinimal) -> Async<Term[]>
-    getAllTermsByChildTerm: SwateObsolete.TermMinimal -> Async<Term[]>
+    getTermSuggestionsByChildTerm: (int * string * ArcitisaObsolete.TermMinimal) -> Async<Term[]>
+    getAllTermsByChildTerm: ArcitisaObsolete.TermMinimal -> Async<Term[]>
     getTermsForAdvancedSearch: (AdvancedSearchQuery) -> Async<Term[]>
     getUnitTermSuggestions: (int * string) -> Async<Term[]>
-    getTermsByNames: SwateObsolete.TermSearchable[] -> Async<SwateObsolete.TermSearchable[]>
+    getTermsByNames: ArcitisaObsolete.TermSearchable[] -> Async<ArcitisaObsolete.TermSearchable[]>
 
     // Tree related requests
     getTreeByAccession: string -> Async<TreeTypes.Tree>
@@ -272,22 +272,22 @@ type IOntologyAPIv2 = {
         {|
             n: int
             query: string
-            parent_term: SwateObsolete.TermMinimal
+            parent_term: ArcitisaObsolete.TermMinimal
         |}
             -> Async<Term[]>
-    getAllTermsByParentTerm: SwateObsolete.TermMinimal -> Async<Term[]>
+    getAllTermsByParentTerm: ArcitisaObsolete.TermMinimal -> Async<Term[]>
     /// (nOfReturnedResults*queryString*parentOntology). If parentOntology = "" then isNull -> Error.
     getTermSuggestionsByChildTerm:
         {|
             n: int
             query: string
-            child_term: SwateObsolete.TermMinimal
+            child_term: ArcitisaObsolete.TermMinimal
         |}
             -> Async<Term[]>
-    getAllTermsByChildTerm: SwateObsolete.TermMinimal -> Async<Term[]>
+    getAllTermsByChildTerm: ArcitisaObsolete.TermMinimal -> Async<Term[]>
     getTermsForAdvancedSearch: (AdvancedSearchQuery) -> Async<Term[]>
     getUnitTermSuggestions: {| n: int; query: string |} -> Async<Term[]>
-    getTermsByNames: SwateObsolete.TermSearchable[] -> Async<SwateObsolete.TermSearchable[]>
+    getTermsByNames: ArcitisaObsolete.TermSearchable[] -> Async<ArcitisaObsolete.TermSearchable[]>
 
     // Tree related requests
     getTreeByAccession: string -> Async<TreeTypes.Tree>

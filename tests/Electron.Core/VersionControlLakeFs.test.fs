@@ -6,9 +6,9 @@ open Fable.Electron
 open Main
 open Main.Bindings.Path
 open Main.VersionControl
-open Swate.Components.Composite.Authentication.Types
-open Swate.Electron.Shared.IPCTypes
-open Swate.Electron.Shared.VersionControlTypes
+open Arcitisa.Components.Composite.Authentication.Types
+open Arcitisa.Electron.Shared.IPCTypes
+open Arcitisa.Electron.Shared.VersionControlTypes
 open VersionControlService.Abstractions
 open Vitest
 open ElectronCore.TestHelpers
@@ -145,7 +145,7 @@ let private createFixtureWithRuntime
             -> VersionControlRuntime.VersionControlRuntime)
     =
     promise {
-        let! root = createTempDirectoryAsync "swate-vc-lakefs-"
+        let! root = createTempDirectoryAsync "arcitisa-vc-lakefs-"
         let workspace = join [| root; "workspace" |]
         let scratch = join [| root; "scratch" |]
         let settings = join [| root; "settings" |]
@@ -161,7 +161,7 @@ let private createFixtureWithRuntime
         let repositoryToken =
             RuntimeNodeInterop.randomUuid().Replace("-", "").ToLowerInvariant()
 
-        let repository = $"swate-{repositoryToken}"
+        let repository = $"arcitisa-{repositoryToken}"
 
         try
             do! createRepository connection repository

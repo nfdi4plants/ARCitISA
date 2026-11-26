@@ -3,8 +3,8 @@ module Main.IndexedFileTree
 
 open System.Collections.Generic
 open Fable.Core
-open Swate.Components.Shared
-open Swate.Electron.Shared.FileIOTypes
+open Arcitisa.Components.Shared
+open Arcitisa.Electron.Shared.FileIOTypes
 
 /// The main-process view of an ARC folder. Entries are keyed by the PathKey of their absolute path and keep the
 /// display path as scanned. A children index lists the direct children of each loaded directory in

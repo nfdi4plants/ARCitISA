@@ -1,6 +1,6 @@
-module Swate.Components.Composite.GraphCanvas.Minimap
+module Arcitisa.Components.Composite.GraphCanvas.Minimap
 
-open Swate.Components.Composite.GraphCanvas.Types
+open Arcitisa.Components.Composite.GraphCanvas.Types
 
 // The geometry of the minimap in plain numbers. Layout units are the units of the drawing before zoom.
 // A point of the drawing at (x, y) sits at (OffsetX + x * Zoom, OffsetY + y * Zoom) in the scroll

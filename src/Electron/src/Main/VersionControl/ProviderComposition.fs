@@ -1,4 +1,4 @@
-/// The one place in Swate that knows which version control providers exist. It builds
+/// The one place in ARCitISA that knows which version control providers exist. It builds
 /// the Git factory over the DataHUB account store and the lakeFS factory over an
 /// application-owned state root, and it resolves the factory for a vault from the
 /// persisted binding. Everything above this module works with the neutral SPI only.
@@ -42,11 +42,11 @@ let dataHubRevisionPolicy: RevisionPolicyStrategy = {
         fun request ->
             let path = RepositoryPath.value request.Path
 
-            if Swate.Components.Shared.GitLfsRules.isIsaMetadataFile path then
+            if Arcitisa.Components.Shared.GitLfsRules.isIsaMetadataFile path then
                 RevisionPathPolicy.Inline
             elif
-                Swate.Components.Shared.GitLfsRules.isInDatasetFolder path
-                || request.SizeInBytes > float Swate.Components.Shared.GitLfsRules.maxNonLfsFileSizeBytes
+                Arcitisa.Components.Shared.GitLfsRules.isInDatasetFolder path
+                || request.SizeInBytes > float Arcitisa.Components.Shared.GitLfsRules.maxNonLfsFileSizeBytes
             then
                 RevisionPathPolicy.LargeObject
             else
@@ -95,7 +95,7 @@ let createCatalog (factories: ProviderFactory list) : ProviderResolver.ProviderC
     | Error message -> failwith message
 
 /// The production catalog: Git over the DataHUB accounts, lakeFS without any
-/// configured connection until lakeFS accounts exist in Swate. The caller passes the
+/// configured connection until lakeFS accounts exist in ARCitISA. The caller passes the
 /// path case sensitivity it also hands to the resolver and the binding store.
 let createProductionCatalog
     (sensitivity: PathCaseSensitivity)
@@ -118,7 +118,7 @@ let lakeFsProviderId =
     | Ok providerId -> providerId
     | Error message -> failwith message
 
-/// The provider new vaults are initialized with. Swate only provisions Git today.
+/// The provider new vaults are initialized with. ARCitISA only provisions Git today.
 let defaultProviderId = gitProviderId
 
 /// Turns the location text the renderer sends into a repository location for the
@@ -184,7 +184,7 @@ let indexLockWaitMilliseconds (path: string) =
     |> Option.defaultValue 0
 
 /// Lock paths old enough for cleanup in a plain Git repository. Any Git process can
-/// leave an index lock behind, including a killed Swate process or another tool. Swate
+/// leave an index lock behind, including a killed ARCitISA process or another tool. ARCitISA
 /// removes a lock only after its workspace operations are idle and it is old enough. The
 /// clear operation waits out a young lock. Linked worktrees and submodules store `.git`
 /// as a file, so this returns no path for them.

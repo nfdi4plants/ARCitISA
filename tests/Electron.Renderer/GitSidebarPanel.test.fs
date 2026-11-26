@@ -84,7 +84,7 @@ Vitest.describe (
             fun () ->
                 Vitest.expect(items.[0].Log).toEqual None
 
-                let output: Swate.Electron.Shared.VersionControlTypes.VersionControlOutputDto = {
+                let output: Arcitisa.Electron.Shared.VersionControlTypes.VersionControlOutputDto = {
                     OperationId = folderAction.OperationId
                     Entries = [|
                         {
@@ -117,7 +117,7 @@ Vitest.describe (
 
                 let withLogs = backgroundActivityItems [| folderAction; fileAction |] logs
 
-                let linesOf (item: Swate.Components.Page.GitSidebarTypes.GitSidebarBackgroundActivity) =
+                let linesOf (item: Arcitisa.Components.Page.GitSidebarTypes.GitSidebarBackgroundActivity) =
                     item.Log.Value.Lines |> Array.map (fun line -> line.Kind, line.Text)
 
                 Vitest.expect(linesOf withLogs.[0]).toEqual [| "command", "git lfs fetch" |]

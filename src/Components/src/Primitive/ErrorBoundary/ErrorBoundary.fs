@@ -1,10 +1,10 @@
-namespace Swate.Components.Primitive.ErrorBoundary
+namespace Arcitisa.Components.Primitive.ErrorBoundary
 
 open Fable.Core
 open Fable.Core.JsInterop
 open Fable.React
 open Feliz
-open Swate.Components.JsBindings
+open Arcitisa.Components.JsBindings
 
 module private ErrorBoundaryTypes =
 

@@ -2,11 +2,11 @@ module Main.NoteSearchReader
 
 open System
 open Fable.Core
-open Swate.Components.Composite.Notes.Editor
-open Swate.Electron.Shared.FileIOHelper
-open Swate.Electron.Shared.FileIOTypes
-open Swate.Components.Composite.Notes.Types
-open Swate.Components.Shared
+open Arcitisa.Components.Composite.Notes.Editor
+open Arcitisa.Electron.Shared.FileIOHelper
+open Arcitisa.Electron.Shared.FileIOTypes
+open Arcitisa.Components.Composite.Notes.Types
+open Arcitisa.Components.Shared
 open Main.Bindings.Filesystem
 open Main.Notes.NoteConstants
 

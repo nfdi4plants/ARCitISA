@@ -34,7 +34,7 @@ let npm (version: Changelog.Version) (isDryRun: bool) =
         printGreenfn "Start updating .css file to use @layer swt-base instead of @layer base"
 
         let cssFilePath =
-            Path.Combine(ProjectPaths.componentsPath, "dist", "assets", "swate-components.css")
+            Path.Combine(ProjectPaths.componentsPath, "dist", "assets", "arcitisa-components.css")
 
         if not (System.IO.File.Exists(cssFilePath)) then
             failwithf "CSS file not found at %s" cssFilePath
@@ -106,7 +106,7 @@ let docker (username: string) (key: string) (version: Changelog.Version) (isDryR
     VersionIO.updateFSharpProjectVersions version
 
     let dockerRegistryTarget = "ghcr.io"
-    let imageName = "ghcr.io/nfdi4plants/swate"
+    let imageName = "ghcr.io/nfdi4plants/arcitisa"
 
     let login =
         run
@@ -129,7 +129,7 @@ let docker (username: string) (key: string) (version: Changelog.Version) (isDryR
     let imageLatest = $"{imageName}:latest"
     let imageNext = $"{imageName}:next"
 
-    // docker build -t ghcr.io/nfdi4plants/swate:next -t ghcr.io/nfdi4plants/swate:2.0.0 -t ghcr.io/nfdi4plants/swate:latest -f ./build/Dockerfile.publish .
+    // docker build -t ghcr.io/nfdi4plants/arcitisa:next -t ghcr.io/nfdi4plants/arcitisa:2.0.0 -t ghcr.io/nfdi4plants/arcitisa:latest -f ./build/Dockerfile.publish .
 
     let build =
         run
@@ -156,24 +156,6 @@ let docker (username: string) (key: string) (version: Changelog.Version) (isDryR
             if not isPrerelease then
                 run "docker" [ "push"; imageVersioned ] ""
                 run "docker" [ "push"; imageLatest ] ""
-
-    ()
-
-open System.IO
-open System.IO.Compression
-
-/// Builds the frontend and zips it for the GitHub release
-let electron () =
-
-    let sourceDir = Path.Combine(ProjectPaths.deployPath, "public")
-    let targetZip = "./SwateClient.zip"
-
-    Bundle.Client(false)
-
-    if File.Exists(targetZip) then
-        File.Delete(targetZip)
-
-    ZipFile.CreateFromDirectory(sourceDir, targetZip, CompressionLevel.Optimal, includeBaseDirectory = false)
 
     ()
 
@@ -354,8 +336,8 @@ let electronBinaries (version: Changelog.Version) (arch: string) =
 
 let verifyReleaseAssets (dir: string) =
 
-    // Must match the artifact names uploaded by the electron-web target of the release job and by
-    // the release_electron_binaries matrix in .github/workflows/release-pipeline.yml.
+    // Must match the artifact names uploaded by the release_electron_binaries matrix in
+    // .github/workflows/release-pipeline.yml.
     let electronMatrix = [
         "Windows", "x64"
         "macOS", "x64"
@@ -364,12 +346,9 @@ let verifyReleaseAssets (dir: string) =
         "Linux", "arm64"
     ]
 
-    let expectedArtifacts = [
-        "release-assets-client", [ ".zip" ]
-        yield!
-            electronMatrix
-            |> List.map (fun (os, arch) -> $"release-assets-electron-{os}-{arch}", (electronTarget os arch).Extensions)
-    ]
+    let expectedArtifacts =
+        electronMatrix
+        |> List.map (fun (os, arch) -> $"release-assets-electron-{os}-{arch}", (electronTarget os arch).Extensions)
 
     let problems =
         expectedArtifacts

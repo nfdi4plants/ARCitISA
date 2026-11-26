@@ -1,15 +1,15 @@
-namespace Swate.Components.Page.ArcFileEditor.EmptyTableView
+namespace Arcitisa.Components.Page.ArcFileEditor.EmptyTableView
 
 open Feliz
 open ARCtrl
 open Fable.Core
-open Swate.Components
-open Swate.Components.Primitive
-open Swate.Components.Primitive.CardGrid
-open Swate.Components.Composite.Widgets
-open Swate.Components.Composite.Widgets.BuildingBlockWidget
-open Swate.Components.Shared
-open Swate.Components.Page.ArcFileEditor.EmptyTableView.Types
+open Arcitisa.Components
+open Arcitisa.Components.Primitive
+open Arcitisa.Components.Primitive.CardGrid
+open Arcitisa.Components.Composite.Widgets
+open Arcitisa.Components.Composite.Widgets.BuildingBlockWidget
+open Arcitisa.Components.Shared
+open Arcitisa.Components.Page.ArcFileEditor.EmptyTableView.Types
 
 module private MainTypes =
     [<RequireQualifiedAccess>]

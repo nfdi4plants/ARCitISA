@@ -3,7 +3,7 @@ module ElectronRenderer.GitLfsHelperTests
 open Fable.Core
 open Fable.Core.JsInterop
 open Renderer.Components.Helper.GitLfsHelper
-open Swate.Electron.Shared.VersionControlTypes
+open Arcitisa.Electron.Shared.VersionControlTypes
 open Vitest
 
 let private outcome: OperationOutcomeDto<unit> = {

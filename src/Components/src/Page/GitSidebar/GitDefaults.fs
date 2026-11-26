@@ -1,4 +1,4 @@
-namespace Swate.Components.Page.GitSidebarTypes
+namespace Arcitisa.Components.Page.GitSidebarTypes
 
 /// The git settings a user chooses once and every ARC opened afterwards starts with.
 type SettingsGitDefaults = {

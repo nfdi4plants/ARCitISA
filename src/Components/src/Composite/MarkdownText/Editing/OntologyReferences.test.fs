@@ -1,12 +1,12 @@
-module internal Swate.Components.Composite.MarkdownText.Editing.OntologyReferencesTests
+module internal Arcitisa.Components.Composite.MarkdownText.Editing.OntologyReferencesTests
 
 open Fable.Core
 open Vitest
-open Swate.Components.Composite.TextEditor.Types
-open Swate.Components.Composite.TermSearch.Types
-open Swate.Components.Composite.MarkdownText.JsBindings.Mdast
-open Swate.Components.Composite.MarkdownText.Editing.MarkdownEdits
-open Swate.Components.Composite.MarkdownText.Editing.OntologyReferences
+open Arcitisa.Components.Composite.TextEditor.Types
+open Arcitisa.Components.Composite.TermSearch.Types
+open Arcitisa.Components.Composite.MarkdownText.JsBindings.Mdast
+open Arcitisa.Components.Composite.MarkdownText.Editing.MarkdownEdits
+open Arcitisa.Components.Composite.MarkdownText.Editing.OntologyReferences
 
 let private instrumentModel: OntologyReference = {|
     name = "instrument model"

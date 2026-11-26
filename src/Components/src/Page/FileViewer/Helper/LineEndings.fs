@@ -1,6 +1,6 @@
-module Swate.Components.Page.FileViewer.Helper.LineEndings
+module Arcitisa.Components.Page.FileViewer.Helper.LineEndings
 
-open Swate.Components.Composite.TextEditor
+open Arcitisa.Components.Composite.TextEditor
 
 /// A notice for a file that mixes "\r\n", "\r" and "\n". The editor writes every line ending like the first one on
 /// save (LanguageDetection.detectLineSeparator), and this says so before the first save changes every line.

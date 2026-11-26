@@ -5,8 +5,8 @@ open ARCtrl
 open ARCtrl.Contract
 open Main.Bindings.Path
 open Main.Bindings.Filesystem
-open Swate.Components.Shared
-open Swate.Electron.Shared.FileIOHelper
+open Arcitisa.Components.Shared
+open Arcitisa.Electron.Shared.FileIOHelper
 
 [<AutoOpen>]
 module ArcLoadExtensions =
@@ -246,7 +246,7 @@ module ArcLoadExtensions =
                             Operation = Operation.UPDATE
                     })
 
-                match! ContractExecutor.fulfillContractsSwateAsync arcPath repairs with
+                match! ContractExecutor.fulfillContractsArcitisaAsync arcPath repairs with
                 | Ok _ -> return true
                 | Error _ -> return false
             | _ -> return false
@@ -341,13 +341,13 @@ module ArcLoadExtensions =
         /// Loads ARC metadata without traversing payload folders and migrates legacy `isa_datamap` paths.
         /// The load skips undecodable CWL and YAML payloads and returns them as issues. It leaves their files
         /// on disk unchanged.
-        static member LoadAsyncSwateWithIssues(arcPath: string) = promise {
+        static member LoadAsyncArcitisaWithIssues(arcPath: string) = promise {
             let! discoveredPaths = discoverStructuralArcFilePathsWithAsync readdirWithTypesAsync arcPath
             let! paths = migrateLegacyDataMapPathsAsync arcPath discoveredPaths
             let arc = ARC.fromFilePaths paths
             let contracts = arc.GetReadContracts()
 
-            match! ContractExecutor.fulfillReadContractsSwateAsync arcPath contracts with
+            match! ContractExecutor.fulfillReadContractsArcitisaAsync arcPath contracts with
             | Ok fulfilledContracts ->
                 let decodableContracts, issues =
                     partitionDecodablePayloadContracts fulfilledContracts
@@ -358,9 +358,9 @@ module ArcLoadExtensions =
             | Error errors -> return Error errors
         }
 
-        /// Loads ARC metadata like LoadAsyncSwateWithIssues and logs each skipped payload as a warning.
-        static member LoadAsyncSwate(arcPath: string) = promise {
-            match! ARC.LoadAsyncSwateWithIssues arcPath with
+        /// Loads ARC metadata like LoadAsyncArcitisaWithIssues and logs each skipped payload as a warning.
+        static member LoadAsyncArcitisa(arcPath: string) = promise {
+            match! ARC.LoadAsyncArcitisaWithIssues arcPath with
             | Ok(arc, issues) ->
                 for issue in issues do
                     Browser.Dom.console.warn (
@@ -371,11 +371,11 @@ module ArcLoadExtensions =
             | Error errors -> return Error errors
         }
 
-        /// Repairs only zero-byte canonical workbooks left by interrupted creates, then retries LoadAsyncSwate.
-        /// ARCtrl #620 was fixed in 3.2.3; this wrapper retains recovery because LoadAsyncSwate bypasses
+        /// Repairs only zero-byte canonical workbooks left by interrupted creates, then retries LoadAsyncArcitisa.
+        /// ARCtrl #620 was fixed in 3.2.3; this wrapper retains recovery because LoadAsyncArcitisa bypasses
         /// ARC.tryLoadAsync and its upstream recovery path.
-        static member LoadAsyncSwateZeroByteRepair(arcPath: string) = promise {
-            match! ARC.LoadAsyncSwate arcPath with
+        static member LoadAsyncArcitisaZeroByteRepair(arcPath: string) = promise {
+            match! ARC.LoadAsyncArcitisa arcPath with
             | Ok arc ->
                 baselineArcStaticHashes arc
                 return Ok arc
@@ -383,7 +383,7 @@ module ArcLoadExtensions =
                 let! repairedAny = repairZeroByteCanonicalArcFiles arcPath
 
                 if repairedAny then
-                    match! ARC.LoadAsyncSwate arcPath with
+                    match! ARC.LoadAsyncArcitisa arcPath with
                     | Ok arc ->
                         baselineArcStaticHashes arc
                         return Ok arc

@@ -1,8 +1,8 @@
-namespace Swate.Components.Composite.Notes.Editor
+namespace Arcitisa.Components.Composite.Notes.Editor
 
 open System
 open Feliz
-open Swate.Components.Shared
+open Arcitisa.Components.Shared
 
 [<RequireQualifiedAccess>]
 module TargetSelector =

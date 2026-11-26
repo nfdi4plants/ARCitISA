@@ -8,10 +8,10 @@ open Renderer.Context.FileStateContext
 open Renderer.Context.FileTreeExpansionContext
 open Renderer.Context.FileTreeHooks
 open Renderer.Context.FileTreeStore
-open Swate.Components
-open Swate.Components.Page.FileExplorer.Types
-open Swate.Electron.Shared.FileIOTypes
-open Swate.Electron.Shared.IPCTypes
+open Arcitisa.Components
+open Arcitisa.Components.Page.FileExplorer.Types
+open Arcitisa.Electron.Shared.FileIOTypes
+open Arcitisa.Electron.Shared.IPCTypes
 open Vitest
 
 Vitest.afterEach (fun () -> RTL.cleanup ())
@@ -185,7 +185,7 @@ let private ExplorerView () =
     let items =
         buildVisibleItems createItem (fun _ entries -> entries) snapshot ctx.expandedIds
 
-    Swate.Components.Page.FileExplorer.FileExplorer.FileExplorer(
+    Arcitisa.Components.Page.FileExplorer.FileExplorer.FileExplorer(
         initialItems = items,
         expandedIds = ctx.expandedIds,
         onExpandedIdsChange = ctx.setExpandedIds,

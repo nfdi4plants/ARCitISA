@@ -1,9 +1,9 @@
-module Swate.Electron.Shared.DTOs.ArcNodesDto
+module Arcitisa.Electron.Shared.DTOs.ArcNodesDto
 
 open ARCtrl
 open ARCtrl.Json
-open Swate.Components.Page.ArcFileEditor.EmptyTableView.Types
-open Swate.Electron.Shared.DTOs.ProvenanceGroupingDto
+open Arcitisa.Components.Page.ArcFileEditor.EmptyTableView.Types
+open Arcitisa.Electron.Shared.DTOs.ProvenanceGroupingDto
 
 /// One ARC table on its way over IPC. IPC copies plain data only, so the table travels as ARCtrl JSON
 /// and is turned back into a working `ArcTable` in the renderer.

@@ -1,4 +1,4 @@
-module Swate.Components.Composite.Widgets.DataAnnotator.Types
+module Arcitisa.Components.Composite.Widgets.DataAnnotator.Types
 
 open System
 open ARCtrl
@@ -68,7 +68,7 @@ type DataFile = {
 
         let rows =
             this.DataContent.Split(
-                Swate.Components.ClipboardContract.Contract.LineBreaks,
+                Arcitisa.Components.ClipboardContract.Contract.LineBreaks,
                 StringSplitOptions.RemoveEmptyEntries
             )
 
@@ -120,7 +120,7 @@ type ParsedDataFile = {
 
         let rows =
             file.DataContent.Split(
-                Swate.Components.ClipboardContract.Contract.LineBreaks,
+                Arcitisa.Components.ClipboardContract.Contract.LineBreaks,
                 StringSplitOptions.RemoveEmptyEntries
             )
 

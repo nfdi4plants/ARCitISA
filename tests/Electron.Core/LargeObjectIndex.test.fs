@@ -2,8 +2,8 @@ module ElectronCore.LargeObjectIndexTests
 
 open Fable.Core
 open Main.LargeObjectIndex
-open Swate.Electron.Shared.IPCTypes
-open Swate.Electron.Shared.VersionControlTypes
+open Arcitisa.Electron.Shared.IPCTypes
+open Arcitisa.Electron.Shared.VersionControlTypes
 open VersionControlService.Abstractions
 open Vitest
 

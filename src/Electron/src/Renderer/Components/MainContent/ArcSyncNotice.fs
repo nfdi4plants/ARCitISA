@@ -2,7 +2,7 @@ module Renderer.Components.MainContent.ArcSyncNotice
 
 open Feliz
 open Renderer.Context.ArcSyncContext
-open Swate.Components.Primitive.Banner.Types
+open Arcitisa.Components.Primitive.Banner.Types
 
 /// Entries for the window's layout banner slot: a failed load, and the files whose unsaved edits a load replaced.
 /// A running load has no banner, because a banner that comes and goes with every short load makes the window jump.

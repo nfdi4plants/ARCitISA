@@ -4,10 +4,10 @@ module Renderer.Components.Helper.NoteCreation
 
 open System
 open Fable.Core
-open Swate.Components.Shared
-open Swate.Components.Composite.Notes.Editor
-open Swate.Electron.Shared.FileIOTypes
-open Swate.Electron.Shared.FileIOHelper
+open Arcitisa.Components.Shared
+open Arcitisa.Components.Composite.Notes.Editor
+open Arcitisa.Electron.Shared.FileIOTypes
+open Arcitisa.Electron.Shared.FileIOHelper
 open Renderer.Components.Helper.FileSystemHelper
 
 /// Where a new note goes.

@@ -1,8 +1,8 @@
 namespace Components
 
 open Feliz
-open Swate.Components
-open Swate.Components.Primitive
+open Arcitisa.Components
+open Arcitisa.Components.Primitive
 
 open Browser.Dom
 
@@ -59,7 +59,7 @@ type NavbarBurger =
 
 
     [<ReactComponent>]
-    static member Main(model, dispatch, ?host: Swatehost) =
+    static member Main(model, dispatch, ?host: Arcitisahost) =
         let isOpen, setIsOpen = React.useState (false)
 
         let navigateTo =
@@ -93,12 +93,12 @@ type NavbarBurger =
                 NavbarBurger.DropdownItem(
                     "Docs",
                     Icons.Docs("swt:size-4"),
-                    prop.href Swate.Components.Shared.URLs.SWATE_WIKI
+                    prop.href Arcitisa.Components.Shared.URLs.ARCITISA_WIKI
                 )
                 NavbarBurger.DropdownItem(
                     "Contact",
                     Icons.Contact("swt:size-4"),
-                    prop.href Swate.Components.Shared.URLs.CONTACT
+                    prop.href Arcitisa.Components.Shared.URLs.CONTACT
                 )
             ],
             style = Style.init "swt:dropdown-end"

@@ -4,11 +4,11 @@ open Fable.Core
 open Feliz
 open Renderer.Types
 open Renderer.Context.GitWorkflow
-open Swate.Components.Page.GitComparison
-open Swate.Electron.Shared.VersionControlTypes
+open Arcitisa.Components.Page.GitComparison
+open Arcitisa.Electron.Shared.VersionControlTypes
 
 module Presentation = Renderer.GitDiffPresentation
-module Paged = Swate.Components.Page.GitComparison.GitPagedDiffTypes
+module Paged = Arcitisa.Components.Page.GitComparison.GitPagedDiffTypes
 
 [<AllowNullLiteral>]
 type private IPerformance =
@@ -119,7 +119,7 @@ let Main (page: GitDiffPageData) =
     // these measures until they are cleared, outside the JavaScript heap. With thousands of diff
     // rows as props, each loaded page added megabytes that never came back. Clearing them when
     // the pages change and when the diff closes keeps that memory bounded. The production build
-    // records no measures, and Swate reads none.
+    // records no measures, and ARCitISA reads none.
     React.useEffect ((fun () -> FsReact.createDisposable clearPerformanceMeasures), [| box page.Pages |])
 
     // Once the first page is ready, the loader reads every other page in the background, so the

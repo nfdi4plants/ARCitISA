@@ -1,8 +1,8 @@
-module Swate.Components.Composite.Table.Helper
+module Arcitisa.Components.Composite.Table.Helper
 
 open Feliz
-open Swate.Components
-open Swate.Components.Composite.Table.Types
+open Arcitisa.Components
+open Arcitisa.Components.Composite.Table.Types
 
 type ATCMC =
     static member Icon(className: string) = Html.i [ prop.className className ]

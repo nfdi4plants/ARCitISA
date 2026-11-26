@@ -4,7 +4,7 @@ open ARCtrl
 open ARCtrl.ArcPathHelper
 open ARCtrl.Contract
 open ARCtrl.Helper
-open Swate.Components.Shared
+open Arcitisa.Components.Shared
 
 type ARC with
 

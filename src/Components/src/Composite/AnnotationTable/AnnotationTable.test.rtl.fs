@@ -1,4 +1,4 @@
-module internal Swate.Components.Composite.AnnotationTable.AnnotationTableTests
+module internal Arcitisa.Components.Composite.AnnotationTable.AnnotationTableTests
 
 open ARCtrl
 open Browser.Dom
@@ -6,7 +6,7 @@ open Browser.Types
 open Fable.Core
 open Feliz
 open Vitest
-open Swate.Components.Composite.AnnotationTable.Context
+open Arcitisa.Components.Composite.AnnotationTable.Context
 
 [<Emit("$0.spyOn(HTMLElement.prototype, $1, 'get').mockReturnValue($2)")>]
 let private mockGeometry (vi: Vi) (property: string) (value: int) : unit = jsNative

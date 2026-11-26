@@ -1,15 +1,15 @@
-namespace Swate.Components.Composite.Workspace
+namespace Arcitisa.Components.Composite.Workspace
 
 open System
 open Fable.Core
 open Fable.Core.JsInterop
 open Feliz
 open Browser.Types
-open Swate.Components
-open Swate.Components.Primitive.ContextMenu
-open Swate.Components.Primitive.ContextMenu.Types
-open Swate.Components.Composite.Workspace.Types
-open Swate.Components.Composite.Workspace.Context
+open Arcitisa.Components
+open Arcitisa.Components.Primitive.ContextMenu
+open Arcitisa.Components.Primitive.ContextMenu.Types
+open Arcitisa.Components.Composite.Workspace.Types
+open Arcitisa.Components.Composite.Workspace.Context
 
 module private TabContextMenuHelper =
 

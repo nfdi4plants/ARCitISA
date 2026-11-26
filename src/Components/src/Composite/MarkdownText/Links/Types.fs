@@ -1,4 +1,4 @@
-module Swate.Components.Composite.MarkdownText.Links.Types
+module Arcitisa.Components.Composite.MarkdownText.Links.Types
 
 /// Where a link or image reference of a Markdown document points.
 [<RequireQualifiedAccess>]

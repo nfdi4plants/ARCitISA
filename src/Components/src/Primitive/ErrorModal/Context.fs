@@ -1,7 +1,7 @@
-module Swate.Components.Primitive.ErrorModal.Context
+module Arcitisa.Components.Primitive.ErrorModal.Context
 
-open Swate.Components
-open Swate.Components.Primitive.ErrorModal.Types
+open Arcitisa.Components
+open Arcitisa.Components.Primitive.ErrorModal.Types
 
 open Feliz
 

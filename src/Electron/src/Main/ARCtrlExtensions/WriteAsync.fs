@@ -73,21 +73,21 @@ module ArcWriteExtensions =
     type ARC with
 
         /// Generates targeted ARC files and create-only defaults without changing the live saved baseline.
-        member this.GetWriteContractsSwate(?skipUpdateFS: bool) =
+        member this.GetWriteContractsArcitisa(?skipUpdateFS: bool) =
             copyArcPreservingStaticHashes this |> writeContracts skipUpdateFS
 
         /// Existing destinations are skipped. The creation lifecycle reloads disk as its clean baseline.
-        member this.TryWriteAsyncSwate(arcPath: string) = promise {
+        member this.TryWriteAsyncArcitisa(arcPath: string) = promise {
             try
                 return!
-                    this.GetWriteContractsSwate()
-                    |> ContractExecutor.fulfillContractsSwateAsync arcPath
+                    this.GetWriteContractsArcitisa()
+                    |> ContractExecutor.fulfillContractsArcitisaAsync arcPath
             with error ->
                 return Error [| error.Message |]
         }
 
         /// Model payloads are upserts; default scaffold files remain create-only.
-        member this.PrepareUpdateContractsSwateAsync(arcPath: string) : JS.Promise<Result<Contract[], string[]>> = promise {
+        member this.PrepareUpdateContractsArcitisaAsync(arcPath: string) : JS.Promise<Result<Contract[], string[]>> = promise {
             let snapshot, raw, dirty, isFullWrite = prepareSave None this
 
             let! prepared =
@@ -104,5 +104,5 @@ module ArcWriteExtensions =
         }
 
         /// Commits captured saved baselines only after the complete batch succeeds.
-        member this.TryUpdateAsyncSwate(arcPath: string) =
-            persistArcSaveWithAsync ContractExecutor.fulfillContractsSwateAsync arcPath this
+        member this.TryUpdateAsyncArcitisa(arcPath: string) =
+            persistArcSaveWithAsync ContractExecutor.fulfillContractsArcitisaAsync arcPath this

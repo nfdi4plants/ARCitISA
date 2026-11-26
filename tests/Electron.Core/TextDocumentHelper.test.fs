@@ -1,6 +1,6 @@
 module ElectronCore.TextDocumentHelperTests
 
-open Swate.Electron.Shared.TextDocumentHelper
+open Arcitisa.Electron.Shared.TextDocumentHelper
 open Vitest
 
 Vitest.describe (

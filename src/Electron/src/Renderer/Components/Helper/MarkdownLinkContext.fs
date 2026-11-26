@@ -2,9 +2,9 @@ module Renderer.Components.Helper.MarkdownLinkContext
 
 open Fable.Core
 open Feliz
-open Swate.Components.Composite.MarkdownText.Links.Types
-open Swate.Electron.Shared
-open Swate.Electron.Shared.DTOs.MarkdownResolverDto
+open Arcitisa.Components.Composite.MarkdownText.Links.Types
+open Arcitisa.Electron.Shared
+open Arcitisa.Electron.Shared.DTOs.MarkdownResolverDto
 open Renderer.Types
 
 /// The text shown in place of an image the main process refuses to serve.

@@ -6,9 +6,9 @@ open Fetch
 open Main.Bindings
 open Main.Bindings.Filesystem
 open Main.Helper
-open Swate.Components.Shared
-open Swate.Electron.Shared
-open Swate.Electron.Shared.DTOs.MarkdownResolverDto
+open Arcitisa.Components.Shared
+open Arcitisa.Electron.Shared
+open Arcitisa.Electron.Shared.DTOs.MarkdownResolverDto
 
 module internal ResponseFactory =
 
@@ -47,7 +47,7 @@ type MarkdownResolverService
     // The same limit the link lint sends at most. It is a literal there, so Fable inlines it and Main does not
     // import the Markdown modules.
     let maxCheckedPaths =
-        Swate.Components.Composite.MarkdownText.Links.LinkDiagnostics.maxCheckedPaths
+        Arcitisa.Components.Composite.MarkdownText.Links.LinkDiagnostics.maxCheckedPaths
 
     let refuseAndClose (handle: FileHandle) (refusal: AssetRefusal) = promise {
         try

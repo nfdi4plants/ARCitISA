@@ -5,8 +5,8 @@
 module Renderer.Components.Helper.GitLfsHelper
 
 open Fable.Core
-open Swate.Components.Shared
-open Swate.Electron.Shared.VersionControlTypes
+open Arcitisa.Components.Shared
+open Arcitisa.Electron.Shared.VersionControlTypes
 
 let private toUnitResult = Renderer.Context.GitWorkflow.toUnitResult
 

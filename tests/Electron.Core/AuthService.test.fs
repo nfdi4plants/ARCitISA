@@ -3,7 +3,7 @@ module ElectronCore.AuthServiceTests
 open System
 open Fable.Core
 open Main.Auth
-open Swate.Electron.Shared.AuthTypes
+open Arcitisa.Electron.Shared.AuthTypes
 open Vitest
 open ElectronCore.TestHelpers
 
@@ -102,12 +102,12 @@ let private releaseAll (gitLab: FakeGitLab) =
 
 /// Runs the test over an empty credential store in a temporary folder and removes what it signed in.
 let private withAuthStore (testBody: unit -> JS.Promise<unit>) : JS.Promise<unit> = promise {
-    let! rootPath = createTempDirectoryAsync "swate-auth-service-"
-    Vitest.vi.stubEnv ("SWATE_TEST_USER_DATA", Some rootPath)
+    let! rootPath = createTempDirectoryAsync "arcitisa-auth-service-"
+    Vitest.vi.stubEnv ("ARCITISA_TEST_USER_DATA", Some rootPath)
 
     let cleanUp () = promise {
         AuthService.listAccounts ()
-        |> Array.map _.User.LocalSwateAccountId
+        |> Array.map _.User.LocalArcitisaAccountId
         |> AuthService.removeAccounts
         |> ignore
 
@@ -138,7 +138,7 @@ let private signIn (baseUrl: string) = promise {
     return
         (AuthService.listAccounts ()
          |> Array.find (fun account -> account.User.TargetDataHub = baseUrl))
-            .User.LocalSwateAccountId
+            .User.LocalArcitisaAccountId
 }
 
 let private storedTokens () =
@@ -239,14 +239,17 @@ Vitest.describe (
                             "https://second.example.org", "token-for-https://second.example.org"
                         ]
 
-                    Vitest.expect(AuthService.listAccounts () |> Array.map _.User.LocalSwateAccountId).toEqual [|
+                    Vitest.expect(AuthService.listAccounts () |> Array.map _.User.LocalArcitisaAccountId).toEqual [|
                         keptId
                     |]
 
                     Vitest.expect(storedTokens () |> Array.map fst).toEqual [| "https://kept.example.org" |]
 
                     Vitest
-                        .expect((AuthService.getState ()).ActiveAccount |> Option.map _.User.LocalSwateAccountId)
+                        .expect(
+                            (AuthService.getState ()).ActiveAccount
+                            |> Option.map _.User.LocalArcitisaAccountId
+                        )
                         .toEqual (Some keptId)
                 })
         )

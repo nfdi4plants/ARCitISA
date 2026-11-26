@@ -1,13 +1,13 @@
-module Swate.Components.Composite.DataMapTable.Helper
+module Arcitisa.Components.Composite.DataMapTable.Helper
 
 open ARCtrl
 open Browser.Dom
 open Fable.Core
-open Swate.Components
-open Swate.Components.Shared
-open Swate.Components.Composite.DataMapTable.Types
-open Swate.Components.Composite.DataMapTable.ClipboardTarget
-open Swate.Components.Composite.Table.Types
+open Arcitisa.Components
+open Arcitisa.Components.Shared
+open Arcitisa.Components.Composite.DataMapTable.Types
+open Arcitisa.Components.Composite.DataMapTable.ClipboardTarget
+open Arcitisa.Components.Composite.Table.Types
 
 let private captureCells
     (dataMap: Datamap)
@@ -19,18 +19,18 @@ let private captureCells
         |> Seq.toArray
 
     let cells =
-        Swate.Components.ClipboardContract.Contract.Capture.matrix
+        Arcitisa.Components.ClipboardContract.Contract.Capture.matrix
             (fun coordinate -> dataMap.GetCell(coordinate.x - 1, coordinate.y - 1))
             coordinates
 
     {
-        PlainText = Swate.Components.ClipboardContract.Contract.Capture.toPlainText cells
+        PlainText = Arcitisa.Components.ClipboardContract.Contract.Capture.toPlainText cells
         Cells = Some cells
     }
 
 let copyCells (dataMap: Datamap) (coordinates: seq<CellCoordinate>) =
     let content = captureCells dataMap coordinates
-    Swate.Components.ClipboardCodec.write content.PlainText content.Cells
+    Arcitisa.Components.ClipboardCodec.write content.PlainText content.Cells
 
 let updateDataMap (dataMap: Datamap) (setDataMap: Datamap -> unit) (update: Datamap -> unit) =
     // Always mutate a copy so memoized views compare against the unchanged current value.
@@ -43,7 +43,7 @@ let duplicateRows (dataMap: Datamap) (coordinates: seq<CellCoordinate>) (setData
         dataMap
         setDataMap
         (fun nextDataMap ->
-            for rowIndex in Swate.Components.Composite.Table.Helper.selectedRowIndices dataMap.RowCount coordinates do
+            for rowIndex in Arcitisa.Components.Composite.Table.Helper.selectedRowIndices dataMap.RowCount coordinates do
                 let source = dataMap.DataContexts.[rowIndex]
                 let duplicate = source.Copy()
                 // ARCtrl's copy omits Label and shares mutable ontology annotations and comments.
@@ -56,7 +56,7 @@ let duplicateRows (dataMap: Datamap) (coordinates: seq<CellCoordinate>) (setData
         )
 
 let cutCells (dataMap: Datamap) (coordinates: CellCoordinate[]) (setDataMap: Datamap -> unit) =
-    Swate.Components.ClipboardContract.Actions.cut
+    Arcitisa.Components.ClipboardContract.Actions.cut
         (captureCells dataMap coordinates)
         (fun () -> updateDataMap dataMap setDataMap _.ClearCells(coordinates))
 
@@ -67,7 +67,7 @@ let pasteFromClipboard
     (setDataMap: Datamap -> unit)
     =
     promise {
-        let! content = Swate.Components.ClipboardCodec.read ()
+        let! content = Arcitisa.Components.ClipboardCodec.read ()
 
         updateDataMap
             dataMap

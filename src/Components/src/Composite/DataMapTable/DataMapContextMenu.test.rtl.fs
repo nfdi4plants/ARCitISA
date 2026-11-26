@@ -1,11 +1,11 @@
-module internal Swate.Components.Composite.DataMapTable.DataMapContextMenuTests
+module internal Arcitisa.Components.Composite.DataMapTable.DataMapContextMenuTests
 
 open ARCtrl
 open Browser.Dom
 open Browser.Types
 open Fable.Core
 open Vitest
-open Swate.Components
+open Arcitisa.Components
 
 [<Emit("$0.spyOn(HTMLElement.prototype, $1, 'get').mockImplementation(function () { return $1 === 'offsetWidth' && this.hasAttribute('data-column') ? 120 : $2; })")>]
 let private mockGeometry (vi: Vi) (property: string) (value: int) : unit = jsNative

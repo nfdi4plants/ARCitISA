@@ -17,8 +17,8 @@ let install () =
             menu.items
             |> Array.filter (fun item ->
                 item.role <> Enums.MenuItem.Role.Help
-                && item.id <> "swate-help"
-                && item.id <> "swate-arc"
+                && item.id <> "arcitisa-help"
+                && item.id <> "arcitisa-arc"
             )
             |> Array.map U2.Case2
         | None ->

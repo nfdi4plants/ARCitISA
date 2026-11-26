@@ -2,9 +2,9 @@ namespace MainComponents
 
 open Feliz
 open EmptyTableModals
-open Swate.Components
-open Swate.Components.Primitive
-open Swate.Components.Primitive.CardGrid
+open Arcitisa.Components
+open Arcitisa.Components.Primitive
+open Arcitisa.Components.Primitive.CardGrid
 open Model
 open ARCtrl
 
@@ -80,28 +80,28 @@ type EmptyTableElement =
             Html.div [
                 prop.className "swt:flex swt:justify-center swt:h-full swt:items-center"
                 prop.children [
-                    Swate.Components.Primitive.CardGrid.CardGrid.CardGrid(
+                    Arcitisa.Components.Primitive.CardGrid.CardGrid.CardGrid(
                         React.Fragment [
-                            Swate.Components.Primitive.CardGrid.CardGrid.CardGridButton(
-                                Swate.Components.Primitive.Icons.Templates(),
+                            Arcitisa.Components.Primitive.CardGrid.CardGrid.CardGridButton(
+                                Arcitisa.Components.Primitive.Icons.Templates(),
                                 "Start with template!",
                                 "Select a full template as a starting point.",
                                 fun _ -> Modals.Templates |> Some |> setModal
                             )
-                            Swate.Components.Primitive.CardGrid.CardGrid.CardGridButton(
-                                Swate.Components.Primitive.Icons.BuildingBlock(),
+                            Arcitisa.Components.Primitive.CardGrid.CardGrid.CardGridButton(
+                                Arcitisa.Components.Primitive.Icons.BuildingBlock(),
                                 "Start from scratch!",
                                 "Select a building block as a starting point.",
                                 fun _ -> Modals.BuildingBlock |> Some |> setModal
                             )
-                            Swate.Components.Primitive.CardGrid.CardGrid.CardGridButton(
-                                Swate.Components.Primitive.Icons.BasicTable(),
+                            Arcitisa.Components.Primitive.CardGrid.CardGrid.CardGridButton(
+                                Arcitisa.Components.Primitive.Icons.BasicTable(),
                                 "Create basic table!",
                                 "Create a table with columns: Input, Protocol, Output.",
                                 fun _ -> EmptyTableElement.createMinimalTable (model, dispatch)
                             )
-                            Swate.Components.Primitive.CardGrid.CardGrid.CardGridButton(
-                                Swate.Components.Primitive.Icons.OutputColumn(),
+                            Arcitisa.Components.Primitive.CardGrid.CardGrid.CardGridButton(
+                                Arcitisa.Components.Primitive.Icons.OutputColumn(),
                                 "Utilize prior output!",
                                 "Select an output column of one table as new input column.",
                                 (fun _ -> Modals.PreviousTableSelect |> Some |> setModal),

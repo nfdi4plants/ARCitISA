@@ -1,4 +1,4 @@
-module internal Swate.Components.Page.FileViewer.Helper.LineEndingsTests
+module internal Arcitisa.Components.Page.FileViewer.Helper.LineEndingsTests
 
 open Vitest
 

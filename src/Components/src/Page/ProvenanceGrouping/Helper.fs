@@ -1,11 +1,11 @@
-namespace Swate.Components.Page.ProvenanceGrouping
+namespace Arcitisa.Components.Page.ProvenanceGrouping
 
 [<Fable.Core.Mangle(false)>]
 module Exports =
 
-    open Swate.Components.Shared.ProvenanceGrouping.Types
-    open Swate.Components.Shared.ProvenanceGrouping.Session
-    open Swate.Components.Page.ProvenanceGrouping.Types
+    open Arcitisa.Components.Shared.ProvenanceGrouping.Types
+    open Arcitisa.Components.Shared.ProvenanceGrouping.Session
+    open Arcitisa.Components.Page.ProvenanceGrouping.Types
 
     let private sideFromName =
         function

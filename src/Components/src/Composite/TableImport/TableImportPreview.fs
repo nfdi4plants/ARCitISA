@@ -1,10 +1,10 @@
-namespace Swate.Components.Composite.TableImport
+namespace Arcitisa.Components.Composite.TableImport
 
 open ARCtrl
 open Fable.Core
 open Feliz
-open Swate.Components
-open Swate.Components.Composite.TableImport.Types
+open Arcitisa.Components
+open Arcitisa.Components.Composite.TableImport.Types
 
 [<Erase; Mangle(false)>]
 type TableImportPreview =
@@ -36,7 +36,7 @@ type TableImportPreview =
 
     [<ReactComponent>]
     static member private NewTableNameField
-        (newTableName: Swate.Components.Shared.ARCtrlHelper.NewTableName, setName: string -> unit)
+        (newTableName: Arcitisa.Components.Shared.ARCtrlHelper.NewTableName, setName: string -> unit)
         =
         let message (colorClass: string) (iconClass: string) (text: string) =
             Html.span [

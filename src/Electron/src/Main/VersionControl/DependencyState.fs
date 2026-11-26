@@ -9,8 +9,8 @@ open System
 open Fable.Core
 open Fable.Electron.Main
 open Main.Bindings.PromiseRace
-open Swate.Electron.Shared.IPCTypes.MainToRendererIpc
-open Swate.Electron.Shared.VersionControlTypes
+open Arcitisa.Electron.Shared.IPCTypes.MainToRendererIpc
+open Arcitisa.Electron.Shared.VersionControlTypes
 open VersionControlService.Abstractions
 
 /// Asks every registered provider for its components. A provider whose check fails does not hide

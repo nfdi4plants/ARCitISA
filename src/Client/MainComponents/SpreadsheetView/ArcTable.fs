@@ -4,7 +4,7 @@ open Feliz
 
 open Model
 open Messages
-open Swate.Components.Composite.AnnotationTable
+open Arcitisa.Components.Composite.AnnotationTable
 
 [<ReactComponent>]
 let Main (model: Model, dispatch) =

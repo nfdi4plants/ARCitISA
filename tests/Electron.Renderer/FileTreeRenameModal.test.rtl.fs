@@ -3,9 +3,9 @@ module ElectronRenderer.FileTreeRenameModalTests
 open Browser.Types
 open Renderer.Components.LeftSidebar.FileExplorer.Modals
 open Renderer.Components.LeftSidebar.FileExplorer.FileTreeRenameHelper
-open Swate.Components.Page.FileExplorer.Types
-open Swate.Components.Shared
-open Swate.Electron.Shared.RenamePathRules
+open Arcitisa.Components.Page.FileExplorer.Types
+open Arcitisa.Components.Shared
+open Arcitisa.Electron.Shared.RenamePathRules
 open Vitest
 
 Vitest.afterEach (fun () -> RTL.cleanup ())

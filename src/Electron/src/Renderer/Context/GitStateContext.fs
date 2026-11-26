@@ -6,12 +6,12 @@ open Feliz
 open Feliz.UseElmish
 
 open Renderer.Types
-open Swate.Components.Page.GitSidebarTypes
-open Swate.Components.Primitive.ErrorModal.Context
-open Swate.Components.Primitive.ErrorModal.Types
-open Swate.Electron.Shared.IPCTypes
-open Swate.Electron.Shared.IPCTypes.MainToRendererIpc
-open Swate.Electron.Shared.VersionControlTypes
+open Arcitisa.Components.Page.GitSidebarTypes
+open Arcitisa.Components.Primitive.ErrorModal.Context
+open Arcitisa.Components.Primitive.ErrorModal.Types
+open Arcitisa.Electron.Shared.IPCTypes
+open Arcitisa.Electron.Shared.IPCTypes.MainToRendererIpc
+open Arcitisa.Electron.Shared.VersionControlTypes
 
 open Renderer.Context.GitWorkflow
 

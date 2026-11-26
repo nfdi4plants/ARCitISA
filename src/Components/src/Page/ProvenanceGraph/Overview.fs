@@ -1,9 +1,9 @@
 /// The rows of the location overview: one row per level above the current view, with the item that leads to the view.
-module Swate.Components.Page.ProvenanceGraph.Overview
+module Arcitisa.Components.Page.ProvenanceGraph.Overview
 
-open Swate.Components.Shared.ProvenanceGraph.Types
-open Swate.Components.Shared.ProvenanceGraph.Queries
-open Swate.Components.Page.ProvenanceGraph.Types
+open Arcitisa.Components.Shared.ProvenanceGraph.Types
+open Arcitisa.Components.Shared.ProvenanceGraph.Queries
+open Arcitisa.Components.Page.ProvenanceGraph.Types
 
 /// A collapsed row shows at most this many items.
 let maxItems = 7

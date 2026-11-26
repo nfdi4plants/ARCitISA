@@ -10,8 +10,8 @@ open Main.Bindings.Crypto
 open Main.Bindings.Filesystem
 open Main.Bindings.Path
 open Main.IPC.TextFileSave
-open Swate.Electron.Shared.FileIOHelper
-open Swate.Electron.Shared.FileIOTypes
+open Arcitisa.Electron.Shared.FileIOHelper
+open Arcitisa.Electron.Shared.FileIOTypes
 open Vitest
 
 [<Import("writeFile", "fs/promises")>]
@@ -34,7 +34,7 @@ let private toArray (bytes: byte[]) =
 let private utf8 (text: string) = bufferFromString text "utf8"
 
 let private withDirectory (check: string -> JS.Promise<unit>) = promise {
-    let! directoryPath = TestHelpers.createTempDirectoryAsync "swate-text-io-"
+    let! directoryPath = TestHelpers.createTempDirectoryAsync "arcitisa-text-io-"
 
     try
         do! check directoryPath

@@ -1,13 +1,13 @@
 module Renderer.Components.LeftSidebar.FileExplorer.FileTreeContextMenu
 
 open System
-open Swate.Components
+open Arcitisa.Components
 open Fable.Core
 open Fable.Core.JsInterop
-open Swate.Components.Page.FileExplorer.Types
-open Swate.Components.Primitive.ErrorModal.Types
-open Swate.Components.Shared
-open Swate.Electron.Shared.FileIOTypes
+open Arcitisa.Components.Page.FileExplorer.Types
+open Arcitisa.Components.Primitive.ErrorModal.Types
+open Arcitisa.Components.Shared
+open Arcitisa.Electron.Shared.FileIOTypes
 open Renderer.Context.LfsActivityContext
 open Renderer.Components.LeftSidebar.FileExplorer.FileTreeRenameHelper
 open Renderer.Components.LeftSidebar.FileExplorer.Helper
@@ -260,7 +260,7 @@ let folderLfsContextMenuItems (config: ContextMenuConfig) (item: FileItem) =
     | Some path when item.IsDirectory ->
         let objects = config.getFolderLargeObjects path
 
-        Swate.Components.Page.FileExplorer.FileExplorerGitLfsHelper.folderContextMenuItems
+        Arcitisa.Components.Page.FileExplorer.FileExplorerGitLfsHelper.folderContextMenuItems
             item
             (isLockedByLfsActivity config.lfsActivePaths item)
             objects.NeedsDownload.Length
@@ -294,7 +294,7 @@ let createContextMenuItems (config: ContextMenuConfig) arcScopeId =
             dataMapContextMenuItems config.createDataMap config.requestDeleteItem config.tryFindDataMapItemByPath item
             [
                 yield!
-                    Swate.Components.Page.FileExplorer.FileExplorerGitLfsHelper.contextMenuItems
+                    Arcitisa.Components.Page.FileExplorer.FileExplorerGitLfsHelper.contextMenuItems
                         item
                         toggleLfsMark
                         (Some downloadLfsFile)

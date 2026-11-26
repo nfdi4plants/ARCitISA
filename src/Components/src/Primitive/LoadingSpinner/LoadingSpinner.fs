@@ -1,8 +1,8 @@
-namespace Swate.Components.Primitive.LoadingSpinner
+namespace Arcitisa.Components.Primitive.LoadingSpinner
 
 open Fable.Core
 open Feliz
-open Swate.Components.Primitive
+open Arcitisa.Components.Primitive
 
 [<Erase; Mangle(false)>]
 type LoadingSpinner =

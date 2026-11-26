@@ -1,4 +1,4 @@
-module Swate.Components.Composite.SortableList.Types
+module Arcitisa.Components.Composite.SortableList.Types
 
 open Feliz
 

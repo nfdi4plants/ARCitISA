@@ -1,4 +1,4 @@
-namespace Swate.Components.Composite.Template
+namespace Arcitisa.Components.Composite.Template
 
 open System
 open ARCtrl
@@ -6,17 +6,17 @@ open Elmish
 open Fable.Core
 open Feliz
 open Feliz.UseElmish
-open Swate.Components
-open Swate.Components.Composite.Template.Types
+open Arcitisa.Components
+open Arcitisa.Components.Composite.Template.Types
 
-module TemplateHelper = Swate.Components.Composite.Template.Helper
-module TemplateCacheCtx = Swate.Components.Composite.Template.TemplateCacheContext
+module TemplateHelper = Arcitisa.Components.Composite.Template.Helper
+module TemplateCacheCtx = Arcitisa.Components.Composite.Template.TemplateCacheContext
 
 module private TemplateCacheProviderHelper =
 
 
     [<Literal>]
-    let CacheStorageKey = "swate.components.template.cache.v1"
+    let CacheStorageKey = "Arcitisa.Components.template.cache.v1"
 
     let DefaultFetchInterval = TimeSpan.FromHours 1.0
 

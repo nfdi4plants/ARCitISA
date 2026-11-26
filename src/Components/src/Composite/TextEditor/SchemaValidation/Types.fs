@@ -1,4 +1,4 @@
-module Swate.Components.Composite.TextEditor.SchemaValidation.Types
+module Arcitisa.Components.Composite.TextEditor.SchemaValidation.Types
 
 /// Offsets into the source text, end exclusive.
 type Span = { From: int; To: int }

@@ -1,10 +1,10 @@
-module Swate.Components.Composite.GraphCanvas.ImageExport
+module Arcitisa.Components.Composite.GraphCanvas.ImageExport
 
 open Browser.Dom
 open Browser.Types
 open Fable.Core
-open Swate.Components
-open Swate.Components.JsBindings
+open Arcitisa.Components
+open Arcitisa.Components.JsBindings
 
 // Turns the drawn graph into a PNG of the whole layout. The markup is a self-contained copy of the live SVG.
 // Colors come from custom properties and color-mix() in inline styles, which an image cannot resolve on its own.

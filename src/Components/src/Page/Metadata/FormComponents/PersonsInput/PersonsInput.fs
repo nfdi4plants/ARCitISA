@@ -1,4 +1,4 @@
-namespace Swate.Components.Page.Metadata.FormComponents.PersonsInput
+namespace Arcitisa.Components.Page.Metadata.FormComponents.PersonsInput
 
 open Browser.Types
 open Fable.Core
@@ -6,10 +6,10 @@ open Fable.Core.JsInterop
 open Feliz
 open ARCtrl
 
-open Swate.Components
-open Swate.Components.Primitive.LayoutComponents
-open Swate.Components.Page.Metadata.FormComponents
-open Swate.Components.Page.Metadata.FormComponents.PersonsInput.Types
+open Arcitisa.Components
+open Arcitisa.Components.Primitive.LayoutComponents
+open Arcitisa.Components.Page.Metadata.FormComponents
+open Arcitisa.Components.Page.Metadata.FormComponents.PersonsInput.Types
 
 module private PersonsInputHelper =
 

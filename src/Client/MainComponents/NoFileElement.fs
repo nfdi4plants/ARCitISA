@@ -7,8 +7,8 @@ open Messages
 open Browser.Types
 open Fable.Core.JsInterop
 open ARCtrl
-open Swate.Components.Shared
-open Swate
+open Arcitisa.Components.Shared
+open Arcitisa
 
 open Elmish
 

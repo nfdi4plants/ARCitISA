@@ -1,9 +1,9 @@
-namespace Swate.Components.Page.ChangelogSample
+namespace Arcitisa.Components.Page.ChangelogSample
 
 open Fable.Core
 open Feliz
-open Swate.Components.Api.GitHubReleases
-open Swate.Components.Page.Changelog
+open Arcitisa.Components.Api.GitHubReleases
+open Arcitisa.Components.Page.Changelog
 
 module internal Fixtures =
 

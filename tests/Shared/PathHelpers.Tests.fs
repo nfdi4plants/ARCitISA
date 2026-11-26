@@ -6,7 +6,7 @@ open Fable.Mocha
 open Expecto
 #endif
 
-open Swate.Components.Shared
+open Arcitisa.Components.Shared
 
 let tests =
     testList "PathHelpers" [

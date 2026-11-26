@@ -1,6 +1,6 @@
-module Swate.Components.Composite.Widgets.JsonImport.Types
+module Arcitisa.Components.Composite.Widgets.JsonImport.Types
 
-open Swate.Components.Shared
+open Arcitisa.Components.Shared
 
 type JsonImportFile = {
     FileName: string option

@@ -1,4 +1,4 @@
-namespace Swate.Components.Primitive.CardGrid
+namespace Arcitisa.Components.Primitive.CardGrid
 
 open Fable.Core
 open Feliz

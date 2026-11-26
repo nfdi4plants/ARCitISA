@@ -3,10 +3,10 @@ module MainComponents.FooterTabs
 open Feliz
 open ARCtrl
 open Model
-open Swate.Components
-open Swate.Components.Primitive
-open Swate.Components.Primitive.BaseModal
-open Swate.Components.Shared
+open Arcitisa.Components
+open Arcitisa.Components.Primitive
+open Arcitisa.Components.Primitive.BaseModal
+open Arcitisa.Components.Shared
 
 
 type private FooterTab = {
@@ -72,7 +72,7 @@ let Main (index: int, tables: ArcTables, model: Model, dispatch: Messages.Msg ->
     let id = $"ReorderMe_{index}_{table.Name}"
     let tabRef = React.useElementRef ()
 
-    /// https://github.com/nfdi4plants/Swate/issues/925
+    /// https://github.com/nfdi4plants/ARCitISA/issues/925
     let startEdit = fun _ -> { state with IsEditable = true } |> setState
 
     let updateName =
@@ -99,8 +99,8 @@ let Main (index: int, tables: ArcTables, model: Model, dispatch: Messages.Msg ->
                     // .. when pressing "ENTER". "ESCAPE" will negate changes.
                     prop.onKeyDown (fun e ->
                         match e.code with
-                        | Swate.Components.kbdEventCode.enter -> updateName e
-                        | Swate.Components.kbdEventCode.escape ->
+                        | Arcitisa.Components.kbdEventCode.enter -> updateName e
+                        | Arcitisa.Components.kbdEventCode.escape ->
                             setState {
                                 state with
                                     IsEditable = false

@@ -1,4 +1,4 @@
-module Swate.Components.Page.ValidationPackageBrowser.ValidationPackagesYaml
+module Arcitisa.Components.Page.ValidationPackageBrowser.ValidationPackagesYaml
 
 open System
 open ARCtrl.ValidationPackages

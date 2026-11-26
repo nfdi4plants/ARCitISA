@@ -7,7 +7,7 @@ open System
 open System.Collections.Generic
 open Fable.Core
 open Main.VersionControl.VersionControlSettings
-open Swate.Electron.Shared.VersionControlTypes
+open Arcitisa.Electron.Shared.VersionControlTypes
 open VersionControlService.Abstractions
 
 type HostedSession = {

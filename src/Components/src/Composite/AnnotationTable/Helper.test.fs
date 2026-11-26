@@ -1,8 +1,8 @@
-module internal Swate.Components.Composite.AnnotationTable.HelperTests
+module internal Arcitisa.Components.Composite.AnnotationTable.HelperTests
 
 open ARCtrl
 open Vitest
-open Swate.Components.Composite.AnnotationTable.Helper
+open Arcitisa.Components.Composite.AnnotationTable.Helper
 
 let private createTable () =
     let table = ArcTable.init "Duplication"

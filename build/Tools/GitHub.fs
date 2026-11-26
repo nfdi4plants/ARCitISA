@@ -62,7 +62,7 @@ let private mkHeaders token = [
     "Authorization", sprintf "Bearer %s" token
     "Accept", "application/vnd.github+json"
     "X-GitHub-Api-Version", "2022-11-28"
-    "user-agent", "Swate build script"
+    "user-agent", "ARCitISA build script"
 ]
 
 let private toJson (data: (string * obj) list) = JsonSerializer.Serialize(dict data)

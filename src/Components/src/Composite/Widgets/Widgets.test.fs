@@ -1,7 +1,7 @@
-module internal Swate.Components.Composite.Widgets.WidgetsTests
+module internal Arcitisa.Components.Composite.Widgets.WidgetsTests
 
 open Vitest
-open Swate.Components.Composite.Widgets.Types
+open Arcitisa.Components.Composite.Widgets.Types
 
 let private host = { X = 800; Y = 500 }
 let private element = { X = 300; Y = 200 }

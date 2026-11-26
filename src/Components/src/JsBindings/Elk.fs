@@ -1,8 +1,8 @@
-namespace Swate.Components.JsBindings
+namespace Arcitisa.Components.JsBindings
 
 open Fable.Core
 open Fable.Core.JsInterop
-open Swate.Components.Util.WebWorker
+open Arcitisa.Components.Util.WebWorker
 
 /// Typed binding for elkjs (https://github.com/kieler/elkjs), the bundled build without web workers.
 ///

@@ -6,13 +6,13 @@ open Feliz.UseElmish
 open Renderer.Components
 open Renderer.Components.Helper.ArcVaultHelper
 open Renderer.Types
-open Swate.Components
-open Swate.Components.Composite.Layout
-open Swate.Components.Primitive.BaseModal
-open Swate.Components.Primitive.ErrorModal
-open Swate.Components.Primitive.ErrorModal.Context
-open Swate.Electron.Shared
-open Swate.Electron.Shared.IPCTypes.MainToRendererIpc
+open Arcitisa.Components
+open Arcitisa.Components.Composite.Layout
+open Arcitisa.Components.Primitive.BaseModal
+open Arcitisa.Components.Primitive.ErrorModal
+open Arcitisa.Components.Primitive.ErrorModal.Context
+open Arcitisa.Electron.Shared
+open Arcitisa.Electron.Shared.IPCTypes.MainToRendererIpc
 
 type private Model = {
     // Current ARC root shared with renderer contexts.
@@ -152,7 +152,7 @@ let private subscribe (_model: Model) : Sub<Msg> = [
 [<ReactComponent>]
 let private LeftActionButtons (leftSidebarTarget: LeftSidebarPage) setLeftSidebarTarget =
     let leftSidebarCtx =
-        Swate.Components.Composite.Layout.LeftSidebarContext.useLeftSidebarCtx ()
+        Arcitisa.Components.Composite.Layout.LeftSidebarContext.useLeftSidebarCtx ()
 
     let pageStateCtx = Renderer.Context.PageStateContext.usePageStateCtx ()
     let appStateCtx = Renderer.Context.AppStateContext.useAppStateCtx ()
@@ -265,7 +265,7 @@ let private LeftActionButtons (leftSidebarTarget: LeftSidebarPage) setLeftSideba
 [<ReactComponent>]
 let private LeftSidebarNavigationProvider (setLeftSidebarTarget: LeftSidebarPage -> unit, children: ReactElement) =
     let leftSidebarCtx =
-        Swate.Components.Composite.Layout.LeftSidebarContext.useLeftSidebarCtx ()
+        Arcitisa.Components.Composite.Layout.LeftSidebarContext.useLeftSidebarCtx ()
 
     let navigation: Renderer.Context.LeftSidebarNavigationContext.LeftSidebarNavigation =
         React.useMemo (
@@ -309,7 +309,7 @@ let Main () =
         let reopensOpenDocument =
             match pageState, leaveGuard.documentPath () with
             | Some(PageState.TextDocumentPage data), Some openPath ->
-                Swate.Electron.Shared.TextDocumentHelper.isSameDocumentPath data.Path openPath
+                Arcitisa.Electron.Shared.TextDocumentHelper.isSameDocumentPath data.Path openPath
             | _ -> false
 
         if reopensOpenDocument || not (leaveGuard.isDirty ()) then
@@ -347,7 +347,7 @@ let Main () =
 
     let currentArcScopeId =
         model.ArcRootPath
-        |> Option.map Swate.Components.Shared.PathHelpers.normalizePath
+        |> Option.map Arcitisa.Components.Shared.PathHelpers.normalizePath
         |> Option.bind (fun path ->
             if System.String.IsNullOrWhiteSpace path then
                 None
@@ -363,8 +363,8 @@ let Main () =
 
     let leftActions = LeftActionButtons model.LeftSidebarTarget setLeftSidebarTarget
 
-    Swate.Components.Composite.ThemeSelector.ThemeProvider.ThemeProvider(
-        Swate.Components.Composite.TermSearch.TermSearchConfigProvider.TIBQueryProvider(
+    Arcitisa.Components.Composite.ThemeSelector.ThemeProvider.ThemeProvider(
+        Arcitisa.Components.Composite.TermSearch.TermSearchConfigProvider.TIBQueryProvider(
             Context.AppStateContext.AppStateCtx.Provider(
                 model.ArcRootPath,
                 Renderer.Context.ArcSyncContext.Provider(
@@ -406,7 +406,7 @@ let Main () =
                                                                 statFile = Api.ipcArcVaultApi.statFile
                                                             },
                                                             Renderer.Context.GitStateContext.GitStateCtxProvider(
-                                                                Swate
+                                                                Arcitisa
                                                                     .Components
                                                                     .Composite
                                                                     .AnnotationTable

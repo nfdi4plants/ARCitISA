@@ -10,9 +10,9 @@ open Fable.Electron.Main
 open Main
 open Main.VersionControl
 open Main.VersionControl.VersionControlSettings
-open Swate.Electron.Shared.IPCTypes
-open Swate.Electron.Shared.IPCTypes.MainToRendererIpc
-open Swate.Electron.Shared.VersionControlTypes
+open Arcitisa.Electron.Shared.IPCTypes
+open Arcitisa.Electron.Shared.IPCTypes.MainToRendererIpc
+open Arcitisa.Electron.Shared.VersionControlTypes
 open VersionControlService.Abstractions
 
 /// Output is None for a call without a window. Its operations ask the library for no output.
@@ -1134,7 +1134,7 @@ let api (event: IpcMainInvokeEvent) : IVersionControlApi = {
                                 let! fileSize = tryGetRegularFileSize hosted.Binding.WorkspaceRoot relativePath
 
                                 match
-                                    Swate.Components.Shared.GitLfsRules.tryGetToggleBlockedReason
+                                    Arcitisa.Components.Shared.GitLfsRules.tryGetToggleBlockedReason
                                         relativePath
                                         fileSize
                                         request.UseLargeObjectStorage

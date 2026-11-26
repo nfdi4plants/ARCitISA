@@ -1,8 +1,8 @@
 module Renderer.Context.FileTreeStore
 
-open Swate.Components.Shared
-open Swate.Electron.Shared.FileIOTypes
-open Swate.Electron.Shared.IPCTypes
+open Arcitisa.Components.Shared
+open Arcitisa.Electron.Shared.FileIOTypes
+open Arcitisa.Electron.Shared.IPCTypes
 
 /// Immutable view of the tree. Version is the store's own change counter and serves as React identity.
 /// TreeVersion is the writer version of the last change that reached this snapshot.

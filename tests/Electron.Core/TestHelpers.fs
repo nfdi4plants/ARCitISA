@@ -8,9 +8,9 @@ open Main
 open Main.ArcVaultState
 open Main.Bindings.Path
 open Main.VersionControl
-open Swate.Components.Composite.Authentication.Types
-open Swate.Electron.Shared.IPCTypes
-open Swate.Electron.Shared.VersionControlTypes
+open Arcitisa.Components.Composite.Authentication.Types
+open Arcitisa.Electron.Shared.IPCTypes
+open Arcitisa.Electron.Shared.VersionControlTypes
 open VersionControlService.Abstractions
 open ARCtrl
 
@@ -163,7 +163,7 @@ let private symlinkSync (_target: string) (_linkPath: string) (_linkType: string
 let private rmSync (_path: string) (_options: Main.Bindings.Filesystem.RmOptions) : unit = jsNative
 
 let canCreateFileLinks () =
-    let probeDirectory = mkdtempSync (join [| tmpdir (); "swate-link-probe-" |])
+    let probeDirectory = mkdtempSync (join [| tmpdir (); "arcitisa-link-probe-" |])
 
     try
         try

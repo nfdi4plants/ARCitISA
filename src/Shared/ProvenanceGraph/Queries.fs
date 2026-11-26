@@ -3,10 +3,10 @@
 ///
 /// Every ordered output follows the insertion order of explicit arrays. The
 /// Dictionary and HashSet values only answer lookups by string key.
-module Swate.Components.Shared.ProvenanceGraph.Queries
+module Arcitisa.Components.Shared.ProvenanceGraph.Queries
 
 open System.Collections.Generic
-open Swate.Components.Shared.ProvenanceGraph.Types
+open Arcitisa.Components.Shared.ProvenanceGraph.Types
 
 [<NoEquality; NoComparison>]
 type private RowLink = {

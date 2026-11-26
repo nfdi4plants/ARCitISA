@@ -56,10 +56,10 @@ export const __electronMock = {
 
 export const app = {
     getPath: () => {
-        const userDataPath = process.env.SWATE_TEST_USER_DATA;
+        const userDataPath = process.env.ARCITISA_TEST_USER_DATA;
 
         if (!userDataPath) {
-            throw new Error("SWATE_TEST_USER_DATA is not configured.");
+            throw new Error("ARCITISA_TEST_USER_DATA is not configured.");
         }
 
         return userDataPath;

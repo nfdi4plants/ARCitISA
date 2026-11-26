@@ -1,10 +1,10 @@
-module Swate.Components.Page.ArcFileEditor.Helper
+module Arcitisa.Components.Page.ArcFileEditor.Helper
 
-open Swate.Components.Shared
-open Swate.Components
+open Arcitisa.Components.Shared
+open Arcitisa.Components
 open ARCtrl
-open Swate.Components.Page.ArcFileEditor.Types
-open Swate.Components.Composite.Widgets.DataAnnotator.Types
+open Arcitisa.Components.Page.ArcFileEditor.Types
+open Arcitisa.Components.Composite.Widgets.DataAnnotator.Types
 
 [<Literal>]
 let TableDragIdPrefix = "table-"

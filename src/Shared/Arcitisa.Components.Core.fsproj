@@ -5,10 +5,10 @@
   </PropertyGroup>
 
   <PropertyGroup>
-    <PackageId>Swate.Components.Core</PackageId>
+    <PackageId>ARCitISA.Components.Core</PackageId>
     <PackageVersion>2.0.0</PackageVersion>
     <Authors>Kevin Frey</Authors>
-    <Description>Types for Swate.Components</Description>
+    <Description>Types for ARCitISA.Components</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageTags>F# fable rdm react fable-library fable-javascript</PackageTags>
     <PackageProjectUrl>https://github.com/nfdi4plants/ARCitISA</PackageProjectUrl>

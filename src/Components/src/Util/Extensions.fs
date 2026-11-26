@@ -1,4 +1,4 @@
-namespace Swate.Components
+namespace Arcitisa.Components
 
 open Feliz
 open ARCtrl

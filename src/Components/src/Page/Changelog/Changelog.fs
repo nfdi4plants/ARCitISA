@@ -1,9 +1,9 @@
-namespace Swate.Components.Page.Changelog
+namespace Arcitisa.Components.Page.Changelog
 
 open Fable.Core
 open Feliz
-open Swate.Components.Api.GitHubReleases
-open Swate.Components.Composite.MarkdownText
+open Arcitisa.Components.Api.GitHubReleases
+open Arcitisa.Components.Composite.MarkdownText
 
 module private ChangelogTypes =
 

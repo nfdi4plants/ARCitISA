@@ -1,8 +1,8 @@
-module internal Swate.Components.Tests.JsonImport
+module internal Arcitisa.Components.Tests.JsonImport
 
 open ARCtrl
-open Swate.Components.Shared
-open Swate.Components.Tests.TableFiles
+open Arcitisa.Components.Shared
+open Arcitisa.Components.Tests.TableFiles
 open Vitest
 
 /// A file with one table per name, each holding a cell that names its table.

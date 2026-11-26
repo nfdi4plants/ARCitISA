@@ -1,10 +1,10 @@
-module internal Swate.Components.Composite.TextEditor.TextCompletionTests
+module internal Arcitisa.Components.Composite.TextEditor.TextCompletionTests
 
 open Fable.Core
 open Vitest
-open Swate.Components.Composite.TextEditor.JsBindings.CodeMirror
-open Swate.Components.Composite.TextEditor.JsBindings.Autocomplete
-open Swate.Components.Composite.TextEditor.Types
+open Arcitisa.Components.Composite.TextEditor.JsBindings.CodeMirror
+open Arcitisa.Components.Composite.TextEditor.JsBindings.Autocomplete
+open Arcitisa.Components.Composite.TextEditor.Types
 
 let private stateWith (doc: string) (extension: Extension) =
     EditorStateApi.create {| doc = doc; extensions = extension |}

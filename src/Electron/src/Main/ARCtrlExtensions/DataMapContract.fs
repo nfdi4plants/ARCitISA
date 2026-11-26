@@ -2,7 +2,7 @@ module Main.ARCtrlExtensions.DataMapContract
 
 open ARCtrl
 open ARCtrl.Contract
-open Swate.Components.Shared
+open Arcitisa.Components.Shared
 
 let create (parentInfo: DatamapParentInfo) (dataMap: Datamap) : Contract =
     match parentInfo.Parent with

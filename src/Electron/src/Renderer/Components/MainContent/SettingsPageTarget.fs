@@ -4,13 +4,13 @@ open System
 open Feliz
 open Renderer.Components.Helper.ArcVaultHelper
 open Renderer.Context.VersionControlDependencyContext
-open Swate.Components.Page.GitSidebarTypes
-open Swate.Components.PageComponents.SettingsPage
-open Swate.Components.PageComponents.SettingsPage.Types
-open Swate.Components.Primitive.ErrorModal.Context
-open Swate.Electron.Shared.IPCTypes
-open Swate.Electron.Shared.IPCTypes.MainToRendererIpc
-open Swate.Electron.Shared.VersionControlTypes
+open Arcitisa.Components.Page.GitSidebarTypes
+open Arcitisa.Components.PageComponents.SettingsPage
+open Arcitisa.Components.PageComponents.SettingsPage.Types
+open Arcitisa.Components.Primitive.ErrorModal.Context
+open Arcitisa.Electron.Shared.IPCTypes
+open Arcitisa.Electron.Shared.IPCTypes.MainToRendererIpc
+open Arcitisa.Electron.Shared.VersionControlTypes
 
 let private toGitDefaults (values: UserDefaultValuesDto) : SettingsGitDefaults = {
     LfsAutoTrackThresholdMb = values.LfsAutoTrackThresholdMb
@@ -160,7 +160,7 @@ let SettingsPage (category: SettingsCategory option) =
         prop.className "swt:size-full swt:min-w-0 swt:min-h-0 swt:overflow-y-auto"
         prop.testId "main-content-settings-page"
         prop.children [
-            Swate.Components.PageComponents.SettingsPage.SettingsPage.SettingsPage(
+            Arcitisa.Components.PageComponents.SettingsPage.SettingsPage.SettingsPage(
                 onAutoCreateNotesFolderEnabled = onAutoCreateNotesFolderEnabled,
                 uiScaling = uiScaling.state,
                 onUIScaling = submitUIScaling,

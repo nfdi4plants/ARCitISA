@@ -2,7 +2,7 @@ module ElectronCore.VersionControlCompositionTests
 
 open Fable.Core
 open Main.VersionControl
-open Swate.Components.Composite.Authentication.Types
+open Arcitisa.Components.Composite.Authentication.Types
 open VersionControlService.Abstractions
 open VersionControlService.Git.GitCredentialStrategy
 open Vitest
@@ -18,7 +18,7 @@ let private account
     {
         User = {
             Id = 1
-            LocalSwateAccountId = localId
+            LocalArcitisaAccountId = localId
             Username = username
             Name = "Display Name"
             Email = email
@@ -52,7 +52,7 @@ let private state (active: AccountSummary option) (stored: AccountSummary list) 
 let private source (authState: AuthStateDto) (tokens: (string * string) list) : DataHubStrategies.DataHubAccountSource =
     let tokenOf (candidate: AccountSummary) =
         tokens
-        |> List.tryFind (fun (id, _) -> id = candidate.User.LocalSwateAccountId)
+        |> List.tryFind (fun (id, _) -> id = candidate.User.LocalArcitisaAccountId)
         |> Option.map snd
 
     let hostMatches (host: string) (candidate: AccountSummary) =
@@ -371,13 +371,13 @@ Vitest.describe (
                 let aboveThresholdPolicy =
                     ProviderComposition.dataHubRevisionPolicy.ResolvePathPolicy {
                         Path = path
-                        SizeInBytes = float Swate.Components.Shared.GitLfsRules.maxNonLfsFileSizeBytes + 1.0
+                        SizeInBytes = float Arcitisa.Components.Shared.GitLfsRules.maxNonLfsFileSizeBytes + 1.0
                     }
 
                 let atThresholdPolicy =
                     ProviderComposition.dataHubRevisionPolicy.ResolvePathPolicy {
                         Path = path
-                        SizeInBytes = float Swate.Components.Shared.GitLfsRules.maxNonLfsFileSizeBytes
+                        SizeInBytes = float Arcitisa.Components.Shared.GitLfsRules.maxNonLfsFileSizeBytes
                     }
 
                 Vitest.expect(aboveThresholdPolicy).toEqual RevisionPathPolicy.LargeObject
@@ -507,15 +507,15 @@ Vitest.describe (
             "development builds load the worker next to the main bundle, packaged builds the unpacked copy",
             fun () ->
                 let development =
-                    TextDiffWorkers.workerPath false "C:/Swate/resources" "C:/repo/.vite/build"
+                    TextDiffWorkers.workerPath false "C:/ARCitISA/resources" "C:/repo/.vite/build"
 
                 let packaged =
-                    TextDiffWorkers.workerPath true "C:/Swate/resources" "C:/repo/.vite/build"
+                    TextDiffWorkers.workerPath true "C:/ARCitISA/resources" "C:/repo/.vite/build"
 
                 Vitest.expect(development.Replace('\\', '/')).toBe "C:/repo/.vite/build/text-diff-worker.cjs"
 
                 Vitest.expect(packaged.Replace('\\', '/')).toBe
-                    "C:/Swate/resources/app.asar.unpacked/.vite/build/text-diff-worker.cjs"
+                    "C:/ARCitISA/resources/app.asar.unpacked/.vite/build/text-diff-worker.cjs"
         )
 
         Vitest.test (
@@ -527,7 +527,7 @@ Vitest.describe (
                         (Some "/xdg/cache")
                         "/home/carol"
                         (fun () -> "/electron/temp")
-                        "Swate"
+                        "ARCitISA"
 
                 Vitest.expect(tempRoot "win32").toBe "/electron/temp"
                 Vitest.expect(tempRoot "darwin").toBe "/electron/temp"
@@ -542,11 +542,14 @@ Vitest.describe (
                         xdgCacheHome
                         "/home/carol"
                         (fun () -> failwith "Linux does not use the Electron temp folder.")
-                        "Swate"
+                        "ARCitISA"
 
-                let homeCache = Main.Bindings.Path.join [| "/home/carol"; ".cache"; "Swate" |]
+                let homeCache = Main.Bindings.Path.join [| "/home/carol"; ".cache"; "ARCitISA" |]
 
-                Vitest.expect(tempRoot (Some "/xdg/cache")).toBe (Main.Bindings.Path.join [| "/xdg/cache"; "Swate" |])
+                Vitest
+                    .expect(tempRoot (Some "/xdg/cache"))
+                    .toBe (Main.Bindings.Path.join [| "/xdg/cache"; "ARCitISA" |])
+
                 Vitest.expect(tempRoot None).toBe homeCache
                 Vitest.expect(tempRoot (Some "relative/cache")).toBe homeCache
                 Vitest.expect(tempRoot (Some "")).toBe homeCache
@@ -632,7 +635,7 @@ Vitest.describe (
         Vitest.test (
             "stale lock paths exist only for a plain git directory",
             fun () -> promise {
-                let! root = createTempDirectoryAsync "swate-vc-locks-"
+                let! root = createTempDirectoryAsync "arcitisa-vc-locks-"
 
                 try
                     let plainRepo = Main.Bindings.Path.join [| root; "plain" |]
@@ -708,7 +711,7 @@ Vitest.describe (
         Vitest.test (
             "an unbound git repository is adoptable and a plain folder is unmanaged",
             fun () -> promise {
-                let! root = createTempDirectoryAsync "swate-vc-composition-"
+                let! root = createTempDirectoryAsync "arcitisa-vc-composition-"
 
                 try
                     let repoRoot = Main.Bindings.Path.join [| root; "repo" |]

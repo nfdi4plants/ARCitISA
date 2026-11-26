@@ -1,10 +1,10 @@
-namespace Swate.Components.Page.FileViewer
+namespace Arcitisa.Components.Page.FileViewer
 
 open Fable.Core
 open Feliz
-open Swate.Components.Composite.MarkdownText
-open Swate.Components.Composite.MarkdownText.Links.Types
-open Swate.Components.Page.FileViewer.Types
+open Arcitisa.Components.Composite.MarkdownText
+open Arcitisa.Components.Composite.MarkdownText.Links.Types
+open Arcitisa.Components.Page.FileViewer.Types
 
 [<Erase; Mangle(false)>]
 type RenderedText =

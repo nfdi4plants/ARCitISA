@@ -1,10 +1,10 @@
-namespace Swate.Components.Page
+namespace Arcitisa.Components.Page
 
 open Browser.Types
 open Fable.Core
 open Feliz
-open Swate.Components
-open Swate.Components.ReactHooks
+open Arcitisa.Components
+open Arcitisa.Components.ReactHooks
 
 module internal GitTextComparisonRendering =
 

@@ -1,8 +1,8 @@
 /// Path helpers for the text document page and its leave guard. Pure, so Main tests can cover them.
-module Swate.Electron.Shared.TextDocumentHelper
+module Arcitisa.Electron.Shared.TextDocumentHelper
 
 open Fable.Core
-open Swate.Components.Shared
+open Arcitisa.Components.Shared
 
 let private segments (path: string) : string[] =
     (PathHelpers.normalizeCanonicalRelativePath path).Split('/')

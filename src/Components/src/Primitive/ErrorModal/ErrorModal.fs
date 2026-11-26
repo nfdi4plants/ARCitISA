@@ -1,10 +1,10 @@
-namespace Swate.Components.Primitive.ErrorModal
+namespace Arcitisa.Components.Primitive.ErrorModal
 
 open Feliz
 open Fable.Core
-open Swate.Components
-open Swate.Components.Primitive.BaseModal
-open Swate.Components.Primitive.ErrorModal.Types
+open Arcitisa.Components
+open Arcitisa.Components.Primitive.BaseModal
+open Arcitisa.Components.Primitive.ErrorModal.Types
 
 [<Erase; Mangle(false)>]
 type ErrorModal =
@@ -34,7 +34,7 @@ type ErrorModal =
         Html.div [
             prop.className "swt:whitespace-pre-wrap"
             prop.children (
-                message.Split(Swate.Components.ClipboardContract.Contract.LineBreaks, System.StringSplitOptions.None)
+                message.Split(Arcitisa.Components.ClipboardContract.Contract.LineBreaks, System.StringSplitOptions.None)
                 |> Array.collect (fun line -> [| Html.text line; Html.br [] |])
             )
         ]

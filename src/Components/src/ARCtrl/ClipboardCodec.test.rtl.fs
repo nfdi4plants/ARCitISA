@@ -1,7 +1,7 @@
-module internal Swate.Components.ClipboardCodecBrowserTests
+module internal Arcitisa.Components.ClipboardCodecBrowserTests
 
 open ARCtrl
-open Swate.Components
+open Arcitisa.Components
 open Vitest
 
 for rejectHtml in [ false; true ] do

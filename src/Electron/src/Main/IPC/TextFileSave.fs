@@ -6,8 +6,8 @@ module Main.IPC.TextFileSave
 
 open System.Text.RegularExpressions
 open Fable.Core
-open Swate.Electron.Shared.FileIOHelper
-open Swate.Electron.Shared.FileIOTypes
+open Arcitisa.Electron.Shared.FileIOHelper
+open Arcitisa.Electron.Shared.FileIOTypes
 open Main.Bindings
 open Main.Bindings.Filesystem
 open Main.Bindings.Path

@@ -11,7 +11,7 @@ open Main.ArcVaultHelper
 open Main.ArcMerge
 open Main.Bindings.Filesystem
 open Main.Bindings.Path
-open Swate.Components.Shared
+open Arcitisa.Components.Shared
 open ARC
 
 /// The light hash of each ARC file of an ARC.
@@ -309,7 +309,11 @@ module ArcDeleteHelper =
         (arcPath: string)
         (relativePath: string)
         : JS.Promise<Result<ArcEntityDeleteOutcome, exn>> =
-        deleteArcEntityWithAsync ARC.LoadAsyncSwate ContractExecutor.fulfillContractsSwateAsync arcPath relativePath
+        deleteArcEntityWithAsync
+            ARC.LoadAsyncArcitisa
+            ContractExecutor.fulfillContractsArcitisaAsync
+            arcPath
+            relativePath
 
     /// Deletes an entity inside an exclusive external operation scope and applies the delete to memory before the sync
     /// at the end of the scope. afterDelete runs once memory has been committed. A partial delete is applied too and

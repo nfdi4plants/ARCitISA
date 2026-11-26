@@ -1,10 +1,10 @@
-namespace Swate.Components.Page.Metadata
+namespace Arcitisa.Components.Page.Metadata
 
 open Fable.Core
 open Feliz
 open ARCtrl
-open Swate.Components
-open Swate.Components.Primitive.LayoutComponents
+open Arcitisa.Components
+open Arcitisa.Components.Primitive.LayoutComponents
 
 [<Erase; Mangle(false)>]
 type DataMapMetadata =
@@ -14,8 +14,8 @@ type DataMapMetadata =
         // 👀 If you rename these variables, ensure that the names are forwarded for lazy loading in `src\Components\src\Metadata\ArcFileMetadata.fs` as well!
         (datamap: Datamap)
         =
-        Swate.Components.Primitive.LayoutComponents.LayoutComponents.Section [
-            Swate.Components.Primitive.LayoutComponents.LayoutComponents.BoxedField(
+        Arcitisa.Components.Primitive.LayoutComponents.LayoutComponents.Section [
+            Arcitisa.Components.Primitive.LayoutComponents.LayoutComponents.BoxedField(
                 "DataMap",
                 description = $"Data Contexts: {datamap.DataContexts.Count}"
             )

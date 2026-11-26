@@ -1,9 +1,9 @@
-namespace Swate.Components.Composite.EditorToolbar
+namespace Arcitisa.Components.Composite.EditorToolbar
 
 open Fable.Core
 open Feliz
-open Swate.Components.Composite.TextEditor
-open Swate.Components.Util
+open Arcitisa.Components.Composite.TextEditor
+open Arcitisa.Components.Util
 
 module private EditorToolbarHelpers =
 

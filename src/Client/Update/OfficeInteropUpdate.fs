@@ -6,7 +6,7 @@ open Messages
 open OfficeInterop
 open OfficeInterop.Core
 open Model
-open Swate.Components.Shared
+open Arcitisa.Components.Shared
 open ARCtrl
 
 module OfficeInterop =

@@ -3,13 +3,13 @@ module Renderer.Components.MainContent.DataHubBrowserTarget
 open System
 open Feliz
 open Renderer.Components.Helper.ArcVaultHelper
-open Swate.Components
-open Swate.Components.Page.DataHub
-open Swate.Components.Page.DataHub.DataHubTypes
-open Swate.Components.Api.GitLabApi
-open Swate.Components.Composite.Actionbar.Types
-open Swate.Components.Primitive.ErrorModal.Context
-open Swate.Electron.Shared.VersionControlTypes
+open Arcitisa.Components
+open Arcitisa.Components.Page.DataHub
+open Arcitisa.Components.Page.DataHub.DataHubTypes
+open Arcitisa.Components.Api.GitLabApi
+open Arcitisa.Components.Composite.Actionbar.Types
+open Arcitisa.Components.Primitive.ErrorModal.Context
+open Arcitisa.Electron.Shared.VersionControlTypes
 
 module DataHubBrowserHelper =
     let toRepositoryFolderName (projectInfo: ExploreProjectDto) =
@@ -102,7 +102,7 @@ let DataHubBrowserTarget () =
     Html.div [
         prop.className "swt:size-full swt:flex swt:flex-col swt:overflow-hidden"
         prop.children [
-            Swate.Components.Page.GitSidebar.OperationStatusNotice(
+            Arcitisa.Components.Page.GitSidebar.OperationStatusNotice(
                 ?runStatus = runStatus,
                 ?errorNotice = gitStateCtx.state.ErrorNotice,
                 ?warningNotice = gitStateCtx.state.WarningNotice,

@@ -1,4 +1,4 @@
-module internal Swate.Components.Composite.GraphCanvas.GraphCanvasTests
+module internal Arcitisa.Components.Composite.GraphCanvas.GraphCanvasTests
 
 // Ported from GraphCanvas.test.tsx of arc-portal-ui. Tests use the real ELK through the default layout, or
 // the layout seam of the component where a test controls when a layout resolves or fails.
@@ -31,10 +31,10 @@ open Browser.Types
 open Fable.Core
 open Feliz
 open Vitest
-open Swate.Components.JsBindings
-open Swate.Components.Composite.GraphCanvas
-open Swate.Components.Composite.GraphCanvas.Types
-open Swate.Components.Composite.GraphCanvas.Layout
+open Arcitisa.Components.JsBindings
+open Arcitisa.Components.Composite.GraphCanvas
+open Arcitisa.Components.Composite.GraphCanvas.Types
+open Arcitisa.Components.Composite.GraphCanvas.Layout
 
 type private LayoutFn =
     CanvasNode[] -> CanvasEdge[] -> string[] -> MeasureText -> LayoutOptions -> JS.Promise<GraphLayout>

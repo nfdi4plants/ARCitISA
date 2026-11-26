@@ -2,10 +2,10 @@ module Renderer.Components.Helper.ArcFileApiHelper
 
 
 open Fable.Core
-open Swate.Components.Shared
-open Swate.Electron.Shared.FileIOHelper
-open Swate.Electron.Shared.FileIOTypes
-open Swate.Electron.Shared.IPCTypes
+open Arcitisa.Components.Shared
+open Arcitisa.Electron.Shared.FileIOHelper
+open Arcitisa.Electron.Shared.FileIOTypes
+open Arcitisa.Electron.Shared.IPCTypes
 
 let withArcFileRequest
     (arcFile: ArcFiles)

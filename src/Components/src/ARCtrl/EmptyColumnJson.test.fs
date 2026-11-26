@@ -1,8 +1,8 @@
-module internal Swate.Components.Tests.EmptyColumnJson
+module internal Arcitisa.Components.Tests.EmptyColumnJson
 
 open ARCtrl
 open ARCtrl.Json
-open Swate.Components.Shared
+open Arcitisa.Components.Shared
 open Vitest
 
 let private makeAssay withData =

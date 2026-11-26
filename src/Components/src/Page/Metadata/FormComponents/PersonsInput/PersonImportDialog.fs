@@ -1,11 +1,11 @@
-namespace Swate.Components.Page.Metadata.FormComponents.PersonsInput
+namespace Arcitisa.Components.Page.Metadata.FormComponents.PersonsInput
 
 open ARCtrl
 open Fable.Core
 open Feliz
-open Swate.Components
-open Swate.Components.Primitive.Dialog
-open Swate.Components.Primitive.Popover
+open Arcitisa.Components
+open Arcitisa.Components.Primitive.Dialog
+open Arcitisa.Components.Primitive.Popover
 
 module private PersonImportDialogTypes =
     [<RequireQualifiedAccess>]

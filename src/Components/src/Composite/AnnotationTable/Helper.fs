@@ -1,9 +1,9 @@
-module Swate.Components.Composite.AnnotationTable.Helper
+module Arcitisa.Components.Composite.AnnotationTable.Helper
 
 open ARCtrl
-open Swate.Components
+open Arcitisa.Components
 
-module TableHelper = Swate.Components.Composite.Table.Helper
+module TableHelper = Arcitisa.Components.Composite.Table.Helper
 
 /// Reorders a copy, retaining the table's name, headers, and complete cell values.
 let reorderColumns (table: ArcTable) (columnOrder: int[]) =

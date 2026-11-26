@@ -1,15 +1,15 @@
-module internal Swate.Components.Page.ProvenanceGraph.OverviewTests
+module internal Arcitisa.Components.Page.ProvenanceGraph.OverviewTests
 
 // The rules of the location overview: the window of items around the selected one, the rows of each view and the
 // view that a click on an item opens. The rows come from the example ARC. Headings and labels are read from the
 // data, never typed as literals.
 
 open Vitest
-open Swate.Components.Shared.ProvenanceGraph.Types
-open Swate.Components.Page.ProvenanceGraph.Types
-open Swate.Components.Page.ProvenanceGraph.Overview
+open Arcitisa.Components.Shared.ProvenanceGraph.Types
+open Arcitisa.Components.Page.ProvenanceGraph.Types
+open Arcitisa.Components.Page.ProvenanceGraph.Overview
 
-module Sample = Swate.Components.Page.ProvenanceGraphSample
+module Sample = Arcitisa.Components.Page.ProvenanceGraphSample
 
 let private dataset = "assays/Extraction/"
 let private processKey = "assays/Extraction/::Extraction"

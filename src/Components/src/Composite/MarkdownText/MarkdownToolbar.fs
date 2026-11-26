@@ -1,15 +1,15 @@
-namespace Swate.Components.Composite.MarkdownText
+namespace Arcitisa.Components.Composite.MarkdownText
 
 open Fable.Core
 open Feliz
-open Swate.Components.Primitive.Dropdown
-open Swate.Components.Composite.TextEditor
-open Swate.Components.Util
-open Swate.Components.Composite.TextEditor.Types
-open Swate.Components.Composite.TermSearch.Types
-open Swate.Components.Composite.EditorToolbar
-open Swate.Components.Composite.MarkdownText.Editing.Types
-open Swate.Components.Composite.MarkdownText.Editing.MarkdownCommands
+open Arcitisa.Components.Primitive.Dropdown
+open Arcitisa.Components.Composite.TextEditor
+open Arcitisa.Components.Util
+open Arcitisa.Components.Composite.TextEditor.Types
+open Arcitisa.Components.Composite.TermSearch.Types
+open Arcitisa.Components.Composite.EditorToolbar
+open Arcitisa.Components.Composite.MarkdownText.Editing.Types
+open Arcitisa.Components.Composite.MarkdownText.Editing.MarkdownCommands
 
 [<Erase; Mangle(false)>]
 type MarkdownToolbar =

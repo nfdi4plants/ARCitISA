@@ -1,9 +1,9 @@
-namespace Swate.Components.Composite.Table
+namespace Arcitisa.Components.Composite.Table
 
 open System
-open Swate.Components
-open Swate.Components.Composite.Table.Context
-open Swate.Components.Composite.Table.Types
+open Arcitisa.Components
+open Arcitisa.Components.Composite.Table.Context
+open Arcitisa.Components.Composite.Table.Types
 open Fable.Core
 open Fable.Core.JsInterop
 open Feliz

@@ -1,7 +1,7 @@
-module Swate.Components.ClipboardContract.Types
+module Arcitisa.Components.ClipboardContract.Types
 
 open global.ARCtrl
-open Swate.Components
+open Arcitisa.Components
 
 type ClipboardContent = {
     Cells: CompositeCell[][] option

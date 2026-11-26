@@ -1,9 +1,9 @@
 module TempRunner
 
 open Expecto
-open Swate.Components.Page.FileExplorer.FileExplorerGitLfsHelper
-open Swate.Components.Page.FileExplorer.Types
-open Swate.Components.Shared.Tests
+open Arcitisa.Components.Page.FileExplorer.FileExplorerGitLfsHelper
+open Arcitisa.Components.Page.FileExplorer.Types
+open Arcitisa.Components.Shared.Tests
 
 let private createLfsItem (downloaded: bool) (isPointer: bool) = {
     FileTree.createFile "data.bin" (Some "data.bin") FileItemIcon.Document with

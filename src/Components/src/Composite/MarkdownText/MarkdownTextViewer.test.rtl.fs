@@ -1,10 +1,10 @@
-module internal Swate.Components.Composite.MarkdownText.MarkdownTextViewerTests
+module internal Arcitisa.Components.Composite.MarkdownText.MarkdownTextViewerTests
 
 open Fable.Core
 open Browser.Types
 open Vitest
-open Swate.Components.Composite.MarkdownText
-open Swate.Components.Composite.MarkdownText.Links.Types
+open Arcitisa.Components.Composite.MarkdownText
+open Arcitisa.Components.Composite.MarkdownText.Links.Types
 
 type private FakeContext() =
     member val OpenedArcPaths = ResizeArray<string>()

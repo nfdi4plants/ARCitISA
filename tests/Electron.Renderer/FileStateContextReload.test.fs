@@ -8,13 +8,13 @@ open Feliz
 open Renderer.Components.Helper
 open Renderer.Context.FileStateContext
 open Renderer.Context.FileTreeStore
-open Swate.Electron.Shared.IPCTypes
+open Arcitisa.Electron.Shared.IPCTypes
 open Renderer.Types
 open ARCtrl
-open Swate.Electron.Shared.FileIOTypes
-open Swate.Electron.Shared.FileIOHelper
-open Swate.Components.Shared
-open Swate.Components.Page.ArcFileEditor.Types
+open Arcitisa.Electron.Shared.FileIOTypes
+open Arcitisa.Electron.Shared.FileIOHelper
+open Arcitisa.Components.Shared
+open Arcitisa.Components.Page.ArcFileEditor.Types
 open Vitest
 
 type private RendererPageState = Renderer.Types.PageState
@@ -405,7 +405,7 @@ Vitest.describe (
             fun () ->
                 let workflowArcFile =
                     ArcWorkflow.init "DeletePreviewWorkflow"
-                    |> Swate.Components.Shared.ARCtrlHelper.ArcFiles.Workflow
+                    |> Arcitisa.Components.Shared.ARCtrlHelper.ArcFiles.Workflow
 
                 Vitest
                     .expect(
@@ -750,7 +750,7 @@ Vitest.describe (
             "fromFileContentDTO opens an ARC workbook without tables on Metadata",
             fun () ->
                 let dto =
-                    Swate.Electron.Shared.FileIOHelper.FileContentDTO.fromArcFile (
+                    Arcitisa.Electron.Shared.FileIOHelper.FileContentDTO.fromArcFile (
                         ArcFiles.Assay(ArcAssay.init "assay")
                     )
                     |> Option.defaultWith (fun () -> failwith "Expected an assay DTO.")
@@ -767,7 +767,7 @@ Vitest.describe (
                 assay.AddTable(ArcTable.init "table")
 
                 let dto =
-                    Swate.Electron.Shared.FileIOHelper.FileContentDTO.fromArcFile (ArcFiles.Assay assay)
+                    Arcitisa.Electron.Shared.FileIOHelper.FileContentDTO.fromArcFile (ArcFiles.Assay assay)
                     |> Option.defaultWith (fun () -> failwith "Expected an assay DTO.")
 
                 match RendererPageState.fromFileContentDTO (dto, 0, None) with
@@ -781,7 +781,7 @@ Vitest.describe (
                 let parent = DatamapParentInfo.create "assay" DataMapParent.Assay
 
                 let dto =
-                    Swate.Electron.Shared.FileIOHelper.FileContentDTO.fromArcFile (
+                    Arcitisa.Electron.Shared.FileIOHelper.FileContentDTO.fromArcFile (
                         ArcFiles.DataMap(Some parent, Datamap.init ())
                     )
                     |> Option.defaultWith (fun () -> failwith "Expected a DataMap DTO.")

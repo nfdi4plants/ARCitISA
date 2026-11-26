@@ -1,10 +1,10 @@
-namespace Swate.Components.Page.ProvenanceGrouping
+namespace Arcitisa.Components.Page.ProvenanceGrouping
 
 /// Stable keys for the property shelf folders.
 module PropertyFolders =
 
     open System
-    open Swate.Components.Shared.ProvenanceGrouping.Types
+    open Arcitisa.Components.Shared.ProvenanceGrouping.Types
 
     let private slug (value: string) =
         let text = if isNull value then "" else value.Trim()
@@ -35,10 +35,10 @@ module PropertyFolders =
 /// Builds property rail headers and values from the persistent model plus UI-only palette state.
 module PropertyRails =
 
-    open Swate.Components.Shared.ProvenanceGrouping.Types
-    open Swate.Components.Shared.ProvenanceGrouping.Grouping
-    open Swate.Components.Shared.ProvenanceGrouping.Session
-    open Swate.Components.Page.ProvenanceGrouping.Types
+    open Arcitisa.Components.Shared.ProvenanceGrouping.Types
+    open Arcitisa.Components.Shared.ProvenanceGrouping.Grouping
+    open Arcitisa.Components.Shared.ProvenanceGrouping.Session
+    open Arcitisa.Components.Page.ProvenanceGrouping.Types
 
     type RailProjection = {
         Headers: ProvenancePropertyKey list
@@ -316,9 +316,9 @@ module Search =
 
 module PropertyProjection =
 
-    open Swate.Components.Shared.ProvenanceGrouping.Types
-    open Swate.Components.Shared.ProvenanceGrouping.Session
-    open Swate.Components.Page.ProvenanceGrouping.Types
+    open Arcitisa.Components.Shared.ProvenanceGrouping.Types
+    open Arcitisa.Components.Shared.ProvenanceGrouping.Session
+    open Arcitisa.Components.Page.ProvenanceGrouping.Types
 
     let anchorOfOrigin =
         function
@@ -692,10 +692,10 @@ module PropertyProjection =
 /// Projects the active session layer into renderable groups, connections, and layer commands.
 module Display =
 
-    open Swate.Components.Shared.ProvenanceGrouping.Types
-    open Swate.Components.Shared.ProvenanceGrouping.Grouping
-    open Swate.Components.Shared.ProvenanceGrouping.Session
-    open Swate.Components.Page.ProvenanceGrouping.Types
+    open Arcitisa.Components.Shared.ProvenanceGrouping.Types
+    open Arcitisa.Components.Shared.ProvenanceGrouping.Grouping
+    open Arcitisa.Components.Shared.ProvenanceGrouping.Session
+    open Arcitisa.Components.Page.ProvenanceGrouping.Types
 
     let displayLayer session uiState =
         let layer = Session.activeLayer session

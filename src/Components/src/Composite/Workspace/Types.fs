@@ -1,4 +1,4 @@
-module Swate.Components.Composite.Workspace.Types
+module Arcitisa.Components.Composite.Workspace.Types
 
 open System
 open Fable.Core

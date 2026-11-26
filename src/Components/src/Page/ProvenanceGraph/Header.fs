@@ -1,7 +1,7 @@
 /// The rules of the explorer header that need no DOM.
-module Swate.Components.Page.ProvenanceGraph.Header
+module Arcitisa.Components.Page.ProvenanceGraph.Header
 
-open Swate.Components.Page.ProvenanceGraph.Types
+open Arcitisa.Components.Page.ProvenanceGraph.Types
 
 /// The header switches to its narrow layout when the full content does not fit on one line.
 /// A fraction of a pixel counts against fitting, so rounding never pushes the full header past its line.

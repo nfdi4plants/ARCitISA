@@ -1,7 +1,7 @@
-module internal Swate.Components.Composite.GraphCanvas.ImageExportTests
+module internal Arcitisa.Components.Composite.GraphCanvas.ImageExportTests
 
 open Vitest
-open Swate.Components.Composite.GraphCanvas.ImageExport
+open Arcitisa.Components.Composite.GraphCanvas.ImageExport
 
 Vitest.describe (
     "scale",

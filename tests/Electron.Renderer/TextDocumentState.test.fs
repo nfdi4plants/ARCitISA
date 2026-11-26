@@ -1,7 +1,7 @@
 module ElectronRenderer.TextDocumentStateTests
 
 open Vitest
-open Swate.Electron.Shared.FileIOTypes
+open Arcitisa.Electron.Shared.FileIOTypes
 open Renderer.Components.MainContent.TextDocument.TextDocumentState
 
 let private info (hash: string) (encoding: TextFileEncoding) (readOnly: TextReadOnlyReason option) : TextDocumentInfo = {|

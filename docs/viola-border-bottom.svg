@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 88" width="880" height="88" aria-hidden="true">
+  <defs>
+    <path id="leaf" d="M0 0C5-7 15-8 21 0C15 8 5 7 0 0Z"/>
+    <g id="violet">
+      <ellipse cx="-6" cy="-8" rx="8" ry="10.5" transform="rotate(-25 -6 -8)" fill="#5E35A8"/>
+      <ellipse cx="6" cy="-8" rx="8" ry="10.5" transform="rotate(25 6 -8)" fill="#5E35A8"/>
+      <ellipse cx="-10.5" cy="2" rx="9" ry="6.5" transform="rotate(18 -10.5 2)" fill="#8A5FD8"/>
+      <ellipse cx="10.5" cy="2" rx="9" ry="6.5" transform="rotate(-18 10.5 2)" fill="#8A5FD8"/>
+      <ellipse cx="0" cy="9.5" rx="10.5" ry="8.5" fill="#9E78E6"/>
+      <g stroke="#2E1460" stroke-width="0.9" stroke-linecap="round" fill="none">
+        <path d="M0 4.5V12M-2.5 4L-5 10.5M2.5 4L5 10.5M-3.5 2.2L-10 1.2M3.5 2.2L10 1.2"/>
+      </g>
+      <circle cx="0" cy="2.6" r="3" fill="#F7C744"/>
+      <circle cx="0" cy="2.2" r="1.1" fill="#FFFFFF"/>
+    </g>
+    <g id="tricolor">
+      <ellipse cx="-6" cy="-8" rx="8" ry="10.5" transform="rotate(-25 -6 -8)" fill="#4B2690"/>
+      <ellipse cx="6" cy="-8" rx="8" ry="10.5" transform="rotate(25 6 -8)" fill="#4B2690"/>
+      <ellipse cx="-10.5" cy="2" rx="9" ry="6.5" transform="rotate(18 -10.5 2)" fill="#B9A2F0"/>
+      <ellipse cx="10.5" cy="2" rx="9" ry="6.5" transform="rotate(-18 10.5 2)" fill="#B9A2F0"/>
+      <ellipse cx="0" cy="9.5" rx="10.5" ry="8.5" fill="#F7D35C"/>
+      <g stroke="#3A1A75" stroke-width="0.9" stroke-linecap="round" fill="none">
+        <path d="M0 4.5V12.5M-2.5 4L-5.5 11M2.5 4L5.5 11M-3.5 2.2L-10 1.2M3.5 2.2L10 1.2"/>
+      </g>
+      <circle cx="0" cy="2.6" r="2.6" fill="#F2A93B"/>
+      <circle cx="0" cy="2.2" r="1" fill="#FFFFFF"/>
+    </g>
+    <linearGradient id="fade">
+      <stop offset="0" stop-color="#fff" stop-opacity="0"/>
+      <stop offset="0.04" stop-color="#fff"/>
+      <stop offset="0.96" stop-color="#fff"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+    <mask id="ends"><rect width="880" height="88" fill="url(#fade)"/></mask>
+    <g id="bud">
+      <path d="M0 0C-4-4-4-11 0-14C4-11 4-4 0 0Z" fill="#7A4FC8"/>
+      <path d="M0 0C-3-1-6-4-5-7M0 0C3-1 6-4 5-7" stroke="#3F9B62" stroke-width="1.6" fill="none" stroke-linecap="round"/>
+    </g>
+  </defs>
+  <g transform="translate(880 0) scale(-1 1)">
+    <path d="M0 52 C37 36 73 36 110 52 S183 68 220 52 S293 36 330 52 S403 68 440 52 S513 36 550 52 S623 68 660 52 S733 36 770 52 S843 68 880 52" stroke="#2F855A" stroke-width="2.4" fill="none" stroke-linecap="round" mask="url(#ends)"/>
+    <use href="#leaf" transform="translate(110 52) rotate(-215)" fill="#2F855A"/>
+    <use href="#leaf" transform="translate(110 52) rotate(35)" fill="#48A56E"/>
+    <path d="M140 64c4 2 9 1 9 -4c0 -3 -4 -4 -5 -1" stroke="#48A56E" stroke-width="1.4" fill="none" stroke-linecap="round"/>
+    <use href="#leaf" transform="translate(220 52) rotate(-145)" fill="#2F855A"/>
+    <use href="#leaf" transform="translate(220 52) rotate(-35)" fill="#48A56E"/>
+    <path d="M190 40c-4 -2 -9 -1 -9 4c0 3 4 4 5 1" stroke="#48A56E" stroke-width="1.4" fill="none" stroke-linecap="round"/>
+    <use href="#leaf" transform="translate(330 52) rotate(-215)" fill="#2F855A"/>
+    <use href="#leaf" transform="translate(330 52) rotate(35)" fill="#48A56E"/>
+    <path d="M360 64c4 2 9 1 9 -4c0 -3 -4 -4 -5 -1" stroke="#48A56E" stroke-width="1.4" fill="none" stroke-linecap="round"/>
+    <use href="#leaf" transform="translate(440 52) rotate(-145)" fill="#2F855A"/>
+    <use href="#leaf" transform="translate(440 52) rotate(-35)" fill="#48A56E"/>
+    <path d="M410 40c-4 -2 -9 -1 -9 4c0 3 4 4 5 1" stroke="#48A56E" stroke-width="1.4" fill="none" stroke-linecap="round"/>
+    <use href="#leaf" transform="translate(550 52) rotate(-215)" fill="#2F855A"/>
+    <use href="#leaf" transform="translate(550 52) rotate(35)" fill="#48A56E"/>
+    <path d="M580 64c4 2 9 1 9 -4c0 -3 -4 -4 -5 -1" stroke="#48A56E" stroke-width="1.4" fill="none" stroke-linecap="round"/>
+    <use href="#leaf" transform="translate(660 52) rotate(-145)" fill="#2F855A"/>
+    <use href="#leaf" transform="translate(660 52) rotate(-35)" fill="#48A56E"/>
+    <path d="M630 40c-4 -2 -9 -1 -9 4c0 3 4 4 5 1" stroke="#48A56E" stroke-width="1.4" fill="none" stroke-linecap="round"/>
+    <use href="#leaf" transform="translate(770 52) rotate(-215)" fill="#2F855A"/>
+    <use href="#leaf" transform="translate(770 52) rotate(35)" fill="#48A56E"/>
+    <path d="M800 64c4 2 9 1 9 -4c0 -3 -4 -4 -5 -1" stroke="#48A56E" stroke-width="1.4" fill="none" stroke-linecap="round"/>
+    <path d="M55 40Q58 34 55 28" stroke="#2F855A" stroke-width="2" fill="none" stroke-linecap="round"/>
+    <use href="#tricolor" transform="translate(55 26) rotate(-8) scale(1.05)"/>
+    <use href="#violet" transform="translate(165 65) rotate(-6) scale(0.78)"/>
+    <use href="#bud" transform="translate(191 59) rotate(28) scale(0.9)"/>
+    <path d="M275 40Q278 34 275 28" stroke="#2F855A" stroke-width="2" fill="none" stroke-linecap="round"/>
+    <use href="#violet" transform="translate(275 26) rotate(6) scale(1.05)"/>
+    <use href="#tricolor" transform="translate(385 65) rotate(10) scale(0.78)"/>
+    <use href="#bud" transform="translate(411 59) rotate(28) scale(0.9)"/>
+    <path d="M495 40Q498 34 495 28" stroke="#2F855A" stroke-width="2" fill="none" stroke-linecap="round"/>
+    <use href="#tricolor" transform="translate(495 26) rotate(6) scale(1.05)"/>
+    <use href="#violet" transform="translate(605 65) rotate(-6) scale(0.78)"/>
+    <use href="#bud" transform="translate(631 59) rotate(28) scale(0.9)"/>
+    <path d="M715 40Q718 34 715 28" stroke="#2F855A" stroke-width="2" fill="none" stroke-linecap="round"/>
+    <use href="#violet" transform="translate(715 26) rotate(-8) scale(1.05)"/>
+    <use href="#tricolor" transform="translate(825 65) rotate(-6) scale(0.78)"/>
+    <use href="#bud" transform="translate(851 59) rotate(28) scale(0.9)"/>
+  </g>
+</svg>

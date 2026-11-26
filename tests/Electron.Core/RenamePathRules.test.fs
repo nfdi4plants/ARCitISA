@@ -1,7 +1,7 @@
 module ElectronCore.RenamePathRulesTests
 
-open Swate.Electron.Shared.RenamePathRules
-open Swate.Components.Shared
+open Arcitisa.Electron.Shared.RenamePathRules
+open Arcitisa.Components.Shared
 open Vitest
 
 let private mainFolderMessage =

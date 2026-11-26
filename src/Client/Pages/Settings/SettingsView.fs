@@ -8,9 +8,9 @@ open Messages
 
 open Feliz
 
-open Swate.Components
-open Swate.Components.Composite.ThemeSelector.Context
-open Swate.Components.Composite.ThemeSelector.Types
+open Arcitisa.Components
+open Arcitisa.Components.Composite.ThemeSelector.Context
+open Arcitisa.Components.Composite.ThemeSelector.Types
 
 type Settings =
 
@@ -187,7 +187,7 @@ type Settings =
         Components.Forms.Generic.BoxedField(
             "Term Search Configuration",
             content = [
-                Swate.Components.Composite.TermSearch.TermSearchConfigSetter.TermSearchConfigSetter !!Renderer
+                Arcitisa.Components.Composite.TermSearch.TermSearchConfigSetter.TermSearchConfigSetter !!Renderer
             ]
         )
 
@@ -219,7 +219,7 @@ type Settings =
 
         //Bulma.label "Advanced Settings"
         //if model.PageState.IsExpert then
-        //    swateCore model dispatch
+        //    arcitisaCore model dispatch
         //else
-        //    swateExperts model dispatch
+        //    arcitisaExperts model dispatch
         ]

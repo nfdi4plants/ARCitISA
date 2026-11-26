@@ -12,10 +12,10 @@ open Main.ArcVaultHelper
 open Main.Bindings
 open Main.Bindings.Filesystem
 open Main.Bindings.Path
-open Swate.Components.Shared
-open Swate.Electron.Shared.FileIOTypes
-open Swate.Electron.Shared.IPCTypes
-open Swate.Electron.Shared.IPCTypes.MainToRendererIpc
+open Arcitisa.Components.Shared
+open Arcitisa.Electron.Shared.FileIOTypes
+open Arcitisa.Electron.Shared.IPCTypes
+open Arcitisa.Electron.Shared.IPCTypes.MainToRendererIpc
 open Vitest
 
 module WatcherHelpers = Main.WatcherHelpers
@@ -50,7 +50,7 @@ let private noopSink = fun (_: bool) -> ()
 let private watcherApi: IArcFileWatcherApi = { IsLoadingChanges = noopSink }
 
 let private withTempArc =
-    TestHelpers.withTempArcWith "swate-structural-watcher-" "StructuralWatcherArc"
+    TestHelpers.withTempArcWith "arcitisa-structural-watcher-" "StructuralWatcherArc"
 
 let private seedEntities (arc: ARC) =
     arc.AddStudy(ArcStudy("S1", title = "Old title"))
@@ -903,7 +903,7 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "SWATE_WATCH_POLLING forces polling on any platform",
+            "ARCITISA_WATCH_POLLING forces polling on any platform",
             fun () ->
                 Vitest.expect(resolveFileWatcherPolling "linux" None None).toBe false
                 Vitest.expect(resolveFileWatcherPolling "darwin" None None).toBe false

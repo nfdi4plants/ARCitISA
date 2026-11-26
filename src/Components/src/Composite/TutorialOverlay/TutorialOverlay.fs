@@ -1,9 +1,9 @@
-namespace Swate.Components.Composite.TutorialOverlay
+namespace Arcitisa.Components.Composite.TutorialOverlay
 
 open Fable.Core
 open Feliz
 open Browser.Types
-open Swate.Components.Composite.TutorialOverlay.Types
+open Arcitisa.Components.Composite.TutorialOverlay.Types
 
 /// Spotlight geometry, relative to the tutorial content wrapper.
 type private SpotlightRect = {

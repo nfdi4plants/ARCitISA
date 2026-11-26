@@ -1,10 +1,10 @@
 /// Highlights code outside of an editor, such as the code blocks of the Markdown preview, with the grammars and
 /// colors of the TextEditor. A grammar loads on first use, and @codemirror/language-data keeps it for later blocks.
-module Swate.Components.Composite.TextEditor.CodeHighlight
+module Arcitisa.Components.Composite.TextEditor.CodeHighlight
 
 open Fable.Core
-open Swate.Components.Composite.TextEditor.JsBindings.CodeMirror
-open Swate.Components.Composite.TextEditor.JsBindings.Lezer
+open Arcitisa.Components.Composite.TextEditor.JsBindings.CodeMirror
+open Arcitisa.Components.Composite.TextEditor.JsBindings.Lezer
 
 /// The inline style of a highlighted run, usable as a React style object. Unset fields stay undefined.
 [<Global>]

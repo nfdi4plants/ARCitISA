@@ -1,8 +1,8 @@
 /// The editor languages: which language a file has, from its name and first line, and how the editor treats it.
 /// Also the line separator of a text. The detection takes the registry as data, so the tests pass their own.
-module Swate.Components.Composite.TextEditor.LanguageDetection
+module Arcitisa.Components.Composite.TextEditor.LanguageDetection
 
-open Swate.Components.Composite.TextEditor.JsBindings.CodeMirror
+open Arcitisa.Components.Composite.TextEditor.JsBindings.CodeMirror
 
 /// A language whose text is prose. Its lines wrap and the browser's spellcheck runs on it, except on the text of
 /// these syntax nodes, which is code, markup or an address. The names are node names of the language's parser.

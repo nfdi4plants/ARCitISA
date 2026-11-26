@@ -1,16 +1,16 @@
-namespace Swate.Components.Composite.Widgets.JsonImport
+namespace Arcitisa.Components.Composite.Widgets.JsonImport
 
 open Fable.Core
 open Fable.Core.JsInterop
 open Feliz
 open Browser.Types
-open Swate.Components.Composite.Widgets
-open Swate.Components.Composite.Widgets.Context
-open Swate.Components.Composite.Widgets.JsonImport.Types
-open Swate.Components.Shared
+open Arcitisa.Components.Composite.Widgets
+open Arcitisa.Components.Composite.Widgets.Context
+open Arcitisa.Components.Composite.Widgets.JsonImport.Types
+open Arcitisa.Components.Shared
 open ARCtrl
 
-module JsonHelper = Swate.Components.Composite.Widgets.JsonImport.Helper
+module JsonHelper = Arcitisa.Components.Composite.Widgets.JsonImport.Helper
 
 module private JsonImportTypes =
 

@@ -2,7 +2,7 @@ namespace Renderer.Components.Helper
 
 open Fable.Core
 open Feliz
-open Swate.Components.Primitive.BaseModal
+open Arcitisa.Components.Primitive.BaseModal
 
 [<Erase; Mangle(false)>]
 type FileTargetConflictModal =

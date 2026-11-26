@@ -1,12 +1,12 @@
-module internal Swate.Components.Util.WebWorkerSample
+module internal Arcitisa.Components.Util.WebWorkerSample
 
 open Fable.Core
 open Feliz
-open Swate.Components
-open Swate.Components.Util.WebWorker
-open Swate.Components.Util.WebWorkerTestWorker
-open Swate.Components.Util.WebWorkerRejectingWorker
-open Swate.Components.Util.WebWorkerCrashingWorker
+open Arcitisa.Components
+open Arcitisa.Components.Util.WebWorker
+open Arcitisa.Components.Util.WebWorkerTestWorker
+open Arcitisa.Components.Util.WebWorkerRejectingWorker
+open Arcitisa.Components.Util.WebWorkerCrashingWorker
 
 /// What the rejecting worker rejects with.
 let rejectionMessage = WebWorkerRejectingWorker.message

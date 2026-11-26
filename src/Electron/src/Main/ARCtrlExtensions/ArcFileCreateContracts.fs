@@ -1,7 +1,7 @@
 namespace Main.ARCtrlExtensions
 
 open ARCtrl.Contract
-open Swate.Components.Shared
+open Arcitisa.Components.Shared
 
 [<RequireQualifiedAccess>]
 module ArcFileCreateContracts =

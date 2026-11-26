@@ -3,9 +3,9 @@ namespace Update
 open Elmish
 
 open Messages
-open Swate.Components.Shared
+open Arcitisa.Components.Shared
 open Model
-open Swate.Components
+open Arcitisa.Components
 
 module ARCitect =
 

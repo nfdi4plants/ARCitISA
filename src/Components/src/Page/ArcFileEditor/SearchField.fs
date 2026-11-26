@@ -1,13 +1,13 @@
-namespace Swate.Components.Page.ArcFileEditor
+namespace Arcitisa.Components.Page.ArcFileEditor
 
 open Fable.Core
 open Fable.Core.JsInterop
 open Feliz
-open Swate.Components
-open Swate.Components.Shared
-open Swate.Components.Composite.Table.Types
-open Swate.Components.Page.ArcFileEditor.Types
-open Swate.Components.Util
+open Arcitisa.Components
+open Arcitisa.Components.Shared
+open Arcitisa.Components.Composite.Table.Types
+open Arcitisa.Components.Page.ArcFileEditor.Types
+open Arcitisa.Components.Util
 
 [<Erase; Mangle(false)>]
 type SearchField =

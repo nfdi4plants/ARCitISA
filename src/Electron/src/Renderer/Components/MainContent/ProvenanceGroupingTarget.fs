@@ -2,10 +2,10 @@ module Renderer.Components.MainContent.ProvenanceGroupingTarget
 
 open Fable.Core
 open Feliz
-open Swate.Components.Shared.ProvenanceGrouping.Edit
-open Swate.Components.Shared.ProvenanceGrouping.Session
-open Swate.Components.Page.ProvenanceGrouping.Types
-open Swate.Electron.Shared.DTOs.ProvenanceGroupingDto
+open Arcitisa.Components.Shared.ProvenanceGrouping.Edit
+open Arcitisa.Components.Shared.ProvenanceGrouping.Session
+open Arcitisa.Components.Page.ProvenanceGrouping.Types
+open Arcitisa.Electron.Shared.DTOs.ProvenanceGroupingDto
 
 module ProvenanceGroupingTargetHelper =
 
@@ -239,7 +239,7 @@ let ProvenanceGroupingTarget () =
                                 Html.div [
                                     prop.className "swt:flex-1 swt:min-h-0 swt:min-w-0 swt:overflow-hidden"
                                     prop.children [
-                                        Swate.Components.Page.ProvenanceGrouping.ProvenanceGrouping.Main(
+                                        Arcitisa.Components.Page.ProvenanceGrouping.ProvenanceGrouping.Main(
                                             session,
                                             onChange
                                         )

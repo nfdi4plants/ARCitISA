@@ -1,10 +1,10 @@
 module Renderer.Components.MainContent.ArcFilePreviewTargetHelper
 
 open Fable.Core
-open Swate.Components.Page.ArcFileEditor.Types
-open Swate.Components.Composite.Widgets.JsonImport.Types
-open Swate.Components.Primitive.ErrorModal.Types
-open Swate.Components.Shared
+open Arcitisa.Components.Page.ArcFileEditor.Types
+open Arcitisa.Components.Composite.Widgets.JsonImport.Types
+open Arcitisa.Components.Primitive.ErrorModal.Types
+open Arcitisa.Components.Shared
 open ARCtrl
 
 let editorKey (arcFile: ArcFiles) (requestedView: ActiveView option) =
@@ -46,11 +46,11 @@ let jsonImportErrorModalRequest (error: JsonImportError) : ErrorModalRequest =
 let handleSetArcFileOutcome
     (reloadPage: unit -> unit)
     (showModal: string -> string -> unit)
-    (outcome: Swate.Electron.Shared.IPCTypes.SetArcFileOutcome)
+    (outcome: Arcitisa.Electron.Shared.IPCTypes.SetArcFileOutcome)
     =
     match outcome with
-    | Swate.Electron.Shared.IPCTypes.SetArcFileOutcome.Applied -> ()
-    | Swate.Electron.Shared.IPCTypes.SetArcFileOutcome.Refused ->
+    | Arcitisa.Electron.Shared.IPCTypes.SetArcFileOutcome.Applied -> ()
+    | Arcitisa.Electron.Shared.IPCTypes.SetArcFileOutcome.Refused ->
         reloadPage ()
 
         showModal

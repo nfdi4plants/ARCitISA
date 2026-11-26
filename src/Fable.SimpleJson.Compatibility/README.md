@@ -32,12 +32,12 @@ Check this whenever you update Fable or Fable.Remoting, or every few months.
      Bump `Fable.Remoting.Client` and `Fable.Electron.Remoting` if newer releases depend on it.
      Remove `Fable.Parsimmon`, `Fable.Remoting.MsgPack` and `Fable.Browser.XMLHttpRequest`, which
      only the compatibility projects use.
-   - [Swate.Components.fsproj](../Components/src/Swate.Components.fsproj): replace the
+   - [Arcitisa.Components.fsproj](../Components/src/Arcitisa.Components.fsproj): replace the
      `Fable.Remoting.Client.Compatibility` `ProjectReference` with
      `<PackageReference Include="Fable.Remoting.Client" />` and add
      `<PackageReference Include="Fable.SimpleJson" />`, so the published NuGet package also
      requires the fixed version.
-   - [Swate.Electron.Shared.fsproj](../Electron/src/Swate.Electron.Shared/Swate.Electron.Shared.fsproj):
+   - [Arcitisa.Electron.Shared.fsproj](../Electron/src/Arcitisa.Electron.Shared/Arcitisa.Electron.Shared.fsproj):
      replace the `Fable.Electron.Remoting.Compatibility` `ProjectReference` with
      `<PackageReference Include="Fable.Electron.Remoting" />`.
    - [Client.fsproj](../Client/Client.fsproj): add `<PackageReference Include="Fable.SimpleJson" />` back.
@@ -47,7 +47,7 @@ Check this whenever you update Fable or Fable.Remoting, or every few months.
      [Build.fs](../../build/Build.fs) and [ProjectInfo.fs](../../build/ProjectInfo.fs), and the
      compatibility step from [run-tests.yml](../../.github/workflows/run-tests.yml).
    - Keep [JsonWireFormat.test.fs](../Components/src/Api/JsonWireFormat.test.fs). It tests the
-     Swate API DTOs, not the library.
+     ARCitISA API DTOs, not the library.
    - Re-enable NuGet publishing by removing the `nuget` matrix exclusion in
      [release-pipeline.yml](../../.github/workflows/release-pipeline.yml) after verifying that a
      consumer of the packed NuGet package compiles with the fixed upstream dependencies.
@@ -73,12 +73,12 @@ would compile before this project and fail to find it. The unmodified Remoting s
 therefore copied as projects next to this one:
 
 - [Fable.Remoting.Client.Compatibility](../Fable.Remoting.Client.Compatibility/README.md),
-  referenced by Swate.Components (and through it by Client).
+  referenced by Arcitisa.Components (and through it by Client).
 - [Fable.Electron.Remoting.Compatibility](../Fable.Electron.Remoting.Compatibility/README.md),
-  referenced by Swate.Electron.Shared.
+  referenced by Arcitisa.Electron.Shared.
 
 These projects keep the original package and assembly names, but are not packable. The npm
-package of Swate.Components contains the fix, because it is compiled in. The NuGet package does
+package of Arcitisa.Components contains the fix, because it is compiled in. The NuGet package does
 not: `dotnet pack` declares a dependency on the stock `Fable.Remoting.Client 7.32.0`
 instead. NuGet publishing is therefore disabled through a matrix exclusion in
 [release-pipeline.yml](../../.github/workflows/release-pipeline.yml) until the fixed upstream

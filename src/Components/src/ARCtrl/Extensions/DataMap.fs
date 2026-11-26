@@ -2,7 +2,7 @@
 module ARCtrl.DataMapExtensions
 
 open ARCtrl
-open Swate.Components
+open Arcitisa.Components
 open Helper
 open ArcTableAux
 

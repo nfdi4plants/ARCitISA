@@ -1,11 +1,11 @@
-namespace Swate.Components.Composite
+namespace Arcitisa.Components.Composite
 
 open Browser.Dom
 open Fable.Core
 open Fable.Core.JsInterop
 open Feliz
-open Swate.Components.Composite.Notes.Types
-open Swate.Components.Primitive
+open Arcitisa.Components.Composite.Notes.Types
+open Arcitisa.Components.Primitive
 
 module InputField =
 

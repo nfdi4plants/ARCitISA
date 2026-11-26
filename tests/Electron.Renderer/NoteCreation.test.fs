@@ -2,9 +2,9 @@ module ElectronRenderer.NoteCreationTests
 
 open System
 open Renderer.Components.Helper.NoteCreation
-open Swate.Components.Shared
-open Swate.Components.Composite.Notes.Editor
-open Swate.Electron.Shared.FileIOTypes
+open Arcitisa.Components.Shared
+open Arcitisa.Components.Composite.Notes.Editor
+open Arcitisa.Electron.Shared.FileIOTypes
 open Vitest
 
 let private date = DateTime(2026, 11, 19)

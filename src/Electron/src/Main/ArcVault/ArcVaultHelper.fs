@@ -2,9 +2,9 @@ module Main.ArcVaultHelper
 
 
 open System
-open Swate.Components.Shared
-open Swate.Electron.Shared.FileIOHelper
-open Swate.Electron.Shared.FileIOTypes
+open Arcitisa.Components.Shared
+open Arcitisa.Electron.Shared.FileIOHelper
+open Arcitisa.Electron.Shared.FileIOTypes
 open ARCtrl
 open Fable.Electron
 open Fable.Core
@@ -13,7 +13,7 @@ open Main
 open Main.ARCtrlExtensions
 open Main.Bindings
 open Node.Api
-open Swate.Electron.Shared.RenamePathRules
+open Arcitisa.Electron.Shared.RenamePathRules
 
 let arcNotOpenError () =
     exn "No ARC is open. Open an ARC and try again."
@@ -132,10 +132,10 @@ let updateARCByFileContentDTO (oldArc: ARC) (dto: FileContentDTO) : Result<ARC, 
                 Ok oldArc
         | ArcFiles.Template _ -> Error(exn "Saving of template files is not supported.")
 
-let swatelogfn id fmt =
+let arcitisalogfn id fmt =
     Printf.kprintf (fun s -> Browser.Dom.console.log ("[ARCitISA-" + string id + "] " + s)) fmt
 
-let swatefailfn id fmt =
+let arcitisafailfn id fmt =
     Printf.kprintf (fun s -> failwith ("[ARCitISA-" + string id + "] " + s)) fmt
 
 type OpenArcRootRenamePlan = {
@@ -293,7 +293,7 @@ let createWindow () =
 
     let mainWindowOptions =
         BrowserWindowConstructorOptions(
-            title = Swate.Electron.Shared.ApplicationVersion.windowTitle None,
+            title = Arcitisa.Electron.Shared.ApplicationVersion.windowTitle None,
             icon = (windowIconPath |> U2.Case2),
             width = int screenSize.width,
             height = int screenSize.height,
@@ -356,7 +356,7 @@ let isFileWatcherPathIgnored (path: string) =
 
 /// Environment variable that forces polling for network or FUSE mounts, where native file events do not arrive.
 [<Literal>]
-let watchPollingEnvironmentVariable = "SWATE_WATCH_POLLING"
+let watchPollingEnvironmentVariable = "ARCITISA_WATCH_POLLING"
 
 /// Decides between polling and native events. An explicit choice wins. Otherwise the environment flag
 /// forces polling on any platform and the platform default applies without it.
@@ -445,7 +445,7 @@ let createFileWatcher (path: string) (usePolling: bool option) =
     createFileWatcherWith defaultFileWatcherTuning path usePolling
 
 let sendArcHasUnsavedChangesUpdate (hasUnsavedChanges: bool) (window: BrowserWindow) =
-    WindowSend.send<Swate.Electron.Shared.IPCTypes.MainToRendererIpc.IHasUnsavedArcChangesRendererApi>
+    WindowSend.send<Arcitisa.Electron.Shared.IPCTypes.MainToRendererIpc.IHasUnsavedArcChangesRendererApi>
         window
         (fun api -> api.arcUnsavedChangesUpdate hasUnsavedChanges)
 

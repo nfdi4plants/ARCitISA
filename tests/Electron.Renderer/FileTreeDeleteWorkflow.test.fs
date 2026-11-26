@@ -2,8 +2,8 @@ module ElectronRenderer.FileTreeDeleteWorkflowTests
 
 open Fable.Core
 open Renderer.Components.LeftSidebar.FileExplorer
-open Swate.Components.Page.FileExplorer.Types
-open Swate.Components.Primitive.ErrorModal.Types
+open Arcitisa.Components.Page.FileExplorer.Types
+open Arcitisa.Components.Primitive.ErrorModal.Types
 open Vitest
 
 let rec private waitUntil (predicate: unit -> bool, attempts: int) = promise {
