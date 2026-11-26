@@ -82,10 +82,23 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y rpm zstd libarchive-tools xvfb
 
+      - run: npm run fable
+
+      # No release has the Squirrel id and package name arcitisa yet. 3.4.0 will, and it is built by
+      # the Forge makers that this branch still has. Goes together with the makers in phase 1.
+      - name: Build 3.4.0 packages with the Forge makers
+        if: runner.os == 'Windows' || (runner.os == 'Linux' && matrix.arch == 'x64')
+        run: |
+          npm version 3.4.0 --no-git-tag-version
+          if [ "$RUNNER_OS" = Windows ]; then makers=@electron-forge/maker-squirrel; else makers=@electron-forge/maker-deb,@electron-forge/maker-rpm; fi
+          node scripts/forge-make.cjs --arch=x64 --targets=$makers
+          mkdir -p "$RUNNER_TEMP/forge-3.4.0"
+          find out/make -type f \( -name '*Setup.exe' -o -name '*.deb' -o -name '*.rpm' \) -exec cp {} "$RUNNER_TEMP/forge-3.4.0/" \;
+          ls -la "$RUNNER_TEMP/forge-3.4.0"
+          rm -rf out
+
       - name: Set the trial version
         run: npm version "$TRIAL_VERSION" --no-git-tag-version
-
-      - run: npm run fable
 
       - name: electron-forge package
         run: npx electron-forge package --arch=${{ matrix.arch }}
@@ -215,6 +228,33 @@ jobs:
           if (-not (Test-Path "$squirrel\app-*")) { Write-Error 'Setup removed the old install in silent mode' }
           'old install check passed'
 
+      - name: "Windows: silent setup stops when the 3.4.0 Squirrel install (arcitisa) is found"
+        if: ${{ !cancelled() && steps.build.outcome == 'success' && runner.os == 'Windows' }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $setup = (Get-ChildItem out/installers/*.exe | Select-Object -First 1).FullName
+          $oldSetup = (Get-ChildItem "$env:RUNNER_TEMP\forge-3.4.0\*Setup.exe" | Select-Object -First 1).FullName
+          "3.4.0 setup: $oldSetup"
+          Start-Process $oldSetup
+          $squirrel = "$env:LOCALAPPDATA\arcitisa"
+          $deadline = (Get-Date).AddSeconds(180)
+          while (-not ((Test-Path "$squirrel\app-*") -and (Test-Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\arcitisa')) -and (Get-Date) -lt $deadline) { Start-Sleep -Seconds 2 }
+          Start-Sleep -Seconds 15
+          Get-ChildItem -Force $squirrel | Select-Object Name
+          Get-Process arcitisa -ErrorAction SilentlyContinue | Where-Object { $_.Path -like "$squirrel\*" } | Stop-Process -Force
+          Start-Sleep -Seconds 3
+          # The previous step left 3.4.0-rc.2 installed. 3.4.0 does not replace it.
+          'Squirrel entries in Settings > Apps:'
+          Get-ChildItem 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall' | Where-Object { $_.PSChildName -in 'swate', 'arcitisa' } | ForEach-Object { '{0}: {1} {2}' -f $_.PSChildName, (Get-ItemProperty $_.PSPath).DisplayName, (Get-ItemProperty $_.PSPath).DisplayVersion }
+
+          $p = Start-Process $setup -ArgumentList '/S' -Wait -PassThru
+          "setup exit code with the 3.4.0 install present: $($p.ExitCode)"
+          if ($p.ExitCode -ne 1) { Write-Error 'Expected exit code 1: silent setup answers No and quits' }
+          if (Test-Path "$env:LOCALAPPDATA\Programs\ARCitISA\ARCitISA.exe") { Write-Error 'Setup installed although it should have stopped' }
+          if (-not (Test-Path "$squirrel\app-*")) { Write-Error 'Setup removed the 3.4.0 install in silent mode' }
+          '3.4.0 install check passed'
+
       # ----- Linux ---------------------------------------------------------------------------------
 
       - name: "Linux: deb metadata"
@@ -301,6 +341,33 @@ jobs:
             rpm -q arcitisa
             ls -la /opt/ARCitISA/arcitisa /usr/bin/arcitisa'
 
+      - name: "Linux: Ubuntu, apt upgrades the 3.4.0 arcitisa deb"
+        if: ${{ !cancelled() && steps.build.outcome == 'success' && runner.os == 'Linux' && matrix.arch == 'x64' }}
+        run: |
+          docker run --rm -e DEBIAN_FRONTEND=noninteractive -v "$RUNNER_TEMP/forge-3.4.0:/old:ro" -v "$PWD/out/installers:/new:ro" ubuntu:24.04 bash -euxc '
+            apt-get update -qq
+            apt-get install -y -qq /old/*.deb > /dev/null
+            dpkg -s arcitisa | grep -E "^(Package|Version|Status):"
+            ls -la /usr/bin/arcitisa
+            apt-get install -y /new/*_amd64.deb
+            dpkg -s arcitisa | grep -E "^(Package|Version|Status):"
+            ls -la /opt/ARCitISA/arcitisa /usr/bin/arcitisa
+            test "$(readlink -f /usr/bin/arcitisa)" = /opt/ARCitISA/arcitisa'
+
+      # rpm removes the files of the old package after the install script of the new one has run. The
+      # 3.4.0 rpm owns /usr/bin/arcitisa, the new one creates it in that script.
+      - name: "Linux: Fedora, dnf upgrades the 3.4.0 arcitisa rpm"
+        if: ${{ !cancelled() && steps.build.outcome == 'success' && runner.os == 'Linux' && matrix.arch == 'x64' }}
+        run: |
+          docker run --rm -v "$RUNNER_TEMP/forge-3.4.0:/old:ro" -v "$PWD/out/installers:/new:ro" fedora:latest bash -euxc '
+            dnf install -y -q /old/*.rpm
+            rpm -q arcitisa
+            ls -la /usr/bin/arcitisa
+            dnf install -y /new/*.x86_64.rpm
+            rpm -q arcitisa
+            ls -la /opt/ARCitISA/arcitisa /usr/bin/arcitisa
+            test "$(readlink -f /usr/bin/arcitisa)" = /opt/ARCitISA/arcitisa'
+
       - name: "Linux: Arch, pacman -U upgrades arcitisa"
         if: ${{ !cancelled() && steps.old.outcome == 'success' }}
         run: |
@@ -369,4 +436,12 @@ jobs:
         with:
           name: v4-installer-trial-${{ runner.os }}-${{ matrix.arch }}
           path: src/Electron/out/installers/*
+          retention-days: 7
+
+      # The 3.4.0 Squirrel setup is the old version in Sandbox test H.
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() && (runner.os == 'Windows' || (runner.os == 'Linux' && matrix.arch == 'x64')) }}
+        with:
+          name: v4-installer-trial-forge-3.4.0-${{ runner.os }}
+          path: ${{ runner.temp }}/forge-3.4.0/*
           retention-days: 7
