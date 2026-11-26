@@ -257,6 +257,18 @@ jobs:
           if (-not (Test-Path "$squirrel\app-*")) { Write-Error 'Setup removed the 3.4.0 install in silent mode' }
           '3.4.0 install check passed'
 
+      # Test E installs this one over the trial version.
+      - name: "Windows: build a 4.0.0-rc.2 installer for the update test"
+        if: ${{ !cancelled() && steps.build.outcome == 'success' && runner.os == 'Windows' }}
+        run: npx electron-builder --prepackaged "${{ matrix.app }}" --win nsis --x64 --config electron-builder.config.js --publish never -c.extraMetadata.version=4.0.0-rc.2 -c.directories.output=out/installers-rc.2
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() && steps.build.outcome == 'success' && runner.os == 'Windows' }}
+        with:
+          name: v4-installer-trial-Windows-x64-rc.2
+          path: src/Electron/out/installers-rc.2/*.exe
+          retention-days: 7
+
       # ----- Linux ---------------------------------------------------------------------------------
 
       - name: "Linux: deb metadata"
@@ -446,4 +458,50 @@ jobs:
         with:
           name: v4-installer-trial-forge-3.4.0-${{ runner.os }}
           path: ${{ runner.temp }}/forge-3.4.0/*
+          retention-days: 7
+
+  # Tests A to H of the plan. Each test gets a fresh runner, because every test installs.
+  ui-tests:
+    needs: trial
+    if: ${{ !cancelled() }}
+    strategy:
+      fail-fast: false
+      matrix:
+        test: [A, B, C, D, E, F, G, H]
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: .github/v4-installer-trial
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: v4-installer-trial-Windows-x64
+          path: ${{ runner.temp }}/kit/installers-4.0.0-rc.1
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: v4-installer-trial-Windows-x64-rc.2
+          path: ${{ runner.temp }}/kit/installers-4.0.0-rc.2
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: v4-installer-trial-forge-3.4.0-Windows
+          path: ${{ runner.temp }}/kit/old-3.4.0
+
+      - name: Download the 3.4.0-rc.2 setup
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download $env:OLD_RELEASE --repo $env:GITHUB_REPOSITORY -p '*Setup.exe' -D "$env:RUNNER_TEMP\kit\old-3.4.0-rc.2"
+
+      - name: Test ${{ matrix.test }}
+        shell: powershell
+        run: .github\v4-installer-trial\Driver.ps1 -Test ${{ matrix.test }} -Kit "$env:RUNNER_TEMP\kit" -Out "$env:RUNNER_TEMP\results"
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() }}
+        with:
+          name: v4-installer-trial-ui-${{ matrix.test }}
+          path: ${{ runner.temp }}/results
           retention-days: 7
