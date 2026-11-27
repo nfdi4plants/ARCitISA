@@ -297,6 +297,10 @@ type IVersionControlApi = {
     /// reports it. A failed result means the answer is unknown.
     canDeduplicateStorage: OperationRequestDto -> JS.Promise<Result<OperationResultDto<bool>, exn>>
     getRepositoryWebUrl: OperationRequestDto -> JS.Promise<Result<OperationResultDto<string option>, exn>>
+    /// The commits that lead to the current one, newest first, one page per call.
+    listRevisions: ListRevisionsRequestDto -> JS.Promise<Result<OperationResultDto<RevisionPageDto>, exn>>
+    /// The files a commit changed against its first parent.
+    getRevisionChanges: RevisionChangesRequestDto -> JS.Promise<Result<OperationResultDto<FileChangeDto[]>, exn>>
     /// Removes a stale provider lock left by a killed process, only while no operation
     /// of this session runs, then refreshes and returns the status.
     clearStaleLock: OperationRequestDto -> JS.Promise<Result<OperationResultDto<WorkspaceStatusDto>, exn>>

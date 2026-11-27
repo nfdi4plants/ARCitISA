@@ -1653,14 +1653,14 @@ type GitSidebar =
                     prop.tabIndex 0
                     prop.title change.Path
                     prop.className [
-                        "swt:group swt:flex swt:min-h-6 swt:w-full swt:min-w-0 swt:items-center swt:gap-2 swt:rounded-box swt:border swt:px-2 swt:text-left swt:transition-colors swt:select-none swt:@max-xs:gap-1.5"
+                        rowBoxClassName
                         "swt:cursor-pointer"
                         if change.Kind = GitSidebarChangeKind.Conflicted then
-                            "swt:border-error/40 swt:bg-error/5 hover:swt:bg-error/10"
+                            "swt:border-error/40 swt:bg-error/5 swt:hover:bg-error/10"
                         elif props.IsMarked then
-                            "swt:border-success/40 swt:bg-success/10 hover:swt:bg-success/15"
+                            markedRowClassName
                         else
-                            "swt:border-base-content/10 swt:bg-base-100 hover:swt:bg-base-200/80"
+                            idleRowClassName
                     ]
                     prop.onClick (fun (event: MouseEvent) ->
                         activateRow (event.ctrlKey || event.metaKey) event.shiftKey
@@ -1770,8 +1770,7 @@ type GitSidebar =
                 prop.children [
                     if props.ChangedFiles.Length = 0 then
                         Html.div [
-                            prop.className
-                                "swt:mt-2 swt:min-w-0 swt:wrap-break-word swt:rounded-box swt:border swt:border-dashed swt:border-base-content/15 swt:bg-base-200/40 swt:px-4 swt:py-6 swt:text-sm swt:text-base-content/60 swt:@max-xs:px-2"
+                            prop.className [ "swt:mt-2"; emptyListClassName ]
                             prop.text (
                                 if
                                     props.Status.TrackingBranch.IsSome
@@ -2191,7 +2190,8 @@ type GitSidebar =
             ?operationSteps: GitSidebarStep[],
             ?operationLog: GitSidebarLog,
             ?lastLog: GitSidebarLastLog,
-            ?lfsDedupUnavailableReason: string
+            ?lfsDedupUnavailableReason: string,
+            ?history: GitSidebarHistory
         ) =
 
         let runStatus = defaultArg runStatus GitSidebarRunStatus.Idle
@@ -2615,6 +2615,11 @@ type GitSidebar =
                     onRefresh ()
         }
 
+        let historyView =
+            match history with
+            | Some history -> GitHistory.GitHistory history
+            | None -> Html.none
+
         Html.div [
             prop.testId "GitSidebar"
             prop.className
@@ -2731,6 +2736,8 @@ type GitSidebar =
                             ]
                         ]
                     ]
+                else
+                    Html.none
 
                 GitSidebar.ChangedFilesList(
                     {
@@ -2743,6 +2750,8 @@ type GitSidebar =
                         DiscardChanges = submitDiscardSelection
                     }
                 )
+
+                historyView
 
                 GitSidebar.Modals(
                     {

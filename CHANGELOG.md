@@ -18,6 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Planned as 4.0.0. Upgrading from 3.x: see [Upgrading from ARCitISA 3.x to 4.0](docs/migrations/v4.md).
 
+### ✨ Added
+
+- The Git sidebar has a History section with the commits of the current branch and the changes in each of them. (by @caroott)
+
 ### 🔄 Changed
 
 - New installers for all platforms, made with electron-builder (#1463, by @Freymaurer):

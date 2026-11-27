@@ -45,6 +45,9 @@ type GitStateController = {
     abandonMerge: unit -> unit
     pruneLfsCache: unit -> unit
     dedupLfsStorage: unit -> unit
+    loadMoreHistory: unit -> unit
+    /// The files of one commit against its first parent.
+    loadRevisionChanges: string -> JS.Promise<Result<GitSidebarChange[], string>>
     /// Requests of the open diff page.
     sendDiffMsg: GitDiffMsg -> unit
 }
@@ -69,6 +72,8 @@ module private Helper =
             getStatus = Api.ipcVersionControlApi.getStatus
             listRefs = Api.ipcVersionControlApi.listRefs
             getRepositoryWebUrl = Api.ipcVersionControlApi.getRepositoryWebUrl
+            listRevisions = Api.ipcVersionControlApi.listRevisions
+            getRevisionChanges = Api.ipcVersionControlApi.getRevisionChanges
             getStoragePolicySettings = Api.ipcVersionControlApi.getStoragePolicySettings
             setStoragePolicySettings = Api.ipcVersionControlApi.setStoragePolicySettings
             getUploadRightAway = Api.ipcVersionControlApi.getUploadRightAway
@@ -152,6 +157,8 @@ let GitStateCtx =
             abandonMerge = fun () -> ()
             pruneLfsCache = fun () -> ()
             dedupLfsStorage = fun () -> ()
+            loadMoreHistory = fun () -> ()
+            loadRevisionChanges = fun _ -> promise { return Ok [||] }
             sendDiffMsg = fun _ -> ()
         }
     )
@@ -302,6 +309,11 @@ let GitStateCtxProvider (children: ReactElement) =
 
     let dedupLfsStorage () = dispatch DedupLfsStorageRequested
 
+    let loadMoreHistory () = dispatch HistoryLoadMoreRequested
+
+    let loadRevisionChanges (revision: string) =
+        loadRevisionChangesAsync dependencies revision
+
     React.useEffect ((fun () -> dispatch (ArcPathChanged appStateCtx)), [| box appStateCtx |])
 
     // Other parts of the app replace the page directly, so the workflow learns here that the
@@ -345,6 +357,8 @@ let GitStateCtxProvider (children: ReactElement) =
                 abandonMerge = abandonMerge
                 pruneLfsCache = pruneLfsCache
                 dedupLfsStorage = dedupLfsStorage
+                loadMoreHistory = loadMoreHistory
+                loadRevisionChanges = loadRevisionChanges
                 sendDiffMsg = sendDiffMsg
             }),
             [| box gitState |]

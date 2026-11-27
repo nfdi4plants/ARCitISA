@@ -19,6 +19,10 @@ let private externalChangesRefreshDelayMs = 1500
 [<Literal>]
 let DefaultDiffIndexingLimitMb = 1024
 
+/// The number of commits one history page asks for. The first page and every load more use it.
+[<Literal>]
+let HistoryPageSize = 50
+
 /// The defaults ARCitISA ships with. The renderer starts from these values until the main process
 /// reports the effective ones, and keeps them when that call fails.
 let builtInUserDefaults: UserDefaultValuesDto = {
@@ -174,6 +178,16 @@ type GitDiffReopen = {
     TargetPageIndex: int
 }
 
+/// The commit list of the history section.
+type GitHistoryState = {
+    Commits: GitSidebarCommit[]
+    /// The cursor of the next page. None when the list is complete.
+    NextCursor: string option
+    IsLoadingMore: bool
+    /// The message of the last load that failed.
+    LoadError: string option
+}
+
 type GitState = {
     Status: GitSidebarStatus
     ChangedFiles: GitSidebarChange[]
@@ -184,6 +198,8 @@ type GitState = {
     /// Whether the version control provider can deduplicate the ARC. None until the check answers or
     /// when it could not tell.
     CanDeduplicateStorage: bool option
+    /// None before the first refresh, and when the provider has no history service or its session cannot be opened.
+    History: GitHistoryState option
     PendingConfirmation: GitSidebarConfirmationDialog option
     PendingRemoteAction: GitPendingRemoteAction
     PendingPublishRename: GitPublishRenamePrompt option
@@ -295,6 +311,7 @@ type GitState = {
         Refs = [||]
         OriginRemoteRepositoryWebUrl = None
         CanDeduplicateStorage = None
+        History = None
         PendingConfirmation = None
         PendingRemoteAction = GitPendingRemoteAction.None
         PendingPublishRename = None
@@ -358,6 +375,7 @@ type GitRefreshResult = {
     Refs: Result<LogicalRefDto[], OperationFailureDto>
     LfsSettings: Result<StoragePolicySettingsDto, OperationFailureDto>
     OriginRemoteRepositoryWebUrl: string option
+    History: Result<RevisionPageDto, OperationFailureDto> option
 }
 
 type Reply<'T> = Result<'T, string> -> unit
@@ -678,6 +696,8 @@ type Msg =
     | OperationStarted of OperationRequestDto
     | ArcPathChanged of ArcRootPath
     | StorageDeduplicationChecked of arcSessionId: int * canDeduplicate: bool
+    | HistoryLoadMoreRequested
+    | HistoryPageLoaded of arcSessionId: int * cursor: string * Result<RevisionPageDto, string>
     | GitRepositoryInitialized of arcPath: string
     | RefreshRequested
     | RefreshRequestedSilently
@@ -757,6 +777,8 @@ type GitDependencies = {
     getStatus: OperationRequestDto -> JS.Promise<Result<OperationResultDto<WorkspaceStatusDto>, exn>>
     listRefs: OperationRequestDto -> JS.Promise<Result<OperationResultDto<LogicalRefDto[]>, exn>>
     getRepositoryWebUrl: OperationRequestDto -> JS.Promise<Result<OperationResultDto<string option>, exn>>
+    listRevisions: ListRevisionsRequestDto -> JS.Promise<Result<OperationResultDto<RevisionPageDto>, exn>>
+    getRevisionChanges: RevisionChangesRequestDto -> JS.Promise<Result<OperationResultDto<FileChangeDto[]>, exn>>
     getStoragePolicySettings:
         OperationRequestDto -> JS.Promise<Result<OperationResultDto<StoragePolicySettingsDto>, exn>>
     setStoragePolicySettings: StoragePolicySettingsRequestDto -> JS.Promise<Result<OperationResultDto<unit>, exn>>
@@ -1365,6 +1387,61 @@ let applyStatus (status: WorkspaceStatusDto) (model: GitState) =
             PendingMaterializationSessionId = pendingMaterializationSessionId
     }
 
+let private mapCommitPerson (signature: RevisionSignatureDto) : GitSidebarCommitPerson = {
+    Name = signature.Name
+    Email = signature.Email
+    At = signature.At
+}
+
+// The history section does not show a tracking flag on a label, so the labels need no tracking ref.
+let private mapCommit (entry: RevisionEntryDto) : GitSidebarCommit = {
+    Id = entry.Id
+    ParentIds = entry.ParentIds
+    Summary = entry.Summary
+    Message = entry.Message
+    Committer = mapCommitPerson entry.Committer
+    Author = entry.Author |> Option.map mapCommitPerson
+    Branches = mapBranches None entry.Refs
+    IsLocalOnly = (entry.Publication = PublicationStateDto.LocalOnly)
+}
+
+/// A first page that starts like the current list keeps the list, so commits loaded further down survive the refreshes
+/// that change nothing. A page without a cursor is the whole history and always replaces the list.
+let private applyHistory (result: Result<RevisionPageDto, OperationFailureDto> option) (model: GitState) =
+    match result with
+    | None -> None
+    | Some(Error failure) ->
+        let current =
+            model.History
+            |> Option.defaultValue {
+                Commits = [||]
+                NextCursor = None
+                IsLoadingMore = false
+                LoadError = None
+            }
+
+        Some {
+            current with
+                LoadError = Some(failureMessage failure)
+        }
+    | Some(Ok page) ->
+        let commits = page.Revisions |> Array.map mapCommit
+
+        match model.History with
+        | Some current when
+            page.NextCursor.IsSome
+            && current.Commits.Length >= commits.Length
+            && Array.take commits.Length current.Commits = commits
+            ->
+            Some { current with LoadError = None }
+        | _ ->
+            Some {
+                Commits = commits
+                NextCursor = page.NextCursor
+                IsLoadingMore = false
+                LoadError = None
+            }
+
 let private applyRefreshResult (refreshResult: GitRefreshResult) (model: GitState) =
     let modelWithStatus =
         match refreshResult.Status with
@@ -1407,6 +1484,7 @@ let private applyRefreshResult (refreshResult: GitRefreshResult) (model: GitStat
 
     {
         modelWithSettings with
+            History = applyHistory refreshResult.History modelWithSettings
             Services = refreshResult.Session |> Result.toOption |> Option.map _.Services
             OriginRemoteRepositoryWebUrl = refreshResult.OriginRemoteRepositoryWebUrl
             RepositoryAvailability = GitRepositoryAvailability.Ready
@@ -1708,6 +1786,24 @@ let private toResult (call: JS.Promise<Result<OperationResultDto<'T>, exn>>) = p
 
 let private request (deps: GitDependencies) : OperationRequestDto = { OperationId = deps.newOperationId () }
 
+/// One page of the commit list. No cursor asks for the first page.
+let private listRevisionsAsync
+    (deps: GitDependencies)
+    (cursor: string option)
+    : JS.Promise<Result<RevisionPageDto, OperationFailureDto>> =
+    promise {
+        let! result =
+            toResult (
+                deps.listRevisions {
+                    OperationId = deps.newOperationId ()
+                    Cursor = cursor
+                    Limit = HistoryPageSize
+                }
+            )
+
+        return result |> Result.map (fun (outcome, _) -> outcome.Value)
+    }
+
 let private refreshAllAsync (deps: GitDependencies) = promise {
     let! sessionResult = toResult (deps.getSessionInfo (request deps))
 
@@ -1719,11 +1815,12 @@ let private refreshAllAsync (deps: GitDependencies) = promise {
             Refs = Error failure
             LfsSettings = Error failure
             OriginRemoteRepositoryWebUrl = None
+            History = None
         }
     | Ok(sessionOutcome, _) ->
         let session = sessionOutcome.Value
-        // The session info runs first because it decides whether the repository URL call is
-        // needed. The other four calls are independent and run together. and! awaits them
+        // The session info runs first because it decides whether the repository URL and history
+        // calls are needed. The other five calls are independent and run together. and! awaits them
         // through Promise.all, so a rejected call never stays unobserved.
         let! statusResult = toResult (deps.getStatus (request deps))
         and! refsResult = toResult (deps.listRefs (request deps))
@@ -1746,14 +1843,63 @@ let private refreshAllAsync (deps: GitDependencies) = promise {
             else
                 promise { return None }
 
+        and! history =
+            if session.Services.History then
+                promise {
+                    let! page = listRevisionsAsync deps None
+                    return Some page
+                }
+            else
+                promise { return None }
+
         return {
             Session = Ok session
             Status = statusResult |> Result.map (fun (outcome, _) -> outcome.Value)
             Refs = refsResult |> Result.map (fun (outcome, _) -> outcome.Value)
             LfsSettings = settingsResult
             OriginRemoteRepositoryWebUrl = webUrl
+            History = history
         }
 }
+
+/// The files of one commit against its first parent, for the history section.
+let loadRevisionChangesAsync
+    (deps: GitDependencies)
+    (revision: string)
+    : JS.Promise<Result<GitSidebarChange[], string>> =
+    promise {
+        let! result =
+            toResult (
+                deps.getRevisionChanges {
+                    OperationId = deps.newOperationId ()
+                    Revision = revision
+                }
+            )
+
+        return
+            match result with
+            | Ok(outcome, _) ->
+                Ok(
+                    outcome.Value
+                    |> Array.map (fun change -> {
+                        Path = change.Path
+                        OriginalPath = change.OldPath
+                        Kind = changeKind change.Kind
+                    })
+                )
+            | Error failure -> Error(failureMessage failure)
+    }
+
+/// One more page of the commit list. A rejected call becomes the Error case, so the load never stays pending.
+let private loadHistoryPageCmd (deps: GitDependencies) (arcSessionId: int) (cursor: string) : Cmd<Msg> =
+    Cmd.OfPromise.either
+        (fun () -> promise {
+            let! page = listRevisionsAsync deps (Some cursor)
+            return page |> Result.mapError failureMessage
+        })
+        ()
+        (fun result -> HistoryPageLoaded(arcSessionId, cursor, result))
+        (fun err -> HistoryPageLoaded(arcSessionId, cursor, Error(string err)))
 
 let private versionOf (refreshResult: GitRefreshResult) =
     refreshResult.Status |> Result.toOption |> Option.map _.WorkspaceVersion
@@ -5382,6 +5528,42 @@ let private updateCore
                 CanDeduplicateStorage = Some canDeduplicate
         },
         Cmd.none
+    | HistoryLoadMoreRequested ->
+        match model.History with
+        | Some({
+                   NextCursor = Some cursor
+                   IsLoadingMore = false
+               } as history) ->
+            {
+                model with
+                    History =
+                        Some {
+                            history with
+                                IsLoadingMore = true
+                                LoadError = None
+                        }
+            },
+            loadHistoryPageCmd deps model.ArcSessionId cursor
+        | _ -> model, Cmd.none
+    | HistoryPageLoaded(arcSessionId, cursor, result) ->
+        match model.History with
+        | Some history when arcSessionId = model.ArcSessionId && history.NextCursor = Some cursor ->
+            let loaded =
+                match result with
+                | Ok page -> {
+                    history with
+                        Commits = Array.append history.Commits (page.Revisions |> Array.map mapCommit)
+                        NextCursor = page.NextCursor
+                        IsLoadingMore = false
+                  }
+                | Error message -> {
+                    history with
+                        IsLoadingMore = false
+                        LoadError = Some message
+                  }
+
+            { model with History = Some loaded }, Cmd.none
+        | _ -> model, Cmd.none
     | SidebarVisibilityChanged false ->
         {
             model with
@@ -5920,7 +6102,13 @@ let private updateCore
                 Cmd.ofMsg (WriteRequested(Push GitUpdateAcceptance.RequirePreview))
             ]
         else
-            nextModel, applyPageChangeCmd setPageState outcome.PageChange
+            // A finalized merge moves the tip, so the history is read again.
+            nextModel,
+            Cmd.batch [
+                applyPageChangeCmd setPageState outcome.PageChange
+                if outcome.Finalized then
+                    Cmd.ofMsg RefreshRequestedSilently
+            ]
     | SaveDownloadLargeFilesRequested downloadLargeFiles when model.CurrentArcPath.IsNone ->
         {
             model with

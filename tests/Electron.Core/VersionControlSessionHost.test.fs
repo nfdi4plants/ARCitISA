@@ -1628,6 +1628,7 @@ Vitest.describe (
                     Vitest.expect(session.ProviderId).toBe "git"
                     Vitest.expect(session.Services.Synchronization).toBe true
                     Vitest.expect(session.Services.ConflictResolution).toBe true
+                    Vitest.expect(session.Services.History).toBe true
                     Vitest.expect(session.WorkspaceRoot.Replace('\\', '/')).toBe (fixture.RepoRoot.Replace('\\', '/'))
 
                     writeText (join [| fixture.RepoRoot; "assay.txt" |]) "assay\n"
@@ -2604,6 +2605,50 @@ Vitest.describe (
         )
 
         Vitest.test (
+            "listRevisions returns the commits of the repository and getRevisionChanges the files of one",
+            fun () ->
+                withFixture (fun fixture -> promise {
+                    registerVault 65 fixture.RepoRoot |> ignore
+                    let api = Main.IPC.IVersionControlApi.api (ipcEvent 65)
+
+                    let baseId = git fixture.RepoRoot [ "rev-parse"; "HEAD" ] |> _.Trim()
+                    writeText (join [| fixture.RepoRoot; "second.txt" |]) "second\n"
+                    git fixture.RepoRoot [ "add"; "second.txt" ] |> ignore
+                    git fixture.RepoRoot [ "commit"; "-m"; "second" ] |> ignore
+                    let secondId = git fixture.RepoRoot [ "rev-parse"; "HEAD" ] |> _.Trim()
+
+                    let! listed =
+                        api.listRevisions {
+                            OperationId = "history"
+                            Cursor = None
+                            Limit = 10
+                        }
+
+                    let page = (expectDtoValue "listRevisions" listed).Value
+                    Vitest.expect(page.Revisions |> Array.map _.Id).toEqual [| secondId; baseId |]
+                    Vitest.expect(page.Revisions |> Array.map _.Summary).toEqual [| "second"; "base" |]
+                    Vitest.expect(page.Revisions.[0].ParentIds).toEqual [| baseId |]
+
+                    Vitest.expect(page.Revisions |> Array.map _.Publication).toEqual [|
+                        PublicationStateDto.LocalOnly
+                        PublicationStateDto.Published
+                    |]
+
+                    Vitest.expect(page.NextCursor).toEqual None
+
+                    let! changed =
+                        api.getRevisionChanges {
+                            OperationId = "history-changes"
+                            Revision = secondId
+                        }
+
+                    let changes = (expectDtoValue "getRevisionChanges" changed).Value
+                    Vitest.expect(changes |> Array.map _.Path).toEqual [| "second.txt" |]
+                    Vitest.expect(changes |> Array.map _.Kind).toEqual [| FileChangeKindDto.Added |]
+                })
+        )
+
+        Vitest.test (
             "an absent optional service is reported with a stable code and an open failure keeps its provider code",
             fun () ->
                 withFixture (fun fixture -> promise {
@@ -2630,6 +2675,27 @@ Vitest.describe (
                         let failure = expectDtoFailure "web url without browser service" url
                         Vitest.expect(failure.Category).toEqual FailureCategoryDto.Unsupported
                         Vitest.expect(failure.Code).toBe VersionControlCodes.ServiceUnavailable
+
+                        let! page =
+                            api.listRevisions {
+                                OperationId = "history"
+                                Cursor = None
+                                Limit = 10
+                            }
+
+                        let! changes =
+                            api.getRevisionChanges {
+                                OperationId = "history-changes"
+                                Revision = "abc123"
+                            }
+
+                        for result in
+                            [
+                                expectDtoFailure "history without service" page
+                                expectDtoFailure "revision changes without service" changes
+                            ] do
+                            Vitest.expect(result.Category).toEqual FailureCategoryDto.Unsupported
+                            Vitest.expect(result.Code).toBe VersionControlCodes.ServiceUnavailable
 
                         registerVault 51 failingRoot |> ignore
                         let failingApi = Main.IPC.IVersionControlApi.api (ipcEvent 51)

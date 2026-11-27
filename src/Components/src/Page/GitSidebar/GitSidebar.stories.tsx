@@ -1259,3 +1259,51 @@ export const SavesADiffIndexingLimitInTheMemoryRange: Story = {
     await expect(saveDiffIndexingLimitSpy).toHaveBeenCalledWith(8);
   },
 };
+
+const historyPerson = {
+  Name: "Ada Lovelace",
+  Email: "ada.lovelace@example.org",
+  At: 1_700_000_000,
+};
+
+export const WithHistory: Story = {
+  args: {
+    status: baseStatus,
+    changedFiles: changedFiles.slice(),
+    branchOptions: branchOptions.slice(),
+    callbacks: buildCallbacks(),
+    downloadLargeFiles: true,
+    lfsAutoTrackThresholdMb: 1,
+    diffIndexingLimitMb: 1024,
+    history: {
+      Commits: [
+        {
+          Id: "abc1234" + "0".repeat(33),
+          ParentIds: [],
+          Summary: "Add the first protocol",
+          Message: "Add the first protocol",
+          Committer: historyPerson,
+          Author: historyPerson,
+          Branches: [branchOptions[0]],
+          IsLocalOnly: true,
+        },
+      ],
+      HasMore: false,
+      IsLoadingMore: false,
+      LoadError: undefined,
+      OnLoadMore: noop,
+      OnLoadCommitChanges: () =>
+        Promise.resolve(okResult<typeof changedFiles, string>(changedFiles)),
+      OnSelectCommitChange: () =>
+        Promise.resolve(okResult<void, string>(undefined)),
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    await userEvent.click(canvas.getByTestId("GitSidebarHistoryToggle"));
+    await expect(canvas.getByTestId("GitSidebarHistoryCommit-0")).toHaveTextContent(
+      "Add the first protocol",
+    );
+  },
+};

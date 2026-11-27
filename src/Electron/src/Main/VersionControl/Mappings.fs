@@ -144,6 +144,40 @@ let fileChange (change: FileChange) : FileChangeDto = {
     Kind = fileChangeKind change.Kind
 }
 
+let diffEntryChange (entry: DiffEntry) : FileChangeDto = {
+    Path = RepositoryPath.value entry.Path
+    OldPath = entry.OldPath |> Option.map RepositoryPath.value
+    Kind = fileChangeKind entry.Kind
+}
+
+let revisionSignature (signature: RevisionSignature) : RevisionSignatureDto = {
+    Name = signature.Name
+    Email = signature.Email
+    At = float signature.At
+}
+
+let revisionEntry (entry: RevisionEntry) : RevisionEntryDto = {
+    Id = RevisionId.value entry.Id
+    ParentIds = entry.ParentIds |> Array.map RevisionId.value
+    Summary = entry.Summary
+    Message = entry.Message
+    Committer = revisionSignature entry.Committer
+    Author = entry.Author |> Option.map revisionSignature
+    Refs = entry.Refs |> Array.map logicalRef
+    Publication = publication entry.Publication
+}
+
+let revisionPage (page: RevisionPage) : RevisionPageDto = {
+    Revisions = page.Revisions |> Array.map revisionEntry
+    NextCursor = page.NextCursor
+}
+
+/// The library validates the cursor and clamps the limit.
+let listRevisionsRequest (request: ListRevisionsRequestDto) : ListRevisionsRequest = {
+    Cursor = request.Cursor
+    Limit = request.Limit
+}
+
 let relationship (relationship: RevisionRelationship) : RevisionRelationshipDto =
     match relationship with
     | UpToDate -> RevisionRelationshipDto.UpToDate
@@ -255,6 +289,7 @@ let serviceAvailability (functions: ProviderFunctions) : ServiceAvailabilityDto 
     let objectMaterialization = functions.ObjectMaterialization
     let storagePolicy = functions.StoragePolicy
     let maintenance = functions.Maintenance
+    let history = functions.History
 
     {
         Synchronization =
@@ -289,6 +324,7 @@ let serviceAvailability (functions: ProviderFunctions) : ServiceAvailabilityDto 
             && isImplemented maintenance.Deduplicate
             && isImplemented maintenance.CanDeduplicate
         RepositoryBrowser = isImplemented functions.RepositoryBrowser.GetRepositoryWebUrl
+        History = isImplemented history.ListRevisions && isImplemented history.GetRevisionChanges
     }
 
 let sessionInfo

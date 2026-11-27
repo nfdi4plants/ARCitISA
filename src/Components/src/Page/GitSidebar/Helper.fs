@@ -52,6 +52,24 @@ let splitPath (path: string) : string * string option =
     | index when index > 0 -> path.Substring(index + 1), Some(path.Substring(0, index))
     | _ -> path, None
 
+/// The typography of a section title in the sidebar.
+let sectionTitleClassName =
+    "swt:text-xs swt:font-semibold swt:uppercase swt:tracking-[0.2em] swt:text-base-content/60 swt:@max-xs:tracking-[0.12em]"
+
+/// The box of a row in a list of files or commits. The idle and the marked classes give its border and background.
+let rowBoxClassName =
+    "swt:group swt:flex swt:min-h-6 swt:w-full swt:min-w-0 swt:items-center swt:gap-2 swt:rounded-box swt:border swt:px-2 swt:text-left swt:transition-colors swt:select-none swt:@max-xs:gap-1.5"
+
+/// The dashed box that stands in for an empty list.
+let emptyListClassName =
+    "swt:min-w-0 swt:wrap-break-word swt:rounded-box swt:border swt:border-dashed swt:border-base-content/15 swt:bg-base-200/40 swt:px-4 swt:py-6 swt:text-sm swt:text-base-content/60 swt:@max-xs:px-2"
+
+let idleRowClassName =
+    "swt:border-base-content/10 swt:bg-base-100 swt:hover:bg-base-200/80"
+
+let markedRowClassName =
+    "swt:border-success/40 swt:bg-success/10 swt:hover:bg-success/15"
+
 /// One row that the list renders, and the offset it starts at.
 type VirtualRow = { Index: int; Start: int }
 

@@ -12,8 +12,10 @@ type GitSidebarParts =
     [<ReactComponent>]
     static member SectionHeader(title: string, countText: string option) =
         Html.div [
-            prop.className
-                "swt:flex swt:min-w-0 swt:items-center swt:justify-between swt:gap-2 swt:px-3 swt:pt-3 swt:text-xs swt:font-semibold swt:uppercase swt:tracking-[0.2em] swt:text-base-content/60 swt:@max-xs:px-2 swt:@max-xs:tracking-[0.12em]"
+            prop.className [
+                sectionTitleClassName
+                "swt:flex swt:min-w-0 swt:items-center swt:justify-between swt:gap-2 swt:px-3 swt:pt-3 swt:@max-xs:px-2"
+            ]
             prop.children [
                 Html.span [
                     prop.className "swt:min-w-0 swt:truncate"

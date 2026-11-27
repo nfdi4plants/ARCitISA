@@ -472,6 +472,8 @@
     <Compile Include="Page\GitSidebar\Types.fs" />
     <Compile Include="Page\GitSidebar\Helper.fs" />
     <Compile Include="Page\GitSidebar\GitSidebarParts.fs" />
+    <Compile Include="Page\GitSidebar\GitHistory.fs" />
+    <Compile Include="Page\GitSidebar\GitHistory.test.rtl.fs" />
     <Compile Include="Page\GitSidebar\GitSidebar.fs" />
     <Compile Include="Page\GitSidebar\GitSidebar.test.rtl.fs" />
     <Compile Include="Page\GitComparison\GitTextComparison.Core.fs" />

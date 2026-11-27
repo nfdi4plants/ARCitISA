@@ -435,6 +435,7 @@ Vitest.describe (
                         Vitest.expect(services.StoragePolicy).toBe false
                         Vitest.expect(services.Maintenance).toBe false
                         Vitest.expect(services.RepositoryBrowser).toBe false
+                        Vitest.expect(services.History).toBe false
 
                         let! objects = api.listObjects (request "lakefs-list-objects")
 

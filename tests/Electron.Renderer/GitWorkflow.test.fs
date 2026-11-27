@@ -154,6 +154,7 @@ let private sessionInfo: WorkspaceSessionInfoDto = {
         StoragePolicy = true
         Maintenance = true
         RepositoryBrowser = true
+        History = true
     }
 }
 
@@ -350,6 +351,8 @@ let private defaultDependencies: GitDependencies = {
     getStatus = fun _ -> unexpectedPromise "getStatus"
     listRefs = fun _ -> unexpectedPromise "listRefs"
     getRepositoryWebUrl = fun _ -> promise { return Ok(succeeded None) }
+    listRevisions = fun _ -> promise { return Ok(succeeded { Revisions = [||]; NextCursor = None }) }
+    getRevisionChanges = fun _ -> promise { return Ok(succeeded [||]) }
     getStoragePolicySettings = fun _ -> unexpectedPromise "getStoragePolicySettings"
     setStoragePolicySettings = fun _ -> unexpectedPromise "setStoragePolicySettings"
     // The main process holds no stored value by default, so a refresh keeps the checkbox it has.
@@ -684,6 +687,7 @@ let private refreshed status = {
     Refs = Ok refs
     LfsSettings = Ok(lfsSettings 5 true)
     OriginRemoteRepositoryWebUrl = None
+    History = None
 }
 
 Vitest.describe (
@@ -1537,6 +1541,7 @@ Vitest.describe (
                     Refs = Ok refs
                     LfsSettings = Error settingsFailure
                     OriginRemoteRepositoryWebUrl = None
+                    History = None
                 }
 
                 let firstState, firstCmd =
@@ -1585,6 +1590,7 @@ Vitest.describe (
                     Refs = Ok [| localBranch "feature/stale" true true |]
                     LfsSettings = Ok(lfsSettings 9 false)
                     OriginRemoteRepositoryWebUrl = Some "https://example.org/feature/stale"
+                    History = None
                 }
 
                 let nextState, cmd =
@@ -1776,6 +1782,7 @@ Vitest.describe (
                     Refs = Error missing
                     LfsSettings = Error missing
                     OriginRemoteRepositoryWebUrl = None
+                    History = None
                 }
 
                 let state = {
@@ -1818,6 +1825,7 @@ Vitest.describe (
                     Refs = Error missing
                     LfsSettings = Error missing
                     OriginRemoteRepositoryWebUrl = None
+                    History = None
                 }
 
                 let state = {
@@ -5565,6 +5573,7 @@ Vitest.describe (
                     Refs = Ok [| localBranch "feature/old-arc" true true |]
                     LfsSettings = Ok(lfsSettings 13 true)
                     OriginRemoteRepositoryWebUrl = None
+                    History = None
                 }
 
                 let nextState, finishCmd =
@@ -7243,6 +7252,41 @@ Vitest.describe (
                             WriteRequested(Push GitUpdateAcceptance.RequirePreview)
                         |]
                     )
+            }
+        )
+
+        Vitest.test (
+            "ConfirmMergeResolutionCompleted asks for a refresh only when the merge was finalized and no push follows",
+            fun () -> promise {
+                let state = {
+                    GitState.Empty with
+                        CurrentArcPath = Some "C:/arc"
+                        ArcSessionId = 5
+                        BusyOperation = Some(GitBusyOperation.ConfirmingMergeResolution "conflict.txt")
+                        MergeResolutionPendingPath = Some "conflict.txt"
+                }
+
+                let outcome finalized = {
+                    UpdatedStatus = cleanStatus
+                    NextConflictedPath = None
+                    PageChange = GitPageChange.Clear
+                    Notice = None
+                    PendingMaterializationPath = None
+                    ResolutionSessionId = "session-1"
+                    Finalized = finalized
+                }
+
+                let _, finalizedCmd =
+                    update defaultDependencies ignore (ConfirmMergeResolutionCompleted(5, Ok(outcome true))) state
+
+                let _, unfinishedCmd =
+                    update defaultDependencies ignore (ConfirmMergeResolutionCompleted(5, Ok(outcome false))) state
+
+                let! finalizedMessages = collectMessages finalizedCmd
+                let! unfinishedMessages = collectMessages unfinishedCmd
+
+                Vitest.expect(finalizedMessages).toEqual ([| RefreshRequestedSilently |])
+                Vitest.expect(unfinishedMessages).toEqual ([||])
             }
         )
 
@@ -14034,6 +14078,399 @@ Vitest.describe (
                 Vitest.expect(uploadCheckbox.disabled).toBe (false)
 
                 cleanup ()
+            }
+        )
+)
+
+let private commitEntry (id: string) (publication: PublicationStateDto) (refs: LogicalRefDto[]) : RevisionEntryDto = {
+    Id = id
+    ParentIds = [||]
+    Summary = $"summary {id}"
+    Message = $"message {id}"
+    Committer = {
+        Name = "Carol"
+        Email = Some "carol@example.org"
+        At = 1700000000.0
+    }
+    Author = None
+    Refs = refs
+    Publication = publication
+}
+
+let private historyPage (ids: string list) (cursor: string option) : RevisionPageDto = {
+    Revisions =
+        ids
+        |> List.map (fun id -> commitEntry id PublicationStateDto.Published [||])
+        |> List.toArray
+    NextCursor = cursor
+}
+
+let private historyDependencies listRevisions = {
+    defaultDependencies with
+        getStatus = fun _ -> promise { return Ok(succeeded cleanStatus) }
+        listRefs = fun _ -> promise { return Ok(succeeded refs) }
+        getStoragePolicySettings = fun _ -> promise { return Ok(succeeded (lfsSettings 3 true)) }
+        listRevisions = listRevisions
+}
+
+let private servingPage (page: RevisionPageDto) =
+    historyDependencies (fun _ -> promise { return Ok(succeeded page) })
+
+let private openArcState = {
+    GitState.Empty with
+        CurrentArcPath = Some "C:/arc-a"
+}
+
+/// Runs one refresh against the dependencies and returns the state it ends in.
+let private refreshWith (deps: GitDependencies) (state: GitState) = promise {
+    let requesting, requestCmd = update deps ignore RefreshRequested state
+    let! messages = collectMessages requestCmd
+
+    match messages with
+    | [| (RefreshCompleted _ as message) |] -> return fst (update deps ignore message requesting)
+    | _ -> return failwith "Expected refresh completion message."
+}
+
+/// Asks for the next page. Returns the state right after the request and the state after the answer.
+let private loadMoreWith (deps: GitDependencies) (state: GitState) = promise {
+    let requesting, requestCmd = update deps ignore HistoryLoadMoreRequested state
+    let! messages = collectMessages requestCmd
+    let mutable current = requesting
+
+    for message in messages do
+        current <- fst (update deps ignore message current)
+
+    return requesting, current
+}
+
+let private commitIds (state: GitState) =
+    state.History |> Option.map (fun history -> history.Commits |> Array.map _.Id)
+
+Vitest.describe (
+    "GitWorkflow history",
+    fun () ->
+        Vitest.test (
+            "a refresh with the history service stores the first page and asks for it with the page size",
+            fun () -> promise {
+                let requests = ResizeArray<ListRevisionsRequestDto>()
+
+                let deps =
+                    historyDependencies (fun request ->
+                        requests.Add request
+                        promise { return Ok(succeeded (historyPage [ "c3"; "c2" ] (Some "cursor-1"))) }
+                    )
+
+                let! state = refreshWith deps openArcState
+
+                Vitest.expect(commitIds state).toEqual (Some [| "c3"; "c2" |])
+                Vitest.expect(state.History.Value.NextCursor).toEqual (Some "cursor-1")
+                Vitest.expect(requests.Count).toBe 1
+                Vitest.expect(requests.[0].Cursor).toEqual None
+                Vitest.expect(requests.[0].Limit).toBe HistoryPageSize
+            }
+        )
+
+        Vitest.test (
+            "a refresh of a session without the history service leaves History empty and makes no call",
+            fun () -> promise {
+                let mutable calls = 0
+
+                let withoutHistory = {
+                    sessionInfo with
+                        Services = {
+                            sessionInfo.Services with
+                                History = false
+                        }
+                }
+
+                let deps = {
+                    historyDependencies (fun _ ->
+                        calls <- calls + 1
+                        promise { return Ok(succeeded (historyPage [ "c1" ] None)) }
+                    ) with
+                        getSessionInfo = fun _ -> promise { return Ok(succeeded withoutHistory) }
+                }
+
+                let! state = refreshWith deps openArcState
+
+                Vitest.expect(state.History).toEqual None
+                Vitest.expect(calls).toBe 0
+            }
+        )
+
+        Vitest.test (
+            "a commit maps its publication state and the branches that point at it",
+            fun () -> promise {
+                let page: RevisionPageDto = {
+                    Revisions = [|
+                        commitEntry "c1" PublicationStateDto.LocalOnly [|
+                            localBranch "main" true true
+                            remoteBranch "main"
+                        |]
+                        commitEntry "c0" PublicationStateDto.Published [||]
+                    |]
+                    NextCursor = None
+                }
+
+                let! state = refreshWith (servingPage page) openArcState
+                let commits = state.History.Value.Commits
+
+                Vitest.expect(commits.[0].IsLocalOnly).toBe true
+                Vitest.expect(commits.[1].IsLocalOnly).toBe false
+                Vitest.expect(commits.[0].Branches |> Array.map _.RefName).toEqual [| "main"; "origin/main" |]
+            }
+        )
+
+        Vitest.test (
+            "load more appends the next page and moves the cursor",
+            fun () -> promise {
+                let requests = ResizeArray<ListRevisionsRequestDto>()
+
+                let deps =
+                    historyDependencies (fun request ->
+                        requests.Add request
+
+                        match request.Cursor with
+                        | None -> promise { return Ok(succeeded (historyPage [ "c3"; "c2" ] (Some "cursor-1"))) }
+                        | Some _ -> promise { return Ok(succeeded (historyPage [ "c1" ] None)) }
+                    )
+
+                let! first = refreshWith deps openArcState
+                let! requesting, loaded = loadMoreWith deps first
+
+                Vitest.expect(requesting.History.Value.IsLoadingMore).toBe true
+                Vitest.expect(requests.[1].Cursor).toEqual (Some "cursor-1")
+                Vitest.expect(requests.[1].Limit).toBe HistoryPageSize
+                Vitest.expect(commitIds loaded).toEqual (Some [| "c3"; "c2"; "c1" |])
+                Vitest.expect(loaded.History.Value.NextCursor).toEqual None
+                Vitest.expect(loaded.History.Value.IsLoadingMore).toBe false
+            }
+        )
+
+        Vitest.test (
+            "load more does nothing while a load runs or when the list is complete",
+            fun () -> promise {
+                let! complete = refreshWith (servingPage (historyPage [ "c1" ] None)) openArcState
+                let! partial = refreshWith (servingPage (historyPage [ "c1" ] (Some "cursor-1"))) openArcState
+
+                let loading = {
+                    partial with
+                        History =
+                            Some {
+                                partial.History.Value with
+                                    IsLoadingMore = true
+                            }
+                }
+
+                for state in [ complete; loading ] do
+                    let next, cmd = update defaultDependencies ignore HistoryLoadMoreRequested state
+                    let! messages = collectMessages cmd
+
+                    Vitest.expect(next).toEqual state
+                    Vitest.expect(messages).toEqual [||]
+            }
+        )
+
+        Vitest.test (
+            "a load that rejects ends with the error and can be tried again",
+            fun () -> promise {
+                let mutable reject = false
+
+                let deps =
+                    historyDependencies (fun _ ->
+                        if reject then
+                            promise { return failwith "network down" }
+                        else
+                            promise { return Ok(succeeded (historyPage [ "c1" ] (Some "cursor-1"))) }
+                    )
+
+                let! first = refreshWith deps openArcState
+                reject <- true
+                let! _, failedLoad = loadMoreWith deps first
+                let history = failedLoad.History.Value
+
+                Vitest.expect(history.IsLoadingMore).toBe false
+                Vitest.expect(history.LoadError.Value.Contains "network down").toBe true
+                Vitest.expect(history.Commits).toEqual first.History.Value.Commits
+                Vitest.expect(history.NextCursor).toEqual (Some "cursor-1")
+
+                let retrying, _ = update deps ignore HistoryLoadMoreRequested failedLoad
+                Vitest.expect(retrying.History.Value.IsLoadingMore).toBe true
+                Vitest.expect(retrying.History.Value.LoadError).toEqual None
+            }
+        )
+
+        Vitest.test (
+            "a late page for another ARC session or another cursor is ignored",
+            fun () -> promise {
+                let! state = refreshWith (servingPage (historyPage [ "c1" ] (Some "cursor-1"))) openArcState
+                let page = historyPage [ "c0" ] None
+
+                let otherSession, _ =
+                    update
+                        defaultDependencies
+                        ignore
+                        (HistoryPageLoaded(state.ArcSessionId + 1, "cursor-1", Ok page))
+                        state
+
+                let otherCursor, _ =
+                    update defaultDependencies ignore (HistoryPageLoaded(state.ArcSessionId, "cursor-0", Ok page)) state
+
+                Vitest.expect(otherSession).toEqual state
+                Vitest.expect(otherCursor).toEqual state
+            }
+        )
+
+        Vitest.test (
+            "a refresh that replaces the list while a load more request is pending ends without loading and ignores the late page",
+            fun () -> promise {
+                let! first = refreshWith (servingPage (historyPage [ "c3"; "c2" ] (Some "cursor-1"))) openArcState
+                let pending, _ = update defaultDependencies ignore HistoryLoadMoreRequested first
+
+                let! replaced = refreshWith (servingPage (historyPage [ "c4"; "c3" ] (Some "cursor-9"))) pending
+
+                let afterLatePage, _ =
+                    update
+                        defaultDependencies
+                        ignore
+                        (HistoryPageLoaded(replaced.ArcSessionId, "cursor-1", Ok(historyPage [ "c1" ] None)))
+                        replaced
+
+                Vitest.expect(pending.History.Value.IsLoadingMore).toBe true
+                Vitest.expect(replaced.History.Value.IsLoadingMore).toBe false
+                Vitest.expect(commitIds afterLatePage).toEqual (Some [| "c4"; "c3" |])
+            }
+        )
+
+        Vitest.test (
+            "a refresh whose page equals the head of the list keeps the commits loaded further down",
+            fun () -> promise {
+                let deps =
+                    historyDependencies (fun request ->
+                        match request.Cursor with
+                        | None -> promise { return Ok(succeeded (historyPage [ "c3"; "c2" ] (Some "cursor-1"))) }
+                        | Some _ -> promise { return Ok(succeeded (historyPage [ "c1"; "c0" ] (Some "cursor-2"))) }
+                    )
+
+                let! first = refreshWith deps openArcState
+                let! _, loaded = loadMoreWith deps first
+                let! refreshed = refreshWith deps loaded
+
+                Vitest.expect(commitIds refreshed).toEqual (Some [| "c3"; "c2"; "c1"; "c0" |])
+                Vitest.expect(refreshed.History.Value.NextCursor).toEqual (Some "cursor-2")
+            }
+        )
+
+        Vitest.test (
+            "a refresh with a different first page replaces the list, also when only the publication changed",
+            fun () -> promise {
+                let! loaded = refreshWith (servingPage (historyPage [ "c2"; "c1" ] (Some "cursor-1"))) openArcState
+
+                let! newTip = refreshWith (servingPage (historyPage [ "c3"; "c2" ] (Some "cursor-9"))) loaded
+
+                let withLocalTip: RevisionPageDto = {
+                    Revisions = [|
+                        commitEntry "c2" PublicationStateDto.LocalOnly [||]
+                        commitEntry "c1" PublicationStateDto.Published [||]
+                    |]
+                    NextCursor = Some "cursor-1"
+                }
+
+                let! changedPublication = refreshWith (servingPage withLocalTip) loaded
+
+                Vitest.expect(commitIds newTip).toEqual (Some [| "c3"; "c2" |])
+                Vitest.expect(newTip.History.Value.NextCursor).toEqual (Some "cursor-9")
+                Vitest.expect(changedPublication.History.Value.Commits.[0].IsLocalOnly).toBe true
+            }
+        )
+
+        Vitest.test (
+            "a refresh whose page is empty replaces a loaded list",
+            fun () -> promise {
+                let! loaded = refreshWith (servingPage (historyPage [ "c2"; "c1" ] (Some "cursor-1"))) openArcState
+                let! emptied = refreshWith (servingPage (historyPage [] None)) loaded
+
+                Vitest.expect(commitIds emptied).toEqual (Some [||])
+                Vitest.expect(emptied.History.Value.NextCursor).toEqual None
+            }
+        )
+
+        Vitest.test (
+            "a failed page keeps the list and sets the error, and without a list the list is empty",
+            fun () -> promise {
+                let failing =
+                    historyDependencies (fun _ -> promise {
+                        return Ok(failed NotFound "history_unavailable" "The history is gone")
+                    })
+
+                let! loaded = refreshWith (servingPage (historyPage [ "c1" ] (Some "cursor-1"))) openArcState
+                let! kept = refreshWith failing loaded
+                let! empty = refreshWith failing openArcState
+
+                Vitest.expect(commitIds kept).toEqual (Some [| "c1" |])
+                Vitest.expect(kept.History.Value.LoadError.Value.Contains "The history is gone").toBe true
+                Vitest.expect(commitIds empty).toEqual (Some [||])
+                Vitest.expect(empty.History.Value.LoadError.IsSome).toBe true
+            }
+        )
+
+        Vitest.test (
+            "loadRevisionChangesAsync maps the kinds and old paths and returns the failure message",
+            fun () -> promise {
+                let requests = ResizeArray<RevisionChangesRequestDto>()
+
+                let changes: FileChangeDto[] = [|
+                    {
+                        Path = "a.txt"
+                        OldPath = None
+                        Kind = FileChangeKindDto.Added
+                    }
+                    {
+                        Path = "new.txt"
+                        OldPath = Some "old.txt"
+                        Kind = FileChangeKindDto.Renamed
+                    }
+                |]
+
+                let serving = {
+                    defaultDependencies with
+                        getRevisionChanges =
+                            fun request ->
+                                requests.Add request
+                                promise { return Ok(succeeded changes) }
+                }
+
+                let failing = {
+                    defaultDependencies with
+                        getRevisionChanges =
+                            fun _ -> promise { return Ok(failed NotFound "revision_not_found" "No such commit") }
+                }
+
+                let! loaded = loadRevisionChangesAsync serving "abc123"
+                let! failure = loadRevisionChangesAsync failing "abc123"
+
+                Vitest.expect(requests.[0].Revision).toBe "abc123"
+
+                Vitest
+                    .expect(loaded)
+                    .toEqual (
+                        Ok [|
+                            {
+                                Path = "a.txt"
+                                OriginalPath = None
+                                Kind = GitSidebarChangeKind.Added
+                            }
+                            {
+                                Path = "new.txt"
+                                OriginalPath = Some "old.txt"
+                                Kind = GitSidebarChangeKind.Renamed
+                            }
+                        |]
+                    )
+
+                match failure with
+                | Error message -> Vitest.expect(message.Contains "No such commit").toBe true
+                | Ok _ -> failwith "Expected a failure."
             }
         )
 )

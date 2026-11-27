@@ -563,6 +563,40 @@ type LogicalRefDto = {
     IsCurrent: bool
 }
 
+/// Who made or committed a revision. At is in seconds since the Unix epoch.
+type RevisionSignatureDto = {
+    Name: string
+    Email: string option
+    At: float
+}
+
+type RevisionEntryDto = {
+    Id: string
+    ParentIds: string[]
+    Summary: string
+    Message: string
+    Committer: RevisionSignatureDto
+    Author: RevisionSignatureDto option
+    Refs: LogicalRefDto[]
+    Publication: PublicationStateDto
+}
+
+type RevisionPageDto = {
+    Revisions: RevisionEntryDto[]
+    NextCursor: string option
+}
+
+type ListRevisionsRequestDto = {
+    OperationId: string
+    Cursor: string option
+    Limit: int
+}
+
+type RevisionChangesRequestDto = {
+    OperationId: string
+    Revision: string
+}
+
 [<StringEnum(CaseRules.None)>]
 type FileChangeKindDto =
     | Added
@@ -691,8 +725,8 @@ type RepositoryLocationDto = {
     ConnectionProfileId: string option
 }
 
-/// Which optional services the open session offers. The renderer reads Synchronization and
-/// RepositoryBrowser. A call to an absent service answers service_unavailable.
+/// Which optional services the open session offers. The renderer reads Synchronization,
+/// RepositoryBrowser and History. A call to an absent service answers service_unavailable.
 type ServiceAvailabilityDto = {
     Synchronization: bool
     TextDiff: bool
@@ -701,6 +735,7 @@ type ServiceAvailabilityDto = {
     StoragePolicy: bool
     Maintenance: bool
     RepositoryBrowser: bool
+    History: bool
 }
 
 type WorkspaceSessionInfoDto = {

@@ -148,6 +148,30 @@ let Main () =
             [| box gitStateCtx.state.PendingPublishRename |]
         )
 
+    // The callbacks only dispatch or call the main process, so the section keeps its object until the history state changes.
+    let history =
+        React.useMemo (
+            (fun () ->
+                gitStateCtx.state.History
+                |> Option.map (fun history ->
+                    let mapped: Arcitisa.Components.Page.GitSidebarTypes.GitSidebarHistory = {
+                        Commits = history.Commits
+                        HasMore = history.NextCursor.IsSome
+                        IsLoadingMore = history.IsLoadingMore
+                        LoadError = history.LoadError
+                        OnLoadMore = gitStateCtx.loadMoreHistory
+                        OnLoadCommitChanges = gitStateCtx.loadRevisionChanges
+                        OnSelectCommitChange =
+                            fun request ->
+                                gitStateCtx.selectChange request.Change (DiffComparisonDto.Revision request.CommitId)
+                    }
+
+                    mapped
+                )
+            ),
+            [| box gitStateCtx.state.History |]
+        )
+
     React.useEffect ((fun () -> fun () -> gitStateCtx.sidebarVisibilityChanged false), [||])
 
     React.useEffect (
@@ -284,5 +308,6 @@ let Main () =
             onSubmitPublishRename = gitStateCtx.submitPublishRename,
             onCancelPublishRename = gitStateCtx.cancelPublishRename,
             onOpenRemoteRepository = (fun repositoryWebUrl -> window.``open`` (repositoryWebUrl, "_blank") |> ignore),
-            ?remoteActionsWarning = remoteActionsWarning
+            ?remoteActionsWarning = remoteActionsWarning,
+            ?history = history
         )

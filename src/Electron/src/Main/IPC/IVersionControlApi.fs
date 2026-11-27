@@ -433,13 +433,15 @@ let private withOptionalProviderRef (value: string option) (call: ProviderRef op
     | None -> call None
     | Some text -> withProviderRef text (Some >> call)
 
+let private withRevision (value: string) (call: RevisionId -> Async<OperationResult<'T>>) =
+    match Mappings.tryRevisionId value with
+    | Ok revision -> call revision
+    | Error failure -> async { return Failed failure }
+
 let private withOptionalRevision (value: string option) (call: RevisionId option -> Async<OperationResult<'T>>) =
     match value with
     | None -> call None
-    | Some text ->
-        match Mappings.tryRevisionId text with
-        | Ok revision -> call (Some revision)
-        | Error failure -> async { return Failed failure }
+    | Some text -> withRevision text (Some >> call)
 
 /// Closes the repository that Clone, Initialize or Bind opened and answers with the folder the app named.
 /// The session host opens the folder later.
@@ -1200,6 +1202,34 @@ let api (event: IpcMainInvokeEvent) : IVersionControlApi = {
                 false
                 (withFunction _.RepositoryBrowser.GetRepositoryWebUrl "a repository browser" id)
                 id
+    listRevisions =
+        fun request ->
+            withSession
+                "listRevisions"
+                event
+                request.OperationId
+                false
+                (withFunction
+                    _.History.ListRevisions
+                    "a commit history"
+                    (fun listRevisions repository context ->
+                        listRevisions repository (Mappings.listRevisionsRequest request) context
+                    ))
+                Mappings.revisionPage
+    getRevisionChanges =
+        fun request ->
+            withSession
+                "getRevisionChanges"
+                event
+                request.OperationId
+                false
+                (withFunction
+                    _.History.GetRevisionChanges
+                    "a commit history"
+                    (fun getRevisionChanges repository context ->
+                        withRevision request.Revision (fun revision -> getRevisionChanges repository revision context)
+                    ))
+                (fun summary -> summary.Entries |> Array.map Mappings.diffEntryChange)
     // Removes a stale provider lock only while this operation is the only one of the
     // session, then refreshes and returns the status. Removed files are reported as
     // warnings whose message is the absolute path, because they are not repository

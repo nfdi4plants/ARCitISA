@@ -38,6 +38,43 @@ type GitSidebarBranchOption = {
     IsTracking: bool
 }
 
+/// Who made or committed a commit. At is in seconds since the Unix epoch.
+type GitSidebarCommitPerson = {
+    Name: string
+    Email: string option
+    At: float
+}
+
+type GitSidebarCommit = {
+    Id: string
+    ParentIds: string[]
+    Summary: string
+    Message: string
+    Committer: GitSidebarCommitPerson
+    /// None when the provider records no author apart from the committer.
+    Author: GitSidebarCommitPerson option
+    /// The branches that point at the commit.
+    Branches: GitSidebarBranchOption[]
+    /// The commit exists only on this computer, not in the online repository.
+    IsLocalOnly: bool
+}
+
+type GitSidebarCommitChangeRequest = {
+    CommitId: string
+    Change: GitSidebarChange
+}
+
+/// The data and the callbacks of the history section.
+type GitSidebarHistory = {
+    Commits: GitSidebarCommit[]
+    HasMore: bool
+    IsLoadingMore: bool
+    LoadError: string option
+    OnLoadMore: unit -> unit
+    OnLoadCommitChanges: string -> JS.Promise<Result<GitSidebarChange[], string>>
+    OnSelectCommitChange: GitSidebarCommitChangeRequest -> JS.Promise<Result<unit, string>>
+}
+
 type GitSidebarProgress = {
     Method: string option
     Stage: string option
