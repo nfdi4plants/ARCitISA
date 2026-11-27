@@ -304,8 +304,7 @@ let setActiveLocalArcitisaAccountId (localArcitisaAccountId: string option) : un
 
         match localArcitisaAccountId with
         | Some id when isSafeLocalArcitisaAccountId id ->
-            let json =
-                JS.JSON.stringify {| localArcitisaAccountId = id |}
+            let json = JS.JSON.stringify {| localArcitisaAccountId = id |}
 
             let tmp = path + ".tmp"
             writeFileSync tmp json TextEncoding.Utf8
