@@ -64,9 +64,14 @@ module Routing =
     open Elmish
     open Elmish.Navigation
 
-    /// The URL is turned into a Result.
+    /// The URL is turned into a Result. The host comes from is_arcitisahost, or from is_swatehost,
+    /// which Excel add-ins installed from a manifest older than 4.0.0 still send.
     let route: Parser<Route -> Route, _> =
-        oneOf [ map Route.Home (s "" <?> intParam "is_swatehost") ]
+        oneOf [
+            map
+                (fun arcitisaHost swateHost -> Route.Home(Option.orElse swateHost arcitisaHost))
+                (s "" <?> intParam "is_arcitisahost" <?> intParam "is_swatehost")
+        ]
 
     let parsePath (location: Browser.Types.Location) : Route option =
         Elmish.UrlParser.parsePath route location

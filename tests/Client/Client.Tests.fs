@@ -8,6 +8,7 @@ let client =
         Components.Tests.Table.KeyboardNavigation.Main
         Spreadsheet.Tests.DataAnnotator.Main
         OfficeAddIn.AnnotationTable.Successful.Main
+        Routing.Tests.Main
     ]
 
 let all =
