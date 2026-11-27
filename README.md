@@ -23,7 +23,7 @@ The easiest way to get started is the ARCitISA desktop app. Download the latest 
 
     Install `git-lfs` as well if your ARCs contain large files.
 
-**Coming from ARCitISA 3.x:** close all ARCitISA windows first. On Windows, the setup finds the old version, asks, and removes it. The deb and rpm packages replace the old `swate` package of versions up to 3.4.0-rc.2; apt and dnf list it as removed before you confirm. Your settings and signed-in accounts move to the new place on the first start. A few display preferences, such as the theme, go back to their defaults once.
+**Coming from ARCitISA 3.x?** Read [Upgrading from ARCitISA 3.x to 4.0](docs/migrations/v4.md) first.
 
 #### Your settings
 
@@ -35,7 +35,7 @@ ARCitISA keeps your settings, signed-in accounts and the list of recent ARCs in 
 
 When you uninstall ARCitISA on Windows, it asks whether to delete this folder as well (No is the default). On macOS and Linux, uninstalling keeps it. You can delete the folder yourself at any time; ARCitISA then starts with default settings and you sign in again.
 
-For administrators: `ARCitISA-Setup-<version>-x64.exe /S` installs silently for the current user (`/allusers` for everyone). A silent install stops with exit code 1 when ARCitISA 3.x is installed, instead of removing it. A silent uninstall (`"Uninstall ARCitISA.exe" /S`) never deletes the settings folder.
+For administrators: `ARCitISA-Setup-<version>-x64.exe /S` installs silently for the current user (`/allusers` for everyone). A silent uninstall (`"Uninstall ARCitISA.exe" /S`) never deletes the settings folder.
 
 ### 🪻 Viola's Journey
 
