@@ -263,7 +263,11 @@ function Invoke-Wizard([string]$path, [hashtable]$o) {
       else { 'progress' })
     $next = Find-Id $w '1'
     if ($page -ne $last) { Shot "page-$page"; $r.Pages += $page; Log "page $page"; $last = $page }
-    if ($null -eq $next -or -not $next.Current.IsEnabled) { Start-Sleep -Milliseconds 500; continue }
+    # The progress page moves on to the finish page by itself (MUI's SetAutoClose), so nothing is
+    # clicked there. Its texts may be read just before the finish page replaces it, and then $next is
+    # already the enabled Finish button, with "Run ARCitISA" still ticked. This has to be checked
+    # here: a continue inside the switch below only leaves the switch.
+    if ($page -eq 'progress' -or $null -eq $next -or -not $next.Current.IsEnabled) { Start-Sleep -Milliseconds 500; continue }
     switch ($page) {
       'mode' {
         $allUsers = Find-Name $w 'Anyone who uses this computer*'
@@ -286,7 +290,6 @@ function Invoke-Wizard([string]$path, [hashtable]$o) {
         $run = Find-Name $w 'Run *'
         if ($run) { Set-Toggle $run ([bool]$o.Run) }
       }
-      'progress' { Start-Sleep -Milliseconds 500; continue }
     }
     Invoke-Control $next
     Start-Sleep -Seconds 1
