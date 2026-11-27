@@ -217,41 +217,28 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "restores an active account selection that only has the key of older versions",
+            "an active account selection with only the key of 3.x selects no account",
             fun () ->
                 withTempAuthStore (fun rootPath -> promise {
                     do! seedActiveAccountAsync rootPath """{"localSwateAccountId":"older-account"}"""
-                    Vitest.expect(SecureAuthStore.getActiveLocalArcitisaAccountId ()).toBe (Some "older-account")
+                    Vitest.expect(SecureAuthStore.getActiveLocalArcitisaAccountId ()).toBe (None)
                 })
         )
 
         Vitest.test (
-            "prefers the current account key when both keys are present",
-            fun () ->
-                withTempAuthStore (fun rootPath -> promise {
-                    do!
-                        seedActiveAccountAsync
-                            rootPath
-                            """{"localArcitisaAccountId":"current-account","localSwateAccountId":"older-account"}"""
-
-                    Vitest.expect(SecureAuthStore.getActiveLocalArcitisaAccountId ()).toBe (Some "current-account")
-                })
-        )
-
-        Vitest.test (
-            "writes the active account selection under both keys so older versions can read it",
+            "writes the active account selection and reads it back",
             fun () ->
                 withTempAuthStore (fun rootPath -> promise {
                     SecureAuthStore.setActiveLocalArcitisaAccountId (Some "shared-account")
 
                     let! written = readJsonFileAsync (join [| authDirectoryPath rootPath; "active-account.json" |])
                     Vitest.expect(written?localArcitisaAccountId).toBe ("shared-account")
-                    Vitest.expect(written?localSwateAccountId).toBe ("shared-account")
+                    Vitest.expect(SecureAuthStore.getActiveLocalArcitisaAccountId ()).toBe (Some "shared-account")
                 })
         )
 
         Vitest.test (
-            "writes the account id under both keys into the meta file",
+            "writes the account id into the meta file",
             fun () ->
                 withTempAuthStore (fun rootPath -> promise {
                     let credential: SecureAuthStore.StoredCredential = {
@@ -277,7 +264,6 @@ Vitest.describe (
 
                     let! written = readJsonFileAsync (join [| authDirectoryPath rootPath; "meta-key-meta.json" |])
                     Vitest.expect(written?localArcitisaAccountId).toBe ("meta-key")
-                    Vitest.expect(written?localSwateAccountId).toBe ("meta-key")
                 })
         )
 )
