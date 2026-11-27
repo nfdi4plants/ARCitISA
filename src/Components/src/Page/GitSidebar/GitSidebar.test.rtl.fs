@@ -752,3 +752,43 @@ Vitest.test (
         Vitest.expect((RTL.screen.getByTestId "GitSidebarBranchLocation").textContent).toBe
             "group/subgroup/my-arc · main"
 )
+
+let private historyElement (isMergeInProgress: bool) =
+    let history: GitSidebarHistory = {
+        Commits = [||]
+        HasMore = false
+        IsLoadingMore = false
+        LoadError = None
+        OnLoadMore = ignore
+        OnLoadCommitChanges = fun _ -> promise { return Ok [||] }
+        OnSelectCommitChange = fun _ -> promise { return Ok() }
+    }
+
+    GitSidebar.Main(
+        status = {
+            status with
+                IsMergeInProgress = isMergeInProgress
+        },
+        changedFiles = [||],
+        branchOptions = [||],
+        callbacks = callbacks,
+        downloadLargeFiles = true,
+        lfsAutoTrackThresholdMb = 1,
+        diffIndexingLimitMb = 1024,
+        history = history
+    )
+
+Vitest.test (
+    "the history section stays open when a merge starts and ends",
+    fun () ->
+        let result = RTL.render (historyElement false)
+        RTL.fireEvent.click (RTL.screen.getByTestId "GitSidebarHistoryToggle")
+
+        Vitest.expect((RTL.screen.queryByTestId "GitSidebarHistoryPanel").IsSome).toBe true
+
+        result.rerender (historyElement true)
+        Vitest.expect((RTL.screen.queryByTestId "GitSidebarHistoryPanel").IsSome).toBe true
+
+        result.rerender (historyElement false)
+        Vitest.expect((RTL.screen.queryByTestId "GitSidebarHistoryPanel").IsSome).toBe true
+)

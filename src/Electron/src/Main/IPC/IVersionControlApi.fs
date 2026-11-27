@@ -1,5 +1,5 @@
 /// Provider-neutral version control IPC. Every handler resolves the vault of the calling
-/// window, opens (or reuses) its library session, registers the operation for
+/// window, opens (or reuses) its repository, registers the operation for
 /// cancellation, forwards progress to the window and maps the structured result.
 /// Mutations run as external operations, so what they change loads through a sync, and they refresh the file tree afterwards.
 module Main.IPC.IVersionControlApi
@@ -128,14 +128,6 @@ let private tryBridgeFromEvent (event: IpcMainInvokeEvent) =
     windowFromIpcEvent event
     |> Option.map bridgeForWindow
     |> Option.defaultValue silentBridge
-
-let private serviceUnavailable (service: string) : OperationResult<'T> =
-    Failed(
-        OperationFailure.create
-            Unsupported
-            VersionControlCodes.ServiceUnavailable
-            $"The workspace provider does not offer {service}."
-    )
 
 /// A session that could not be opened keeps the provider's category and code. A detail
 /// line marks that the failure came from opening the session, not from the operation.
@@ -343,16 +335,20 @@ let private withMutatingSession
         operation
         mapValue
 
-let private withService
-    (select: WorkspaceSession -> 'S option)
+/// Calls one function of the subscribed functions of the provider that opened the repository, with
+/// that repository. A function the provider does not have gets the failure the renderer knows for
+/// it, with the name of the service in the message.
+let private withFunction
+    (select: ProviderFunctions -> Entry<'call>)
     (serviceName: string)
-    (call: 'S -> OperationContext -> Async<OperationResult<'T>>)
+    (call: 'call -> Repository -> OperationContext -> Async<OperationResult<'T>>)
     (hosted: WorkspaceSessionHost.HostedSession)
     (context: OperationContext)
     : Async<OperationResult<'T>> =
-    match select hosted.Session with
-    | Some service -> call service context
-    | None -> async { return serviceUnavailable serviceName }
+    ProviderComposition.callFunction
+        (select hosted.Provider.Functions)
+        serviceName
+        (fun entry -> call entry hosted.Repository context)
 
 /// Runs one text diff call in the session of the calling window. An invalid request is
 /// answered before the operation is registered, and every failure of the reply is bounded.
@@ -362,7 +358,8 @@ let private withTextDiff
     (event: IpcMainInvokeEvent)
     (operationId: string)
     (request: Result<'R, OperationFailure>)
-    (call: WorkspaceSessionHost.HostedSession -> TextDiffService -> 'R -> OperationContext -> Async<OperationResult<'T>>)
+    (select: TextDiffFunctions -> Entry<'call>)
+    (call: WorkspaceSessionHost.HostedSession -> 'call -> 'R -> OperationContext -> Async<OperationResult<'T>>)
     (mapValue: 'T -> 'U)
     : JS.Promise<Result<OperationResultDto<'U>, exn>> =
     promise {
@@ -376,10 +373,10 @@ let private withTextDiff
                     operationId
                     false
                     (fun hosted context ->
-                        withService
-                            _.TextDiff
+                        withFunction
+                            (fun functions -> select functions.TextDiff)
                             "text diffs"
-                            (fun service serviceContext -> call hosted service converted serviceContext)
+                            (fun entry _ serviceContext -> call hosted entry converted serviceContext)
                             hosted
                             context
                     )
@@ -436,73 +433,65 @@ let private withOptionalProviderRef (value: string option) (call: ProviderRef op
     | None -> call None
     | Some text -> withProviderRef text (Some >> call)
 
+let private withRevision (value: string) (call: RevisionId -> Async<OperationResult<'T>>) =
+    match Mappings.tryRevisionId value with
+    | Ok revision -> call revision
+    | Error failure -> async { return Failed failure }
+
 let private withOptionalRevision (value: string option) (call: RevisionId option -> Async<OperationResult<'T>>) =
     match value with
     | None -> call None
-    | Some text ->
-        match Mappings.tryRevisionId text with
-        | Ok revision -> call (Some revision)
-        | Error failure -> async { return Failed failure }
+    | Some text -> withRevision text (Some >> call)
 
-let private tryFactoryFor (host: WorkspaceSessionHost.WorkspaceSessionHost) (providerId: ProviderId) =
-    ProviderResolver.tryGetFactory host.Runtime.Catalog providerId
+/// Closes the repository that Clone, Initialize or Bind opened and answers with the folder the app named.
+/// The session host opens the folder later.
+let private closeProvisioned
+    (provider: ProviderComposition.AppProvider)
+    (folder: string)
+    (result: OperationResult<Repository>)
+    : Async<OperationResult<string>> =
+    let closeOutcome (outcome: OperationOutcome<Repository>) = async {
+        do! provider.Provider.Close outcome.Value
 
-/// Persists a binding the provider produced. When the store fails after the provider
-/// already changed state, the result is a partial success with StateChanged and a
-/// recovery action, never a plain failure.
-let private persistProvisionedBinding
-    (host: WorkspaceSessionHost.WorkspaceSessionHost)
-    (result: OperationResult<WorkspaceBinding>)
-    : OperationResult<WorkspaceBinding> =
-    let persistFailure (message: string) = {
-        OperationFailure.create ProviderError VersionControlCodes.BindingNotPersisted message with
-            StateChanged = true
-            Retryable = true
-            RecoveryAction =
-                Some {
-                    Code = VersionControlCodes.Recovery.ReopenWorkspace
-                    Instructions =
-                        Some
-                            "The workspace was provisioned but its binding could not be saved. Open the workspace again so it is bound."
-                }
+        return WorkspaceSessionHost.withValue folder outcome
     }
 
-    match result with
-    | Succeeded outcome ->
-        match host.Runtime.Bindings.Save outcome.Value with
-        | Ok() -> Succeeded outcome
-        | Error message -> PartiallySucceeded(outcome, persistFailure message)
-    | PartiallySucceeded(outcome, failure) ->
-        match host.Runtime.Bindings.Save outcome.Value with
-        | Ok() -> PartiallySucceeded(outcome, failure)
-        | Error message -> PartiallySucceeded(outcome, persistFailure message)
-    | Failed failure -> Failed failure
+    async {
+        match result with
+        | Succeeded outcome ->
+            let! closed = closeOutcome outcome
+            return Succeeded closed
+        | PartiallySucceeded(outcome, failure) ->
+            let! closed = closeOutcome outcome
+            return PartiallySucceeded(closed, failure)
+        | Failed failure -> return Failed failure
+    }
 
 let initializeLocalWorkspace
     (host: WorkspaceSessionHost.WorkspaceSessionHost)
     (targetPath: string)
     (context: OperationContext)
-    : Async<OperationResult<WorkspaceBinding>> =
+    : Async<OperationResult<string>> =
     async {
-        match tryFactoryFor host ProviderComposition.defaultProviderId with
-        | None ->
-            return
-                validationFailed
-                    VersionControlCodes.LocationUnsupported
-                    "The default version control provider is not registered."
-        | Some factory ->
-            let! initialized =
-                factory.Initialize
-                    {
-                        TargetPath = targetPath
-                        Location = None
-                    }
-                    context
+        let provider = ProviderComposition.defaultProvider host.Runtime.Providers
 
-            return persistProvisionedBinding host initialized
+        let! initialized =
+            ProviderComposition.callFunction
+                provider.Functions.Initialize
+                "initialization"
+                (fun initialize ->
+                    initialize
+                        {
+                            TargetPath = targetPath
+                            Location = None
+                        }
+                        context
+                )
+
+        return! closeProvisioned provider targetPath initialized
     }
 
-/// Runs a provisioning operation and maps its binding to the workspace root.
+/// Runs a provisioning operation, which answers with the workspace root.
 let private provision
     (host: WorkspaceSessionHost.WorkspaceSessionHost)
     (bridge: RendererBridge)
@@ -510,12 +499,12 @@ let private provision
     (operationId: string)
     (workspaceRoot: string)
     (windowId: int option)
-    (run: OperationContext -> Async<OperationResult<WorkspaceBinding>>)
+    (run: OperationContext -> Async<OperationResult<string>>)
     : JS.Promise<Result<OperationResultDto<string>, exn>> =
     promise {
         let! result = runTracked host bridge operationName operationId (Some workspaceRoot) windowId true run
 
-        return Ok(Mappings.result (fun (binding: WorkspaceBinding) -> binding.WorkspaceRoot) result)
+        return Ok(Mappings.result id result)
     }
 
 let private removeExistingFile (path: string) =
@@ -533,8 +522,8 @@ let private locationFor
     match ProviderComposition.tryCreateLocation providerLocation displayName with
     | Error message -> Error(OperationFailure.create Validation VersionControlCodes.LocationUnsupported message)
     | Ok location ->
-        match tryFactoryFor host location.ProviderId with
-        | Some factory -> Ok(location, factory)
+        match ProviderComposition.tryFindProvider host.Runtime.Providers location.ProviderId with
+        | Some provider -> Ok(location, provider)
         | None ->
             Error(
                 OperationFailure.create
@@ -544,8 +533,8 @@ let private locationFor
             )
 
 let api (event: IpcMainInvokeEvent) : IVersionControlApi = {
-    // Opening the session adopts an unbound workspace and persists its binding. That
-    // side effect is intended: the first read of a vault is what binds it.
+    // The first read of a vault opens its repository: the host asks the providers which one owns
+    // the folder. That side effect is intended.
     getSessionInfo =
         fun request ->
             withSession
@@ -554,7 +543,9 @@ let api (event: IpcMainInvokeEvent) : IVersionControlApi = {
                 request.OperationId
                 false
                 (fun hosted _ -> async { return OperationResult.succeeded hosted })
-                (fun hosted -> Mappings.sessionInfo hosted.SessionId hosted.Session)
+                (fun hosted ->
+                    Mappings.sessionInfo hosted.SessionId hosted.WorkspaceRoot hosted.Provider hosted.Repository
+                )
     cloneWorkspace =
         fun request ->
             let host = WorkspaceSessionHost.get ()
@@ -567,26 +558,32 @@ let api (event: IpcMainInvokeEvent) : IVersionControlApi = {
                 request.OperationId
                 request.TargetPath
                 (windowFromIpcEvent event |> Option.map _.id)
-                (fun context -> async {
-                    let! cloned =
-                        match locationFor host request.ProviderLocation request.DisplayName with
-                        | Error failure -> async { return Failed failure }
-                        | Ok(location, factory) ->
+                (fun context ->
+                    match locationFor host request.ProviderLocation request.DisplayName with
+                    | Error failure -> async { return Failed failure }
+                    | Ok(location, provider) -> async {
+                        let! cloned =
                             withOptionalProviderRef
                                 request.TargetRef
                                 (fun targetRef ->
-                                    factory.Clone
-                                        {
-                                            Location = location
-                                            TargetPath = request.TargetPath
-                                            TargetRef = targetRef
-                                            MaterializeAllObjects = request.MaterializeAllObjects
-                                        }
-                                        context
+                                    ProviderComposition.callFunction
+                                        provider.Functions.Clone
+                                        "cloning"
+                                        (fun clone ->
+                                            clone
+                                                {
+                                                    Location = location
+                                                    TargetPath = request.TargetPath
+                                                    TargetRef = targetRef
+                                                    MaterializeAllObjects = request.MaterializeAllObjects
+                                                }
+                                                context
+                                        )
                                 )
 
-                    return persistProvisionedBinding host cloned
-                })
+                        return! closeProvisioned provider request.TargetPath cloned
+                      }
+                )
     initializeWorkspace =
         fun request ->
             let host = WorkspaceSessionHost.get ()
@@ -678,26 +675,27 @@ let api (event: IpcMainInvokeEvent) : IVersionControlApi = {
                                                     locationFor host request.ProviderLocation request.DisplayName
                                                 with
                                                 | Error failure -> return Failed failure
-                                                | Ok(location, factory) ->
+                                                | Ok(location, provider) ->
                                                     let! bindResult =
-                                                        factory.Bind
-                                                            {
-                                                                WorkspaceRoot = arcPath
-                                                                Location = location
-                                                            }
-                                                            context
+                                                        ProviderComposition.callFunction
+                                                            provider.Functions.Bind
+                                                            "binding"
+                                                            (fun bind ->
+                                                                bind
+                                                                    {
+                                                                        RepositoryRoot = arcPath
+                                                                        Location = location
+                                                                    }
+                                                                    context
+                                                            )
 
-                                                    match persistProvisionedBinding host bindResult with
+                                                    match! closeProvisioned provider arcPath bindResult with
                                                     | Succeeded _ ->
-                                                        // The open session keeps the location it was opened with.
+                                                        // The opened repository keeps the location it was opened with.
                                                         return! reopenWithSavedSettings arcPath context
-                                                    | PartiallySucceeded(_, failure) when
-                                                        failure.Code = VersionControlCodes.BindingNotPersisted
-                                                        ->
-                                                        return Failed failure
                                                     | PartiallySucceeded(_, failure) ->
-                                                        // The binding is persisted, so the session is reopened and
-                                                        // the provider's partial failure rides along.
+                                                        // The host reopens the repository, and the result keeps the
+                                                        // provider's partial failure.
                                                         let! reopened = reopenWithSavedSettings arcPath context
 
                                                         return
@@ -711,7 +709,11 @@ let api (event: IpcMainInvokeEvent) : IVersionControlApi = {
                                         Ok(
                                             Mappings.result
                                                 (fun (hosted: WorkspaceSessionHost.HostedSession) ->
-                                                    Mappings.sessionInfo hosted.SessionId hosted.Session
+                                                    Mappings.sessionInfo
+                                                        hosted.SessionId
+                                                        hosted.WorkspaceRoot
+                                                        hosted.Provider
+                                                        hosted.Repository
                                                 )
                                                 bound
                                         )
@@ -741,7 +743,7 @@ let api (event: IpcMainInvokeEvent) : IVersionControlApi = {
             return Ok canceled
         }
     // The install flow checks the dependencies in the operation of its window. The shared check asks
-    // every registered provider and keeps a failing provider from hiding the others.
+    // the current provider.
     checkDependencies =
         fun request -> promise {
             let host = WorkspaceSessionHost.get ()
@@ -756,14 +758,14 @@ let api (event: IpcMainInvokeEvent) : IVersionControlApi = {
                     None
                     (windowFromIpcEvent event |> Option.map _.id)
                     false
-                    (DependencyState.checkDependencies host.Runtime.Catalog)
+                    (DependencyState.checkDependencies host.Runtime.Providers)
 
             return Ok(Mappings.result (Array.map Mappings.dependencyStatus) result)
         }
     getDependencyState = fun () -> promise { return DependencyState.getState () }
     recheckDependencies = fun () -> promise { return DependencyState.recheck () }
-    // The first provider that does not answer Unsupported owns the component, whether
-    // its installation succeeded or failed.
+    // The current provider answers for the component, so what it says about one it cannot
+    // install reaches the user as its own failure.
     installDependency =
         fun request -> promise {
             let host = WorkspaceSessionHost.get ()
@@ -778,22 +780,12 @@ let api (event: IpcMainInvokeEvent) : IVersionControlApi = {
                     None
                     (windowFromIpcEvent event |> Option.map _.id)
                     true
-                    (fun context -> async {
-                        let factories = ProviderResolver.factories host.Runtime.Catalog
-                        let mutable outcome: OperationResult<DependencyStatus> option = None
-
-                        for factory in factories do
-                            if outcome.IsNone then
-                                let! installed = factory.InstallDependency request.Component context
-
-                                match installed with
-                                | Failed failure when failure.Category = Unsupported -> ()
-                                | result -> outcome <- Some result
-
-                        return
-                            outcome
-                            |> Option.defaultValue (serviceUnavailable $"installation of '{request.Component}'")
-                    })
+                    (fun context ->
+                        ProviderComposition.callFunction
+                            (ProviderComposition.defaultProvider host.Runtime.Providers).Functions.InstallDependency
+                            $"installation of '{request.Component}'"
+                            (fun install -> install request.Component context)
+                    )
 
             // The banner shows the shared check, so a fix made here needs a new check to clear it.
             match result with
@@ -810,7 +802,7 @@ let api (event: IpcMainInvokeEvent) : IVersionControlApi = {
                 event
                 request.OperationId
                 false
-                (fun hosted context -> hosted.Session.Core.GetStatus context)
+                (withFunction _.GetStatus "workspace status" id)
                 Mappings.workspaceStatus
     listRefs =
         fun request ->
@@ -819,7 +811,7 @@ let api (event: IpcMainInvokeEvent) : IVersionControlApi = {
                 event
                 request.OperationId
                 false
-                (fun hosted context -> hosted.Session.Core.ListRefs context)
+                (withFunction _.ListRefs "refs" id)
                 (Array.map Mappings.logicalRef)
     createRef =
         fun request ->
@@ -828,20 +820,24 @@ let api (event: IpcMainInvokeEvent) : IVersionControlApi = {
                 event
                 request.OperationId
                 request.SwitchTo
-                (fun hosted context ->
-                    withOptionalProviderRef
-                        request.BaseRef
-                        (fun baseRef ->
-                            hosted.Session.Core.CreateRef
-                                {
-                                    Name = request.Name
-                                    BaseRef = baseRef
-                                    SwitchTo = request.SwitchTo
-                                    ExpectedWorkspaceVersion = request.ExpectedWorkspaceVersion
-                                }
-                                context
-                        )
-                )
+                (withFunction
+                    _.CreateRef
+                    "ref creation"
+                    (fun createRef repository context ->
+                        withOptionalProviderRef
+                            request.BaseRef
+                            (fun baseRef ->
+                                createRef
+                                    repository
+                                    {
+                                        Name = request.Name
+                                        BaseRef = baseRef
+                                        SwitchTo = request.SwitchTo
+                                        ExpectedRepositoryVersion = request.ExpectedWorkspaceVersion
+                                    }
+                                    context
+                            )
+                    ))
                 Mappings.logicalRef
     preflightSwitchRef =
         fun request ->
@@ -850,18 +846,22 @@ let api (event: IpcMainInvokeEvent) : IVersionControlApi = {
                 event
                 request.OperationId
                 false
-                (fun hosted context ->
-                    withProviderRef
-                        request.TargetRef
-                        (fun targetRef ->
-                            hosted.Session.Core.PreflightSwitchRef
-                                {
-                                    TargetRef = targetRef
-                                    ExpectedWorkspaceVersion = request.ExpectedWorkspaceVersion
-                                }
-                                context
-                        )
-                )
+                (withFunction
+                    _.PreflightSwitchRef
+                    "ref switching"
+                    (fun preflightSwitchRef repository context ->
+                        withProviderRef
+                            request.TargetRef
+                            (fun targetRef ->
+                                preflightSwitchRef
+                                    repository
+                                    {
+                                        TargetRef = targetRef
+                                        ExpectedRepositoryVersion = request.ExpectedWorkspaceVersion
+                                    }
+                                    context
+                            )
+                    ))
                 Mappings.switchPreflight
     switchRef =
         fun request ->
@@ -870,18 +870,22 @@ let api (event: IpcMainInvokeEvent) : IVersionControlApi = {
                 event
                 request.OperationId
                 true
-                (fun hosted context ->
-                    withProviderRef
-                        request.TargetRef
-                        (fun targetRef ->
-                            hosted.Session.Core.SwitchRef
-                                {
-                                    TargetRef = targetRef
-                                    ExpectedWorkspaceVersion = request.ExpectedWorkspaceVersion
-                                }
-                                context
-                        )
-                )
+                (withFunction
+                    _.SwitchRef
+                    "ref switching"
+                    (fun switchRef repository context ->
+                        withProviderRef
+                            request.TargetRef
+                            (fun targetRef ->
+                                switchRef
+                                    repository
+                                    {
+                                        TargetRef = targetRef
+                                        ExpectedRepositoryVersion = request.ExpectedWorkspaceVersion
+                                    }
+                                    context
+                            )
+                    ))
                 Mappings.workspaceStatus
     createRevision =
         fun request ->
@@ -890,19 +894,23 @@ let api (event: IpcMainInvokeEvent) : IVersionControlApi = {
                 event
                 request.OperationId
                 true
-                (fun hosted context ->
-                    withPaths
-                        request.Paths
-                        (fun paths ->
-                            hosted.Session.Core.CreateRevision
-                                {
-                                    Message = request.Message
-                                    Paths = paths
-                                    ExpectedWorkspaceVersion = request.ExpectedWorkspaceVersion
-                                }
-                                context
-                        )
-                )
+                (withFunction
+                    _.CreateRevision
+                    "revision creation"
+                    (fun createRevision repository context ->
+                        withPaths
+                            request.Paths
+                            (fun paths ->
+                                createRevision
+                                    repository
+                                    {
+                                        Message = request.Message
+                                        Paths = paths
+                                        ExpectedRepositoryVersion = request.ExpectedWorkspaceVersion
+                                    }
+                                    context
+                            )
+                    ))
                 RevisionId.value
     restorePaths =
         fun request ->
@@ -911,18 +919,22 @@ let api (event: IpcMainInvokeEvent) : IVersionControlApi = {
                 event
                 request.OperationId
                 true
-                (fun hosted context ->
-                    withPaths
-                        request.Paths
-                        (fun paths ->
-                            hosted.Session.Core.RestorePaths
-                                {
-                                    Paths = paths
-                                    ExpectedWorkspaceVersion = request.ExpectedWorkspaceVersion
-                                }
-                                context
-                        )
-                )
+                (withFunction
+                    _.RestorePaths
+                    "path restoring"
+                    (fun restorePaths repository context ->
+                        withPaths
+                            request.Paths
+                            (fun paths ->
+                                restorePaths
+                                    repository
+                                    {
+                                        Paths = paths
+                                        ExpectedRepositoryVersion = request.ExpectedWorkspaceVersion
+                                    }
+                                    context
+                            )
+                    ))
                 id
     refreshSynchronization =
         fun request ->
@@ -931,7 +943,7 @@ let api (event: IpcMainInvokeEvent) : IVersionControlApi = {
                 event
                 request.OperationId
                 false
-                (withService _.Synchronization "synchronization" (fun service context -> service.Refresh context))
+                (withFunction _.Synchronization.Refresh "synchronization" id)
                 Mappings.synchronizationState
     synchronize =
         fun request ->
@@ -940,16 +952,17 @@ let api (event: IpcMainInvokeEvent) : IVersionControlApi = {
                 event
                 request.OperationId
                 true
-                (withService
-                    _.Synchronization
+                (withFunction
+                    _.Synchronization.Synchronize
                     "synchronization"
-                    (fun service context ->
+                    (fun synchronize repository context ->
                         withOptionalRevision
                             request.ExpectedTargetRevision
                             (fun expectedTarget ->
-                                service.Synchronize
+                                synchronize
+                                    repository
                                     {
-                                        ExpectedWorkspaceVersion = request.ExpectedWorkspaceVersion
+                                        ExpectedRepositoryVersion = request.ExpectedWorkspaceVersion
                                         ExpectedTargetRevision = expectedTarget
                                         AcceptUpdateRisks = request.AcceptUpdateRisks
                                         PublishLocalRevisions = request.PublishLocalRevisions
@@ -965,17 +978,18 @@ let api (event: IpcMainInvokeEvent) : IVersionControlApi = {
                 event
                 request.OperationId
                 true
-                (withService
-                    _.ConflictResolution
+                (withFunction
+                    _.ConflictResolution.Resolve
                     "conflict resolution"
-                    (fun service context ->
+                    (fun resolve repository context ->
                         withPath
                             request.Path
                             (fun path ->
-                                service.Resolve
+                                resolve
+                                    repository
                                     {
                                         Handle = Mappings.conflictHandleFromDto request.Handle
-                                        ExpectedWorkspaceVersion = request.ExpectedWorkspaceVersion
+                                        ExpectedRepositoryVersion = request.ExpectedWorkspaceVersion
                                         Path = path
                                         Resolution = Mappings.conflictResolutionFromDto request.Resolution
                                     }
@@ -990,14 +1004,15 @@ let api (event: IpcMainInvokeEvent) : IVersionControlApi = {
                 event
                 request.OperationId
                 true
-                (withService
-                    _.ConflictResolution
+                (withFunction
+                    _.ConflictResolution.Finalize
                     "conflict resolution"
-                    (fun service context ->
-                        service.Finalize
+                    (fun finalize repository context ->
+                        finalize
+                            repository
                             {
                                 Handle = Mappings.conflictHandleFromDto request.Handle
-                                ExpectedWorkspaceVersion = request.ExpectedWorkspaceVersion
+                                ExpectedRepositoryVersion = request.ExpectedWorkspaceVersion
                                 Message = request.Message
                             }
                             context
@@ -1010,14 +1025,15 @@ let api (event: IpcMainInvokeEvent) : IVersionControlApi = {
                 event
                 request.OperationId
                 true
-                (withService
-                    _.ConflictResolution
+                (withFunction
+                    _.ConflictResolution.Cancel
                     "conflict resolution"
-                    (fun service context ->
-                        service.Cancel
+                    (fun cancel repository context ->
+                        cancel
+                            repository
                             {
                                 Handle = Mappings.conflictHandleFromDto request.Handle
-                                ExpectedWorkspaceVersion = request.ExpectedWorkspaceVersion
+                                ExpectedRepositoryVersion = request.ExpectedWorkspaceVersion
                             }
                             context
                     ))
@@ -1029,10 +1045,7 @@ let api (event: IpcMainInvokeEvent) : IVersionControlApi = {
                 event
                 request.OperationId
                 false
-                (withService
-                    _.ObjectMaterialization
-                    "large object materialization"
-                    (fun service context -> service.ListObjects context))
+                (withFunction _.ObjectMaterialization.ListObjects "large object materialization" id)
                 (Array.map Mappings.objectState)
     materializeObjects =
         fun request ->
@@ -1041,10 +1054,12 @@ let api (event: IpcMainInvokeEvent) : IVersionControlApi = {
                 event
                 request.OperationId
                 (shouldRefreshObjectTree request)
-                (withService
-                    _.ObjectMaterialization
+                (withFunction
+                    _.ObjectMaterialization.Materialize
                     "large object materialization"
-                    (fun service context -> withPaths request.Paths (fun paths -> service.Materialize paths context)))
+                    (fun materialize repository context ->
+                        withPaths request.Paths (fun paths -> materialize repository paths context)
+                    ))
                 id
     dematerializeObjects =
         fun request ->
@@ -1053,10 +1068,12 @@ let api (event: IpcMainInvokeEvent) : IVersionControlApi = {
                 event
                 request.OperationId
                 (shouldRefreshObjectTree request)
-                (withService
-                    _.ObjectMaterialization
+                (withFunction
+                    _.ObjectMaterialization.Dematerialize
                     "large object materialization"
-                    (fun service context -> withPaths request.Paths (fun paths -> service.Dematerialize paths context)))
+                    (fun dematerialize repository context ->
+                        withPaths request.Paths (fun paths -> dematerialize repository paths context)
+                    ))
                 id
     getStoragePolicySettings =
         fun request ->
@@ -1068,10 +1085,7 @@ let api (event: IpcMainInvokeEvent) : IVersionControlApi = {
                 (fun hosted _ -> async {
                     let host = WorkspaceSessionHost.get ()
 
-                    return
-                        OperationResult.succeeded (
-                            storagePolicySettingsDto (host.GetSettings hosted.Binding.WorkspaceRoot)
-                        )
+                    return OperationResult.succeeded (storagePolicySettingsDto (host.GetSettings hosted.WorkspaceRoot))
                 })
                 id
     setStoragePolicySettings =
@@ -1083,7 +1097,7 @@ let api (event: IpcMainInvokeEvent) : IVersionControlApi = {
                 false
                 (fun hosted context ->
                     let host = WorkspaceSessionHost.get ()
-                    let current = host.GetSettings hosted.Binding.WorkspaceRoot
+                    let current = host.GetSettings hosted.WorkspaceRoot
 
                     let settings = {
                         AutoTrackThresholdMb =
@@ -1095,7 +1109,7 @@ let api (event: IpcMainInvokeEvent) : IVersionControlApi = {
                             |> Option.defaultValue current.DiffIndexingLimitMb
                     }
 
-                    host.SetSettings(hosted.Binding.WorkspaceRoot, settings, context)
+                    host.SetSettings(hosted.WorkspaceRoot, settings, context)
                 )
                 id
     // The checkbox calls skip runTracked and the busy flag, because they change no workspace
@@ -1124,25 +1138,32 @@ let api (event: IpcMainInvokeEvent) : IVersionControlApi = {
                 request.OperationId
                 true
                 (fun hosted context ->
-                    match hosted.Session.StoragePolicy with
-                    | None -> async { return serviceUnavailable "storage policies" }
-                    | Some service ->
-                        withPath
-                            request.Path
-                            (fun path -> async {
-                                let relativePath = RepositoryPath.value path
-                                let! fileSize = tryGetRegularFileSize hosted.Binding.WorkspaceRoot relativePath
+                    withFunction
+                        _.StoragePolicy.SetPathPolicy
+                        "storage policies"
+                        (fun setPathPolicy repository policyContext ->
+                            withPath
+                                request.Path
+                                (fun path -> async {
+                                    let relativePath = RepositoryPath.value path
 
-                                match
-                                    Arcitisa.Components.Shared.GitLfsRules.tryGetToggleBlockedReason
-                                        relativePath
-                                        fileSize
-                                        request.UseLargeObjectStorage
-                                with
-                                | Some reason ->
-                                    return validationFailed VersionControlCodes.StoragePolicyBlocked reason
-                                | None -> return! service.SetPathPolicy path request.UseLargeObjectStorage context
-                            })
+                                    let! fileSize = tryGetRegularFileSize hosted.WorkspaceRoot relativePath
+
+                                    match
+                                        Arcitisa.Components.Shared.GitLfsRules.tryGetToggleBlockedReason
+                                            relativePath
+                                            fileSize
+                                            request.UseLargeObjectStorage
+                                    with
+                                    | Some reason ->
+                                        return validationFailed VersionControlCodes.StoragePolicyBlocked reason
+                                    | None ->
+                                        return!
+                                            setPathPolicy repository path request.UseLargeObjectStorage policyContext
+                                })
+                        )
+                        hosted
+                        context
                 )
                 id
     pruneStorage =
@@ -1152,7 +1173,7 @@ let api (event: IpcMainInvokeEvent) : IVersionControlApi = {
                 event
                 request.OperationId
                 false
-                (withService _.Maintenance "storage maintenance" (fun service context -> service.Prune context))
+                (withFunction _.Maintenance.Prune "storage maintenance" id)
                 id
     deduplicateStorage =
         fun request ->
@@ -1161,7 +1182,7 @@ let api (event: IpcMainInvokeEvent) : IVersionControlApi = {
                 event
                 request.OperationId
                 false
-                (withService _.Maintenance "storage maintenance" (fun service context -> service.Deduplicate context))
+                (withFunction _.Maintenance.Deduplicate "storage maintenance" id)
                 id
     canDeduplicateStorage =
         fun request ->
@@ -1170,7 +1191,7 @@ let api (event: IpcMainInvokeEvent) : IVersionControlApi = {
                 event
                 request.OperationId
                 false
-                (withService _.Maintenance "storage maintenance" (fun service context -> service.CanDeduplicate context))
+                (withFunction _.Maintenance.CanDeduplicate "storage maintenance" id)
                 id
     getRepositoryWebUrl =
         fun request ->
@@ -1179,11 +1200,36 @@ let api (event: IpcMainInvokeEvent) : IVersionControlApi = {
                 event
                 request.OperationId
                 false
-                (withService
-                    _.RepositoryBrowser
-                    "a repository browser"
-                    (fun service context -> service.GetRepositoryWebUrl context))
+                (withFunction _.RepositoryBrowser.GetRepositoryWebUrl "a repository browser" id)
                 id
+    listRevisions =
+        fun request ->
+            withSession
+                "listRevisions"
+                event
+                request.OperationId
+                false
+                (withFunction
+                    _.History.ListRevisions
+                    "a commit history"
+                    (fun listRevisions repository context ->
+                        listRevisions repository (Mappings.listRevisionsRequest request) context
+                    ))
+                Mappings.revisionPage
+    getRevisionChanges =
+        fun request ->
+            withSession
+                "getRevisionChanges"
+                event
+                request.OperationId
+                false
+                (withFunction
+                    _.History.GetRevisionChanges
+                    "a commit history"
+                    (fun getRevisionChanges repository context ->
+                        withRevision request.Revision (fun revision -> getRevisionChanges repository revision context)
+                    ))
+                (fun summary -> summary.Entries |> Array.map Mappings.diffEntryChange)
     // Removes a stale provider lock only while this operation is the only one of the
     // session, then refreshes and returns the status. Removed files are reported as
     // warnings whose message is the absolute path, because they are not repository
@@ -1199,7 +1245,7 @@ let api (event: IpcMainInvokeEvent) : IVersionControlApi = {
                     let host = WorkspaceSessionHost.get ()
 
                     let otherOperations =
-                        host.RunningOperationIds hosted.Binding.WorkspaceRoot
+                        host.RunningOperationIds hosted.WorkspaceRoot
                         |> Array.filter (fun id -> id <> request.OperationId)
 
                     if otherOperations.Length > 0 then
@@ -1213,7 +1259,7 @@ let api (event: IpcMainInvokeEvent) : IVersionControlApi = {
                             }
                     else
                         let recentLockPaths =
-                            ProviderComposition.recentLockPaths hosted.Binding.ProviderId hosted.Binding.WorkspaceRoot
+                            ProviderComposition.recentLockPaths hosted.Provider.Id hosted.WorkspaceRoot
 
                         if recentLockPaths.Length > 0 then
                             let waitMilliseconds =
@@ -1225,17 +1271,17 @@ let api (event: IpcMainInvokeEvent) : IVersionControlApi = {
                             do! waitForStaleLock waitMilliseconds
 
                         let lockPaths =
-                            ProviderComposition.staleLockPaths hosted.Binding.ProviderId hosted.Binding.WorkspaceRoot
+                            ProviderComposition.staleLockPaths hosted.Provider.Id hosted.WorkspaceRoot
 
                         let removed = lockPaths |> Array.filter removeExistingFile
 
-                        match hosted.Session.Synchronization with
-                        | Some synchronization ->
-                            let! _ = synchronization.Refresh context
+                        match hosted.Provider.Functions.Synchronization.Refresh with
+                        | Implemented refresh ->
+                            let! _ = refresh hosted.Repository context
                             ()
-                        | None -> ()
+                        | Missing _ -> ()
 
-                        let! status = hosted.Session.Core.GetStatus context
+                        let! status = withFunction _.GetStatus "workspace status" id hosted context
 
                         let removedWarnings =
                             removed
@@ -1248,7 +1294,7 @@ let api (event: IpcMainInvokeEvent) : IVersionControlApi = {
                             if removed.Length > 0 then
                                 Performed
                             else
-                                NoOp(Some "no stale lock")
+                                Unchanged(Some "no stale lock")
 
                         // A partial status refresh still reports the removed lock files, since these
                         // warnings are the only evidence of the removal.
@@ -1285,16 +1331,17 @@ let api (event: IpcMainInvokeEvent) : IVersionControlApi = {
                 event
                 request.OperationId
                 (Mappings.tryOpenDiffRequest policy request)
-                (fun hosted service openRequest context -> async {
+                _.Open
+                (fun hosted openDiff openRequest context -> async {
                     let windowId = callingWindowId event
-                    let! opened = service.Open openRequest context
+                    let! opened = openDiff hosted.Repository openRequest context
 
                     match opened with
                     | Succeeded outcome
                     | PartiallySucceeded(outcome, _) ->
                         match outcome.Value with
                         | Resumable.Ready(OpenDiffResult.Opened(handle, _, _, _, _)) ->
-                            TextDiffHandles.recordOrClose windowId hosted.Binding.WorkspaceRoot service handle
+                            TextDiffHandles.recordOrClose windowId hosted handle
                         | _ -> ()
                     | Failed _ -> ()
 
@@ -1308,7 +1355,8 @@ let api (event: IpcMainInvokeEvent) : IVersionControlApi = {
                 event
                 request.OperationId
                 (Mappings.tryReadPageRequest request)
-                (fun _ service pageRequest context -> service.ReadPage pageRequest context)
+                _.ReadPage
+                (fun hosted readPage pageRequest context -> readPage hosted.Repository pageRequest context)
                 Mappings.resumablePage
     replayTextDiffPage =
         fun request ->
@@ -1317,7 +1365,8 @@ let api (event: IpcMainInvokeEvent) : IVersionControlApi = {
                 event
                 request.OperationId
                 (Mappings.tryReplayPageRequest request)
-                (fun _ service replayRequest context -> service.ReplayPage replayRequest context)
+                _.ReplayPage
+                (fun hosted replayPage replayRequest context -> replayPage hosted.Repository replayRequest context)
                 Mappings.diffPage
     expandTextDiff =
         fun request ->
@@ -1326,7 +1375,8 @@ let api (event: IpcMainInvokeEvent) : IVersionControlApi = {
                 event
                 request.OperationId
                 (Mappings.tryExpandRequest request)
-                (fun _ service expandRequest context -> service.Expand expandRequest context)
+                _.Expand
+                (fun hosted expand expandRequest context -> expand hosted.Repository expandRequest context)
                 Mappings.resumableParts
     readTextDiffLine =
         fun request ->
@@ -1335,7 +1385,8 @@ let api (event: IpcMainInvokeEvent) : IVersionControlApi = {
                 event
                 request.OperationId
                 (Mappings.tryReadLineRequest request)
-                (fun _ service lineRequest context -> service.ReadLine lineRequest context)
+                _.ReadLine
+                (fun hosted readLine lineRequest context -> readLine hosted.Repository lineRequest context)
                 Mappings.resumableLine
     getTextDiffSourceInfo =
         fun request ->
@@ -1344,7 +1395,10 @@ let api (event: IpcMainInvokeEvent) : IVersionControlApi = {
                 event
                 request.OperationId
                 (Mappings.tryDiffHandle request)
-                (fun _ service handle context -> service.GetSourceInfo { SourceInfoRequest.Handle = handle } context)
+                _.GetSourceInfo
+                (fun hosted getSourceInfo handle context ->
+                    getSourceInfo hosted.Repository { SourceInfoRequest.Handle = handle } context
+                )
                 Mappings.diffSourceInfoPair
     // A failed close keeps the registry entry, so the window close retries it.
     closeTextDiff =
@@ -1354,8 +1408,9 @@ let api (event: IpcMainInvokeEvent) : IVersionControlApi = {
                 event
                 request.OperationId
                 (Mappings.tryDiffHandle request)
-                (fun _ service handle context -> async {
-                    let! closed = service.Close handle context
+                _.Close
+                (fun hosted closeDiff handle context -> async {
+                    let! closed = closeDiff hosted.Repository handle context
 
                     match closed with
                     | Failed _ -> ()

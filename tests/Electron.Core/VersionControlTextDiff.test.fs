@@ -237,92 +237,64 @@ let private unexpected (name: string) : Async<OperationResult<'T>> = async {
     return failwith $"{name} was not expected."
 }
 
-/// A text diff service whose calls all fail the test. Each test replaces the calls it expects.
-let private unexpectedService: TextDiffService = {
-    Open = fun _ _ -> unexpected "Open"
-    ReadPage = fun _ _ -> unexpected "ReadPage"
-    ReplayPage = fun _ _ -> unexpected "ReplayPage"
-    Expand = fun _ _ -> unexpected "Expand"
-    ReadLine = fun _ _ -> unexpected "ReadLine"
-    GetSourceInfo = fun _ _ -> unexpected "GetSourceInfo"
-    Close = fun _ _ -> unexpected "Close"
+/// The text diff entries of a fake provider. All of them fail the test. Each test replaces the entries it expects.
+let private unexpectedTextDiff: TextDiffFunctions = {
+    Open = Implemented(fun _ _ _ -> unexpected "Open")
+    ReadPage = Implemented(fun _ _ _ -> unexpected "ReadPage")
+    ReplayPage = Implemented(fun _ _ _ -> unexpected "ReplayPage")
+    Expand = Implemented(fun _ _ _ -> unexpected "Expand")
+    ReadLine = Implemented(fun _ _ _ -> unexpected "ReadLine")
+    GetSourceInfo = Implemented(fun _ _ _ -> unexpected "GetSourceInfo")
+    Close = Implemented(fun _ _ _ -> unexpected "Close")
 }
 
-/// A runtime with one provider that owns the workspace root and opens a core-only session
-/// carrying the given text diff service. Opening the session waits for the gate.
+/// A runtime with one provider that owns the workspace root and opens a repository whose provider
+/// has the given text diff entries. Opening the repository waits for the gate.
 let private textDiffRuntime
     (workspaceRoot: string)
     (sessionGate: JS.Promise<unit>)
-    (service: TextDiffService)
+    (textDiff: TextDiffFunctions)
     : VersionControlRuntime.VersionControlRuntime =
     let providerId = ProviderId.tryCreate "git" |> Result.defaultWith failwith
 
-    let unsupported () = async { return Failed(OperationFailure.create Unsupported "operation_not_supported" "fake") }
+    let probe path = async {
+        let detected = ProviderComposition.rootsEqual CaseInsensitive path workspaceRoot
 
-    let binding root : WorkspaceBinding = {
-        SchemaVersion = WorkspaceBinding.CurrentSchemaVersion
-        ProviderId = providerId
-        WorkspaceRoot = root
-        ProviderStateRef = None
-        Location = {
-            ProviderId = providerId
-            DisplayName = None
-            ProviderLocation = root
-            ConnectionProfileId = None
-        }
-        ConnectionProfileId = None
+        return
+            if detected then
+                Detected(workspaceRoot, 50, None)
+            else
+                NotDetected
     }
 
-    let core: CoreVersionControl = {
-        GetStatus = fun _ -> unsupported ()
-        ListRefs = fun _ -> unsupported ()
-        CreateRef = fun _ _ -> unsupported ()
-        PreflightSwitchRef = fun _ _ -> unsupported ()
-        SwitchRef = fun _ _ -> unsupported ()
-        CreateRevision = fun _ _ -> unsupported ()
-        RestorePaths = fun _ _ -> unsupported ()
-        GetDiffSummary = fun _ -> unsupported ()
-    }
+    let functions = {
+        TestHelpers.missingFunctions with
+            Open =
+                Implemented(fun request _ -> async {
+                    do! Async.AwaitPromise sessionGate
 
-    let factory: ProviderFactory = {
-        Id = providerId
-        Probe =
-            fun path -> async {
-                let detected = WorkspaceBindingStore.rootsEqual CaseInsensitive path workspaceRoot
-
-                return
-                    if detected then
-                        Detected(workspaceRoot, 50, None)
-                    else
-                        NotDetected
-            }
-        VerifyLocation = fun _ _ -> unsupported ()
-        Initialize = fun _ _ -> unsupported ()
-        Clone = fun _ _ -> unsupported ()
-        Adopt = fun request _ -> async { return OperationResult.succeeded (binding request.WorkspaceRoot) }
-        Bind = fun _ _ -> unsupported ()
-        Open =
-            fun opened _ -> async {
-                do! Async.AwaitPromise sessionGate
-
-                let session =
-                    WorkspaceSession.createCoreOnly
-                        {
-                            ProviderId = opened.ProviderId
-                            WorkspaceRoot = opened.WorkspaceRoot
-                            Location = Some opened.Location
+                    let repository =
+                        TestHelpers.FakeRepository {
+                            ProviderId = providerId
+                            RepositoryRoot = request.RepositoryRoot
+                            Location =
+                                Some {
+                                    ProviderId = providerId
+                                    DisplayName = None
+                                    ProviderLocation = request.RepositoryRoot
+                                    ConnectionProfileId = None
+                                }
                         }
-                        core
 
-                return OperationResult.succeeded { session with TextDiff = Some service }
-            }
-        CheckDependencies = fun _ -> async { return OperationResult.succeeded [||] }
-        InstallDependency = fun _ _ -> unsupported ()
+                    return OperationResult.succeeded (repository :> Repository)
+                })
+            TextDiff = textDiff
     }
 
     {
-        Catalog = ProviderComposition.createCatalog [ factory ]
-        Bindings = TestHelpers.memoryBindings ()
+        Providers = [|
+            TestHelpers.fakeProvider providerId probe (fun _ -> async { return () }) functions
+        |]
         PathCaseSensitivity = CaseInsensitive
         SessionDefaults = UserDefaults.builtInSessionDefaults
     }
@@ -383,6 +355,7 @@ let private openRequest (operationId: string) (path: string) : OpenTextDiffReque
     OperationId = operationId
     Path = path
     PreviousPath = None
+    Comparison = DiffComparisonDto.WorkingFile
     PreparationTokenId = None
     PreviousEncoding = None
     CurrentEncoding = None
@@ -686,9 +659,6 @@ Vitest.describe (
                 Vitest
                     .expect(Mappings.diffBlocker diskPolicy (DiffBlocker.NotRegularFile DiffSide.Previous))
                     .toEqual (DiffBlockerDto.NotRegularFile DiffSideDto.Previous)
-
-                Vitest.expect(Mappings.diffBlocker diskPolicy DiffBlocker.ProviderUnsupported).toEqual
-                    DiffBlockerDto.ProviderUnsupported
         )
 
         Vitest.test (
@@ -763,6 +733,31 @@ Vitest.describe (
         )
 
         Vitest.test (
+            "a revision comparison reaches the library request and a blank revision is rejected",
+            fun () ->
+                let compare comparison =
+                    Mappings.tryOpenDiffRequest diskPolicy {
+                        openRequest "op" "data/a.txt" with
+                            Comparison = comparison
+                    }
+
+                match compare DiffComparisonDto.WorkingFile with
+                | Ok request -> Vitest.expect(request.Comparison).toEqual DiffComparison.WorkingFile
+                | Error failure -> failwith failure.Message
+
+                match compare (DiffComparisonDto.Revision "abc123") with
+                | Ok request ->
+                    Vitest
+                        .expect(request.Comparison)
+                        .toEqual (DiffComparison.Revision(RevisionId.tryCreate "abc123" |> Result.defaultWith failwith))
+                | Error failure -> failwith failure.Message
+
+                match compare (DiffComparisonDto.Revision "  ") with
+                | Error failure -> Vitest.expect(failure.Code).toBe VersionControlCodes.InvalidRevision
+                | Ok value -> failwith $"Expected a rejected request, got {value}"
+        )
+
+        Vitest.test (
             "open results and resumable results keep their case and payload",
             fun () ->
                 let page: DiffPage = {
@@ -788,14 +783,6 @@ Vitest.describe (
                 let pageDto = Mappings.diffPage page
                 let progressDto = Mappings.scanProgress progress
                 let previewDto = Mappings.pendingPreview maximumPreview
-
-                Vitest
-                    .expect(
-                        Mappings.resumableOpen
-                            diskPolicy
-                            (Resumable.Ready(OpenDiffResult.NotDiffable DiffBlocker.ProviderUnsupported))
-                    )
-                    .toEqual (ResumableOpenDto.Ready(OpenDiffResultDto.NotDiffable DiffBlockerDto.ProviderUnsupported))
 
                 match
                     Mappings.resumableOpen
@@ -1152,6 +1139,7 @@ Vitest.describe (
                         OperationId = overLimit
                         Path = "data/a.txt"
                         PreviousPath = None
+                        Comparison = DiffComparisonDto.WorkingFile
                         PreparationTokenId = None
                         PreviousEncoding = None
                         CurrentEncoding = None
@@ -1193,33 +1181,24 @@ Vitest.describe (
                 let closed, resolveClosed = TestHelpers.deferred ()
                 let bothClosed, resolveBothClosed = TestHelpers.deferred ()
 
-                let unexpected (name: string) : Async<OperationResult<'T>> = async {
-                    return failwith $"{name} was not expected."
-                }
-
                 // The close records the window the host assigns to its operation, which is
                 // the owner the library checks.
-                let service: TextDiffService = {
-                    Open = fun _ _ -> unexpected "Open"
-                    ReadPage = fun _ _ -> unexpected "ReadPage"
-                    ReplayPage = fun _ _ -> unexpected "ReplayPage"
-                    Expand = fun _ _ -> unexpected "Expand"
-                    ReadLine = fun _ _ -> unexpected "ReadLine"
-                    GetSourceInfo = fun _ _ -> unexpected "GetSourceInfo"
-                    Close =
-                        fun handle context -> async {
-                            closes.Add(
-                                handle.Id,
-                                WorkspaceSessionHost.get().TryGetOperationWindowId context.OperationId
-                            )
+                let service = {
+                    unexpectedTextDiff with
+                        Close =
+                            Implemented(fun _ handle context -> async {
+                                closes.Add(
+                                    handle.Id,
+                                    WorkspaceSessionHost.get().TryGetOperationWindowId context.OperationId
+                                )
 
-                            resolveClosed ()
+                                resolveClosed ()
 
-                            if closes.Count = 2 then
-                                resolveBothClosed ()
+                                if closes.Count = 2 then
+                                    resolveBothClosed ()
 
-                            return OperationResult.succeeded ()
-                        }
+                                return OperationResult.succeeded ()
+                            })
                 }
 
                 // The registry closes the handles of a window through the open session of the workspace.
@@ -1235,12 +1214,11 @@ Vitest.describe (
                         host.OpenSession(root, TestHelpers.detached "open-registry-session")
                         |> Async.StartAsPromise
 
-                    let workspaceRoot =
-                        (TestHelpers.expectValue "session open" opened).Binding.WorkspaceRoot
+                    let hosted = TestHelpers.expectValue "session open" opened
 
-                    TextDiffHandles.recordOrClose (Some closedWindow) workspaceRoot service (handle "closed-window")
+                    TextDiffHandles.recordOrClose (Some closedWindow) hosted (handle "closed-window")
                     TextDiffHandles.windowReloaded reloadedWindow
-                    TextDiffHandles.recordOrClose (Some reloadedWindow) workspaceRoot service (handle "after-reload")
+                    TextDiffHandles.recordOrClose (Some reloadedWindow) hosted (handle "after-reload")
 
                     do! within 2000 "Closing the handle of the closed window" closed
 
@@ -1279,9 +1257,9 @@ Vitest.describe (
                 let sentinelClosed, resolveSentinelClosed = TestHelpers.deferred ()
 
                 let service = {
-                    unexpectedService with
+                    unexpectedTextDiff with
                         Close =
-                            fun handle context -> async {
+                            Implemented(fun _ handle context -> async {
                                 closes.Add(
                                     handle.Id,
                                     WorkspaceSessionHost.get().TryGetOperationWindowId context.OperationId
@@ -1294,7 +1272,7 @@ Vitest.describe (
                                     resolveSentinelClosed ()
 
                                 return OperationResult.succeeded ()
-                            }
+                            })
                 }
 
                 let host =
@@ -1310,10 +1288,7 @@ Vitest.describe (
                     let hosted = TestHelpers.expectValue "session open" opened
 
                     let record windowId handleId =
-                        TextDiffHandles.recordOrClose (Some windowId) hosted.Binding.WorkspaceRoot service {
-                            Id = handleId
-                            Version = "v1"
-                        }
+                        TextDiffHandles.recordOrClose (Some windowId) hosted { Id = handleId; Version = "v1" }
 
                     record reloadedWindow "reloaded-1"
                     record reloadedWindow "reloaded-2"
@@ -1392,16 +1367,16 @@ Vitest.describe (
                         async { return closedSession () }
 
                 let service = {
-                    unexpectedService with
+                    unexpectedTextDiff with
                         Open =
-                            fun request context -> async {
+                            Implemented(fun _ request context -> async {
                                 let path = RepositoryPath.value request.Path
                                 let handleId = if path = "reload.txt" then "h-reload" else "h-a"
                                 owners[handleId] <- WorkspaceSessionHost.windowOwnerOf context
                                 return OperationResult.succeeded (Resumable.Ready(openedDiff handleId path))
-                            }
+                            })
                         ReadPage =
-                            fun request context ->
+                            Implemented(fun _ request context ->
                                 owned
                                     request.Handle
                                     context
@@ -1409,14 +1384,25 @@ Vitest.describe (
                                         reads.Add request.Handle.Id
                                         return! unexpected "ReadPage"
                                     })
+                            )
                         ReplayPage =
-                            fun request context -> owned request.Handle context (fun () -> unexpected "ReplayPage")
-                        Expand = fun request context -> owned request.Handle context (fun () -> unexpected "Expand")
-                        ReadLine = fun request context -> owned request.Handle context (fun () -> unexpected "ReadLine")
+                            Implemented(fun _ request context ->
+                                owned request.Handle context (fun () -> unexpected "ReplayPage")
+                            )
+                        Expand =
+                            Implemented(fun _ request context ->
+                                owned request.Handle context (fun () -> unexpected "Expand")
+                            )
+                        ReadLine =
+                            Implemented(fun _ request context ->
+                                owned request.Handle context (fun () -> unexpected "ReadLine")
+                            )
                         GetSourceInfo =
-                            fun request context -> owned request.Handle context (fun () -> unexpected "GetSourceInfo")
+                            Implemented(fun _ request context ->
+                                owned request.Handle context (fun () -> unexpected "GetSourceInfo")
+                            )
                         Close =
-                            fun handle context -> async {
+                            Implemented(fun _ handle context -> async {
                                 if ownedBy handle context then
                                     closes.Add(
                                         handle.Id,
@@ -1427,7 +1413,7 @@ Vitest.describe (
                                         resolveReloadHandleClosed ()
 
                                 return OperationResult.succeeded ()
-                            }
+                            })
                 }
 
                 let host =
@@ -1546,16 +1532,16 @@ Vitest.describe (
                 let mutable answer = DiffStorage.OnDisk
 
                 let service = {
-                    unexpectedService with
+                    unexpectedTextDiff with
                         Open =
-                            fun request _ -> async {
+                            Implemented(fun _ request _ -> async {
                                 policies.Add request.Storage
                                 let path = RepositoryPath.value request.Path
 
                                 return
                                     OperationResult.succeeded (Resumable.Ready(openedDiffWith answer "h-storage" path))
-                            }
-                        Close = fun _ _ -> async { return OperationResult.succeeded () }
+                            })
+                        Close = Implemented(fun _ _ _ -> async { return OperationResult.succeeded () })
                 }
 
                 let host =
@@ -1630,13 +1616,13 @@ Vitest.describe (
                 let sessionGate, releaseSession = TestHelpers.deferred ()
 
                 let service = {
-                    unexpectedService with
+                    unexpectedTextDiff with
                         Open =
-                            fun request _ -> async {
+                            Implemented(fun _ request _ -> async {
                                 let path = RepositoryPath.value request.Path
                                 return OperationResult.succeeded (Resumable.Ready(openedDiff "h-ids" path))
-                            }
-                        Close = fun _ _ -> async { return OperationResult.succeeded () }
+                            })
+                        Close = Implemented(fun _ _ _ -> async { return OperationResult.succeeded () })
                 }
 
                 let host =

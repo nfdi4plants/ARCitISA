@@ -3,6 +3,7 @@ module Renderer.Components.LeftSidebar.Git.GitSidebarPanel
 open Browser.Dom
 open Feliz
 open Renderer.Components.Helper.ArcVaultHelper
+open Arcitisa.Electron.Shared.VersionControlTypes
 open Arcitisa.Components.Primitive.ErrorModal.Context
 
 /// The version control provider answers once per opened ARC whether deduplication can work. On a no, the sidebar disables the button and its tooltip says why.
@@ -147,6 +148,30 @@ let Main () =
             [| box gitStateCtx.state.PendingPublishRename |]
         )
 
+    // The callbacks only dispatch or call the main process, so the section keeps its object until the history state changes.
+    let history =
+        React.useMemo (
+            (fun () ->
+                gitStateCtx.state.History
+                |> Option.map (fun history ->
+                    let mapped: Arcitisa.Components.Page.GitSidebarTypes.GitSidebarHistory = {
+                        Commits = history.Commits
+                        HasMore = history.NextCursor.IsSome
+                        IsLoadingMore = history.IsLoadingMore
+                        LoadError = history.LoadError
+                        OnLoadMore = gitStateCtx.loadMoreHistory
+                        OnLoadCommitChanges = gitStateCtx.loadRevisionChanges
+                        OnSelectCommitChange =
+                            fun request ->
+                                gitStateCtx.selectChange request.Change (DiffComparisonDto.Revision request.CommitId)
+                    }
+
+                    mapped
+                )
+            ),
+            [| box gitStateCtx.state.History |]
+        )
+
     React.useEffect ((fun () -> fun () -> gitStateCtx.sidebarVisibilityChanged false), [||])
 
     React.useEffect (
@@ -249,7 +274,9 @@ let Main () =
                     fun paths ->
                         let conflictedPaths =
                             gitStateCtx.state.ChangedFiles
-                            |> Array.filter _.IsConflicted
+                            |> Array.filter (fun change ->
+                                change.Kind = Arcitisa.Components.Page.GitSidebarTypes.GitSidebarChangeKind.Conflicted
+                            )
                             |> Array.map _.Path
                             |> Set.ofArray
 
@@ -265,7 +292,7 @@ let Main () =
                 OnSaveDiffIndexingLimit = gitStateCtx.saveDiffIndexingLimit
                 OnCreateBranch = gitStateCtx.createBranch
                 OnSwitchBranch = gitStateCtx.switchBranch
-                OnSelectChange = gitStateCtx.selectChange
+                OnSelectChange = fun change -> gitStateCtx.selectChange change DiffComparisonDto.WorkingFile
                 OnPruneLfsCache = gitStateCtx.pruneLfsCache
                 OnDedupLfsStorage = gitStateCtx.dedupLfsStorage
                 OnCancelOperation = gitStateCtx.cancelOperation
@@ -281,5 +308,6 @@ let Main () =
             onSubmitPublishRename = gitStateCtx.submitPublishRename,
             onCancelPublishRename = gitStateCtx.cancelPublishRename,
             onOpenRemoteRepository = (fun repositoryWebUrl -> window.``open`` (repositoryWebUrl, "_blank") |> ignore),
-            ?remoteActionsWarning = remoteActionsWarning
+            ?remoteActionsWarning = remoteActionsWarning,
+            ?history = history
         )

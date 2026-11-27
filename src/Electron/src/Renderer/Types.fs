@@ -158,6 +158,7 @@ type GitDiffNextRequest = {
 type GitDiffPageData = {
     Path: string
     PreviousPath: string option
+    Comparison: DiffComparisonDto
     ChangeKind: GitDiffChangeKind option
     Generation: int
     Handle: DiffHandleDto option

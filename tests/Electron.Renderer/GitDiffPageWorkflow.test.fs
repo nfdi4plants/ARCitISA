@@ -118,6 +118,8 @@ type private FakeDiffClient() =
         getStatus = fun _ -> never "getStatus"
         listRefs = fun _ -> never "listRefs"
         getRepositoryWebUrl = fun _ -> never "getRepositoryWebUrl"
+        listRevisions = fun _ -> never "listRevisions"
+        getRevisionChanges = fun _ -> never "getRevisionChanges"
         getStoragePolicySettings = fun _ -> never "getStoragePolicySettings"
         setStoragePolicySettings = fun _ -> never "setStoragePolicySettings"
         getUploadRightAway = fun () -> never "getUploadRightAway"
@@ -221,13 +223,11 @@ let private runningState = {
 let private change path : GitSidebarChange = {
     Path = path
     OriginalPath = None
-    IndexStatus = "M"
-    WorkingTreeStatus = "."
-    IsConflicted = false
+    Kind = GitSidebarChangeKind.Modified
 }
 
 let private select path =
-    SelectChangeRequested(change path, ignore)
+    SelectChangeRequested(change path, DiffComparisonDto.WorkingFile, ignore)
 
 let private diffOf (state: GitState) =
     match state.DiffPage with
@@ -450,10 +450,12 @@ Vitest.describe (
                 let renamed = {
                     change "new.txt" with
                         OriginalPath = Some "old.txt"
-                        IndexStatus = "R"
+                        Kind = GitSidebarChangeKind.Renamed
                 }
 
-                let! state = run fake (SelectChangeRequested(renamed, ignore)) runningState
+                let! state =
+                    run fake (SelectChangeRequested(renamed, DiffComparisonDto.WorkingFile, ignore)) runningState
+
                 let page = diffOf state
 
                 Vitest.expect(fake.Opens.Count).toBe (2)
@@ -497,8 +499,6 @@ Vitest.describe (
                     )
                     DiffBlockerDto.NotRegularFile DiffSideDto.Current,
                     GitDiffPageStatus.Blocked(Some DiffSideDto.Current, GitDiffBlockReason.NotRegularFile)
-                    DiffBlockerDto.ProviderUnsupported,
-                    GitDiffPageStatus.Blocked(None, GitDiffBlockReason.ProviderUnsupported)
                 ]
 
                 for blocker, expected in cases do
@@ -2192,6 +2192,97 @@ Vitest.describe (
         )
 
         Vitest.test (
+            "Selecting a file of a commit opens the diff with that comparison and the automatic reopen sends it again",
+            fun () -> promise {
+                let fake = FakeDiffClient()
+                let comparison = DiffComparisonDto.Revision "abc123"
+
+                let pageDto index =
+                    diffPage $"p{index}" (Some $"cursor-{index}") [| hunkAt $"h{index}" (index * 10) |]
+
+                fake.OpenReply <- fun _ -> openedOn (handleOfOpen fake.Opens.Count) (pageDto 1)
+
+                fake.ReadReply <-
+                    fun request ->
+                        if request.HandleId = "diff-1" && request.Cursor = "cursor-2" then
+                            failedWith "diff_session_closed" None
+                        else
+                            let index = int (request.Cursor.Replace("cursor-", "")) + 1
+                            succeeded (ResumablePageDto.Ready(pageDto index))
+
+                let! state = run fake (SelectChangeRequested(change "a.txt", comparison, ignore)) runningState
+                let generation = (diffOf state).Generation
+                Vitest.expect(fake.Opens.[0].Comparison).toEqual comparison
+                Vitest.expect((diffOf state).Comparison).toEqual comparison
+
+                let! state = run fake (diffMsg (GitDiffMsg.LoadNext generation)) state
+                let! _ = run fake (diffMsg (GitDiffMsg.LoadNext generation)) state
+
+                Vitest.expect(fake.Opens.Count).toBe (2)
+                Vitest.expect(fake.Opens.[1].Comparison).toEqual comparison
+            }
+        )
+
+        Vitest.test (
+            "An encoding pick on the diff of a file of a commit sends the comparison again",
+            fun () -> promise {
+                let fake = FakeDiffClient()
+                let comparison = DiffComparisonDto.Revision "abc123"
+                let token: PreparationTokenDto = { Id = "token-1" }
+
+                let candidates: EncodingCandidateDto[] = [|
+                    {
+                        Encoding = "windows-1252"
+                        Preview = "a"
+                    }
+                |]
+
+                fake.OpenReply <-
+                    fun request ->
+                        match request.PreviousEncoding with
+                        | None ->
+                            succeeded (
+                                ResumableOpenDto.Ready(
+                                    OpenDiffResultDto.NotDiffable(
+                                        DiffBlockerDto.EncodingRequired(DiffSideDto.Previous, token, candidates)
+                                    )
+                                )
+                            )
+                        | Some _ -> openedPage (diffPage "p1" None [| hunk "h1" |])
+
+                let! state = run fake (SelectChangeRequested(change "a.txt", comparison, ignore)) runningState
+                let generation = (diffOf state).Generation
+
+                let! _ =
+                    run
+                        fake
+                        (diffMsg (GitDiffMsg.ChooseEncoding(generation, DiffSideDto.Previous, "windows-1252")))
+                        state
+
+                Vitest.expect(fake.Opens.Count).toBe (2)
+                Vitest.expect(fake.Opens.[0].Comparison).toEqual comparison
+                Vitest.expect(fake.Opens.[1].Comparison).toEqual comparison
+            }
+        )
+
+        Vitest.test (
+            "The selected change path moves for a working file diff and stays for the diff of a file of a commit",
+            fun () -> promise {
+                let fake = FakeDiffClient()
+                fake.OpenReply <- fun _ -> openedPage (diffPage "p1" None [| hunk "h1" |])
+
+                let! state = run fake (select "a.txt") runningState
+                Vitest.expect(state.SelectedChangePath).toEqual (Some "a.txt")
+
+                let! state =
+                    run fake (SelectChangeRequested(change "b.txt", DiffComparisonDto.Revision "abc123", ignore)) state
+
+                Vitest.expect(state.SelectedChangePath).toEqual (Some "a.txt")
+                Vitest.expect((diffOf state).Path).toBe "b.txt"
+            }
+        )
+
+        Vitest.test (
             "An expired session during an expansion reopens the diff with the gap collapsed",
             fun () -> promise {
                 let fake = FakeDiffClient()
@@ -2693,11 +2784,15 @@ Vitest.describe (
 
                 let conflicted = {
                     change "c.txt" with
-                        IsConflicted = true
+                        Kind = GitSidebarChangeKind.Conflicted
                 }
 
                 let requested, requestCmd =
-                    update dependencies fake.SetPageState (SelectChangeRequested(conflicted, ignore)) state
+                    update
+                        dependencies
+                        fake.SetPageState
+                        (SelectChangeRequested(conflicted, DiffComparisonDto.WorkingFile, ignore))
+                        state
 
                 let! messages = collectMessages requestCmd
 
@@ -2736,11 +2831,13 @@ Vitest.describe (
 
                 let conflicted = {
                     change "c.txt" with
-                        IsConflicted = true
+                        Kind = GitSidebarChangeKind.Conflicted
                 }
 
                 // The first ARC starts loading the page of a conflicted change.
-                let selecting, _ = step (SelectChangeRequested(conflicted, ignore)) runningState
+                let selecting, _ =
+                    step (SelectChangeRequested(conflicted, DiffComparisonDto.WorkingFile, ignore)) runningState
+
                 let loadId = selecting.PageLoadRequestId
 
                 // That ARC closes, a refresh runs while no ARC is open, and another ARC opens.

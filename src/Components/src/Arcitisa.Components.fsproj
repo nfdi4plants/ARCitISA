@@ -90,6 +90,7 @@
     <Compile Include="Api\GitHubReleases.fs" />
     <Compile Include="Api\GitHubReleases.test.fs" />
     <Compile Include="Util\DateTimeExtensions.fs" />
+    <Compile Include="Util\DateTimeExtensions.test.fs" />
     <Compile Include="Util\Extensions.fs" />
     <Compile Include="Util\Interop.fs" />
     <Compile Include="Util\ReactHooks.fs" />
@@ -469,6 +470,10 @@
     <Compile Include="Page\Landing\TargetSelector.fs" />
     <Compile Include="Page\Landing\Landing.fs" />
     <Compile Include="Page\GitSidebar\Types.fs" />
+    <Compile Include="Page\GitSidebar\Helper.fs" />
+    <Compile Include="Page\GitSidebar\GitSidebarParts.fs" />
+    <Compile Include="Page\GitSidebar\GitHistory.fs" />
+    <Compile Include="Page\GitSidebar\GitHistory.test.rtl.fs" />
     <Compile Include="Page\GitSidebar\GitSidebar.fs" />
     <Compile Include="Page\GitSidebar\GitSidebar.test.rtl.fs" />
     <Compile Include="Page\GitComparison\GitTextComparison.Core.fs" />

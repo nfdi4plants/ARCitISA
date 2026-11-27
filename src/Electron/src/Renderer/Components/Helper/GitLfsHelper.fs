@@ -22,7 +22,7 @@ let runToggleLfsMark (relativePath: string) (markAsLfs: bool) : JS.Promise<Resul
 }
 
 /// The caller picks the operation id, so it can follow the progress of the action. Both single file
-/// actions always refresh the tree. The library answers NoOp when the file is already in the requested
+/// actions always refresh the tree. The library answers Unchanged when the file is already in the requested
 /// state, and the file explorer may still show the old state then.
 let runFreeLocalLfsCopy (operationId: string) (relativePath: string) : JS.Promise<Result<unit, string>> = promise {
     let! result =

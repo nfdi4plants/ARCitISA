@@ -41,7 +41,7 @@ let private start () =
                 Main.UserDefaults.production.Effective().GitExecutablePath
             )
 
-            // The provider catalog needs the settings root, which exists only once the app is
+            // The providers need the settings root, which exists only once the app is
             // ready. A failure here must not take the IPC registrations below with it.
             try
                 let runtime =
@@ -50,7 +50,7 @@ let private start () =
 
                 let host = Main.VersionControl.WorkspaceSessionHost.WorkspaceSessionHost(runtime)
                 Main.VersionControl.WorkspaceSessionHost.initialize host
-                Main.VersionControl.DependencyState.initialize runtime.Catalog
+                Main.VersionControl.DependencyState.initialize runtime.Providers
             with error ->
                 Browser.Dom.console.error ("Version control host initialization failed", error.Message)
 

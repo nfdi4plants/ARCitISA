@@ -68,7 +68,7 @@ let warning (warning: OperationWarning) : OperationWarningDto = {
 let effect (effect: OperationEffect) : OperationEffectDto =
     match effect with
     | Performed -> OperationEffectDto.Performed
-    | NoOp reason -> OperationEffectDto.NoOp reason
+    | Unchanged reason -> OperationEffectDto.Unchanged reason
 
 let publication (state: PublicationState) : PublicationStateDto =
     match state with
@@ -82,7 +82,7 @@ let outcome (mapValue: 'T -> 'U) (outcome: OperationOutcome<'T>) : OperationOutc
     Warnings = outcome.Warnings |> Array.map warning
     AffectedPaths = Array.copy outcome.AffectedPaths
     ResultingRevision = outcome.ResultingRevision |> Option.map RevisionId.value
-    ResultingWorkspaceVersion = outcome.ResultingWorkspaceVersion
+    ResultingWorkspaceVersion = outcome.ResultingRepositoryVersion
     Publication = publication outcome.Publication
 }
 
@@ -144,6 +144,40 @@ let fileChange (change: FileChange) : FileChangeDto = {
     Kind = fileChangeKind change.Kind
 }
 
+let diffEntryChange (entry: DiffEntry) : FileChangeDto = {
+    Path = RepositoryPath.value entry.Path
+    OldPath = entry.OldPath |> Option.map RepositoryPath.value
+    Kind = fileChangeKind entry.Kind
+}
+
+let revisionSignature (signature: RevisionSignature) : RevisionSignatureDto = {
+    Name = signature.Name
+    Email = signature.Email
+    At = float signature.At
+}
+
+let revisionEntry (entry: RevisionEntry) : RevisionEntryDto = {
+    Id = RevisionId.value entry.Id
+    ParentIds = entry.ParentIds |> Array.map RevisionId.value
+    Summary = entry.Summary
+    Message = entry.Message
+    Committer = revisionSignature entry.Committer
+    Author = entry.Author |> Option.map revisionSignature
+    Refs = entry.Refs |> Array.map logicalRef
+    Publication = publication entry.Publication
+}
+
+let revisionPage (page: RevisionPage) : RevisionPageDto = {
+    Revisions = page.Revisions |> Array.map revisionEntry
+    NextCursor = page.NextCursor
+}
+
+/// The library validates the cursor and clamps the limit.
+let listRevisionsRequest (request: ListRevisionsRequestDto) : ListRevisionsRequest = {
+    Cursor = request.Cursor
+    Limit = request.Limit
+}
+
 let relationship (relationship: RevisionRelationship) : RevisionRelationshipDto =
     match relationship with
     | UpToDate -> RevisionRelationshipDto.UpToDate
@@ -155,7 +189,7 @@ let relationship (relationship: RevisionRelationship) : RevisionRelationshipDto 
 
 let synchronizationState (state: SynchronizationState) : SynchronizationStateDto = {
     BaseRevision = state.BaseRevision |> Option.map RevisionId.value
-    WorkspaceRevision = state.WorkspaceRevision |> Option.map RevisionId.value
+    WorkspaceRevision = state.LocalRevision |> Option.map RevisionId.value
     TargetRevision = state.TargetRevision |> Option.map RevisionId.value
     TargetRef = state.TargetRef |> Option.map logicalRef
     LocalRevisionCount = state.LocalRevisionCount
@@ -205,9 +239,9 @@ let conflictOutcome (outcome: ConflictResolutionOutcome) : ConflictResolutionOut
     RemainingItems = outcome.RemainingItems |> Array.map conflictItem
 }
 
-let workspaceStatus (status: WorkspaceStatus) : WorkspaceStatusDto = {
+let workspaceStatus (status: RepositoryStatus) : WorkspaceStatusDto = {
     CurrentRef = status.CurrentRef |> Option.map logicalRef
-    WorkspaceVersion = status.WorkspaceVersion
+    WorkspaceVersion = status.RepositoryVersion
     Changes = status.Changes |> Array.map fileChange
     ActiveConflictSession = status.ActiveConflictSession |> Option.map conflictSession
     Synchronization = status.Synchronization |> Option.map synchronizationState
@@ -242,23 +276,70 @@ let repositoryLocation (location: RepositoryLocation) : RepositoryLocationDto = 
     ConnectionProfileId = location.ConnectionProfileId
 }
 
-let serviceAvailability (session: WorkspaceSession) : ServiceAvailabilityDto = {
-    Synchronization = session.Synchronization.IsSome
-    TextDiff = session.TextDiff.IsSome
-    ConflictResolution = session.ConflictResolution.IsSome
-    ObjectMaterialization = session.ObjectMaterialization.IsSome
-    StoragePolicy = session.StoragePolicy.IsSome
-    Maintenance = session.Maintenance.IsSome
-    RepositoryBrowser = session.RepositoryBrowser.IsSome
-}
+let private isImplemented (entry: Entry<'call>) : bool =
+    match entry with
+    | Implemented _ -> true
+    | Missing _ -> false
 
-let sessionInfo (sessionId: string) (session: WorkspaceSession) : WorkspaceSessionInfoDto = {
-    SessionId = sessionId
-    ProviderId = ProviderId.value session.Descriptor.ProviderId
-    WorkspaceRoot = session.Descriptor.WorkspaceRoot
-    Location = session.Descriptor.Location |> Option.map repositoryLocation
-    Services = serviceAvailability session
-}
+/// A flag is true when every entry of its group is implemented.
+let serviceAvailability (functions: ProviderFunctions) : ServiceAvailabilityDto =
+    let synchronization = functions.Synchronization
+    let textDiff = functions.TextDiff
+    let conflictResolution = functions.ConflictResolution
+    let objectMaterialization = functions.ObjectMaterialization
+    let storagePolicy = functions.StoragePolicy
+    let maintenance = functions.Maintenance
+    let history = functions.History
+
+    {
+        Synchronization =
+            isImplemented synchronization.Refresh
+            && isImplemented synchronization.PreviewUpdate
+            && isImplemented synchronization.Update
+            && isImplemented synchronization.Publish
+            && isImplemented synchronization.Synchronize
+        TextDiff =
+            isImplemented textDiff.Open
+            && isImplemented textDiff.ReadPage
+            && isImplemented textDiff.ReplayPage
+            && isImplemented textDiff.Expand
+            && isImplemented textDiff.ReadLine
+            && isImplemented textDiff.GetSourceInfo
+            && isImplemented textDiff.Close
+        ConflictResolution =
+            isImplemented conflictResolution.GetActiveSession
+            && isImplemented conflictResolution.Resolve
+            && isImplemented conflictResolution.Finalize
+            && isImplemented conflictResolution.Cancel
+        ObjectMaterialization =
+            isImplemented objectMaterialization.ListObjects
+            && isImplemented objectMaterialization.Materialize
+            && isImplemented objectMaterialization.Dematerialize
+        StoragePolicy =
+            isImplemented storagePolicy.SetPathPolicy
+            && isImplemented storagePolicy.GetSettings
+            && isImplemented storagePolicy.SetSettings
+        Maintenance =
+            isImplemented maintenance.Prune
+            && isImplemented maintenance.Deduplicate
+            && isImplemented maintenance.CanDeduplicate
+        RepositoryBrowser = isImplemented functions.RepositoryBrowser.GetRepositoryWebUrl
+        History = isImplemented history.ListRevisions && isImplemented history.GetRevisionChanges
+    }
+
+let sessionInfo
+    (sessionId: string)
+    (workspaceRoot: string)
+    (provider: ProviderComposition.AppProvider)
+    (repository: Repository)
+    : WorkspaceSessionInfoDto =
+    {
+        SessionId = sessionId
+        ProviderId = ProviderId.value repository.Descriptor.ProviderId
+        WorkspaceRoot = workspaceRoot
+        Location = repository.Descriptor.Location |> Option.map repositoryLocation
+        Services = serviceAvailability provider.Functions
+    }
 
 let conflictHandleFromDto (handle: ConflictSessionHandleDto) : ConflictSessionHandle = {
     SessionId = handle.SessionId
@@ -503,7 +584,6 @@ let diffBlocker (policy: DiffStoragePolicy) (blocker: DiffBlocker) : DiffBlocker
             })
         )
     | DiffBlocker.NotRegularFile side -> DiffBlockerDto.NotRegularFile(diffSide side)
-    | DiffBlocker.ProviderUnsupported -> DiffBlockerDto.ProviderUnsupported
     | DiffBlocker.BlobTooLargeForMemory(side, blobBytes, limitBytes) ->
         DiffBlockerDto.BlobTooLargeForMemory(
             diffSide side,
@@ -687,6 +767,11 @@ let private tryOptionalRepositoryPath (path: string option) : Result<RepositoryP
     | None -> Ok None
     | Some text -> tryRepositoryPath text |> Result.map Some
 
+let private tryDiffComparison (comparison: DiffComparisonDto) : Result<DiffComparison, OperationFailure> =
+    match comparison with
+    | DiffComparisonDto.WorkingFile -> Ok DiffComparison.WorkingFile
+    | DiffComparisonDto.Revision text -> tryRevisionId text |> Result.map DiffComparison.Revision
+
 /// The storage policy comes from the settings of the session, which the validation here does not see.
 let tryOpenDiffRequest
     (storage: DiffStoragePolicy)
@@ -700,9 +785,14 @@ let tryOpenDiffRequest
     |> Result.bind (fun _ -> tryRepositoryPath request.Path)
     |> Result.bind (fun path ->
         tryOptionalRepositoryPath request.PreviousPath
-        |> Result.map (fun previousPath -> {
+        |> Result.bind (fun previousPath ->
+            tryDiffComparison request.Comparison
+            |> Result.map (fun comparison -> previousPath, comparison)
+        )
+        |> Result.map (fun (previousPath, comparison) -> {
             OpenDiffRequest.Path = path
             PreviousPath = previousPath
+            Comparison = comparison
             Preparation =
                 request.PreparationTokenId
                 |> Option.map (fun tokenId -> { PreparationToken.Id = tokenId })

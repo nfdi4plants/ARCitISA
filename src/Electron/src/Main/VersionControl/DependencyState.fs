@@ -13,50 +13,16 @@ open Arcitisa.Electron.Shared.IPCTypes.MainToRendererIpc
 open Arcitisa.Electron.Shared.VersionControlTypes
 open VersionControlService.Abstractions
 
-/// Asks every registered provider for its components. A provider whose check fails does not hide
-/// the others: its failure rides along as the partial failure. The renderer's install flow and the
-/// state of this module share the function.
+/// Asks the current provider for its components. The renderer's install flow and the state of
+/// this module share the function.
 let checkDependencies
-    (catalog: ProviderResolver.ProviderCatalog)
+    (providers: ProviderComposition.AppProvider[])
     (context: OperationContext)
     : Async<OperationResult<DependencyStatus[]>> =
-    async {
-        let factories = ProviderResolver.factories catalog
-        let mutable statuses: DependencyStatus[] = [||]
-        let mutable failure: OperationFailure option = None
-
-        for factory in factories do
-            if not (context.Cancellation.IsCancellationRequested()) then
-                let! reported = factory.CheckDependencies context
-
-                match reported with
-                | Succeeded outcome
-                | PartiallySucceeded(outcome, _) -> statuses <- Array.append statuses outcome.Value
-                | Failed error when error.Category = Canceled -> failure <- Some error
-                | Failed error ->
-                    if failure.IsNone then
-                        failure <- Some error
-
-        return
-            match failure with
-            | Some error when error.Category = Canceled -> Failed error
-            | _ when context.Cancellation.IsCancellationRequested() ->
-                OperationResult.canceled "The dependency check was canceled."
-            | Some error ->
-                PartiallySucceeded(
-                    OperationOutcome.performed statuses,
-                    {
-                        error with
-                            StateChanged = false
-                            RecoveryAction =
-                                Some {
-                                    Code = VersionControlCodes.Recovery.CheckDependencies
-                                    Instructions = Some "One provider could not report its dependencies."
-                                }
-                    }
-                )
-            | None -> OperationResult.succeeded statuses
-    }
+    ProviderComposition.callFunction
+        (ProviderComposition.defaultProvider providers).Functions.CheckDependencies
+        "a dependency check"
+        (fun check -> check context)
 
 /// What one finished check reports.
 type CheckReport = {
@@ -223,14 +189,14 @@ let private checkDeadlineMilliseconds = 30000.0
 /// One check without a window. No window owns it, so it needs no entry in the operation registry of
 /// the session host. Only the deadline of the controller cancels it.
 let private checkWith
-    (catalog: ProviderResolver.ProviderCatalog)
+    (providers: ProviderComposition.AppProvider[])
     (cancellation: OperationCancellation)
     : JS.Promise<CheckReport> =
     promise {
         let context =
             OperationContext.create (Guid.NewGuid().ToString()) cancellation ignore
 
-        let! result = checkDependencies catalog context |> Async.StartAsPromise
+        let! result = checkDependencies providers context |> Async.StartAsPromise
         return reportOf result
     }
 
@@ -243,9 +209,9 @@ let install (controller: DependencyStateController) : unit = installed <- Some c
 let resetForTests () : unit = installed <- None
 
 /// Creates the controller over the real check and runs the first check. Call it once the runtime exists.
-let initialize (catalog: ProviderResolver.ProviderCatalog) : unit =
+let initialize (providers: ProviderComposition.AppProvider[]) : unit =
     let controller =
-        DependencyStateController(checkWith catalog, broadcastToWindows, nowMilliseconds, checkDeadlineMilliseconds)
+        DependencyStateController(checkWith providers, broadcastToWindows, nowMilliseconds, checkDeadlineMilliseconds)
 
     install controller
     controller.Trigger() |> ignore

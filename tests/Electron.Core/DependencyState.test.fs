@@ -550,18 +550,19 @@ let private installAndCountChecks (installResult: OperationResult<DependencyStat
     let check = ControlledCheck()
     let controller, _ = controllerOver check
 
-    let gitFactory =
-        ProviderComposition.createGitFactory ElectronCore.TestHelpers.noAccounts WorkspaceSessionHost.windowOwnerOf
+    let gitProvider =
+        ProviderComposition.createGitProvider ElectronCore.TestHelpers.noAccounts WorkspaceSessionHost.windowOwnerOf
 
     let runtime: VersionControlRuntime.VersionControlRuntime = {
-        Catalog =
-            ProviderComposition.createCatalog [
-                {
-                    gitFactory with
-                        InstallDependency = fun _ _ -> async { return installResult }
-                }
-            ]
-        Bindings = ElectronCore.TestHelpers.memoryBindings ()
+        Providers = [|
+            {
+                gitProvider with
+                    Functions = {
+                        gitProvider.Functions with
+                            InstallDependency = Implemented(fun _ _ -> async { return installResult })
+                    }
+            }
+        |]
         PathCaseSensitivity = CaseInsensitive
         SessionDefaults = UserDefaults.builtInSessionDefaults
     }

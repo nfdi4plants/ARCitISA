@@ -3,3 +3,5 @@ module internal Arcitisa.Components.Util.Interop
 let listOfArray (items: 'T[]) : 'T list = List.ofArray items
 
 let okResult (value: 'T) : Result<'T, 'Error> = Ok value
+
+let errorResult (error: 'Error) : Result<'T, 'Error> = Error error

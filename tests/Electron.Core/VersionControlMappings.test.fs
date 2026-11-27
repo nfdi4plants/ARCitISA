@@ -101,7 +101,7 @@ Vitest.describe (
                     |]
                     AffectedPaths = [| "a.txt" |]
                     ResultingRevision = Some(revision "abc")
-                    ResultingWorkspaceVersion = Some "v2"
+                    ResultingRepositoryVersion = Some "v2"
                     Publication = LocalOnly
                 }
 
@@ -141,9 +141,9 @@ Vitest.describe (
         Vitest.test (
             "a no-op keeps its reason",
             fun () ->
-                match Mappings.result id (OperationResult.noOp (Some "nothing to publish") ()) with
+                match Mappings.result id (OperationResult.unchanged (Some "nothing to publish") ()) with
                 | OperationResultDto.Succeeded outcome ->
-                    Vitest.expect(outcome.Effect).toEqual (OperationEffectDto.NoOp(Some "nothing to publish"))
+                    Vitest.expect(outcome.Effect).toEqual (OperationEffectDto.Unchanged(Some "nothing to publish"))
                 | other -> failwith $"Expected a success, got {other}"
         )
 
@@ -236,7 +236,7 @@ Vitest.describe (
                             Ok(
                                 OperationResultDto.Succeeded {
                                     outcome with
-                                        Effect = OperationEffectDto.NoOp None
+                                        Effect = OperationEffectDto.Unchanged None
                                 }
                             )
                         )
@@ -270,7 +270,7 @@ Vitest.describe (
                 let providerRef =
                     ProviderRef.tryCreate "refs/heads/main" |> Result.defaultWith failwith
 
-                let status: WorkspaceStatus = {
+                let status: RepositoryStatus = {
                     CurrentRef =
                         Some {
                             Name = "main"
@@ -278,7 +278,7 @@ Vitest.describe (
                             Kind = LocalRef
                             IsCurrent = true
                         }
-                    WorkspaceVersion = "v1"
+                    RepositoryVersion = "v1"
                     Changes = [|
                         {
                             Path = path "b.txt"
@@ -325,7 +325,7 @@ Vitest.describe (
                     Synchronization =
                         Some {
                             BaseRevision = None
-                            WorkspaceRevision = Some(revision "abc")
+                            LocalRevision = Some(revision "abc")
                             TargetRevision = None
                             TargetRef = None
                             LocalRevisionCount = Some 1
@@ -449,5 +449,104 @@ Vitest.describe (
                 match Mappings.tryRepositoryPaths [| "a.txt"; "dir/b.txt" |] with
                 | Ok paths -> Vitest.expect(paths |> Array.map RepositoryPath.value).toEqual [| "a.txt"; "dir/b.txt" |]
                 | Error failure -> failwith failure.Message
+        )
+)
+
+Vitest.describe (
+    "Version control history mapping",
+    fun () ->
+        let entry: RevisionEntry = {
+            Id = revision "c2"
+            ParentIds = [| revision "c1" |]
+            Summary = "Add assay"
+            Message = "Add assay\n\nWith details."
+            Committer = {
+                Name = "Committer"
+                Email = Some "committer@example.org"
+                At = 1700000100L
+            }
+            Author =
+                Some {
+                    Name = "Author"
+                    Email = None
+                    At = 1700000000L
+                }
+            Refs = [|
+                {
+                    Name = "main"
+                    ProviderRef = ProviderRef.tryCreate "refs/heads/main" |> Result.defaultWith failwith
+                    Kind = LocalRef
+                    IsCurrent = true
+                }
+                {
+                    Name = "origin/main"
+                    ProviderRef = ProviderRef.tryCreate "refs/remotes/origin/main" |> Result.defaultWith failwith
+                    Kind = RemoteRef
+                    IsCurrent = false
+                }
+            |]
+            Publication = LocalOnly
+        }
+
+        Vitest.test (
+            "a revision entry keeps its times, optional author, refs and publication",
+            fun () ->
+                let mapped = Mappings.revisionEntry entry
+
+                Vitest.expect(mapped.Id).toBe "c2"
+                Vitest.expect(mapped.ParentIds).toEqual [| "c1" |]
+                Vitest.expect(mapped.Summary).toBe "Add assay"
+                Vitest.expect(mapped.Message).toBe "Add assay\n\nWith details."
+                Vitest.expect(mapped.Committer.At).toBe 1700000100.0
+                Vitest.expect(mapped.Committer.Email).toEqual (Some "committer@example.org")
+                Vitest.expect(mapped.Author |> Option.map _.Name).toEqual (Some "Author")
+                Vitest.expect(mapped.Author |> Option.bind _.Email).toEqual None
+                Vitest.expect(mapped.Refs |> Array.map _.Name).toEqual [| "main"; "origin/main" |]
+                Vitest.expect(mapped.Refs |> Array.map _.Kind).toEqual [| RefKindDto.Local; RefKindDto.Remote |]
+                Vitest.expect(mapped.Publication).toEqual PublicationStateDto.LocalOnly
+
+                let withoutAuthor = Mappings.revisionEntry { entry with Author = None }
+                Vitest.expect(withoutAuthor.Author).toEqual None
+        )
+
+        Vitest.test (
+            "a revision page keeps its cursor and a request passes cursor and limit on",
+            fun () ->
+                let page =
+                    Mappings.revisionPage {
+                        Revisions = [| entry |]
+                        NextCursor = Some "next"
+                    }
+
+                Vitest.expect(page.Revisions |> Array.map _.Id).toEqual [| "c2" |]
+                Vitest.expect(page.NextCursor).toEqual (Some "next")
+
+                let request =
+                    Mappings.listRevisionsRequest {
+                        OperationId = "op"
+                        Cursor = Some "next"
+                        Limit = 50
+                    }
+
+                Vitest.expect(request.Cursor).toEqual (Some "next")
+                Vitest.expect(request.Limit).toBe 50
+        )
+
+        Vitest.test (
+            "a diff entry maps to a file change with its old path and kind",
+            fun () ->
+                let renamed: DiffEntry = {
+                    Path = path "new.txt"
+                    OldPath = Some(path "old.txt")
+                    Kind = RenamedChange
+                    LineInsertions = Some 1
+                    LineDeletions = Some 2
+                }
+
+                let mapped = Mappings.diffEntryChange renamed
+
+                Vitest.expect(mapped.Path).toBe "new.txt"
+                Vitest.expect(mapped.OldPath).toEqual (Some "old.txt")
+                Vitest.expect(mapped.Kind).toEqual FileChangeKindDto.Renamed
         )
 )

@@ -60,34 +60,95 @@ let noAccounts: DataHubStrategies.DataHubAccountSource = {
     TryGetTokenForHost = fun _ -> None
 }
 
-let memoryBindings () =
-    let mutable content: string option = None
+/// A function list in which every entry is missing. A fake provider replaces the entries it has.
+let missingFunctions: ProviderFunctions =
+    let missing () =
+        Missing "The fake provider does not have this function."
 
-    WorkspaceBindingStore.create
-        CaseInsensitive
-        (fun () -> content)
-        (fun next ->
-            content <- Some next
-            Ok()
-        )
-
-let createRuntime
-    (settingsRoot: string)
-    lakeFsCredentials
-    (bindings: WorkspaceBindingStore.IWorkspaceBindingStore)
-    : VersionControlRuntime.VersionControlRuntime =
     {
-        Catalog =
-            ProviderComposition.createCatalog [
-                ProviderComposition.createGitFactory noAccounts WorkspaceSessionHost.windowOwnerOf
-                ProviderComposition.createLakeFsFactory
-                    (ProviderComposition.lakeFsOptions settingsRoot CaseInsensitive)
-                    lakeFsCredentials
-            ]
-        Bindings = bindings
-        PathCaseSensitivity = CaseInsensitive
-        SessionDefaults = UserDefaults.builtInSessionDefaults
+        VerifyLocation = missing ()
+        Initialize = missing ()
+        Clone = missing ()
+        Bind = missing ()
+        Open = missing ()
+        CheckDependencies = missing ()
+        InstallDependency = missing ()
+        GetStatus = missing ()
+        ListRefs = missing ()
+        CreateRef = missing ()
+        PreflightSwitchRef = missing ()
+        SwitchRef = missing ()
+        CreateRevision = missing ()
+        RestorePaths = missing ()
+        GetDiffSummary = missing ()
+        Synchronization = {
+            Refresh = missing ()
+            PreviewUpdate = missing ()
+            Update = missing ()
+            Publish = missing ()
+            Synchronize = missing ()
+        }
+        ConflictResolution = {
+            GetActiveSession = missing ()
+            Resolve = missing ()
+            Finalize = missing ()
+            Cancel = missing ()
+        }
+        TextDiff = {
+            Open = missing ()
+            ReadPage = missing ()
+            ReplayPage = missing ()
+            Expand = missing ()
+            ReadLine = missing ()
+            GetSourceInfo = missing ()
+            Close = missing ()
+        }
+        History = {
+            ListRevisions = missing ()
+            GetRevisionChanges = missing ()
+        }
+        RepositoryBrowser = { GetRepositoryWebUrl = missing () }
+        ObjectMaterialization = {
+            ListObjects = missing ()
+            Materialize = missing ()
+            Dematerialize = missing ()
+        }
+        StoragePolicy = {
+            SetPathPolicy = missing ()
+            GetSettings = missing ()
+            SetSettings = missing ()
+        }
+        Maintenance = {
+            Prune = missing ()
+            Deduplicate = missing ()
+            CanDeduplicate = missing ()
+        }
     }
+
+/// The repository a fake provider opens.
+type FakeRepository(descriptor: RepositoryDescriptor) =
+    inherit Repository(descriptor)
+
+/// A fake provider of the app: the probe, the close and the functions it has.
+let fakeProvider
+    (id: ProviderId)
+    (probe: string -> Async<ProbeResult>)
+    (close: Repository -> Async<unit>)
+    (functions: ProviderFunctions)
+    : ProviderComposition.AppProvider =
+    ProviderComposition.createAppProvider id (ListedProvider(probe, close, functions))
+
+let createRuntime (settingsRoot: string) lakeFsCredentials : VersionControlRuntime.VersionControlRuntime = {
+    Providers = [|
+        ProviderComposition.createGitProvider noAccounts WorkspaceSessionHost.windowOwnerOf
+        ProviderComposition.createLakeFsProvider {
+            ProviderComposition.lakeFsOptions settingsRoot CaseInsensitive with
+                Credentials = lakeFsCredentials
+        }
+    |]
+    PathCaseSensitivity = CaseInsensitive
+    SessionDefaults = UserDefaults.builtInSessionDefaults
+}
 
 let expectValue (operation: string) (result: OperationResult<'T>) =
     match result with

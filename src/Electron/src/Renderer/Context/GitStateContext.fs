@@ -40,11 +40,14 @@ type GitStateController = {
     saveDownloadLargeFiles: bool -> unit
     createBranch: GitSidebarCreateBranchRequest -> unit
     switchBranch: string -> unit
-    selectChange: GitSidebarChange -> JS.Promise<Result<unit, string>>
+    selectChange: GitSidebarChange -> DiffComparisonDto -> JS.Promise<Result<unit, string>>
     confirmMergeResolution: GitMergeResolutionRequest -> unit
     abandonMerge: unit -> unit
     pruneLfsCache: unit -> unit
     dedupLfsStorage: unit -> unit
+    loadMoreHistory: unit -> unit
+    /// The files of one commit against its first parent.
+    loadRevisionChanges: string -> JS.Promise<Result<GitSidebarChange[], string>>
     /// Requests of the open diff page.
     sendDiffMsg: GitDiffMsg -> unit
 }
@@ -69,6 +72,8 @@ module private Helper =
             getStatus = Api.ipcVersionControlApi.getStatus
             listRefs = Api.ipcVersionControlApi.listRefs
             getRepositoryWebUrl = Api.ipcVersionControlApi.getRepositoryWebUrl
+            listRevisions = Api.ipcVersionControlApi.listRevisions
+            getRevisionChanges = Api.ipcVersionControlApi.getRevisionChanges
             getStoragePolicySettings = Api.ipcVersionControlApi.getStoragePolicySettings
             setStoragePolicySettings = Api.ipcVersionControlApi.setStoragePolicySettings
             getUploadRightAway = Api.ipcVersionControlApi.getUploadRightAway
@@ -147,11 +152,13 @@ let GitStateCtx =
             saveDownloadLargeFiles = fun _ -> ()
             createBranch = fun _ -> ()
             switchBranch = fun _ -> ()
-            selectChange = fun _ -> promise { return Ok() }
+            selectChange = fun _ _ -> promise { return Ok() }
             confirmMergeResolution = fun _ -> ()
             abandonMerge = fun () -> ()
             pruneLfsCache = fun () -> ()
             dedupLfsStorage = fun () -> ()
+            loadMoreHistory = fun () -> ()
+            loadRevisionChanges = fun _ -> promise { return Ok [||] }
             sendDiffMsg = fun _ -> ()
         }
     )
@@ -290,8 +297,8 @@ let GitStateCtxProvider (children: ReactElement) =
     let switchBranchTo (branchName: string) =
         dispatch (SwitchBranchRequested branchName)
 
-    let selectChange (change: GitSidebarChange) =
-        Promise.create (fun resolve _reject -> dispatch (SelectChangeRequested(change, resolve)))
+    let selectChange (change: GitSidebarChange) (comparison: DiffComparisonDto) =
+        Promise.create (fun resolve _reject -> dispatch (SelectChangeRequested(change, comparison, resolve)))
 
     let confirmMergeResolutionAction (request: GitMergeResolutionRequest) =
         dispatch (ConfirmMergeResolutionRequested request)
@@ -301,6 +308,11 @@ let GitStateCtxProvider (children: ReactElement) =
     let pruneLfsCache () = dispatch PruneLfsCacheRequested
 
     let dedupLfsStorage () = dispatch DedupLfsStorageRequested
+
+    let loadMoreHistory () = dispatch HistoryLoadMoreRequested
+
+    let loadRevisionChanges (revision: string) =
+        loadRevisionChangesAsync dependencies revision
 
     React.useEffect ((fun () -> dispatch (ArcPathChanged appStateCtx)), [| box appStateCtx |])
 
@@ -345,6 +357,8 @@ let GitStateCtxProvider (children: ReactElement) =
                 abandonMerge = abandonMerge
                 pruneLfsCache = pruneLfsCache
                 dedupLfsStorage = dedupLfsStorage
+                loadMoreHistory = loadMoreHistory
+                loadRevisionChanges = loadRevisionChanges
                 sendDiffMsg = sendDiffMsg
             }),
             [| box gitState |]

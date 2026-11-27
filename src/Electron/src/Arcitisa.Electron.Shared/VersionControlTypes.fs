@@ -189,7 +189,6 @@ type DiffBlockerDto =
     | LocalContentUnavailable of side: DiffSideDto * objectId: string option
     | EncodingRequired of side: DiffSideDto * token: PreparationTokenDto * candidates: EncodingCandidateDto[]
     | NotRegularFile of side: DiffSideDto
-    | ProviderUnsupported
     /// A committed side is larger than the share of the memory budget that holds it. The sizes are
     /// in bytes as decimal strings.
     | BlobTooLargeForMemory of side: DiffSideDto * blobBytes: string * limitBytes: string * cause: MemoryCauseDto
@@ -227,12 +226,19 @@ type ResumableLineDto =
     | Ready of line: DiffLineDto
     | Scanning of progress: ScanProgressDto * continuation: string * pending: PendingPreviewDto option
 
+/// What a text diff compares: the working file against the last revision, or a revision against its first parent.
+[<RequireQualifiedAccess>]
+type DiffComparisonDto =
+    | WorkingFile
+    | Revision of revision: string
+
 /// Opens a diff of one path. PreparationTokenId and the encodings answer an earlier
 /// EncodingRequired blocker, and Continuation resumes an earlier Scanning result.
 type OpenTextDiffRequestDto = {
     OperationId: string
     Path: string
     PreviousPath: string option
+    Comparison: DiffComparisonDto
     PreparationTokenId: string option
     PreviousEncoding: string option
     CurrentEncoding: string option
@@ -329,7 +335,7 @@ type OperationWarningDto = { Code: string; Message: string }
 [<RequireQualifiedAccess>]
 type OperationEffectDto =
     | Performed
-    | NoOp of reason: string option
+    | Unchanged of reason: string option
 
 [<StringEnum(CaseRules.None)>]
 type PublicationStateDto =
@@ -490,9 +496,6 @@ module VersionControlCodes =
     [<Literal>]
     let InvalidRevision = "invalid_revision"
 
-    [<Literal>]
-    let BindingNotPersisted = "binding_not_persisted"
-
     /// A text diff request with an overlong id or a number that is negative or not a decimal integer.
     [<Literal>]
     let InvalidDiffRequest = "invalid_diff_request"
@@ -534,12 +537,6 @@ module VersionControlCodes =
         let InspectWorkspace = "inspect_workspace"
 
         [<Literal>]
-        let ReopenWorkspace = "reopen_workspace"
-
-        [<Literal>]
-        let CheckDependencies = "check_dependencies"
-
-        [<Literal>]
         let AbortMerge = "abort_merge"
 
         [<Literal>]
@@ -564,6 +561,40 @@ type LogicalRefDto = {
     ProviderRef: string
     Kind: RefKindDto
     IsCurrent: bool
+}
+
+/// Who made or committed a revision. At is in seconds since the Unix epoch.
+type RevisionSignatureDto = {
+    Name: string
+    Email: string option
+    At: float
+}
+
+type RevisionEntryDto = {
+    Id: string
+    ParentIds: string[]
+    Summary: string
+    Message: string
+    Committer: RevisionSignatureDto
+    Author: RevisionSignatureDto option
+    Refs: LogicalRefDto[]
+    Publication: PublicationStateDto
+}
+
+type RevisionPageDto = {
+    Revisions: RevisionEntryDto[]
+    NextCursor: string option
+}
+
+type ListRevisionsRequestDto = {
+    OperationId: string
+    Cursor: string option
+    Limit: int
+}
+
+type RevisionChangesRequestDto = {
+    OperationId: string
+    Revision: string
 }
 
 [<StringEnum(CaseRules.None)>]
@@ -694,8 +725,8 @@ type RepositoryLocationDto = {
     ConnectionProfileId: string option
 }
 
-/// Which optional services the open session offers. The renderer reads Synchronization and
-/// RepositoryBrowser. A call to an absent service answers service_unavailable.
+/// Which optional services the open session offers. The renderer reads Synchronization,
+/// RepositoryBrowser and History. A call to an absent service answers service_unavailable.
 type ServiceAvailabilityDto = {
     Synchronization: bool
     TextDiff: bool
@@ -704,6 +735,7 @@ type ServiceAvailabilityDto = {
     StoragePolicy: bool
     Maintenance: bool
     RepositoryBrowser: bool
+    History: bool
 }
 
 type WorkspaceSessionInfoDto = {

@@ -88,7 +88,7 @@ let private createFixture () = promise {
     git repoRoot [ "push"; "-u"; "origin"; "main" ] |> ignore
 
     let runtime =
-        createRuntime settingsRoot VersionControlService.LakeFs.LakeFsCredentials.unconfigured (memoryBindings ())
+        createRuntime settingsRoot VersionControlService.LakeFs.LakeFsCredentials.unconfigured
 
     let host = WorkspaceSessionHost.WorkspaceSessionHost(runtime)
     WorkspaceSessionHost.initialize host
@@ -146,7 +146,7 @@ Vitest.describe (
     "Workspace session host",
     fun () ->
         Vitest.test (
-            "adopts an unbound git repository, persists the binding and reuses the open session",
+            "opens a git repository and reuses the open session",
             fun () ->
                 withFixture (fun fixture -> promise {
                     let! first =
@@ -155,13 +155,7 @@ Vitest.describe (
 
                     let hosted = expectValue "first open" first
 
-                    Vitest.expect(ProviderId.value hosted.Session.Descriptor.ProviderId).toBe "git"
-
-                    let persisted =
-                        fixture.Runtime.Bindings.TryFind fixture.RepoRoot
-                        |> Option.defaultWith (fun () -> failwith "Binding was not persisted.")
-
-                    Vitest.expect(ProviderId.value persisted.ProviderId).toBe "git"
+                    Vitest.expect(ProviderId.value hosted.Repository.Descriptor.ProviderId).toBe "git"
 
                     let! second =
                         fixture.Host.OpenSession(fixture.RepoRoot, detached "open-2")
@@ -177,7 +171,7 @@ Vitest.describe (
 
                     let reopened = expectValue "reopen" third
                     Vitest.expect(reopened.SessionId).not.toBe hosted.SessionId
-                    Vitest.expect(reopened.Binding).toEqual persisted
+                    Vitest.expect(reopened.Repository.Descriptor).toEqual hosted.Repository.Descriptor
                 })
         )
 
@@ -255,36 +249,24 @@ Vitest.describe (
                     let firstSession = expectValue "first open" firstResult
                     let secondSession = expectValue "second open" secondResult
                     Vitest.expect(secondSession.SessionId).toBe firstSession.SessionId
-                    Vitest.expect(fixture.Host.RunningOperationIds firstSession.Binding.WorkspaceRoot).toEqual [||]
+
+                    Vitest.expect(fixture.Host.RunningOperationIds firstSession.WorkspaceRoot).toEqual [||]
                 })
         )
 
         Vitest.test (
-            "a renamed vault closes its session and its binding follows the new root",
+            "a renamed vault closes its session",
             fun () ->
                 withFixture (fun fixture -> promise {
                     let! opened =
                         fixture.Host.OpenSession(fixture.RepoRoot, detached "open")
                         |> Async.StartAsPromise
 
-                    let hosted = expectValue "open" opened
-                    let renamedRoot = join [| fixture.Root; "renamed" |]
+                    expectValue "open" opened |> ignore
 
-                    let! moved =
-                        fixture.Host.WorkspaceRenamed(fixture.RepoRoot, renamedRoot)
-                        |> Async.StartAsPromise
-
-                    Vitest.expect(moved).toEqual (Ok())
+                    do! fixture.Host.WorkspaceRenamed fixture.RepoRoot |> Async.StartAsPromise
 
                     Vitest.expect((fixture.Host.TryGetSession fixture.RepoRoot).IsNone).toBe true
-                    Vitest.expect(fixture.Runtime.Bindings.TryFind fixture.RepoRoot).toEqual None
-
-                    let moved =
-                        fixture.Runtime.Bindings.TryFind renamedRoot
-                        |> Option.defaultWith (fun () -> failwith "Binding did not follow the rename.")
-
-                    Vitest.expect(moved.WorkspaceRoot).toBe renamedRoot
-                    Vitest.expect(moved.Location).toEqual hosted.Binding.Location
                 })
         )
 
@@ -415,10 +397,7 @@ Vitest.describe (
             "the diff window owner is the window registered for the operation, else unknown",
             fun () ->
                 let runtime =
-                    createRuntime
-                        "settings"
-                        VersionControlService.LakeFs.LakeFsCredentials.unconfigured
-                        (memoryBindings ())
+                    createRuntime "settings" VersionControlService.LakeFs.LakeFsCredentials.unconfigured
 
                 let host = WorkspaceSessionHost.WorkspaceSessionHost(runtime)
                 WorkspaceSessionHost.initialize host
@@ -513,21 +492,16 @@ Vitest.describe (
                     let hosted = expectValue "open" opened
 
                     let tracked =
-                        fixture.Host.BeginOperation(
-                            "op-cancel",
-                            Some hosted.Binding.WorkspaceRoot,
-                            None,
-                            false,
-                            ignore
-                        )
+                        fixture.Host.BeginOperation("op-cancel", Some hosted.WorkspaceRoot, None, false, ignore)
 
                     fixture.Host.Cancel("op-cancel", None) |> ignore
 
-                    let synchronization =
-                        hosted.Session.Synchronization
-                        |> Option.defaultWith (fun () -> failwith "no sync service")
+                    let refresh =
+                        match hosted.Provider.Functions.Synchronization.Refresh with
+                        | Implemented refresh -> refresh
+                        | Missing _ -> failwith "no sync service"
 
-                    let! refreshed = synchronization.Refresh tracked.Context |> Async.StartAsPromise
+                    let! refreshed = refresh hosted.Repository tracked.Context |> Async.StartAsPromise
                     tracked.Complete()
                     let failure = expectFailure "canceled refresh" refreshed
                     Vitest.expect(failure.Category).toEqual Canceled
@@ -609,149 +583,144 @@ let private openStartResolvers =
 let private partialOpenFailures =
     System.Collections.Generic.Dictionary<string, OperationFailure>()
 
-/// Two fake providers: "fake.core" owns coreOnlyRoot and opens a core-only session,
+/// The repositories the fake Bind returned, and the repositories that reached Close of the fake providers.
+let private boundRepositories = ResizeArray<Repository>()
+let private closedRepositories = ResizeArray<Repository>()
+
+/// Two fake providers: "git" owns coreOnlyRoot and opens a repository that has a few functions,
 /// "fake.broken" owns failingRoot, fails to open and reports a failing dependency check.
 let private fakeProviderRuntimeWithStoragePolicy
     (coreOnlyRoot: string)
     (failingRoot: string)
-    (storagePolicy: StoragePolicyService option)
-    (objectMaterialization: ObjectMaterializationService option)
+    (storagePolicy: StoragePolicyFunctions)
+    (objectMaterialization: ObjectMaterializationFunctions)
     : VersionControlRuntime.VersionControlRuntime =
     let providerId id =
         ProviderId.tryCreate id |> Result.defaultWith failwith
 
-    let unsupported () = async { return Failed(OperationFailure.create Unsupported "operation_not_supported" "fake") }
+    // A bind retargets the location of its folder, and the next open of the folder reports it,
+    // like a provider that reads the location from the folder.
+    let boundLocations =
+        System.Collections.Generic.Dictionary<string, RepositoryLocation>()
 
-    let bindingFor id root : WorkspaceBinding = {
-        SchemaVersion = WorkspaceBinding.CurrentSchemaVersion
-        ProviderId = providerId id
-        WorkspaceRoot = root
-        ProviderStateRef = None
-        Location = {
+    let repositoryFor id root : Repository =
+        let location: RepositoryLocation =
+            match boundLocations.TryGetValue(ProviderResolver.normalizePath root) with
+            | true, bound -> bound
+            | _ -> {
+                ProviderId = providerId id
+                DisplayName = None
+                ProviderLocation = root
+                ConnectionProfileId = None
+              }
+
+        let descriptor: RepositoryDescriptor = {
             ProviderId = providerId id
-            DisplayName = None
-            ProviderLocation = root
-            ConnectionProfileId = None
+            RepositoryRoot = root
+            Location = Some location
         }
-        ConnectionProfileId = None
-    }
 
-    let coreStatus: WorkspaceStatus = {
+        FakeRepository(descriptor) :> Repository
+
+    let coreStatus: RepositoryStatus = {
         CurrentRef = None
-        WorkspaceVersion = "v1"
+        RepositoryVersion = "v1"
         Changes = [||]
         ActiveConflictSession = None
         Synchronization = None
     }
 
-    let core: CoreVersionControl = {
-        GetStatus = fun _ -> async { return OperationResult.succeeded coreStatus }
-        ListRefs = fun _ -> async { return OperationResult.succeeded [||] }
-        CreateRef = fun _ _ -> unsupported ()
-        PreflightSwitchRef = fun _ _ -> unsupported ()
-        SwitchRef = fun _ _ -> unsupported ()
-        CreateRevision = fun _ _ -> unsupported ()
-        RestorePaths =
-            fun restoreRequest _ -> async {
-                // A restore waits until the test releases its first path, so two
-                // restores can overlap and the busy flag can be observed in between.
-                match restoreRequest.Paths |> Array.tryHead |> Option.map RepositoryPath.value with
-                | Some path when restoreGates.ContainsKey path ->
-                    do! Async.AwaitPromise restoreGates.[path]
-                    return OperationResult.succeeded ()
-                | _ -> return OperationResult.succeeded ()
-            }
-        GetDiffSummary = fun _ -> async { return OperationResult.succeeded { Entries = [||] } }
+    let coreFunctions: ProviderFunctions = {
+        missingFunctions with
+            GetStatus = Implemented(fun _ _ -> async { return OperationResult.succeeded coreStatus })
+            ListRefs = Implemented(fun _ _ -> async { return OperationResult.succeeded [||] })
+            RestorePaths =
+                Implemented(fun _ restoreRequest _ -> async {
+                    // A restore waits until the test releases its first path, so two
+                    // restores can overlap and the busy flag can be observed in between.
+                    match restoreRequest.Paths |> Array.tryHead |> Option.map RepositoryPath.value with
+                    | Some path when restoreGates.ContainsKey path ->
+                        do! Async.AwaitPromise restoreGates.[path]
+                        return OperationResult.succeeded ()
+                    | _ -> return OperationResult.succeeded ()
+                })
+            GetDiffSummary = Implemented(fun _ _ -> async { return OperationResult.succeeded { Entries = [||] } })
+            ObjectMaterialization = objectMaterialization
+            StoragePolicy = storagePolicy
     }
 
-    let factory
+    let provider
         id
         root
-        (openResult: WorkspaceBinding -> OperationResult<WorkspaceSession>)
+        (functions: ProviderFunctions)
+        (openResult: OpenRequest -> OperationResult<Repository>)
         (dependencies: OperationResult<DependencyStatus[]>)
-        : ProviderFactory =
-        {
-            Id = providerId id
-            Probe =
-                fun path -> async {
-                    // The resolver probes with a normalized path; the fixture root is a native path.
-                    let detected = WorkspaceBindingStore.rootsEqual CaseInsensitive path root
+        : ProviderComposition.AppProvider =
+        fakeProvider
+            (providerId id)
+            (fun path -> async {
+                // The host probes with a normalized path. The fixture root is a native path.
+                let detected = ProviderComposition.rootsEqual CaseInsensitive path root
 
-                    return if detected then Detected(root, 50, None) else NotDetected
-                }
-            VerifyLocation = fun _ _ -> unsupported ()
-            Initialize = fun _ _ -> unsupported ()
-            Clone = fun _ _ -> unsupported ()
-            Adopt =
-                fun adoptRequest _ -> async {
-                    return OperationResult.succeeded (bindingFor id adoptRequest.WorkspaceRoot)
-                }
-            Bind =
-                fun bindRequest _ -> async {
-                    // A partial bind: the location is retargeted, but the provider reports a
-                    // failure of a later step, so the host must still reopen the session.
-                    let binding = {
-                        bindingFor id bindRequest.WorkspaceRoot with
-                            Location = bindRequest.Location
-                    }
+                return if detected then Detected(root, 50, None) else NotDetected
+            })
+            (fun closed -> async { closedRepositories.Add closed })
+            {
+                functions with
+                    Bind =
+                        Implemented(fun bindRequest _ -> async {
+                            // A partial bind: the location is retargeted, but the provider reports a
+                            // failure of a later step, so the host must still reopen the session.
+                            boundLocations.[ProviderResolver.normalizePath bindRequest.RepositoryRoot] <-
+                                bindRequest.Location
 
-                    return
-                        PartiallySucceeded(
-                            OperationOutcome.performed binding,
-                            {
-                                OperationFailure.create ProviderError "fake_bind_partial" "The fake fetch failed." with
-                                    StateChanged = true
-                            }
-                        )
-                }
-            Open =
-                fun binding _ -> async {
-                    let rootKey = ProviderResolver.normalizePath binding.WorkspaceRoot
+                            let bound = repositoryFor id bindRequest.RepositoryRoot
+                            boundRepositories.Add bound
 
-                    match openStartResolvers.TryGetValue rootKey with
-                    | true, signal ->
-                        signal ()
-                        openStartResolvers.Remove rootKey |> ignore
-                    | _ -> ()
+                            return
+                                PartiallySucceeded(
+                                    OperationOutcome.performed bound,
+                                    {
+                                        OperationFailure.create
+                                            ProviderError
+                                            "fake_bind_partial"
+                                            "The fake fetch failed." with
+                                            StateChanged = true
+                                    }
+                                )
+                        })
+                    Open =
+                        Implemented(fun openRequest _ -> async {
+                            let rootKey = ProviderResolver.normalizePath openRequest.RepositoryRoot
 
-                    match openGates.TryGetValue rootKey with
-                    | true, gate -> do! Async.AwaitPromise gate
-                    | _ -> ()
+                            match openStartResolvers.TryGetValue rootKey with
+                            | true, signal ->
+                                signal ()
+                                openStartResolvers.Remove rootKey |> ignore
+                            | _ -> ()
 
-                    let result = openResult binding
+                            match openGates.TryGetValue rootKey with
+                            | true, gate -> do! Async.AwaitPromise gate
+                            | _ -> ()
 
-                    match partialOpenFailures.TryGetValue rootKey, result with
-                    | (true, failure), Succeeded outcome -> return PartiallySucceeded(outcome, failure)
-                    | (true, failure), PartiallySucceeded(outcome, _) -> return PartiallySucceeded(outcome, failure)
-                    | _, result -> return result
-                }
-            CheckDependencies = fun _ -> async { return dependencies }
-            InstallDependency = fun _ _ -> unsupported ()
-        }
+                            let result = openResult openRequest
+
+                            match partialOpenFailures.TryGetValue rootKey, result with
+                            | (true, failure), Succeeded outcome -> return PartiallySucceeded(outcome, failure)
+                            | (true, failure), PartiallySucceeded(outcome, _) ->
+                                return PartiallySucceeded(outcome, failure)
+                            | _, result -> return result
+                        })
+                    CheckDependencies = Implemented(fun _ -> async { return dependencies })
+            }
 
     // Registered under the git id so an https location resolves to it.
-    let coreFactory =
-        factory
+    let coreProvider =
+        provider
             "git"
             coreOnlyRoot
-            (fun binding ->
-                let session =
-                    WorkspaceSession.createCoreOnly
-                        {
-                            ProviderId = binding.ProviderId
-                            WorkspaceRoot = binding.WorkspaceRoot
-                            Location = Some binding.Location
-                        }
-                        core
-
-                let session = {
-                    session with
-                        ObjectMaterialization = objectMaterialization
-                        StoragePolicy = storagePolicy
-                }
-
-                OperationResult.succeeded session
-            )
+            coreFunctions
+            (fun openRequest -> OperationResult.succeeded (repositoryFor "git" openRequest.RepositoryRoot))
             (OperationResult.succeeded [|
                 {
                     Component = "fake-tool"
@@ -763,42 +732,43 @@ let private fakeProviderRuntimeWithStoragePolicy
                 }
             |])
 
-    let brokenFactory =
-        factory
+    let brokenProvider =
+        provider
             "fake.broken"
             failingRoot
+            missingFunctions
             (fun _ -> Failed(OperationFailure.create DependencyMissing "tool_missing" "The fake tool is missing."))
             (Failed(OperationFailure.create ProviderError "check_failed" "The fake check failed."))
 
     {
-        Catalog = ProviderComposition.createCatalog [ coreFactory; brokenFactory ]
-        Bindings = memoryBindings ()
+        Providers = [| coreProvider; brokenProvider |]
         PathCaseSensitivity = CaseInsensitive
         SessionDefaults = UserDefaults.builtInSessionDefaults
     }
 
 let private fakeProviderRuntime coreOnlyRoot failingRoot =
-    fakeProviderRuntimeWithStoragePolicy coreOnlyRoot failingRoot None None
+    fakeProviderRuntimeWithStoragePolicy
+        coreOnlyRoot
+        failingRoot
+        missingFunctions.StoragePolicy
+        missingFunctions.ObjectMaterialization
 
 let private fakeProviderRuntimeThatThrowsOnInitialize coreOnlyRoot failingRoot =
     let runtime = fakeProviderRuntime coreOnlyRoot failingRoot
 
-    let factories =
-        ProviderResolver.factories runtime.Catalog
-        |> Array.map (fun factory ->
-            if ProviderId.value factory.Id = "git" then
-                {
-                    factory with
-                        Initialize = fun _ _ -> raise (exn "The fake provider initialization threw.")
+    let providers =
+        runtime.Providers
+        |> Array.map (fun provider ->
+            if provider.Id = ProviderComposition.gitProviderId then
+                fakeProvider provider.Id provider.Provider.Probe provider.Provider.Close {
+                    provider.Functions with
+                        Initialize = Implemented(fun _ _ -> raise (exn "The fake provider initialization threw."))
                 }
             else
-                factory
+                provider
         )
 
-    {
-        runtime with
-            Catalog = ProviderComposition.createCatalog (Array.toList factories)
-    }
+    { runtime with Providers = providers }
 
 let private withCreateArcSetup
     (tempPrefix: string)
@@ -854,11 +824,11 @@ let private withCreateArcSetup
             WorkspaceSessionHost.resetForTests ()
     }
 
-/// Runs the body against the version control api of a window whose session offers the given
-/// object materialization service.
+/// Runs the body against the version control api of a window whose provider has the given
+/// object materialization functions.
 let private withObjectApi
     (windowId: int)
-    (service: ObjectMaterializationService option)
+    (service: ObjectMaterializationFunctions)
     (body: IVersionControlApi -> JS.Promise<unit>)
     =
     promise {
@@ -867,7 +837,11 @@ let private withObjectApi
         Main.Bindings.Filesystem.mkdirSync workspace (Main.Bindings.Filesystem.MkdirOptions(recursive = true))
 
         let runtime =
-            fakeProviderRuntimeWithStoragePolicy workspace (join [| root; "unused" |]) None service
+            fakeProviderRuntimeWithStoragePolicy
+                workspace
+                (join [| root; "unused" |])
+                missingFunctions.StoragePolicy
+                service
 
         let host = WorkspaceSessionHost.WorkspaceSessionHost(runtime)
         WorkspaceSessionHost.initialize host
@@ -954,25 +928,31 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "a NoOp result refreshes the tree only when AlwaysRefreshTree is true",
+            "an Unchanged result refreshes the tree only when AlwaysRefreshTree is true",
             fun () -> promise {
                 let! root = createTempDirectoryAsync "arcitisa-vc-noop-refresh-"
                 let workspace = join [| root; "workspace" |]
                 Main.Bindings.Filesystem.mkdirSync workspace (Main.Bindings.Filesystem.MkdirOptions(recursive = true))
                 writeText (join [| workspace; "object.txt" |]) "object\n"
 
-                let objectMaterialization: ObjectMaterializationService = {
-                    ListObjects = fun _ -> async { return OperationResult.succeeded [||] }
-                    Materialize = fun _ _ -> async { return OperationResult.noOp (Some "already in state") () }
-                    Dematerialize = fun _ _ -> async { return OperationResult.noOp (Some "already in state") () }
+                let objectMaterialization: ObjectMaterializationFunctions = {
+                    ListObjects = Implemented(fun _ _ -> async { return OperationResult.succeeded [||] })
+                    Materialize =
+                        Implemented(fun _ _ _ -> async {
+                            return OperationResult.unchanged (Some "already in state") ()
+                        })
+                    Dematerialize =
+                        Implemented(fun _ _ _ -> async {
+                            return OperationResult.unchanged (Some "already in state") ()
+                        })
                 }
 
                 let runtime =
                     fakeProviderRuntimeWithStoragePolicy
                         workspace
                         (join [| root; "unused" |])
-                        None
-                        (Some objectMaterialization)
+                        missingFunctions.StoragePolicy
+                        objectMaterialization
 
                 let host = WorkspaceSessionHost.WorkspaceSessionHost(runtime)
                 WorkspaceSessionHost.initialize host
@@ -1033,22 +1013,22 @@ Vitest.describe (
                     OperationFailure.create ProviderError "fake_batch_failed" "The fake batch failed."
                     |> OperationFailure.withDetails [| "b.bin: no space" |]
 
-                let objectMaterialization: ObjectMaterializationService = {
-                    ListObjects = fun _ -> async { return OperationResult.succeeded [||] }
+                let objectMaterialization: ObjectMaterializationFunctions = {
+                    ListObjects = Implemented(fun _ _ -> async { return OperationResult.succeeded [||] })
                     Materialize =
-                        fun paths _ -> async {
+                        Implemented(fun _ paths _ -> async {
                             received.AddRange(paths |> Array.map RepositoryPath.value)
                             return Failed batchFailure
-                        }
-                    Dematerialize = fun _ _ -> async { return OperationResult.succeeded () }
+                        })
+                    Dematerialize = Implemented(fun _ _ _ -> async { return OperationResult.succeeded () })
                 }
 
                 let runtime =
                     fakeProviderRuntimeWithStoragePolicy
                         workspace
                         (join [| root; "unused" |])
-                        None
-                        (Some objectMaterialization)
+                        missingFunctions.StoragePolicy
+                        objectMaterialization
 
                 let host = WorkspaceSessionHost.WorkspaceSessionHost(runtime)
                 WorkspaceSessionHost.initialize host
@@ -1095,19 +1075,19 @@ Vitest.describe (
                     OperationFailure.create ProviderError "fake_dematerialize_failed" "The fake free failed."
                     |> OperationFailure.withDetails [| "a.bin: busy" |]
 
-                let service: ObjectMaterializationService = {
-                    ListObjects = fun _ -> async { return OperationResult.succeeded [||] }
-                    Materialize = fun _ _ -> async { return OperationResult.succeeded () }
+                let service: ObjectMaterializationFunctions = {
+                    ListObjects = Implemented(fun _ _ -> async { return OperationResult.succeeded [||] })
+                    Materialize = Implemented(fun _ _ _ -> async { return OperationResult.succeeded () })
                     Dematerialize =
-                        fun paths _ -> async {
+                        Implemented(fun _ paths _ -> async {
                             received.AddRange(paths |> Array.map RepositoryPath.value)
                             return Failed batchFailure
-                        }
+                        })
                 }
 
                 withObjectApi
                     94
-                    (Some service)
+                    service
                     (fun api -> promise {
                         let! result =
                             api.dematerializeObjects {
@@ -1128,23 +1108,23 @@ Vitest.describe (
             fun () ->
                 let mutable calls = 0
 
-                let service: ObjectMaterializationService = {
-                    ListObjects = fun _ -> async { return OperationResult.succeeded [||] }
+                let service: ObjectMaterializationFunctions = {
+                    ListObjects = Implemented(fun _ _ -> async { return OperationResult.succeeded [||] })
                     Materialize =
-                        fun _ _ -> async {
+                        Implemented(fun _ _ _ -> async {
                             calls <- calls + 1
                             return OperationResult.succeeded ()
-                        }
+                        })
                     Dematerialize =
-                        fun _ _ -> async {
+                        Implemented(fun _ _ _ -> async {
                             calls <- calls + 1
                             return OperationResult.succeeded ()
-                        }
+                        })
                 }
 
                 withObjectApi
                     95
-                    (Some service)
+                    service
                     (fun api -> promise {
                         let paths = [| "ok.bin"; "../first.bin"; "../second.bin" |]
 
@@ -1176,7 +1156,7 @@ Vitest.describe (
             fun () ->
                 withObjectApi
                     96
-                    None
+                    missingFunctions.ObjectMaterialization
                     (fun api -> promise {
                         let! materialize =
                             api.materializeObjects {
@@ -1223,24 +1203,25 @@ Vitest.describe (
                             "fake_open_partial"
                             "The fake provider opened with a warning."
 
-                    let storagePolicy: StoragePolicyService = {
-                        SetPathPolicy =
-                            fun _ _ _ -> async {
-                                return Failed(OperationFailure.create Unsupported "operation_not_supported" "fake")
-                            }
-                        GetSettings =
-                            fun _ -> async {
-                                return
-                                    OperationResult.succeeded {
-                                        AutoPolicyThresholdMb = Some 1
-                                        MaterializeLargeObjects = false
-                                    }
-                            }
-                        SetSettings = fun _ _ -> async { return Failed settingsFailure }
+                    let storagePolicy: StoragePolicyFunctions = {
+                        missingFunctions.StoragePolicy with
+                            GetSettings =
+                                Implemented(fun _ _ -> async {
+                                    return
+                                        OperationResult.succeeded {
+                                            AutoPolicyThresholdMb = Some 1
+                                            MaterializeLargeObjects = false
+                                        }
+                                })
+                            SetSettings = Implemented(fun _ _ _ -> async { return Failed settingsFailure })
                     }
 
                     let fakeRuntime =
-                        fakeProviderRuntimeWithStoragePolicy coreOnlyRoot failingRoot (Some storagePolicy) None
+                        fakeProviderRuntimeWithStoragePolicy
+                            coreOnlyRoot
+                            failingRoot
+                            storagePolicy
+                            missingFunctions.ObjectMaterialization
 
                     let fakeHost = WorkspaceSessionHost.WorkspaceSessionHost(fakeRuntime)
                     WorkspaceSessionHost.initialize fakeHost
@@ -1352,34 +1333,35 @@ Vitest.describe (
                     let gate, releaseGate = deferred ()
                     let mutable calls = 0
 
-                    let storagePolicy: StoragePolicyService = {
-                        SetPathPolicy =
-                            fun _ _ _ -> async {
-                                return Failed(OperationFailure.create Unsupported "operation_not_supported" "fake")
-                            }
-                        GetSettings =
-                            fun _ -> async {
-                                return
-                                    OperationResult.succeeded {
-                                        AutoPolicyThresholdMb = Some 1
-                                        MaterializeLargeObjects = false
-                                    }
-                            }
-                        SetSettings =
-                            fun _ _ -> async {
-                                calls <- calls + 1
+                    let storagePolicy: StoragePolicyFunctions = {
+                        missingFunctions.StoragePolicy with
+                            GetSettings =
+                                Implemented(fun _ _ -> async {
+                                    return
+                                        OperationResult.succeeded {
+                                            AutoPolicyThresholdMb = Some 1
+                                            MaterializeLargeObjects = false
+                                        }
+                                })
+                            SetSettings =
+                                Implemented(fun _ _ _ -> async {
+                                    calls <- calls + 1
 
-                                // The push of the defaults at open answers at once. The
-                                // explicit change waits, so the close lands during it.
-                                if calls > 1 then
-                                    do! Async.AwaitPromise gate
+                                    // The push of the defaults at open answers at once. The
+                                    // explicit change waits, so the close lands during it.
+                                    if calls > 1 then
+                                        do! Async.AwaitPromise gate
 
-                                return OperationResult.succeeded ()
-                            }
+                                    return OperationResult.succeeded ()
+                                })
                     }
 
                     let fakeRuntime =
-                        fakeProviderRuntimeWithStoragePolicy coreOnlyRoot failingRoot (Some storagePolicy) None
+                        fakeProviderRuntimeWithStoragePolicy
+                            coreOnlyRoot
+                            failingRoot
+                            storagePolicy
+                            missingFunctions.ObjectMaterialization
 
                     let fakeHost = WorkspaceSessionHost.WorkspaceSessionHost(fakeRuntime)
                     WorkspaceSessionHost.initialize fakeHost
@@ -1435,34 +1417,35 @@ Vitest.describe (
                     let gate, releaseGate = deferred ()
                     let mutable calls = 0
 
-                    let storagePolicy: StoragePolicyService = {
-                        SetPathPolicy =
-                            fun _ _ _ -> async {
-                                return Failed(OperationFailure.create Unsupported "operation_not_supported" "fake")
-                            }
-                        GetSettings =
-                            fun _ -> async {
-                                return
-                                    OperationResult.succeeded {
-                                        AutoPolicyThresholdMb = Some 1
-                                        MaterializeLargeObjects = false
-                                    }
-                            }
-                        SetSettings =
-                            fun _ _ -> async {
-                                calls <- calls + 1
+                    let storagePolicy: StoragePolicyFunctions = {
+                        missingFunctions.StoragePolicy with
+                            GetSettings =
+                                Implemented(fun _ _ -> async {
+                                    return
+                                        OperationResult.succeeded {
+                                            AutoPolicyThresholdMb = Some 1
+                                            MaterializeLargeObjects = false
+                                        }
+                                })
+                            SetSettings =
+                                Implemented(fun _ _ _ -> async {
+                                    calls <- calls + 1
 
-                                // The push of the defaults at open answers at once. The
-                                // explicit change waits, so the checkbox write lands during it.
-                                if calls > 1 then
-                                    do! Async.AwaitPromise gate
+                                    // The push of the defaults at open answers at once. The
+                                    // explicit change waits, so the checkbox write lands during it.
+                                    if calls > 1 then
+                                        do! Async.AwaitPromise gate
 
-                                return OperationResult.succeeded ()
-                            }
+                                    return OperationResult.succeeded ()
+                                })
                     }
 
                     let fakeRuntime =
-                        fakeProviderRuntimeWithStoragePolicy coreOnlyRoot failingRoot (Some storagePolicy) None
+                        fakeProviderRuntimeWithStoragePolicy
+                            coreOnlyRoot
+                            failingRoot
+                            storagePolicy
+                            missingFunctions.ObjectMaterialization
 
                     let fakeHost = WorkspaceSessionHost.WorkspaceSessionHost(fakeRuntime)
                     WorkspaceSessionHost.initialize fakeHost
@@ -1503,6 +1486,76 @@ Vitest.describe (
         )
 
         Vitest.test (
+            "a folder keeps its one opened repository when the provider spells the root differently",
+            fun () -> promise {
+                let folder = "C:/arcs/link"
+                let mutable opens = 0
+
+                let descriptor: RepositoryDescriptor = {
+                    ProviderId = ProviderId.tryCreate "git" |> Result.defaultWith failwith
+                    RepositoryRoot = "D:/storage/real"
+                    Location = None
+                }
+
+                let provider =
+                    fakeProvider
+                        descriptor.ProviderId
+                        (fun path -> async { return Detected(path, 50, None) })
+                        (fun _ -> async { return () })
+                        {
+                            missingFunctions with
+                                Open =
+                                    Implemented(fun _ _ -> async {
+                                        opens <- opens + 1
+                                        return OperationResult.succeeded (FakeRepository(descriptor) :> Repository)
+                                    })
+                                StoragePolicy = {
+                                    missingFunctions.StoragePolicy with
+                                        SetSettings =
+                                            Implemented(fun _ _ _ -> async { return OperationResult.succeeded () })
+                                }
+                        }
+
+                let host =
+                    WorkspaceSessionHost.WorkspaceSessionHost(
+                        {
+                            Providers = [| provider |]
+                            PathCaseSensitivity = CaseInsensitive
+                            SessionDefaults = UserDefaults.builtInSessionDefaults
+                        }
+                    )
+
+                let! first = host.OpenSession(folder, detached "open-link-1") |> Async.StartAsPromise
+                let! second = host.OpenSession(folder, detached "open-link-2") |> Async.StartAsPromise
+
+                let sessionIdOf (result: OperationResult<WorkspaceSessionHost.HostedSession>) =
+                    match result with
+                    | Succeeded outcome -> outcome.Value.SessionId
+                    | _ -> failwith "The open did not succeed."
+
+                Vitest.expect(sessionIdOf first).toBe (sessionIdOf second)
+
+                Vitest.expect(opens).toBe 1
+                Vitest.expect(host.TryGetSession folder |> Option.isSome).toBe true
+
+                let! changed =
+                    host.SetSettings(
+                        folder,
+                        {
+                            AutoTrackThresholdMb = 9
+                            DownloadLargeFiles = true
+                            DiffIndexingLimitMb = 2048
+                        },
+                        detached "settings-link"
+                    )
+                    |> Async.StartAsPromise
+
+                expectValue "settings change" changed |> ignore
+                Vitest.expect((host.GetSettings folder).AutoTrackThresholdMb).toBe 9
+            }
+        )
+
+        Vitest.test (
             "the first call after a partial open reports the settings failure once",
             fun () ->
                 withFixture (fun fixture -> promise {
@@ -1520,24 +1573,25 @@ Vitest.describe (
                             "fake_default_settings_failed"
                             "The fake provider rejected the default settings."
 
-                    let storagePolicy: StoragePolicyService = {
-                        SetPathPolicy =
-                            fun _ _ _ -> async {
-                                return Failed(OperationFailure.create Unsupported "operation_not_supported" "fake")
-                            }
-                        GetSettings =
-                            fun _ -> async {
-                                return
-                                    OperationResult.succeeded {
-                                        AutoPolicyThresholdMb = Some 1
-                                        MaterializeLargeObjects = false
-                                    }
-                            }
-                        SetSettings = fun _ _ -> async { return Failed settingsFailure }
+                    let storagePolicy: StoragePolicyFunctions = {
+                        missingFunctions.StoragePolicy with
+                            GetSettings =
+                                Implemented(fun _ _ -> async {
+                                    return
+                                        OperationResult.succeeded {
+                                            AutoPolicyThresholdMb = Some 1
+                                            MaterializeLargeObjects = false
+                                        }
+                                })
+                            SetSettings = Implemented(fun _ _ _ -> async { return Failed settingsFailure })
                     }
 
                     let fakeRuntime =
-                        fakeProviderRuntimeWithStoragePolicy coreOnlyRoot failingRoot (Some storagePolicy) None
+                        fakeProviderRuntimeWithStoragePolicy
+                            coreOnlyRoot
+                            failingRoot
+                            storagePolicy
+                            missingFunctions.ObjectMaterialization
 
                     let fakeHost = WorkspaceSessionHost.WorkspaceSessionHost(fakeRuntime)
                     WorkspaceSessionHost.initialize fakeHost
@@ -1574,6 +1628,7 @@ Vitest.describe (
                     Vitest.expect(session.ProviderId).toBe "git"
                     Vitest.expect(session.Services.Synchronization).toBe true
                     Vitest.expect(session.Services.ConflictResolution).toBe true
+                    Vitest.expect(session.Services.History).toBe true
                     Vitest.expect(session.WorkspaceRoot.Replace('\\', '/')).toBe (fixture.RepoRoot.Replace('\\', '/'))
 
                     writeText (join [| fixture.RepoRoot; "assay.txt" |]) "assay\n"
@@ -2287,7 +2342,7 @@ Vitest.describe (
                     let! again = api.clearStaleLock (request "clear-lock-2")
                     let noOp = expectDtoValue "clear lock again" again
                     Vitest.expect(noOp.Warnings).toEqual [||]
-                    Vitest.expect(noOp.Effect).toEqual (OperationEffectDto.NoOp(Some "no stale lock"))
+                    Vitest.expect(noOp.Effect).toEqual (OperationEffectDto.Unchanged(Some "no stale lock"))
 
                     let otherWorkspace = join [| fixture.Root; "other-workspace" |]
 
@@ -2299,7 +2354,7 @@ Vitest.describe (
                     let unrelatedOutcome =
                         expectDtoValue "clear lock with unrelated clone" unrelatedClear
 
-                    Vitest.expect(unrelatedOutcome.Effect).toEqual (OperationEffectDto.NoOp(Some "no stale lock"))
+                    Vitest.expect(unrelatedOutcome.Effect).toEqual (OperationEffectDto.Unchanged(Some "no stale lock"))
                     unrelatedClone.Complete()
 
                     let sameWorkspaceOperation =
@@ -2318,7 +2373,7 @@ Vitest.describe (
                         |> Option.defaultWith (fun () -> failwith "session missing")
 
                     let other =
-                        fixture.Host.BeginOperation("busy", Some session.Binding.WorkspaceRoot, None, false, ignore)
+                        fixture.Host.BeginOperation("busy", Some session.WorkspaceRoot, None, false, ignore)
 
                     let! refused = api.clearStaleLock (request "clear-lock-3")
                     other.Complete()
@@ -2349,7 +2404,7 @@ Vitest.describe (
                     Main.IPC.IVersionControlApi.waitForStaleLock <- previousWait
 
                     let outcome = expectDtoValue "clear disappeared lock" cleared
-                    Vitest.expect(outcome.Effect).toEqual (OperationEffectDto.NoOp(Some "no stale lock"))
+                    Vitest.expect(outcome.Effect).toEqual (OperationEffectDto.Unchanged(Some "no stale lock"))
                     Vitest.expect(outcome.Warnings).toEqual [||]
                     Vitest.expect(Main.Bindings.Filesystem.existsSync lockPath).toBe false
                 })
@@ -2378,12 +2433,6 @@ Vitest.describe (
                     Vitest
                         .expect(sessionAfter.Location |> Option.map _.ProviderLocation)
                         .toEqual (Some "https://example.invalid/never/reached.git")
-
-                    let persisted =
-                        fixture.Runtime.Bindings.TryFind fixture.RepoRoot
-                        |> Option.defaultWith (fun () -> failwith "binding missing")
-
-                    Vitest.expect(persisted.Location.ProviderLocation).toBe "https://example.invalid/never/reached.git"
 
                     Vitest.expect(git fixture.RepoRoot [ "remote"; "get-url"; "origin" ] |> _.Trim()).toBe
                         "https://example.invalid/never/reached.git"
@@ -2556,6 +2605,50 @@ Vitest.describe (
         )
 
         Vitest.test (
+            "listRevisions returns the commits of the repository and getRevisionChanges the files of one",
+            fun () ->
+                withFixture (fun fixture -> promise {
+                    registerVault 65 fixture.RepoRoot |> ignore
+                    let api = Main.IPC.IVersionControlApi.api (ipcEvent 65)
+
+                    let baseId = git fixture.RepoRoot [ "rev-parse"; "HEAD" ] |> _.Trim()
+                    writeText (join [| fixture.RepoRoot; "second.txt" |]) "second\n"
+                    git fixture.RepoRoot [ "add"; "second.txt" ] |> ignore
+                    git fixture.RepoRoot [ "commit"; "-m"; "second" ] |> ignore
+                    let secondId = git fixture.RepoRoot [ "rev-parse"; "HEAD" ] |> _.Trim()
+
+                    let! listed =
+                        api.listRevisions {
+                            OperationId = "history"
+                            Cursor = None
+                            Limit = 10
+                        }
+
+                    let page = (expectDtoValue "listRevisions" listed).Value
+                    Vitest.expect(page.Revisions |> Array.map _.Id).toEqual [| secondId; baseId |]
+                    Vitest.expect(page.Revisions |> Array.map _.Summary).toEqual [| "second"; "base" |]
+                    Vitest.expect(page.Revisions.[0].ParentIds).toEqual [| baseId |]
+
+                    Vitest.expect(page.Revisions |> Array.map _.Publication).toEqual [|
+                        PublicationStateDto.LocalOnly
+                        PublicationStateDto.Published
+                    |]
+
+                    Vitest.expect(page.NextCursor).toEqual None
+
+                    let! changed =
+                        api.getRevisionChanges {
+                            OperationId = "history-changes"
+                            Revision = secondId
+                        }
+
+                    let changes = (expectDtoValue "getRevisionChanges" changed).Value
+                    Vitest.expect(changes |> Array.map _.Path).toEqual [| "second.txt" |]
+                    Vitest.expect(changes |> Array.map _.Kind).toEqual [| FileChangeKindDto.Added |]
+                })
+        )
+
+        Vitest.test (
             "an absent optional service is reported with a stable code and an open failure keeps its provider code",
             fun () ->
                 withFixture (fun fixture -> promise {
@@ -2583,6 +2676,27 @@ Vitest.describe (
                         Vitest.expect(failure.Category).toEqual FailureCategoryDto.Unsupported
                         Vitest.expect(failure.Code).toBe VersionControlCodes.ServiceUnavailable
 
+                        let! page =
+                            api.listRevisions {
+                                OperationId = "history"
+                                Cursor = None
+                                Limit = 10
+                            }
+
+                        let! changes =
+                            api.getRevisionChanges {
+                                OperationId = "history-changes"
+                                Revision = "abc123"
+                            }
+
+                        for result in
+                            [
+                                expectDtoFailure "history without service" page
+                                expectDtoFailure "revision changes without service" changes
+                            ] do
+                            Vitest.expect(result.Category).toEqual FailureCategoryDto.Unsupported
+                            Vitest.expect(result.Code).toBe VersionControlCodes.ServiceUnavailable
+
                         registerVault 51 failingRoot |> ignore
                         let failingApi = Main.IPC.IVersionControlApi.api (ipcEvent 51)
                         let! info = failingApi.getSessionInfo (request "info-failing")
@@ -2594,10 +2708,9 @@ Vitest.describe (
                         let! dependencies = failingApi.checkDependencies (request "deps")
 
                         match dependencies with
-                        | Ok(OperationResultDto.PartiallySucceeded(outcome, failure)) ->
+                        | Ok(OperationResultDto.Succeeded outcome) ->
                             Vitest.expect(outcome.Value |> Array.map _.Component).toEqual [| "fake-tool" |]
-                            Vitest.expect(failure.Code).toBe "check_failed"
-                        | other -> failwith $"Expected a partial dependency report, got {other}"
+                        | other -> failwith $"Expected the report of the default provider, got {other}"
                     finally
                         WorkspaceSessionHost.initialize fixture.Host
                 })
@@ -2654,7 +2767,7 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "a partial bind reopens the session over the persisted binding and keeps the provider failure",
+            "a partial bind reopens the session and keeps the provider failure",
             fun () ->
                 withFixture (fun fixture -> promise {
                     let coreOnlyRoot = join [| fixture.Root; "core-bind" |]
@@ -2678,6 +2791,8 @@ Vitest.describe (
                         let api = Main.IPC.IVersionControlApi.api (ipcEvent 53)
                         let! before = api.getSessionInfo (request "info-before-bind")
                         let sessionBefore = (expectDtoValue "session before bind" before).Value
+                        boundRepositories.Clear()
+                        closedRepositories.Clear()
 
                         let! bound =
                             api.bindWorkspace {
@@ -2695,14 +2810,17 @@ Vitest.describe (
                                 .toEqual (Some "https://example.invalid/partial.git")
 
                             Vitest.expect(failure.Code).toBe "fake_bind_partial"
-                        | other -> failwith $"Expected a partial bind, got {other}"
 
-                        Vitest
-                            .expect(
-                                fakeRuntime.Bindings.TryFind coreOnlyRoot
-                                |> Option.map (fun binding -> binding.Location.ProviderLocation)
-                            )
-                            .toEqual (Some "https://example.invalid/partial.git")
+                            let provisioned = Seq.exactlyOne boundRepositories
+
+                            Vitest
+                                .expect(
+                                    closedRepositories
+                                    |> Seq.exists (fun closed -> obj.ReferenceEquals(closed, provisioned))
+                                )
+                                .toBe
+                                true
+                        | other -> failwith $"Expected a partial bind, got {other}"
                     finally
                         WorkspaceSessionHost.initialize fixture.Host
                 })
@@ -2971,7 +3089,7 @@ Vitest.describe (
             "a close timeout waits 30 seconds before approving the close",
             fun () -> promise {
                 let runtime =
-                    createRuntime "" VersionControlService.LakeFs.LakeFsCredentials.unconfigured (memoryBindings ())
+                    createRuntime "" VersionControlService.LakeFs.LakeFsCredentials.unconfigured
 
                 let host = WorkspaceSessionHost.WorkspaceSessionHost(runtime)
                 WorkspaceSessionHost.initialize host
@@ -3280,7 +3398,7 @@ Vitest.describe (
         )
 
         Vitest.test (
-            "initialize creates a bound git workspace and clone into a non-empty folder is refused",
+            "initialize creates a git workspace and clone into a non-empty folder is refused",
             fun () ->
                 withFixture (fun fixture -> promise {
                     let api = Main.IPC.IVersionControlApi.api (ipcEvent 46)
@@ -3296,12 +3414,16 @@ Vitest.describe (
                     let initializedRoot = (expectDtoValue "initialize" initialized).Value
                     Vitest.expect(initializedRoot.Replace('\\', '/')).toBe (fixture.PlainRoot.Replace('\\', '/'))
 
+                    let! opened =
+                        fixture.Host.OpenSession(fixture.PlainRoot, detached "open-initialized")
+                        |> Async.StartAsPromise
+
                     Vitest
                         .expect(
-                            fixture.Runtime.Bindings.TryFind fixture.PlainRoot
-                            |> Option.map (fun binding -> ProviderId.value binding.ProviderId)
+                            ProviderId.value (expectValue "open initialized" opened).Repository.Descriptor.ProviderId
                         )
-                        .toEqual (Some "git")
+                        .toBe
+                        "git"
 
                     Vitest.expect(Main.Bindings.Filesystem.existsSync (join [| fixture.PlainRoot; "keep.txt" |])).toBe
                         true
@@ -3340,11 +3462,11 @@ Vitest.describe (
         // TargetNotEmpty, OperationCanceled, BaseContentNotFound, InvalidLfsThreshold,
         // ServiceUnavailable, SessionUnavailable, WorkspaceUnmanaged, WorkspaceAmbiguous,
         // LocationUnsupported, UnexpectedException, IndexLocked, LockRemovalRefused, LockRemoved,
-        // InvalidPath, InvalidRef, InvalidRevision, BindingNotPersisted, TransportError,
+        // InvalidPath, InvalidRef, InvalidRevision, TransportError,
         // StoragePolicyBlocked, Recovery.ResolveConflictSession,
         // Recovery.RetryMaterialization,
         // Recovery.RemoveIndexLock, Recovery.RestoreWorkspace, Recovery.RefreshWorkspace,
-        // Recovery.InspectWorkspace, Recovery.ReopenWorkspace, Recovery.CheckDependencies,
+        // Recovery.InspectWorkspace,
         // Recovery.AbortMerge, Recovery.RemoveCloneTarget.
         Vitest.test (
             "ARCitISA's code literals match the library's",

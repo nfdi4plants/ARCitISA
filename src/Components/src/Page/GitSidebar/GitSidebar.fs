@@ -9,92 +9,14 @@ open Arcitisa.Components.Primitive
 open Arcitisa.Components.Primitive.BaseModal
 
 open Arcitisa.Components.Page.GitSidebarTypes
+open Arcitisa.Components.Page.GitSidebarHelper
 
 module private GitSidebarInternal =
 
-    type GitChangeKind =
-        | Added
-        | Modified
-        | Deleted
-        | Renamed
-        | Untracked
-        | Conflict
-
-    type ChangePresentation = {
-        Label: string
-        Shorthand: string
-        ToneClassName: string
-    }
-
     let hasConflicts (status: GitSidebarStatus) (changedFiles: GitSidebarChange[]) =
-        status.IsMergeInProgress || (changedFiles |> Array.exists _.IsConflicted)
-
-    let private rawChangeCode (change: GitSidebarChange) =
-        let indexCode = GitStatusCode.normalize change.IndexStatus
-        let worktreeCode = GitStatusCode.normalize change.WorkingTreeStatus
-        $"{indexCode}{worktreeCode}"
-
-    let describeChange (change: GitSidebarChange) = $"git: {rawChangeCode change}"
-
-    let classifyChange (change: GitSidebarChange) =
-        let indexCode = GitStatusCode.normalize change.IndexStatus
-        let worktreeCode = GitStatusCode.normalize change.WorkingTreeStatus
-
-        if change.IsConflicted then
-            GitChangeKind.Conflict
-        elif
-            change.OriginalPath.IsSome
-            || indexCode.StartsWith("R", StringComparison.Ordinal)
-            || worktreeCode.StartsWith("R", StringComparison.Ordinal)
-        then
-            GitChangeKind.Renamed
-        elif indexCode = "?" || worktreeCode = "?" then
-            GitChangeKind.Untracked
-        elif indexCode = "D" || worktreeCode = "D" then
-            GitChangeKind.Deleted
-        elif indexCode = "A" || worktreeCode = "A" then
-            GitChangeKind.Added
-        else
-            GitChangeKind.Modified
-
-    let changePresentation (change: GitSidebarChange) : ChangePresentation =
-        match classifyChange change with
-        | GitChangeKind.Added -> {
-            Label = "Added"
-            Shorthand = "A"
-            ToneClassName = "swt:text-success"
-          }
-        | GitChangeKind.Modified -> {
-            Label = "Modified"
-            Shorthand = "M"
-            ToneClassName = "swt:text-warning"
-          }
-        | GitChangeKind.Deleted -> {
-            Label = "Deleted"
-            Shorthand = "D"
-            ToneClassName = "swt:text-error"
-          }
-        | GitChangeKind.Renamed -> {
-            Label = "Renamed"
-            Shorthand = "R"
-            ToneClassName = "swt:text-info"
-          }
-        | GitChangeKind.Untracked -> {
-            Label = "New (Untracked)"
-            Shorthand = "N"
-            ToneClassName = "swt:text-success"
-          }
-        | GitChangeKind.Conflict -> {
-            Label = "Conflict"
-            Shorthand = "C"
-            ToneClassName = "swt:text-error"
-          }
-
-    /// Splits a repository-relative path into the file name and its parent directory. A trailing slash stays with the name.
-    let splitPath (path: string) : string * string option =
-        match path.TrimEnd('/').LastIndexOf '/' with
-        | index when index > 0 -> path.Substring(index + 1), Some(path.Substring(0, index))
-        | _ -> path, None
+        status.IsMergeInProgress
+        || (changedFiles
+            |> Array.exists (fun change -> change.Kind = GitSidebarChangeKind.Conflicted))
 
     /// The namespace and repository part of a repository web URL, "group/arc" for "https://host/group/arc".
     let repositoryPathOfWebUrl (webUrl: string) : string option =
@@ -429,8 +351,6 @@ type private ChangedFileRowProps = {
     VirtualStart: int
     MeasureElementRef: VirtualMeasureElementRef
 }
-
-type private ChangedFileVirtualItem = { Index: int; Start: int }
 
 type private ModalsProps = {
     IsCreateBranchModalOpen: bool
@@ -1006,26 +926,6 @@ type GitSidebar =
         ]
 
     [<ReactComponent>]
-    static member private SectionHeader(title: string, countText: string option) =
-        Html.div [
-            prop.className
-                "swt:flex swt:min-w-0 swt:items-center swt:justify-between swt:gap-2 swt:px-3 swt:pt-3 swt:text-xs swt:font-semibold swt:uppercase swt:tracking-[0.2em] swt:text-base-content/60 swt:@max-xs:px-2 swt:@max-xs:tracking-[0.12em]"
-            prop.children [
-                Html.span [
-                    prop.className "swt:min-w-0 swt:truncate"
-                    prop.text title
-                ]
-                match countText with
-                | Some value ->
-                    Html.span [
-                        prop.className "swt:shrink-0 swt:text-[0.65rem] swt:text-base-content/50"
-                        prop.text value
-                    ]
-                | None -> Html.none
-            ]
-        ]
-
-    [<ReactComponent>]
     static member private Tooltip
         (label: string, children: ReactElement, ?placementClassName: string, ?testId: string, ?className: string)
         =
@@ -1449,7 +1349,7 @@ type GitSidebar =
     [<ReactComponent>]
     static member private AdvancedActions(props: AdvancedActionsProps) =
         React.Fragment [
-            GitSidebar.SectionHeader("Actions", None)
+            GitSidebarParts.SectionHeader("Actions", None)
 
             Html.div [
                 prop.className "swt:grid swt:grid-cols-2 swt:gap-2 swt:px-3 swt:@max-xs:gap-1 swt:@max-xs:px-2"
@@ -1624,7 +1524,7 @@ type GitSidebar =
     [<ReactComponent>]
     static member private CommitSection(props: CommitSectionProps) =
         React.Fragment [
-            GitSidebar.SectionHeader("Save", None)
+            GitSidebarParts.SectionHeader("Save", None)
 
             Html.div [
                 prop.testId "GitSidebarCommitSection"
@@ -1727,29 +1627,8 @@ type GitSidebar =
         ]
 
     [<ReactComponent>]
-    static member private ChangeStatusTooltip(index: int, change: GitSidebarChange) =
-        let presentation = GitSidebarInternal.changePresentation change
-        let gitReturn = GitSidebarInternal.describeChange change
-        let tooltipText = $"{presentation.Label}:\n- {gitReturn}"
-        let stopRowActivation (event: MouseEvent) = event.stopPropagation ()
-
-        Html.span [
-            prop.testId $"GitSidebarChangeStatusIcon-{index}"
-            prop.className [
-                "swt:shrink-0 swt:text-center"
-                presentation.ToneClassName
-            ]
-            prop.text presentation.Shorthand
-            prop.title tooltipText
-            prop.ariaLabel tooltipText
-            prop.onMouseDown stopRowActivation
-            prop.onClick stopRowActivation
-        ]
-
-    [<ReactComponent>]
     static member private ChangedFileRow(props: ChangedFileRowProps) =
         let change = props.Change
-        let fileName, directory = GitSidebarInternal.splitPath change.Path
 
         let activateRow ctrlKey shiftKey =
             props.UpdateMarkedSelection change ctrlKey shiftKey
@@ -1774,14 +1653,14 @@ type GitSidebar =
                     prop.tabIndex 0
                     prop.title change.Path
                     prop.className [
-                        "swt:group swt:flex swt:min-h-6 swt:w-full swt:min-w-0 swt:items-center swt:gap-2 swt:rounded-box swt:border swt:px-2 swt:text-left swt:transition-colors swt:select-none swt:@max-xs:gap-1.5"
+                        rowBoxClassName
                         "swt:cursor-pointer"
-                        if change.IsConflicted then
-                            "swt:border-error/40 swt:bg-error/5 hover:swt:bg-error/10"
+                        if change.Kind = GitSidebarChangeKind.Conflicted then
+                            "swt:border-error/40 swt:bg-error/5 swt:hover:bg-error/10"
                         elif props.IsMarked then
-                            "swt:border-success/40 swt:bg-success/10 hover:swt:bg-success/15"
+                            markedRowClassName
                         else
-                            "swt:border-base-content/10 swt:bg-base-100 hover:swt:bg-base-200/80"
+                            idleRowClassName
                     ]
                     prop.onClick (fun (event: MouseEvent) ->
                         activateRow (event.ctrlKey || event.metaKey) event.shiftKey
@@ -1792,50 +1671,12 @@ type GitSidebar =
                             activateRow (event.ctrlKey || event.metaKey) event.shiftKey
                     )
                     prop.children [
-                        Html.div [
-                            prop.className "swt:min-w-0 swt:flex-1"
-                            prop.children [
-                                Html.div [
-                                    prop.className "swt:min-w-0"
-                                    prop.children [
-                                        // One truncating line: the ellipsis cuts the directory first and the file name only when it does not fit alone.
-                                        Html.span [
-                                            prop.className
-                                                "swt:block swt:min-w-0 swt:truncate swt:text-sm swt:@max-xs:text-xs"
-                                            prop.children [
-                                                Html.span [
-                                                    prop.testId $"GitSidebarChangeName-{props.Index}"
-                                                    prop.text fileName
-                                                ]
-                                                match directory with
-                                                | Some directory ->
-                                                    // The space keeps assistive tech from reading name and directory as one word.
-                                                    React.Fragment [
-                                                        Html.text " "
-                                                        Html.span [
-                                                            prop.testId $"GitSidebarChangeDirectory-{props.Index}"
-                                                            prop.className
-                                                                "swt:ml-1 swt:text-xs swt:text-base-content/60"
-                                                            prop.text directory
-                                                        ]
-                                                    ]
-                                                | None -> Html.none
-                                            ]
-                                        ]
-                                        match change.OriginalPath with
-                                        | Some originalPath ->
-                                            Html.div [
-                                                prop.testId $"GitSidebarChangeRenamedFrom-{props.Index}"
-                                                prop.className
-                                                    "swt:mt-0.5 swt:truncate swt:text-xs swt:text-base-content/60"
-                                                prop.title originalPath
-                                                prop.text $"Renamed from {originalPath}"
-                                            ]
-                                        | None -> Html.none
-                                    ]
-                                ]
-                            ]
-                        ]
+                        GitSidebarParts.ChangeLabel(
+                            change,
+                            $"GitSidebarChangeName-{props.Index}",
+                            $"GitSidebarChangeDirectory-{props.Index}",
+                            $"GitSidebarChangeRenamedFrom-{props.Index}"
+                        )
                         Html.div [
                             prop.testId $"GitSidebarChangeStatusSlot-{props.Index}"
                             prop.className
@@ -1848,7 +1689,7 @@ type GitSidebar =
                                         $"Discard {props.DiscardPaths.Length} selected changes"
 
                                 // The row offers no discard for a conflicted file, since discarding it would drop one side of the merge.
-                                if not change.IsConflicted && props.DiscardPaths.Length > 0 then
+                                if change.Kind <> GitSidebarChangeKind.Conflicted && props.DiscardPaths.Length > 0 then
                                     Html.button [
                                         prop.testId $"GitSidebarDiscardChangeButton-{props.Index}"
                                         prop.type'.button
@@ -1870,7 +1711,7 @@ type GitSidebar =
                                         ]
                                     ]
 
-                                GitSidebar.ChangeStatusTooltip(props.Index, change)
+                                GitSidebarParts.ChangeStatusIcon(change, $"GitSidebarChangeStatusIcon-{props.Index}")
                             ]
                         ]
                     ]
@@ -1880,7 +1721,6 @@ type GitSidebar =
 
     [<ReactComponent>]
     static member private ChangedFilesList(props: ChangedFilesListProps) =
-        let scrollContainerRef: IRefValue<HTMLElement option> = React.useElementRef ()
         let itemSize = 28
         let itemGap = 4
         let overscan = 8
@@ -1888,7 +1728,7 @@ type GitSidebar =
         let discardPathsForChange (change: GitSidebarChange) =
             let conflictedPaths =
                 props.ChangedFiles
-                |> Array.filter _.IsConflicted
+                |> Array.filter (fun change -> change.Kind = GitSidebarChangeKind.Conflicted)
                 |> Array.map _.Path
                 |> Set.ofArray
 
@@ -1903,41 +1743,14 @@ type GitSidebar =
 
             paths |> Array.filter (fun path -> not (Set.contains path conflictedPaths))
 
-        let changedFileListVirtualizer =
-            Virtual.useVirtualizer (
-                count = props.ChangedFiles.Length,
-                getScrollElement = (fun () -> scrollContainerRef.current),
-                estimateSize = (fun _ -> itemSize),
-                overscan = overscan,
-                gap = itemGap
-            )
+        let getItemKey =
+            React.useCallback ((fun index -> props.ChangedFiles.[index].Path), [| box props.ChangedFiles |])
 
-        let virtualItems =
-            let measuredItems = changedFileListVirtualizer.getVirtualItems ()
-
-            if measuredItems.Length = 0 && props.ChangedFiles.Length > 0 then
-                let isInitialScrollPosition =
-                    scrollContainerRef.current
-                    |> Option.map (fun element -> element.scrollTop = 0.0)
-                    |> Option.defaultValue true
-
-                if not isInitialScrollPosition then
-                    [||]
-                else
-                    [| 0 .. min (props.ChangedFiles.Length - 1) overscan |]
-                    |> Array.map (fun index -> {
-                        Index = index
-                        Start = index * (itemSize + itemGap)
-                    })
-            else
-                measuredItems
-                |> Array.map (fun item -> {
-                    Index = item.index
-                    Start = item.start
-                })
+        let virtualRows =
+            useVirtualRows props.ChangedFiles.Length getItemKey (fun _ -> itemSize) itemGap overscan
 
         React.Fragment [
-            GitSidebar.SectionHeader(
+            GitSidebarParts.SectionHeader(
                 "Changes",
                 Some(
                     if props.ChangedFiles.Length = 1 then
@@ -1951,14 +1764,13 @@ type GitSidebar =
                 prop.testId "GitSidebarChangedFilesScrollContainer"
                 prop.role "region"
                 prop.ariaLabel "Changed files"
-                prop.ref scrollContainerRef
+                prop.ref virtualRows.ScrollContainerRef
                 prop.className
                     "swt:min-h-26 swt:min-w-0 swt:flex-1 swt:overflow-y-auto swt:overflow-x-hidden swt:px-2 swt:pb-2 swt:@max-xs:px-1"
                 prop.children [
                     if props.ChangedFiles.Length = 0 then
                         Html.div [
-                            prop.className
-                                "swt:mt-2 swt:min-w-0 swt:wrap-break-word swt:rounded-box swt:border swt:border-dashed swt:border-base-content/15 swt:bg-base-200/40 swt:px-4 swt:py-6 swt:text-sm swt:text-base-content/60 swt:@max-xs:px-2"
+                            prop.className [ "swt:mt-2"; emptyListClassName ]
                             prop.text (
                                 if
                                     props.Status.TrackingBranch.IsSome
@@ -1975,11 +1787,9 @@ type GitSidebar =
                             prop.testId "GitSidebarChangedFilesVirtualContent"
                             prop.role "list"
                             prop.className "swt:relative swt:mt-1 swt:min-w-0"
-                            prop.style [
-                                style.height (changedFileListVirtualizer.getTotalSize ())
-                            ]
+                            prop.style [ style.height virtualRows.TotalSize ]
                             prop.children [
-                                for virtualItem in virtualItems do
+                                for virtualItem in virtualRows.Rows do
                                     let change = props.ChangedFiles.[virtualItem.Index]
 
                                     let isMarked = Set.contains change.Path props.MarkedPaths
@@ -1999,7 +1809,7 @@ type GitSidebar =
                                                     UpdateMarkedSelection = props.UpdateMarkedSelection
                                                     OpenChange = props.OpenChange
                                                     VirtualStart = virtualItem.Start
-                                                    MeasureElementRef = changedFileListVirtualizer.measureElement
+                                                    MeasureElementRef = virtualRows.MeasureElement
                                                 }
                                             )
                                         ]
@@ -2380,7 +2190,8 @@ type GitSidebar =
             ?operationSteps: GitSidebarStep[],
             ?operationLog: GitSidebarLog,
             ?lastLog: GitSidebarLastLog,
-            ?lfsDedupUnavailableReason: string
+            ?lfsDedupUnavailableReason: string,
+            ?history: GitSidebarHistory
         ) =
 
         let runStatus = defaultArg runStatus GitSidebarRunStatus.Idle
@@ -2804,6 +2615,11 @@ type GitSidebar =
                     onRefresh ()
         }
 
+        let historyView =
+            match history with
+            | Some history -> GitHistory.GitHistory history
+            | None -> Html.none
+
         Html.div [
             prop.testId "GitSidebar"
             prop.className
@@ -2920,6 +2736,8 @@ type GitSidebar =
                             ]
                         ]
                     ]
+                else
+                    Html.none
 
                 GitSidebar.ChangedFilesList(
                     {
@@ -2932,6 +2750,8 @@ type GitSidebar =
                         DiscardChanges = submitDiscardSelection
                     }
                 )
+
+                historyView
 
                 GitSidebar.Modals(
                     {

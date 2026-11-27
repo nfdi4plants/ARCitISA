@@ -1,6 +1,5 @@
 namespace Arcitisa.Components.Page.GitSidebarTypes
 
-open System
 open Fable.Core
 
 [<StringEnum(CaseRules.None)>]
@@ -17,12 +16,18 @@ type GitSidebarStatus = {
     IsMergeInProgress: bool
 }
 
+[<StringEnum(CaseRules.None)>]
+type GitSidebarChangeKind =
+    | Added
+    | Modified
+    | Deleted
+    | Renamed
+    | Conflicted
+
 type GitSidebarChange = {
     Path: string
     OriginalPath: string option
-    IndexStatus: string
-    WorkingTreeStatus: string
-    IsConflicted: bool
+    Kind: GitSidebarChangeKind
 }
 
 type GitSidebarBranchOption = {
@@ -31,6 +36,43 @@ type GitSidebarBranchOption = {
     Kind: GitSidebarBranchKind
     IsCurrent: bool
     IsTracking: bool
+}
+
+/// Who made or committed a commit. At is in seconds since the Unix epoch.
+type GitSidebarCommitPerson = {
+    Name: string
+    Email: string option
+    At: float
+}
+
+type GitSidebarCommit = {
+    Id: string
+    ParentIds: string[]
+    Summary: string
+    Message: string
+    Committer: GitSidebarCommitPerson
+    /// None when the provider records no author apart from the committer.
+    Author: GitSidebarCommitPerson option
+    /// The branches that point at the commit.
+    Branches: GitSidebarBranchOption[]
+    /// The commit exists only on this computer, not in the online repository.
+    IsLocalOnly: bool
+}
+
+type GitSidebarCommitChangeRequest = {
+    CommitId: string
+    Change: GitSidebarChange
+}
+
+/// The data and the callbacks of the history section.
+type GitSidebarHistory = {
+    Commits: GitSidebarCommit[]
+    HasMore: bool
+    IsLoadingMore: bool
+    LoadError: string option
+    OnLoadMore: unit -> unit
+    OnLoadCommitChanges: string -> JS.Promise<Result<GitSidebarChange[], string>>
+    OnSelectCommitChange: GitSidebarCommitChangeRequest -> JS.Promise<Result<unit, string>>
 }
 
 type GitSidebarProgress = {
@@ -159,15 +201,3 @@ type GitSidebarCallbacks = {
     OnDedupLfsStorage: unit -> unit
     OnCancelOperation: unit -> unit
 }
-
-[<RequireQualifiedAccess>]
-module GitStatusCode =
-
-    let normalize (code: string) =
-        let trimmed = code |> Option.ofObj |> Option.defaultValue String.Empty |> _.Trim()
-
-        if String.IsNullOrWhiteSpace trimmed then "." else trimmed
-
-    let isStagedIndexStatus (code: string) =
-        let normalized = normalize code
-        normalized <> "." && normalized <> "?"
