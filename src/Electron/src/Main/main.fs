@@ -20,63 +20,80 @@ let private registerRequiredWindow (failureContext: string) =
 [<Literal>]
 let private textDiffDisposeTimeoutMilliseconds = 5000
 
-// The default user data folder follows the product name. Pin it before anything reads it.
-Main.SettingsStore.pinLegacyUserDataPath ()
+/// Starts the services and the window. Runs only once the user data folder is in place.
+let private start () =
+    // Electron accepts the scheme declaration only before the app is ready.
+    Main.Services.MarkdownResolverService.AssetProtocol.registerScheme ()
 
-// Electron accepts the scheme declaration only before the app is ready.
-Main.Services.MarkdownResolverService.AssetProtocol.registerScheme ()
+    app
+        .whenReady()
+        .``then`` (fun () ->
+            Main.Settings.AppVersion.initialize ()
+            Main.AppMenu.install ()
+            Main.Settings.AppVersion.checkForUpdate () |> Promise.start
 
-app
-    .whenReady()
-    .``then`` (fun () ->
-        Main.Settings.AppVersion.initialize ()
-        Main.AppMenu.install ()
-        Main.Settings.AppVersion.checkForUpdate () |> Promise.start
+            // Restore persisted auth before any IPC handlers fire
+            Main.Auth.AuthService.tryRestoreFromStorage ()
 
-        // Restore persisted auth before any IPC handlers fire
-        Main.Auth.AuthService.tryRestoreFromStorage ()
+            // The library keeps one Git selection for all providers. It has to exist before the first
+            // provider starts Git.
+            Main.VersionControl.GitExecutableSetting.install (Main.UserDefaults.production.Effective().GitExecutablePath)
 
-        // The library keeps one Git selection for all providers. It has to exist before the first
-        // provider starts Git.
-        Main.VersionControl.GitExecutableSetting.install (Main.UserDefaults.production.Effective().GitExecutablePath)
+            // The provider catalog needs the settings root, which exists only once the app is
+            // ready. A failure here must not take the IPC registrations below with it.
+            try
+                let runtime =
+                    Main.VersionControl.VersionControlRuntime.createProduction
+                        Main.VersionControl.WorkspaceSessionHost.windowOwnerOf
 
-        // The provider catalog needs the settings root, which exists only once the app is
-        // ready. A failure here must not take the IPC registrations below with it.
-        try
-            let runtime =
-                Main.VersionControl.VersionControlRuntime.createProduction
-                    Main.VersionControl.WorkspaceSessionHost.windowOwnerOf
+                let host = Main.VersionControl.WorkspaceSessionHost.WorkspaceSessionHost(runtime)
+                Main.VersionControl.WorkspaceSessionHost.initialize host
+                Main.VersionControl.DependencyState.initialize runtime.Catalog
+            with error ->
+                Browser.Dom.console.error ("Version control host initialization failed", error.Message)
 
-            let host = Main.VersionControl.WorkspaceSessionHost.WorkspaceSessionHost(runtime)
-            Main.VersionControl.WorkspaceSessionHost.initialize host
-            Main.VersionControl.DependencyState.initialize runtime.Catalog
-        with error ->
-            Browser.Dom.console.error ("Version control host initialization failed", error.Message)
+            // The handler has to exist before the first window loads, or its first images fail.
+            Main.Services.MarkdownResolverService.AssetProtocol.install (fun windowId ->
+                ARC_VAULTS.TryGetVault windowId |> Option.map _.MarkdownResolver
+            )
 
-        // The handler has to exist before the first window loads, or its first images fail.
-        Main.Services.MarkdownResolverService.AssetProtocol.install (fun windowId ->
-            ARC_VAULTS.TryGetVault windowId |> Option.map _.MarkdownResolver
+            registerRequiredWindow "The application window could not be loaded."
+
+            Remoting.createIpc () |> Remoting.fromIpcMainEvent IPC.IVersionControlApi.api
+            Remoting.createIpc () |> Remoting.fromValue IPC.IGitLabApi.api
+            Remoting.createIpc () |> Remoting.fromIpcMainEvent IPC.ArcVaultsApi.api
+            Remoting.createIpc () |> Remoting.fromIpcMainEvent IPC.MarkdownResolverApi.api
+            Remoting.createIpc () |> Remoting.fromValue Main.IPC.AuthApi.api
+            Remoting.createIpc () |> Remoting.fromValue Main.IPC.TemplateApi.api
+            Remoting.createIpc () |> Remoting.fromValue Main.IPC.ValidationPackageApi.api
+            Remoting.createIpc () |> Remoting.fromValue Main.IPC.UiSettingsApi.api
+            Remoting.createIpc () |> Remoting.fromValue Main.IPC.UserDefaultsApi.api
+            Remoting.createIpc () |> Remoting.fromValue Main.IPC.IAppVersionApi.api
+
+            app.onActivate (fun _ ->
+                if BrowserWindow.getAllWindows().Length = 0 then
+                    registerRequiredWindow "The application window could not be reopened."
+            )
         )
+    |> ignore
 
-        registerRequiredWindow "The application window could not be loaded."
+/// On Linux, an error box before the app is ready only writes to stderr, so it waits for ready.
+let private showUserDataMoveFailedAndQuit (message: string) =
+    eprintfn "ARCitISA could not move your settings.\n%s" message
 
-        Remoting.createIpc () |> Remoting.fromIpcMainEvent IPC.IVersionControlApi.api
-        Remoting.createIpc () |> Remoting.fromValue IPC.IGitLabApi.api
-        Remoting.createIpc () |> Remoting.fromIpcMainEvent IPC.ArcVaultsApi.api
-        Remoting.createIpc () |> Remoting.fromIpcMainEvent IPC.MarkdownResolverApi.api
-        Remoting.createIpc () |> Remoting.fromValue Main.IPC.AuthApi.api
-        Remoting.createIpc () |> Remoting.fromValue Main.IPC.TemplateApi.api
-        Remoting.createIpc () |> Remoting.fromValue Main.IPC.ValidationPackageApi.api
-        Remoting.createIpc () |> Remoting.fromValue Main.IPC.UiSettingsApi.api
-        Remoting.createIpc () |> Remoting.fromValue Main.IPC.UserDefaultsApi.api
-        Remoting.createIpc () |> Remoting.fromValue Main.IPC.IAppVersionApi.api
-
-        app.onActivate (fun _ ->
-            if BrowserWindow.getAllWindows().Length = 0 then
-                registerRequiredWindow "The application window could not be reopened."
+    app
+        .whenReady()
+        .``then`` (fun () ->
+            dialog.showErrorBox ("ARCitISA could not move your settings", message)
+            app.quit ()
         )
-    )
-|> ignore
+    |> ignore
+
+// The user data of 3.x moves before anything reads the user data folder. When that fails, nothing
+// else starts: a Settings folder written in the new place would make the next start delete the old one.
+match Main.SettingsStore.moveLegacyUserDataFolder () with
+| Ok() -> start ()
+| Error message -> showUserDataMoveFailedAndQuit message
 
 app.onWindowAllClosed (fun () ->
     Browser.Dom.console.log ("App quit")
