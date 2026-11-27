@@ -4,8 +4,6 @@ Names from the time ARCitISA was called Swate that are kept only so that existin
 
 ## Kept for compatibility
 
-| Name | Where | Why it is kept | Effect of removing it |
-| --- | --- | --- | --- |
 Added in 4.0.0, to remove in 5.0.0. The account id key, the browser storage keys, the clipboard format and the `.swate-import-` / `.swate-save-` prefixes were renamed in 4.0.0 without a transition.
 
 | Name | Where | Why it is kept | Effect of removing it |
