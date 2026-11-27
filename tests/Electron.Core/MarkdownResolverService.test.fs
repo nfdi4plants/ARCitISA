@@ -560,7 +560,7 @@ Vitest.describe (
                             writeBytesAsync
                                 (join [|
                                     dir
-                                    ".swate-save-0123456789abcdef0123456789abcdef.tmp"
+                                    ".arcitisa-save-0123456789abcdef0123456789abcdef.tmp"
                                 |])
                                 (utf8 "x")
 

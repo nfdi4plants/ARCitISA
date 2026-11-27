@@ -28,10 +28,10 @@ let private officeLockFilePattern = """(^|/)(\.?~\$[^/]*\.[^/]+|\.~lock\.[^/]+#)
 let private lfsBackupPattern = """\.vcs-lfs-backup-[0-9a-fA-F]{32}$"""
 
 /// Name prefix of the temporary file a text save writes next to its target before it renames it into place.
-let textSaveTempPrefix = ".swate-save-"
+let textSaveTempPrefix = ".arcitisa-save-"
 
 /// Matches the name or the ARC-relative path of a save temporary file.
-let textSaveTempPattern = """(^|/)\.swate-save-[0-9a-fA-F]{32}\.tmp$"""
+let textSaveTempPattern = """(^|/)\.arcitisa-save-[0-9a-fA-F]{32}\.tmp$"""
 
 /// True for entries that are not part of the ARC inventory. Git metadata (a `.git` directory or a `.git`
 /// gitlink file, anywhere on the path) counts for files and folders. Lock files of Office and LibreOffice count

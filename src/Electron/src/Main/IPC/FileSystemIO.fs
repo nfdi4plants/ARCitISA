@@ -156,7 +156,7 @@ module ArcFileSystemHelper =
 
     let createTemporaryImportDirectoryName () =
         let guid = Guid.NewGuid().ToString("N")
-        $".swate-import-{guid}"
+        $".arcitisa-import-{guid}"
 
     let private resolveArcRootOrRelativePath arcPath relativePath =
         let normalizedPath = relativePath |> PathHelpers.normalizeCanonicalRelativePath

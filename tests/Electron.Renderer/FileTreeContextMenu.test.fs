@@ -665,7 +665,7 @@ Vitest.describe (
         Vitest.test (
             "an import staging folder and the items inside it offer new items and rename",
             fun () ->
-                let stagingFolder = $"data/.swate-import-{String.replicate 32 (string 'b')}"
+                let stagingFolder = $"data/.arcitisa-import-{String.replicate 32 (string 'b')}"
 
                 let labelsFor (item: FileItem) =
                     createComposedContextMenuItems (createContextMenuConfig ()) item

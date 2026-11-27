@@ -856,7 +856,7 @@ Vitest.describe (
                     .expect(
                         isStructuralFileWatcherPath
                             "/arc"
-                            "/arc/assays/A1/.swate-import-0123456789abcdef0123456789abcdef"
+                            "/arc/assays/A1/.arcitisa-import-0123456789abcdef0123456789abcdef"
                             None
                     )
                     .toBe
@@ -877,7 +877,7 @@ Vitest.describe (
         Vitest.test (
             "a staging folder directly inside a zone folder does not look like an entity",
             fun () ->
-                let staging = ".swate-import-0123456789abcdef0123456789abcdef"
+                let staging = ".arcitisa-import-0123456789abcdef0123456789abcdef"
 
                 Vitest.expect(isStructuralFileWatcherPath "/arc" "/arc/assays/A1/isa.assay.xlsx" None).toBe true
 
@@ -888,7 +888,7 @@ Vitest.describe (
         Vitest.test (
             "an ARC folder named like a staging folder, or inside a staging folder or .git, is not hidden",
             fun () ->
-                let staging = ".swate-import-0123456789abcdef0123456789abcdef"
+                let staging = ".arcitisa-import-0123456789abcdef0123456789abcdef"
 
                 for arcFolder in
                     [

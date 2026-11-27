@@ -121,7 +121,7 @@ Vitest.describe (
 
                 try
                     let hex = String.replicate 32 "c"
-                    let stagingName = $".swate-import-{hex}"
+                    let stagingName = $".arcitisa-import-{hex}"
                     do! fsPromisesDynamic?mkdir (join [| rootPath; ".git" |]) |> unbox<JS.Promise<unit>>
 
                     do!

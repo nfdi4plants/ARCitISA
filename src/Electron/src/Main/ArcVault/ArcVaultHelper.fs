@@ -349,7 +349,7 @@ let shouldUsePollingByDefault (platform: string) =
 /// Import staging folders stay hidden here only, because they exist for the length of an import.
 let isFileWatcherPathIgnored (path: string) =
     let normalizedPath = PathHelpers.normalizeSeparators path
-    let temporaryImportPattern = """(^|/)\.swate-import-[0-9a-fA-F]{32}(/|$)"""
+    let temporaryImportPattern = """(^|/)\.arcitisa-import-[0-9a-fA-F]{32}(/|$)"""
 
     isIgnoredInventoryEntry (PathHelpers.getNameFromPath normalizedPath) normalizedPath false
     || System.Text.RegularExpressions.Regex.IsMatch(normalizedPath, temporaryImportPattern)

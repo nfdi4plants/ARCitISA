@@ -165,7 +165,7 @@ let tests =
 
         testCase "delete classifier treats dot folders in a zone as generic targets"
         <| fun _ ->
-            let path = "assays/.swate-import-" + String.replicate 32 "a"
+            let path = "assays/.arcitisa-import-" + String.replicate 32 "a"
             let classification = ArcEntityPathRules.classifyDeleteTarget path
 
             match classification with
