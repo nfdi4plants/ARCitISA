@@ -16,6 +16,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Planned as 4.0.0. Upgrading from 3.x: see [Upgrading from ARCitISA 3.x to 4.0](docs/migrations/v4.md).
+
+### 🔄 Changed
+
+- New installers for all platforms, made with electron-builder (#1463, by @Freymaurer):
+    - Windows: a setup wizard replaces the Squirrel installer. Install for you or for everyone on the computer, choose the install folder, and add a desktop shortcut if you want one. The uninstaller in Settings > Apps asks whether to delete your settings as well. There is no `.nupkg` file any more.
+    - The Windows setup removes ARCitISA 3.x after asking.
+    - Linux: the deb and rpm packages replace the `swate` package of older versions.
+    - macOS: the app has the new identifier `org.nfdi4plants.app-arc-management-core`.
+    - New file names: `ARCitISA-Setup-<version>-x64.exe`, `ARCitISA-<version>-<arch>.dmg`, `ARCitISA-<version>-x86_64.AppImage`, `arcitisa-<version>-1.aarch64.rpm` on arm64 and `arcitisa-<version>-1-x64.pkg.tar.zst`. The deb, the rpm on x64 and the zip files keep their names.
+- The settings folder is now called `ARCitISA`. The first start moves the `Swate` folder of 3.x there. (by @Freymaurer)
+- The rename has affected some user preferences, the clipboard format, temporary files and the Excel add-in manifest. Some preferences reset once, see the upgrade guide. (by @Freymaurer)
+
 ## 3.4.0-rc.2 - 2026-11-24
 
 ### 🔄 Changed

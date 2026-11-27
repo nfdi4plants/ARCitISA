@@ -20,18 +20,8 @@ let private registerRequiredWindow (failureContext: string) =
 [<Literal>]
 let private textDiffDisposeTimeoutMilliseconds = 5000
 
-// Squirrel launches ARCitISA for install/update/uninstall hooks; its startup helper owns
-// shortcut maintenance and exits when finished. app.quit() does not stop execution of the code below:
-// registering whenReady below can still load a window during shutdown and throw.
-// To avoid this issue, we gate the logic below fully behind the SquirrelStartup check.
-if SquirrelStartup.started then
-    // The helper quits once Update.exe exits. Quitting here too keeps a hook run from
-    // staying open without a window if that exit is never reported.
-    app.quit ()
-else
-    // The default user data folder follows the product name. Pin it before anything reads it.
-    Main.SettingsStore.pinLegacyUserDataPath ()
-
+/// Starts the services and the window. Runs only once the user data folder is in place.
+let private start () =
     // Electron accepts the scheme declaration only before the app is ready.
     Main.Services.MarkdownResolverService.AssetProtocol.registerScheme ()
 
@@ -89,38 +79,56 @@ else
         )
     |> ignore
 
-    app.onWindowAllClosed (fun () ->
-        Browser.Dom.console.log ("App quit")
-        app.quit ()
-    )
+/// On Linux, an error box before the app is ready only writes to stderr, so it waits for ready.
+let private showUserDataMoveFailedAndQuit (message: string) =
+    eprintfn "ARCitISA could not move your settings.\n%s" message
 
-    app.onBeforeQuit (fun _ -> Browser.Dom.console.log ("Quitting"))
+    app
+        .whenReady()
+        .``then`` (fun () ->
+            dialog.showErrorBox ("ARCitISA could not move your settings", message)
+            app.quit ()
+        )
+    |> ignore
 
-    let mutable textDiffWorkersReleased = false
+// The user data of 3.x moves before anything reads the user data folder. When that fails, nothing
+// else starts: a Settings folder written in the new place would make the next start delete the old one.
+match Main.SettingsStore.moveLegacyUserDataFolder () with
+| Ok() -> start ()
+| Error message -> showUserDataMoveFailedAndQuit message
 
-    app.onWillQuit (fun event ->
-        // The before-quit event runs before the windows' close handlers, which may still wait for running operations.
-        match Main.VersionControl.WorkspaceSessionHost.tryCurrent () with
-        | Some host ->
-            host.CloseAll()
-            |> Async.StartAsPromise
-            |> Promise.catch (fun _ -> ())
-            |> Promise.start
-        | None -> ()
+app.onWindowAllClosed (fun () ->
+    Browser.Dom.console.log ("App quit")
+    app.quit ()
+)
 
-        // The diff workers own Git child processes and temp folders. The first will-quit holds
-        // the quit until the pool is disposed or 5 s have passed, then quits again.
-        if not textDiffWorkersReleased then
-            textDiffWorkersReleased <- true
-            event.preventDefault ()
+app.onBeforeQuit (fun _ -> Browser.Dom.console.log ("Quitting"))
 
-            let timeout =
-                Promise.create (fun resolve _ -> JS.setTimeout resolve textDiffDisposeTimeoutMilliseconds |> ignore)
+let mutable textDiffWorkersReleased = false
 
-            Main.Bindings.PromiseRace.race [|
-                Main.VersionControl.TextDiffWorkers.dispose ()
-                timeout
-            |]
-            |> Promise.catch ignore
-            |> Promise.iter (fun () -> app.quit ())
-    )
+app.onWillQuit (fun event ->
+    // The before-quit event runs before the windows' close handlers, which may still wait for running operations.
+    match Main.VersionControl.WorkspaceSessionHost.tryCurrent () with
+    | Some host ->
+        host.CloseAll()
+        |> Async.StartAsPromise
+        |> Promise.catch (fun _ -> ())
+        |> Promise.start
+    | None -> ()
+
+    // The diff workers own Git child processes and temp folders. The first will-quit holds
+    // the quit until the pool is disposed or 5 s have passed, then quits again.
+    if not textDiffWorkersReleased then
+        textDiffWorkersReleased <- true
+        event.preventDefault ()
+
+        let timeout =
+            Promise.create (fun resolve _ -> JS.setTimeout resolve textDiffDisposeTimeoutMilliseconds |> ignore)
+
+        Main.Bindings.PromiseRace.race [|
+            Main.VersionControl.TextDiffWorkers.dispose ()
+            timeout
+        |]
+        |> Promise.catch ignore
+        |> Promise.iter (fun () -> app.quit ())
+)

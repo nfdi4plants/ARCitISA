@@ -8,6 +8,7 @@
     <Compile Include="Components\Table\KeyboardNavigation.tests.fs" />
     <Compile Include="Spreadsheet\DataAnnotator.tests.fs" />
     <Compile Include="OfficeAddIn\AnnotationTable\SuccessfulTests.fs" />
+    <Compile Include="Routing.test.fs" />
     <Compile Include="Client.Tests.fs" />
   </ItemGroup>
   <ItemGroup>

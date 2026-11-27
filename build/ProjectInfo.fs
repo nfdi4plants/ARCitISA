@@ -13,7 +13,7 @@ module ProjectPaths =
     let electronPath = Path.GetFullPath "src/Electron"
     let deployPath = Path.GetFullPath "deploy"
     let nugetDeployPath = Path.GetFullPath "nupkgs"
-    let nugetSln = Path.GetFullPath "Nuget.sln"
+    let nugetSln = Path.GetFullPath "Nuget.slnx"
 
     let sharedTestsPath = Path.GetFullPath "tests/Shared"
     let serverTestsPath = Path.GetFullPath "tests/Server"

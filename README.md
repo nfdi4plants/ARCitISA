@@ -10,16 +10,32 @@ ARCitISA is a powerful tool for research data management, providing a rich set o
 
 The easiest way to get started is the ARCitISA desktop app. Download the latest build for your operating system from the assets on our [GitHub Releases Page](https://github.com/nfdi4plants/ARCitISA/releases):
 
--   **Windows**: `.exe` installer
--   **macOS**: `.dmg` (available for Intel `x64` and Apple Silicon `arm64`)
+-   **Windows**: `ARCitISA-Setup-<version>-x64.exe`. The setup asks whether to install for you or for everyone on the computer, lets you pick the folder and whether to add a desktop shortcut. ARCitISA is always added to the Start menu. Uninstall it in Settings > Apps.
+-   **macOS**: `ARCitISA-<version>-arm64.dmg` for Apple Silicon or `ARCitISA-<version>-x64.dmg` for Intel. The same app is also available as `ARCitISA-darwin-<arch>-<version>.zip`.
 -   **Linux**: `.deb`, `.rpm`, `.pkg.tar.zst` (Arch), `.AppImage`, or `.zip` for `x64`, and `.deb`, `.rpm` or `.zip` for `arm64`
 
     -   Debian and Ubuntu: `sudo apt install ./arcitisa_<version>_amd64.deb` (`_arm64.deb` on arm64)
-    -   Fedora: `sudo dnf install ./arcitisa-<version>-1.x86_64.rpm` (`.arm64.rpm` on arm64)
-    -   Arch Linux and distributions based on it: `sudo pacman -U arcitisa-<version>-1-x86_64.pkg.tar.zst`
-    -   Other distributions: make `ARCitISA-<version>-x64.AppImage` executable with `chmod +x` and run it, or unpack `ARCitISA-linux-x64-<version>.zip` (`linux-arm64` on arm64) and start `arcitisa` in the unpacked folder
+    -   Fedora: `sudo dnf install ./arcitisa-<version>-1.x86_64.rpm` (`.aarch64.rpm` on arm64)
+    -   Arch Linux and distributions based on it: `sudo pacman -U arcitisa-<version>-1-x64.pkg.tar.zst`
+    -   Other distributions: make `ARCitISA-<version>-x86_64.AppImage` executable with `chmod +x` and run it, or unpack `ARCitISA-linux-x64-<version>.zip` (`linux-arm64` on arm64) and start `arcitisa` in the unpacked folder
 
     If the AppImage or the zip stops with a sandbox error, start it with `--no-sandbox`. For the zip you can instead run `sudo chown root:root chrome-sandbox` and `sudo chmod 4755 chrome-sandbox` in the unpacked folder.
+
+    Install `git-lfs` as well if your ARCs contain large files.
+
+**Coming from ARCitISA 3.x?** Read [Upgrading from ARCitISA 3.x to 4.0](docs/migrations/v4.md) first.
+
+#### Your settings
+
+ARCitISA keeps your settings, signed-in accounts and the list of recent ARCs in one folder. Your ARCs are never stored there.
+
+-   Windows: `%AppData%\ARCitISA`
+-   macOS: `~/Library/Application Support/ARCitISA`
+-   Linux: `~/.config/ARCitISA`
+
+When you uninstall ARCitISA on Windows, it asks whether to delete this folder as well (No is the default). On macOS and Linux, uninstalling keeps it. You can delete the folder yourself at any time; ARCitISA then starts with default settings and you sign in again.
+
+For administrators: `ARCitISA-Setup-<version>-x64.exe /S` installs silently for the current user (`/allusers` for everyone). A silent uninstall (`"Uninstall ARCitISA.exe" /S`) never deletes the settings folder.
 
 ### 🪻 Viola's Journey
 

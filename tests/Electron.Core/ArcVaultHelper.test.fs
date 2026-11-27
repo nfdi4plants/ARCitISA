@@ -6100,7 +6100,7 @@ Vitest.describe (
 
                         let stagingLeftovers =
                             readdirSync (join [| arcPath; importTarget |])
-                            |> Array.filter _.StartsWith(".swate-import-")
+                            |> Array.filter _.StartsWith(".arcitisa-import-")
 
                         Vitest.expect(stagingLeftovers).toEqual [||]
 

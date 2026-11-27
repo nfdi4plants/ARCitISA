@@ -53,6 +53,7 @@
     <Compile Include="SecureAuthStore.test.fs" />
     <Compile Include="AuthService.test.fs" />
     <Compile Include="UserDefaults.test.fs" />
+    <Compile Include="UserDataMove.test.fs" />
     <Compile Include="DependencyState.test.fs" />
     <Compile Include="VersionControlComposition.test.fs" />
     <Compile Include="VersionControlMappings.test.fs" />

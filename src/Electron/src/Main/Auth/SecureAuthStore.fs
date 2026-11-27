@@ -15,12 +15,6 @@ let private activeAccountFileName = "active-account.json"
 [<Literal>]
 let private accountIdJsonKey = "localArcitisaAccountId"
 
-/// JSON key of the account id from the time the app was called Swate. It is still written next to
-/// accountIdJsonKey and read when that key is missing, so files from older versions keep working and
-/// older versions can read new files. Listed in docs/maintainer/ObsoleteRemoveOnNextMajor.md.
-[<Literal>]
-let private legacyAccountIdJsonKey = "localSwateAccountId"
-
 /// Non-secret metadata stored in plaintext JSON alongside the encrypted blob.
 type AuthMetadata = {
     LocalArcitisaAccountId: string
@@ -145,7 +139,6 @@ let private authMetadataDecoder (localArcitisaAccountId: string) : Decoder<AuthM
 let private activeLocalArcitisaAccountIdDecoder: Decoder<string option> =
     Decode.object (fun get ->
         get.Optional.Field accountIdJsonKey Decode.string
-        |> Option.orElse (get.Optional.Field legacyAccountIdJsonKey Decode.string)
         |> Option.filter isSafeLocalArcitisaAccountId
     )
 
@@ -206,7 +199,6 @@ let store (credential: StoredCredential) : Result<unit, string> =
             let metaJson =
                 JS.JSON.stringify {|
                     localArcitisaAccountId = credential.Metadata.LocalArcitisaAccountId
-                    localSwateAccountId = credential.Metadata.LocalArcitisaAccountId
                     id = credential.Metadata.Id
                     username = credential.Metadata.Username
                     name = credential.Metadata.Name
@@ -312,11 +304,7 @@ let setActiveLocalArcitisaAccountId (localArcitisaAccountId: string option) : un
 
         match localArcitisaAccountId with
         | Some id when isSafeLocalArcitisaAccountId id ->
-            let json =
-                JS.JSON.stringify {|
-                    localArcitisaAccountId = id
-                    localSwateAccountId = id
-                |}
+            let json = JS.JSON.stringify {| localArcitisaAccountId = id |}
 
             let tmp = path + ".tmp"
             writeFileSync tmp json TextEncoding.Utf8

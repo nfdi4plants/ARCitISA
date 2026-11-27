@@ -58,7 +58,7 @@ The import never overwrites or merges. An existing item with the same name (see 
 
 The import follows symbolic links, including Windows junctions, and copies what a link points to as an ordinary file or folder under the link's name. The import stops at a link that leads back to a folder that contains it or to a folder above it, because the walk would never end. The import refuses such a link at once. It also stops when a link's target no longer exists, or when the walk goes through too many links. Two links to the same folder in different places are both copied in full. A link inside a picked folder that leads to the import target, or to a folder that contains it, stops the import. When a folder cannot be read because access is denied, as with some Windows compatibility junctions such as "My Music" in Documents, the import stops with a message.
 
-The import copies into a staging folder named ".swate-import-" plus 32 hex digits inside the target folder and removes it when it is done. The watcher ignores every path with such a folder name (`ArcVaultHelper.isFileWatcherPathIgnored`). This matters for an import directly into studies, assays, workflows or runs. There a metadata file inside the staging folder, such as "assays/.swate-import-<hex>/isa.assay.xlsx", would look like an entity file to the watcher. Inside data folders the watcher sees nothing anyway, because it watches only the ARC structure. When the import ends, it reconciles the target folder in the file tree (`tryImportExternalFiles` in `src/Electron/src/Main/IPC/IArcVaultsApi.fs`). If ARCitISA cannot remove the staging folder, the file tree lists it like any other folder.
+The import copies into a staging folder named ".arcitisa-import-" plus 32 hex digits inside the target folder and removes it when it is done. The watcher ignores every path with such a folder name (`ArcVaultHelper.isFileWatcherPathIgnored`). This matters for an import directly into studies, assays, workflows or runs. There a metadata file inside the staging folder, such as "assays/.arcitisa-import-<hex>/isa.assay.xlsx", would look like an entity file to the watcher. Inside data folders the watcher sees nothing anyway, because it watches only the ARC structure. When the import ends, it reconciles the target folder in the file tree (`tryImportExternalFiles` in `src/Electron/src/Main/IPC/IArcVaultsApi.fs`). If ARCitISA cannot remove the staging folder, the file tree lists it like any other folder.
 
 ## Rules kept from before this change
 
@@ -72,7 +72,7 @@ New File, New Folder and Rename keep the location rules that existed before PR #
 
 This PR only changed their messages (`describeBlockedGenericCreateTarget`), so the dialogs say why they refuse a name. The import menu entries appear where New File and New Folder do. Apart from the ".git" rule above, the imported items no longer go through these rules.
 
-Delete has its own permission rules. Files and folders named ".gitkeep", ".gitattributes" and "README.md" can be deleted, including generated empty-folder markers. Directly inside studies, assays, workflows and runs, ordinary files and folders use filesystem deletion. A folder containing entity or datamap metadata uses ARC deletion, with the same metadata names and file-kind checks as ARC loading. A folder whose name starts with a dot always uses filesystem deletion, because ARCtrl cannot read such a name as an entity identifier. This covers a leftover ".swate-import-" folder of an interrupted import. ARC-managed folders and the investigation file remain protected.
+Delete has its own permission rules. Files and folders named ".gitkeep", ".gitattributes" and "README.md" can be deleted, including generated empty-folder markers. Directly inside studies, assays, workflows and runs, ordinary files and folders use filesystem deletion. A folder containing entity or datamap metadata uses ARC deletion, with the same metadata names and file-kind checks as ARC loading. A folder whose name starts with a dot always uses filesystem deletion, because ARCtrl cannot read such a name as an entity identifier. This covers a leftover ".arcitisa-import-" folder of an interrupted import. ARC-managed folders and the investigation file remain protected.
 
 ## Dropped rules
 
@@ -107,7 +107,7 @@ Inside picked folders the import skipped these names silently. As picked items i
 - lock files of open Office or LibreOffice documents ("~$Book1.xlsx", ".~lock.notes.odt#")
 - Git LFS backups (".vcs-lfs-backup-" plus 32 hex digits)
 - the ARC's own git files (.gitkeep, .gitattributes)
-- leftover import staging folders (".swate-import-" plus 32 hex digits)
+- leftover import staging folders (".arcitisa-import-" plus 32 hex digits)
 - files named like a staging folder
 
 The reason is that the file tree and the file watcher hide these names and the ARC manages its own git files. A staging folder is a leftover copy of an interrupted import. The code was `isLeftOutOfImport` in `FileSystemIO.fs`. For files it used `ArcVaultHelper.isFileWatcherPathIgnored`, which also matched staging-folder names, and `ArcEntityPathRules.isArcManagedGitFileName` (`PathHelpers.fs`). For folders it used `isTemporaryImportPath`. `inspectPickedItemAsync` turned each case into its own error.
@@ -124,7 +124,7 @@ New File and Rename rejected file names that ARCitISA hides: lock-file names suc
 
 ### Staging-folder names
 
-New File, New Folder and Rename rejected names like ".swate-import-" plus 32 hex digits. The reason is that the watcher ignores staging folders, so changes inside would not show up. The code was `isTemporaryImportPath`, `stagingFolderNameError` and `stagingFileNameError` in `validateNewItemName` in `RenamePathRules.fs`.
+New File, New Folder and Rename rejected names like ".arcitisa-import-" plus 32 hex digits. The reason is that the watcher ignores staging folders, so changes inside would not show up. The code was `isTemporaryImportPath`, `stagingFolderNameError` and `stagingFileNameError` in `validateNewItemName` in `RenamePathRules.fs`.
 
 The watcher still ignores folders with such a name. Directly inside studies, assays, workflows or runs, this keeps a metadata file in such a folder from turning into an entity. Everywhere else such a folder is a data folder, which the watcher does not watch anyway. The file tree lists it, and changes that other programs make inside it appear when the ARCitISA window gets focus or after "Refresh folder".
 

@@ -16,7 +16,7 @@
     <Host Name="Workbook"/>
   </Hosts>
   <DefaultSettings>
-    <SourceLocation DefaultValue="https://swate-alpha.nfdi4plants.org?is_swatehost=2"/>
+    <SourceLocation DefaultValue="https://swate-alpha.nfdi4plants.org?is_arcitisahost=2"/>
   </DefaultSettings>
   <Permissions>ReadWriteDocument</Permissions>
   <VersionOverrides xmlns="http://schemas.microsoft.com/office/taskpaneappversionoverrides" xsi:type="VersionOverridesV1_0">
@@ -85,7 +85,7 @@
       </bt:Images>
       <bt:Urls>
         <bt:Url id="GetStarted.LearnMoreUrl" DefaultValue="https://go.microsoft.com/fwlink/?LinkId=276812"/>
-        <bt:Url id="Arcitisa.Url" DefaultValue="https://swate-alpha.nfdi4plants.org?is_swatehost=2"/>
+        <bt:Url id="Arcitisa.Url" DefaultValue="https://swate-alpha.nfdi4plants.org?is_arcitisahost=2"/>
       </bt:Urls>
       <bt:ShortStrings>
         <bt:String id="GetStarted.Title" DefaultValue="Get started annotating your data for greater good!"/>

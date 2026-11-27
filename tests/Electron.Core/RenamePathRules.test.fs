@@ -436,7 +436,7 @@ Vitest.describe (
         Vitest.test (
             "names the file tree hides and import staging names are accepted for new items and renames",
             fun () ->
-                let stagingName = $".swate-import-{hex32 'a'}"
+                let stagingName = $".arcitisa-import-{hex32 'a'}"
                 let stagingFolder = $"data/{stagingName}"
 
                 let acceptedNames = [

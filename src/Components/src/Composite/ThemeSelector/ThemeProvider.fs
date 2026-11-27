@@ -15,7 +15,7 @@ type ThemeProvider =
     static member ThemeProvider
         (children: ReactElement, ?dataAttribute: string, ?localStorageKey: string, ?enforceTheme: Theme)
         =
-        let localStorageKey = defaultArg localStorageKey "swate-theme-ctx"
+        let localStorageKey = defaultArg localStorageKey "arcitisa-theme-ctx"
         let dataAttribute = defaultArg dataAttribute "data-theme"
         let (theme, setTheme) = React.useLocalStorage (localStorageKey, Theme.Auto)
 

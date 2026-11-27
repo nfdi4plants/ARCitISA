@@ -46,7 +46,7 @@ const mockAllChildrenSearch = async (parentId: string): Promise<Term[]> => {
   return MOCK_TERMS.map(t => ({ ...t }));
 };
 
-const LOCAL_STORAGE_KEY = 'swate-termsearchconfig-ctx-mock';
+const LOCAL_STORAGE_KEY = 'arcitisa-termsearchconfig-ctx-mock';
 
 const meta = {
   title: "Composite Components/TermSearch/TermSearchConfigProvider",

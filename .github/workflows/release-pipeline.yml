@@ -161,8 +161,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Release.verifyReleaseAssets and Release.electronTarget in build/Actions/Release.fs list
-        # every entry here. Update them when this matrix changes.
+        # Release.verifyReleaseAssets and Release.electronExtensions in build/Actions/Release.fs and
+        # src/Electron/scripts/make.cjs list every entry here. Update them when this matrix changes.
         include:
           - os: windows-latest
             arch: x64
@@ -176,8 +176,9 @@ jobs:
           - os: macos-latest
             arch: arm64
             
-          # The rpm maker fails on ubuntu-latest (26.04). Its rpmbuild runs %install in a per-package
-          # build folder, where the spec of electron-installer-redhat cannot find the app files.
+          # Pinned while the rpm came from electron-installer-redhat, whose spec failed on ubuntu-latest
+          # (26.04). electron-builder makes the rpm with fpm now; test on ubuntu-latest before unpinning.
+          # The arm64 packages are built on this x64 runner too.
           - os: ubuntu-24.04
             arch: x64
 
@@ -215,9 +216,11 @@ jobs:
       - name: Install root dependencies
         run: npm i
 
-      - name: Install AppImage build tools
+      # fpm, which electron-builder runs for the Linux packages, needs rpmbuild for the rpm, and zstd
+      # and bsdtar for the pacman package.
+      - name: Install Linux packaging tools
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y squashfs-tools
+        run: sudo apt-get update && sudo apt-get install -y rpm zstd libarchive-tools
 
       - name: Build Electron binaries
         env:
@@ -232,14 +235,13 @@ jobs:
           name: release-assets-electron-${{ runner.os }}-${{ matrix.arch }}
           if-no-files-found: error
           path: |
-            src/Electron/out/make/**/*.exe
-            src/Electron/out/make/**/*.nupkg
-            src/Electron/out/make/**/*.zip
-            src/Electron/out/make/**/*.dmg
-            src/Electron/out/make/**/*.deb
-            src/Electron/out/make/**/*.rpm
-            src/Electron/out/make/**/*.AppImage
-            src/Electron/out/make/**/*.pkg.tar.zst
+            src/Electron/out/installers/*.exe
+            src/Electron/out/installers/*.zip
+            src/Electron/out/installers/*.dmg
+            src/Electron/out/installers/*.deb
+            src/Electron/out/installers/*.rpm
+            src/Electron/out/installers/*.AppImage
+            src/Electron/out/installers/*.pkg.tar.zst
 
   post_release:
     needs: [release, release_electron_binaries, verify_release]

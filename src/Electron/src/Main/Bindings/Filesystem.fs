@@ -68,6 +68,9 @@ let renameSync (oldPath: string) (newPath: string) : unit = jsNative
 [<Import("unlinkSync", "fs")>]
 let unlinkSync (path: string) : unit = jsNative
 
+[<Import("rmSync", "fs")>]
+let rmSync (path: string) (options: RmOptions) : unit = jsNative
+
 [<Import("readdirSync", "fs")>]
 let readdirSync (path: string) : string array = jsNative
 

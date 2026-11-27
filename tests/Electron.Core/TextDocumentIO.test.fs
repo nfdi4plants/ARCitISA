@@ -445,7 +445,7 @@ Vitest.describe (
                     let! gitWritten = TestHelpers.pathExistsAsync (join [| dir; ".git"; "config" |])
                     Vitest.expect(gitWritten).toBe false
 
-                    let tempName = "sub/.swate-save-0123456789abcdef0123456789abcdef.tmp"
+                    let tempName = "sub/.arcitisa-save-0123456789abcdef0123456789abcdef.tmp"
                     let! temp = saveTextFileAsync dir (saveRequest tempName "x" TextFileEncoding.Utf8 None true)
                     expectRefused temp
                     let! tempWritten = TestHelpers.pathExistsAsync (join [| dir; tempName |])
@@ -539,12 +539,12 @@ Vitest.describe (
             "removes save temporary files older than ten minutes after a save",
             fun () ->
                 withDirectory (fun dir -> promise {
-                    let freshName = ".swate-save-fedcba9876543210fedcba9876543210.tmp"
+                    let freshName = ".arcitisa-save-fedcba9876543210fedcba9876543210.tmp"
 
                     let stale =
                         join [|
                             dir
-                            ".swate-save-0123456789abcdef0123456789abcdef.tmp"
+                            ".arcitisa-save-0123456789abcdef0123456789abcdef.tmp"
                         |]
 
                     do! writeBytesAsync stale (utf8 "x")
@@ -722,7 +722,7 @@ Vitest.describe (
 Vitest.describe (
     "isIgnoredInventoryEntry",
     fun () ->
-        let tempName = ".swate-save-0123456789abcdef0123456789abcdef.tmp"
+        let tempName = ".arcitisa-save-0123456789abcdef0123456789abcdef.tmp"
 
         Vitest.test (
             "ignores a save temporary file as a file",

@@ -143,7 +143,7 @@ let private readRelativeFileAsync rootPath relativePath =
 
 let private expectNoTemporaryImportDirectory arcPath relativePath = promise {
     let! entries = Main.Bindings.Filesystem.readdirAsync (absoluteArcPath arcPath relativePath)
-    Vitest.expect(entries |> Array.exists _.StartsWith(".swate-import-")).toBe (false)
+    Vitest.expect(entries |> Array.exists _.StartsWith(".arcitisa-import-")).toBe (false)
 }
 
 /// Creates `<temp root>/external/Run1` with nested files and an empty folder, and returns its path.
@@ -243,7 +243,7 @@ Vitest.describe (
             "temporary import directory name matches the watcher ignore convention",
             fun () ->
                 let directoryName = ArcFileSystemHelper.createTemporaryImportDirectoryName ()
-                let exactPattern = """^\.swate-import-[0-9a-f]{32}$"""
+                let exactPattern = """^\.arcitisa-import-[0-9a-f]{32}$"""
 
                 Vitest.expect(System.Text.RegularExpressions.Regex.IsMatch(directoryName, exactPattern)).toBe (true)
 
@@ -581,8 +581,8 @@ Vitest.describe (
 
                         Vitest.expect(firstExists).toBe (false)
                         Vitest.expect(secondExists).toBe (false)
-                        Vitest.expect(targetEntries |> Array.exists _.StartsWith(".swate-import-")).toBe (false)
-                        Vitest.expect(arcParentEntries |> Array.exists _.StartsWith(".swate-import-")).toBe (false)
+                        Vitest.expect(targetEntries |> Array.exists _.StartsWith(".arcitisa-import-")).toBe (false)
+                        Vitest.expect(arcParentEntries |> Array.exists _.StartsWith(".arcitisa-import-")).toBe (false)
                 })
         )
 
@@ -650,7 +650,7 @@ Vitest.describe (
                         let! entries = fsPromisesDynamic?readdir targetDirectory |> unbox<JS.Promise<string[]>>
 
                         Vitest.expect(firstExists).toBe (false)
-                        Vitest.expect(entries |> Array.exists _.StartsWith(".swate-import-")).toBe (false)
+                        Vitest.expect(entries |> Array.exists _.StartsWith(".arcitisa-import-")).toBe (false)
                 })
         )
 
@@ -1376,7 +1376,7 @@ Vitest.describe (
             "imports a folder with ARC metadata names, lock files, README folders, LFS pointers and staging leftovers completely",
             fun () ->
                 withAssayArc (fun arcPath -> promise {
-                    let stagingFolder = ".swate-import-" + String.replicate 32 "a"
+                    let stagingFolder = ".arcitisa-import-" + String.replicate 32 "a"
 
                     let lfsPointer =
                         "version https://git-lfs.github.com/spec/v1\noid sha256:"
@@ -2209,7 +2209,7 @@ Vitest.describe (
             "a dot folder in a zone that holds an entity workbook is deleted as a generic folder",
             fun () ->
                 withAssayArc (fun arcPath -> promise {
-                    let path = "assays/.swate-import-" + String.replicate 32 "a"
+                    let path = "assays/.arcitisa-import-" + String.replicate 32 "a"
                     do! createRelativeDirectoryAsync arcPath path
                     do! writeRelativeFileAsync arcPath $"{path}/isa.assay.xlsx" "workbook"
                     do! expectDeleteRoute arcPath path (ArcFileSystemHelper.DeletePathRoute.GenericItem path)
