@@ -4,17 +4,16 @@ open ARCtrl
 open Browser.Dom
 open Fable.Core
 
-// The clipboard format keeps its name from the time the app was called Swate, so cells copied in an
-// older version (or in ARCitect) still paste here and the other way round. Renaming it is listed in
-// docs/maintainer/ObsoleteRemoveOnNextMajor.md.
+// Renamed from "web application/x-swate-cells+json" and "data-swate-cells" in 4.0.0. Cells copied
+// between 3.x and 4.x paste as plain text.
 [<Literal>]
-let MimeType = "web application/x-swate-cells+json"
+let MimeType = "web application/x-arcitisa-cells+json"
 
 [<Literal>]
 let private CurrentVersion = 1
 
 [<Literal>]
-let private HtmlPayloadAttribute = "data-swate-cells"
+let private HtmlPayloadAttribute = "data-arcitisa-cells"
 
 type CellDto = {
     Kind: string
