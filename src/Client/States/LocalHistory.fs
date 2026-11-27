@@ -49,42 +49,42 @@ module GeneralHelpers =
 module IndexedDB =
 
     [<Literal>]
-    let swate_history_table = "swate-table-history"
+    let arcitisa_history_table = "arcitisa-table-history"
 
     module LocalStorage =
 
         [<Literal>]
-        let swate_history_items = "swate_history_items"
+        let arcitisa_history_items = "arcitisa_history_items"
 
         [<Literal>]
-        let swate_history_keys = "swate_history_keys"
+        let arcitisa_history_keys = "arcitisa_history_keys"
 
         [<Literal>]
-        let swate_history_position = "swate_history_position"
+        let arcitisa_history_position = "arcitisa_history_position"
 
 module Keys =
 
     [<Literal>]
-    let swate_local_spreadsheet_key = "swate_local_spreadsheet_key"
+    let arcitisa_local_spreadsheet_key = "arcitisa_local_spreadsheet_key"
 
     [<Literal>]
-    let swate_session_history_key = "swate_session_history_key"
+    let arcitisa_session_history_key = "arcitisa_session_history_key"
 
     [<Literal>]
-    let swate_session_history_table_prefix = "swate-table-history"
+    let arcitisa_session_history_table_prefix = "arcitisa-table-history"
 
     [<Literal>]
-    let swate_session_history_position = "swate_session_history_position"
+    let arcitisa_session_history_position = "arcitisa_session_history_position"
 
-    let create_swate_session_history_table_key (tableGuid: System.Guid) =
-        swate_session_history_table_prefix + tableGuid.ToString()
+    let create_arcitisa_session_history_table_key (tableGuid: System.Guid) =
+        arcitisa_session_history_table_prefix + tableGuid.ToString()
 
 module HistoryOrder =
 
     let ofJson (json: string) = Json.parseAs<System.Guid list> (json)
 
     let tryFromSession () =
-        let tryHistory = GeneralHelpers.tryGetSessionItem Keys.swate_session_history_key
+        let tryHistory = GeneralHelpers.tryGetSessionItem Keys.arcitisa_session_history_key
 
         match tryHistory with
         | Some historyJson -> ofJson historyJson |> Some
@@ -93,8 +93,8 @@ module HistoryOrder =
     let toJson (history: System.Guid list) = Json.serialize history
 
     let tryGetHistoryKeys () = promise {
-        let! historyKeys = openDatabase IndexedDB.swate_history_table IndexedDB.LocalStorage.swate_history_keys
-        let! tryHistory = IndexedDB.getAllItems historyKeys IndexedDB.LocalStorage.swate_history_keys
+        let! historyKeys = openDatabase IndexedDB.arcitisa_history_table IndexedDB.LocalStorage.arcitisa_history_keys
+        let! tryHistory = IndexedDB.getAllItems historyKeys IndexedDB.LocalStorage.arcitisa_history_keys
 
         match tryHistory with
         | Some historyJson -> return (ofJson historyJson |> Some)
@@ -109,7 +109,7 @@ module HistoryOrder =
 //    }
 //    static member ofJson (json: string) = Json.parseAs<OrderList>(json)
 //    static member fromSession() =
-//        let tryHistory = tryGetSessionItem Keys.swate_session_history_key
+//        let tryHistory = tryGetSessionItem Keys.arcitisa_session_history_key
 //        match tryHistory with
 //        | Some historyJson -> OrderList.ofJson historyJson
 //        | None -> failwith "Could not find any history."
@@ -232,11 +232,11 @@ type Spreadsheet.Model with
     static member toJsonString(model: Spreadsheet.Model) = model.ToJsonString()
 
     /// <summary>
-    /// This function tries to get the data model from local storage saved under "swate_spreadsheet_key"
+    /// This function tries to get the data model from local storage saved under "arcitisa_local_spreadsheet_key"
     /// </summary>
     static member fromLocalStorage() =
         let snapshotJsonString =
-            GeneralHelpers.tryGetLocalItem (Keys.swate_local_spreadsheet_key)
+            GeneralHelpers.tryGetLocalItem (Keys.arcitisa_local_spreadsheet_key)
 
         match snapshotJsonString with
         | Some j -> Spreadsheet.Model.fromJsonString j
@@ -246,7 +246,7 @@ type Spreadsheet.Model with
     /// Save data in web local storage
     /// </summary>
     static member SaveToLocalStorage(snapshotJsonString) =
-        Browser.WebStorage.localStorage.setItem (Keys.swate_local_spreadsheet_key, snapshotJsonString)
+        Browser.WebStorage.localStorage.setItem (Keys.arcitisa_local_spreadsheet_key, snapshotJsonString)
 
     /// <summary>
     /// Tries to get the data model from indexed db
@@ -271,7 +271,7 @@ type Spreadsheet.Model with
     }
 
     /// <summary>
-    /// Tries to get the data model from indexed db saved under "swate_spreadsheet_key"
+    /// Tries to get the data model from indexed db saved under "arcitisa_local_spreadsheet_key"
     /// </summary>
     static member deleteItemIndexedDB(database, tableKey, key) = promise {
         let! indexedDB = openDatabase database tableKey
@@ -284,10 +284,10 @@ type Spreadsheet.Model with
     /// <param name="databaseName"></param>
     /// <param name="tableKeys"></param>
     static member initHistoryIndexedDB() =
-        initInidexedDB IndexedDB.swate_history_table [|
-            IndexedDB.LocalStorage.swate_history_items
-            IndexedDB.LocalStorage.swate_history_keys
-            IndexedDB.LocalStorage.swate_history_position
+        initInidexedDB IndexedDB.arcitisa_history_table [|
+            IndexedDB.LocalStorage.arcitisa_history_items
+            IndexedDB.LocalStorage.arcitisa_history_keys
+            IndexedDB.LocalStorage.arcitisa_history_position
         |]
 
     /// <summary>
@@ -296,10 +296,10 @@ type Spreadsheet.Model with
     /// <param name="databaseName"></param>
     /// <param name="tableKeys"></param>
     static member clearHistoryIndexedDB() =
-        clearInidexedDB IndexedDB.swate_history_table [|
-            IndexedDB.LocalStorage.swate_history_items
-            IndexedDB.LocalStorage.swate_history_keys
-            IndexedDB.LocalStorage.swate_history_position
+        clearInidexedDB IndexedDB.arcitisa_history_table [|
+            IndexedDB.LocalStorage.arcitisa_history_items
+            IndexedDB.LocalStorage.arcitisa_history_keys
+            IndexedDB.LocalStorage.arcitisa_history_position
         |]
 
 /// <summary>
@@ -321,7 +321,7 @@ type Model = {
 
     member this.UpdateFromSessionStorage() : Model =
         let position =
-            GeneralHelpers.tryGetSessionItem (Keys.swate_session_history_position)
+            GeneralHelpers.tryGetSessionItem (Keys.arcitisa_session_history_position)
             |> Option.map int
 
         let history = HistoryOrder.tryFromSession ()
@@ -347,14 +347,14 @@ type Model = {
     /// </summary>
     /// <param name="position"></param>
     static member updateIndexedDBPosition(position: int) = promise {
-        let! historyPosition = openDatabase IndexedDB.swate_history_table IndexedDB.LocalStorage.swate_history_position
+        let! historyPosition = openDatabase IndexedDB.arcitisa_history_table IndexedDB.LocalStorage.arcitisa_history_position
 
         do!
             IndexedDB.updateItem
                 historyPosition
-                IndexedDB.LocalStorage.swate_history_position
+                IndexedDB.LocalStorage.arcitisa_history_position
                 position
-                IndexedDB.LocalStorage.swate_history_position
+                IndexedDB.LocalStorage.arcitisa_history_position
 
         IndexedDB.closeDatabase historyPosition
     }
@@ -364,14 +364,14 @@ type Model = {
     /// </summary>
     /// <param name="position"></param>
     static member updateHistoryKeys item = promise {
-        let! historyOrder = openDatabase IndexedDB.swate_history_table IndexedDB.LocalStorage.swate_history_keys
+        let! historyOrder = openDatabase IndexedDB.arcitisa_history_table IndexedDB.LocalStorage.arcitisa_history_keys
 
         do!
             IndexedDB.updateItem
                 historyOrder
-                IndexedDB.LocalStorage.swate_history_keys
+                IndexedDB.LocalStorage.arcitisa_history_keys
                 item
-                IndexedDB.LocalStorage.swate_history_keys
+                IndexedDB.LocalStorage.arcitisa_history_keys
 
         IndexedDB.closeDatabase historyOrder
     }
@@ -388,7 +388,7 @@ type Model = {
             failwith "Not enough items in history list."
 
         let tryState =
-            GeneralHelpers.tryGetSessionItem (Keys.create_swate_session_history_table_key guid.Value)
+            GeneralHelpers.tryGetSessionItem (Keys.create_arcitisa_session_history_table_key guid.Value)
 
         match tryState with
         | Some stateJson -> Spreadsheet.Model.fromJsonString (stateJson)
@@ -407,8 +407,8 @@ type Model = {
 
         let! tryState =
             Spreadsheet.Model.tryFromIndexedDB (
-                IndexedDB.swate_history_table,
-                IndexedDB.LocalStorage.swate_history_items,
+                IndexedDB.arcitisa_history_table,
+                IndexedDB.LocalStorage.arcitisa_history_items,
                 key.ToString()
             )
 
@@ -417,11 +417,11 @@ type Model = {
         | None -> return failwith "Could not find any history."
     }
 
-    // Whenever `SaveSpreadsheetModelSnapshot` is called, also generate a new GUID. Save the model with the "swate_history_table" with a key in indexedDB.
-    // In addition save with key "swate_history_keys" a list with the generated GUIDs in which the newest GUID is added first.
-    // Save the current history position with key "swate_history_position" in indexedDB.
-    // If we go back the history then update the "swate_history_position" and load the table with GUID at position "swate_history_position" as model.
-    // If the user changes something when "swate_history_position" <> 0 (up to date, newest), delete all positions up to "swate_history_position" and the corresponding tables.
+    // Whenever `SaveSpreadsheetModelSnapshot` is called, also generate a new GUID. Save the model with the "arcitisa_history_table" with a key in indexedDB.
+    // In addition save with key "arcitisa_history_keys" a list with the generated GUIDs in which the newest GUID is added first.
+    // Save the current history position with key "arcitisa_history_position" in indexedDB.
+    // If we go back the history then update the "arcitisa_history_position" and load the table with GUID at position "arcitisa_history_position" as model.
+    // If the user changes something when "arcitisa_history_position" <> 0 (up to date, newest), delete all positions up to "arcitisa_history_position" and the corresponding tables.
     /// <summary>
     /// Save the next table state to session storage for history control. Table state is stored with guid as key and order is stored as guid list.
     /// </summary>
@@ -436,16 +436,16 @@ type Model = {
                 for rmvKey in toRemoveArray do
                     do!
                         Spreadsheet.Model.deleteItemIndexedDB (
-                            IndexedDB.swate_history_table,
-                            IndexedDB.LocalStorage.swate_history_items,
+                            IndexedDB.arcitisa_history_table,
+                            IndexedDB.LocalStorage.arcitisa_history_items,
                             rmvKey.ToString()
                         )
             // apply all storage changes after everything else went through
             // set current table state with key and guid
             do!
                 Spreadsheet.Model.saveToIndexedDB (
-                    IndexedDB.swate_history_table,
-                    IndexedDB.LocalStorage.swate_history_items,
+                    IndexedDB.arcitisa_history_table,
+                    IndexedDB.LocalStorage.arcitisa_history_items,
                     jsonStr,
                     key.ToString()
                 )
@@ -513,7 +513,7 @@ type Model = {
         /// recursively generate new guids, check if existing and if so repeat until new guid.
         let rec generateNewGuid () =
             let g = System.Guid.NewGuid()
-            let key = Keys.create_swate_session_history_table_key g
+            let key = Keys.create_arcitisa_session_history_table_key g
             let try_key = GeneralHelpers.tryGetSessionItem (key)
             // if key exists redo, else use key
             match try_key with
@@ -549,7 +549,7 @@ type Model = {
             if List.isEmpty toRemoveList |> not then
                 toRemoveList
                 |> List.iter (fun guid ->
-                    let rmvKey = Keys.create_swate_session_history_table_key (guid)
+                    let rmvKey = Keys.create_arcitisa_session_history_table_key (guid)
                     Browser.WebStorage.sessionStorage.removeItem (rmvKey)
                 )
 
@@ -564,16 +564,16 @@ type Model = {
         Browser.WebStorage.sessionStorage.setItem (newKey, snapshotJsonString)
         // set new table guid history
         Browser.WebStorage.sessionStorage.setItem (
-            Keys.swate_session_history_key,
+            Keys.arcitisa_session_history_key,
             HistoryOrder.toJson (nextState.HistoryOrder)
         )
         // reset new table position to 0
-        Browser.WebStorage.sessionStorage.setItem (Keys.swate_session_history_position, "0")
+        Browser.WebStorage.sessionStorage.setItem (Keys.arcitisa_session_history_position, "0")
         nextState
 
     static member ResetHistoryWebStorage() =
         Spreadsheet.Model.clearHistoryIndexedDB () |> Promise.start
-        Browser.WebStorage.localStorage.removeItem (Keys.swate_local_spreadsheet_key)
+        Browser.WebStorage.localStorage.removeItem (Keys.arcitisa_local_spreadsheet_key)
 
     member this.ResetAll() =
         Model.ResetHistoryWebStorage()
