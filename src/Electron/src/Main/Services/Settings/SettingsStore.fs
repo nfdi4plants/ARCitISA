@@ -77,7 +77,12 @@ let private legacyUserDataFolderName = "Swate"
 /// the app is ready and before anything reads the user data folder. The error text names both
 /// folders, for the message the app shows before it quits.
 let moveLegacyUserDataFolder () : Result<unit, string> =
-    let legacyPath = join [| app.getPath Enums.App.GetPath.Name.AppData; legacyUserDataFolderName |]
+    let legacyPath =
+        join [|
+            app.getPath Enums.App.GetPath.Name.AppData
+            legacyUserDataFolderName
+        |]
+
     let currentPath = app.getPath Enums.App.GetPath.Name.UserData
 
     let move =
