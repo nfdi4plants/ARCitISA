@@ -691,7 +691,7 @@ type Msg =
     | SilentRefreshCompleted of requestId: int * result: Result<GitRefreshResult, string>
     | InitRepositoryRequested
     | InitRepositoryCompleted of sessionId: int * result: Result<unit, string>
-    | SelectChangeRequested of GitSidebarChange * Reply<unit>
+    | SelectChangeRequested of GitSidebarChange * DiffComparisonDto * Reply<unit>
     | SelectChangeCompleted of
         requestId: int *
         path: string *
@@ -2056,6 +2056,7 @@ module GitDiffPageLoader =
             OperationId = deps.newOperationId ()
             Path = page.Path
             PreviousPath = page.PreviousPath
+            Comparison = page.Comparison
             PreparationTokenId = preparationTokenId
             PreviousEncoding = page.PreviousEncoding
             CurrentEncoding = page.CurrentEncoding
@@ -2064,11 +2065,19 @@ module GitDiffPageLoader =
         }
 
     /// A diff page for the change that is still opening, and the command that opens it.
-    let start (deps: GitDependencies) (generation: int) (change: GitSidebarChange) =
+    let start
+        (deps: GitDependencies)
+        (generation: int)
+        (path: string)
+        (previousPath: string option)
+        (changeKind: Paged.GitDiffChangeKind)
+        (comparison: DiffComparisonDto)
+        =
         let page: GitDiffPageData = {
-            Path = change.Path
-            PreviousPath = change.OriginalPath
-            ChangeKind = Some(changeKindOf change.Kind)
+            Path = path
+            PreviousPath = previousPath
+            Comparison = comparison
+            ChangeKind = Some changeKind
             Generation = generation
             Handle = None
             SourceInfos = None
@@ -5649,17 +5658,28 @@ let private updateCore
         }
 
         nextModel, Cmd.ofMsg RefreshRequested
-    | SelectChangeRequested(_, reply) when model.CurrentArcPath.IsNone ->
+    | SelectChangeRequested(_, _, reply) when model.CurrentArcPath.IsNone ->
         model, resolveReplyCmd reply (Error "No ARC is loaded.")
-    | SelectChangeRequested(change, reply) when change.Kind <> GitSidebarChangeKind.Conflicted ->
+    | SelectChangeRequested(change, comparison, reply) when change.Kind <> GitSidebarChangeKind.Conflicted ->
         let requestId = nextPageLoadRequestId model
-        let page, openCmd = GitDiffPageLoader.start deps requestId change
+
+        let page, openCmd =
+            GitDiffPageLoader.start
+                deps
+                requestId
+                change.Path
+                change.OriginalPath
+                (GitDiffPageLoader.changeKindOf change.Kind)
+                comparison
 
         {
             model with
                 ErrorNotice = None
                 PageLoadRequestId = requestId
-                SelectedChangePath = Some change.Path
+                SelectedChangePath =
+                    match comparison with
+                    | DiffComparisonDto.WorkingFile -> Some change.Path
+                    | DiffComparisonDto.Revision _ -> model.SelectedChangePath
                 DiffPage = Some page
         },
         Cmd.batch [
@@ -5667,7 +5687,7 @@ let private updateCore
             openCmd
             resolveReplyCmd reply (Ok())
         ]
-    | SelectChangeRequested(change, reply) ->
+    | SelectChangeRequested(change, _, reply) ->
         let requestId = nextPageLoadRequestId model
 
         // An open diff stays with its handle until the loaded page replaces it on screen. The

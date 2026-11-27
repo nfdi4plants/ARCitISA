@@ -3,6 +3,7 @@ module Renderer.Components.LeftSidebar.Git.GitSidebarPanel
 open Browser.Dom
 open Feliz
 open Renderer.Components.Helper.ArcVaultHelper
+open Arcitisa.Electron.Shared.VersionControlTypes
 open Arcitisa.Components.Primitive.ErrorModal.Context
 
 /// The version control provider answers once per opened ARC whether deduplication can work. On a no, the sidebar disables the button and its tooltip says why.
@@ -267,7 +268,7 @@ let Main () =
                 OnSaveDiffIndexingLimit = gitStateCtx.saveDiffIndexingLimit
                 OnCreateBranch = gitStateCtx.createBranch
                 OnSwitchBranch = gitStateCtx.switchBranch
-                OnSelectChange = gitStateCtx.selectChange
+                OnSelectChange = fun change -> gitStateCtx.selectChange change DiffComparisonDto.WorkingFile
                 OnPruneLfsCache = gitStateCtx.pruneLfsCache
                 OnDedupLfsStorage = gitStateCtx.dedupLfsStorage
                 OnCancelOperation = gitStateCtx.cancelOperation

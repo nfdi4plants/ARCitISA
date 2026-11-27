@@ -355,6 +355,7 @@ let private openRequest (operationId: string) (path: string) : OpenTextDiffReque
     OperationId = operationId
     Path = path
     PreviousPath = None
+    Comparison = DiffComparisonDto.WorkingFile
     PreparationTokenId = None
     PreviousEncoding = None
     CurrentEncoding = None
@@ -729,6 +730,31 @@ Vitest.describe (
                 match Mappings.tryOpenDiffRequest memoryPolicy (openRequest "op" "data/a.txt") with
                 | Ok request -> Vitest.expect(request.Storage).toEqual memoryPolicy
                 | Error failure -> failwith failure.Message
+        )
+
+        Vitest.test (
+            "a revision comparison reaches the library request and a blank revision is rejected",
+            fun () ->
+                let compare comparison =
+                    Mappings.tryOpenDiffRequest diskPolicy {
+                        openRequest "op" "data/a.txt" with
+                            Comparison = comparison
+                    }
+
+                match compare DiffComparisonDto.WorkingFile with
+                | Ok request -> Vitest.expect(request.Comparison).toEqual DiffComparison.WorkingFile
+                | Error failure -> failwith failure.Message
+
+                match compare (DiffComparisonDto.Revision "abc123") with
+                | Ok request ->
+                    Vitest
+                        .expect(request.Comparison)
+                        .toEqual (DiffComparison.Revision(RevisionId.tryCreate "abc123" |> Result.defaultWith failwith))
+                | Error failure -> failwith failure.Message
+
+                match compare (DiffComparisonDto.Revision "  ") with
+                | Error failure -> Vitest.expect(failure.Code).toBe VersionControlCodes.InvalidRevision
+                | Ok value -> failwith $"Expected a rejected request, got {value}"
         )
 
         Vitest.test (
@@ -1113,6 +1139,7 @@ Vitest.describe (
                         OperationId = overLimit
                         Path = "data/a.txt"
                         PreviousPath = None
+                        Comparison = DiffComparisonDto.WorkingFile
                         PreparationTokenId = None
                         PreviousEncoding = None
                         CurrentEncoding = None

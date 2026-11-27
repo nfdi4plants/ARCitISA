@@ -731,6 +731,11 @@ let private tryOptionalRepositoryPath (path: string option) : Result<RepositoryP
     | None -> Ok None
     | Some text -> tryRepositoryPath text |> Result.map Some
 
+let private tryDiffComparison (comparison: DiffComparisonDto) : Result<DiffComparison, OperationFailure> =
+    match comparison with
+    | DiffComparisonDto.WorkingFile -> Ok DiffComparison.WorkingFile
+    | DiffComparisonDto.Revision text -> tryRevisionId text |> Result.map DiffComparison.Revision
+
 /// The storage policy comes from the settings of the session, which the validation here does not see.
 let tryOpenDiffRequest
     (storage: DiffStoragePolicy)
@@ -744,10 +749,14 @@ let tryOpenDiffRequest
     |> Result.bind (fun _ -> tryRepositoryPath request.Path)
     |> Result.bind (fun path ->
         tryOptionalRepositoryPath request.PreviousPath
-        |> Result.map (fun previousPath -> {
+        |> Result.bind (fun previousPath ->
+            tryDiffComparison request.Comparison
+            |> Result.map (fun comparison -> previousPath, comparison)
+        )
+        |> Result.map (fun (previousPath, comparison) -> {
             OpenDiffRequest.Path = path
             PreviousPath = previousPath
-            Comparison = DiffComparison.WorkingFile
+            Comparison = comparison
             Preparation =
                 request.PreparationTokenId
                 |> Option.map (fun tokenId -> { PreparationToken.Id = tokenId })

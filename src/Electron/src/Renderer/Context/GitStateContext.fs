@@ -40,7 +40,7 @@ type GitStateController = {
     saveDownloadLargeFiles: bool -> unit
     createBranch: GitSidebarCreateBranchRequest -> unit
     switchBranch: string -> unit
-    selectChange: GitSidebarChange -> JS.Promise<Result<unit, string>>
+    selectChange: GitSidebarChange -> DiffComparisonDto -> JS.Promise<Result<unit, string>>
     confirmMergeResolution: GitMergeResolutionRequest -> unit
     abandonMerge: unit -> unit
     pruneLfsCache: unit -> unit
@@ -147,7 +147,7 @@ let GitStateCtx =
             saveDownloadLargeFiles = fun _ -> ()
             createBranch = fun _ -> ()
             switchBranch = fun _ -> ()
-            selectChange = fun _ -> promise { return Ok() }
+            selectChange = fun _ _ -> promise { return Ok() }
             confirmMergeResolution = fun _ -> ()
             abandonMerge = fun () -> ()
             pruneLfsCache = fun () -> ()
@@ -290,8 +290,8 @@ let GitStateCtxProvider (children: ReactElement) =
     let switchBranchTo (branchName: string) =
         dispatch (SwitchBranchRequested branchName)
 
-    let selectChange (change: GitSidebarChange) =
-        Promise.create (fun resolve _reject -> dispatch (SelectChangeRequested(change, resolve)))
+    let selectChange (change: GitSidebarChange) (comparison: DiffComparisonDto) =
+        Promise.create (fun resolve _reject -> dispatch (SelectChangeRequested(change, comparison, resolve)))
 
     let confirmMergeResolutionAction (request: GitMergeResolutionRequest) =
         dispatch (ConfirmMergeResolutionRequested request)

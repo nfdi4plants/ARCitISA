@@ -226,12 +226,19 @@ type ResumableLineDto =
     | Ready of line: DiffLineDto
     | Scanning of progress: ScanProgressDto * continuation: string * pending: PendingPreviewDto option
 
+/// What a text diff compares: the working file against the last revision, or a revision against its first parent.
+[<RequireQualifiedAccess>]
+type DiffComparisonDto =
+    | WorkingFile
+    | Revision of revision: string
+
 /// Opens a diff of one path. PreparationTokenId and the encodings answer an earlier
 /// EncodingRequired blocker, and Continuation resumes an earlier Scanning result.
 type OpenTextDiffRequestDto = {
     OperationId: string
     Path: string
     PreviousPath: string option
+    Comparison: DiffComparisonDto
     PreparationTokenId: string option
     PreviousEncoding: string option
     CurrentEncoding: string option
