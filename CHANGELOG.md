@@ -27,7 +27,7 @@ Planned as 4.0.0. Upgrading from 3.x: see [Upgrading from ARCitISA 3.x to 4.0](d
     - macOS: the app has the new identifier `org.nfdi4plants.app-arc-management-core`.
     - New file names: `ARCitISA-Setup-<version>-x64.exe`, `ARCitISA-<version>-<arch>.dmg`, `ARCitISA-<version>-x86_64.AppImage`, `arcitisa-<version>-1.aarch64.rpm` on arm64 and `arcitisa-<version>-1-x64.pkg.tar.zst`. The deb, the rpm on x64 and the zip files keep their names.
 - The settings folder is now called `ARCitISA`. The first start moves the `Swate` folder of 3.x there. (by @Freymaurer)
-- Names from the time ARCitISA was called Swate are gone from the browser storage, the clipboard format, temporary files and the Excel add-in manifest. Some preferences reset once, see the upgrade guide. (by @Freymaurer)
+- The rename has affected some user preferences, the clipboard format, temporary files and the Excel add-in manifest. Some preferences reset once, see the upgrade guide. (by @Freymaurer)
 
 ## 3.4.0-rc.2 - 2026-11-24
 
