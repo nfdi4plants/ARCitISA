@@ -125,7 +125,7 @@ type TermSearchConfigProvider =
             ?defaultActive: Set<string>,
             ?localStorageKey: string
         ) =
-        let localStorageKey = defaultArg localStorageKey "swate-termsearchconfig-ctx"
+        let localStorageKey = defaultArg localStorageKey "arcitisa-termsearchconfig-ctx"
         let defaultActive = defaultArg defaultActive Set.empty
 
         let (activeKeys: TermSearchActiveKeysContext), setActiveKeys =

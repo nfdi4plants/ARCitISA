@@ -28,7 +28,7 @@ const renderWithProps = (args: React.ComponentProps<typeof SettingsPageWithProps
   </ThemeProvider>
 );
 
-const autoCreateNotesFolderKey = 'swate-settings-auto-create-notes-folder';
+const autoCreateNotesFolderKey = 'arcitisa-settings-auto-create-notes-folder';
 
 const lfsId = 'SettingsGitDefaultLfsThreshold';
 const downloadId = 'SettingsGitDefaultDownloadLargeFiles';

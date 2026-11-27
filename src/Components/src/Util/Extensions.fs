@@ -37,7 +37,7 @@ module Extensions =
 
 module Keys =
     let inline mkLocalStorageKey (file: string) (component': string) (function': string) : string =
-        $"swate-{file}-{component'}-{function'}"
+        $"arcitisa-{file}-{component'}-{function'}"
 
 
 [<RequireQualifiedAccess>]

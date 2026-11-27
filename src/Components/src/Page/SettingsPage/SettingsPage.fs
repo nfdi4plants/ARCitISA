@@ -17,7 +17,8 @@ open Arcitisa.Components.Util.UserOS
 
 module SettingsPageDefaults =
     [<Literal>]
-    let AutoCreateNotesFolderLocalStorageKey = "swate-settings-auto-create-notes-folder"
+    let AutoCreateNotesFolderLocalStorageKey =
+        "arcitisa-settings-auto-create-notes-folder"
 
 module private SettingsPageHelper =
 
