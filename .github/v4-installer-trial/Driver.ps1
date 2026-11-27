@@ -341,6 +341,13 @@ function Invoke-Uninstall([string]$uninstaller, [string]$dataAnswer) {
   $r
 }
 
+# The key that encrypts the stored account tokens, from Chromium's Local State in a user data folder.
+function Get-EncryptedKey([string]$userDataDir) {
+  $file = Join-Path $userDataDir 'Local State'
+  if (-not (Test-Path $file)) { return $null }
+  try { (Get-Content -Raw $file | ConvertFrom-Json).os_crypt.encrypted_key } catch { $null }
+}
+
 function Get-AppWindows {
   $pids = @(Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -like '*\ARCitISA\arcitisa.exe' } | ForEach-Object { [int]$_.ProcessId })
   if ($pids.Count -eq 0) { return @() }
@@ -392,7 +399,7 @@ try {
       Check 'old install present' ((Test-AppFolder "$env:LOCALAPPDATA\swate") -and (Test-Entry $s1 'swate'))
       Note ("AppData after old install: " + ($s1.AppData -join '; '))
       Start-Setup $rc1
-      $wz = Invoke-Wizard $rc1 @{ Question = 'Yes'; Mode = 'user'; Desktop = $false; Run = $true }
+      $wz = Invoke-Wizard $rc1 @{ Question = 'Yes'; Mode = 'user'; Desktop = $false; Run = $false }
       $s2 = Get-State 'after rc.1 setup'
       Check 'question shown once' ($wz.Questions -eq 1) "questions: $($wz.Questions)"
       Check 'no error message' ($wz.Errors.Count -eq 0) ($wz.Errors -join ' / ')
@@ -407,9 +414,21 @@ try {
       Check 'new entry in Settings > Apps' (Test-Entry $s2 $guid)
       Check 'no desktop shortcut' (-not (Test-Link $s2 "*\Desktop\ARCitISA.lnk"))
       Check 'Start menu shortcut with app id' (@($s2.Links | Where-Object { $_.Path -like '*Start Menu\Programs\ARCitISA.lnk' -and $_.Aumid -eq $appId }).Count -eq 1)
-      Test-AppStarted 'finish page'
+
+      # The first start of 4.x moves Swate to ARCitISA (plan, phase 2). 3.x left ARCitISA with
+      # Chromium's Local State only, which has to give way to the whole Swate folder.
+      Check '3.x left ARCitISA without Settings' ((Test-Path "$env:APPDATA\ARCitISA") -and -not (Test-Path "$env:APPDATA\ARCitISA\Settings")) ($s2.AppData -join '; ')
+      $oldKey = Get-EncryptedKey "$env:APPDATA\Swate"
+      Note "Swate has an encryption key in Local State: $([bool]$oldKey)"
+      New-Item -ItemType Directory -Force "$env:APPDATA\Swate\Settings" | Out-Null
+      Set-Content "$env:APPDATA\Swate\Settings\moved-marker.txt" 'written into Swate before the first start of 4.x'
+      Start-Process explorer.exe -ArgumentList "`"$env:APPDATA\Microsoft\Windows\Start Menu\Programs\ARCitISA.lnk`""
+      Test-AppStarted 'Start menu shortcut'
+      $s3 = Get-State 'after the first start of rc.1'
+      Check 'Swate moved away' (-not (Test-Path "$env:APPDATA\Swate")) ($s3.AppData -join '; ')
+      Check 'ARCitISA holds the settings of 3.x' (Test-Path "$env:APPDATA\ARCitISA\Settings\moved-marker.txt")
+      if ($oldKey) { Check 'ARCitISA has the encryption key of Swate' ((Get-EncryptedKey "$env:APPDATA\ARCitISA") -eq $oldKey) }
       Stop-NewApp
-      Note ("AppData at the end: " + ((Get-State 'end').AppData -join '; '))
     }
     'B' {
       Install-Squirrel $oldRc2 'swate' 'swate'
@@ -448,7 +467,9 @@ try {
     }
     'D' {
       Start-Setup $rc1
-      $wz = Invoke-Wizard $rc1 @{ Question = 'Yes'; Mode = 'user'; Desktop = $true; Run = $false }
+      $wz = Invoke-Wizard $rc1 @{ Question = 'Yes'; Mode = 'user'; Desktop = $true; Run = $true }
+      Test-AppStarted 'finish page'
+      Stop-NewApp
       $s1 = Get-State 'after install with desktop shortcut'
       Check 'no question without an old install' ($wz.Questions -eq 0)
       $link = @($s1.Links | Where-Object { $_.Path -like '*\Desktop\ARCitISA.lnk' })
@@ -464,7 +485,8 @@ try {
       Check 'Start menu shortcut removed' (-not (Test-Link $s2 '*Start Menu\Programs\ARCitISA.lnk'))
       Check 'program folder removed' (-not (Test-Path "$env:LOCALAPPDATA\Programs\ARCitISA"))
       Check 'entry removed' (-not (Test-Entry $s2 $guid))
-      Check 'user data kept' (Test-Path "$env:APPDATA\Swate") ($s2.AppData -join '; ')
+      # A fresh 4.x install has no Swate folder, its data is in ARCitISA.
+      Check 'user data kept' (Test-Path "$env:APPDATA\ARCitISA\Settings") ($s2.AppData -join '; ')
     }
     'E' {
       Start-Setup $rc1
