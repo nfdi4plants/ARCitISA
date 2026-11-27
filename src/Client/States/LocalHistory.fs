@@ -347,7 +347,8 @@ type Model = {
     /// </summary>
     /// <param name="position"></param>
     static member updateIndexedDBPosition(position: int) = promise {
-        let! historyPosition = openDatabase IndexedDB.arcitisa_history_table IndexedDB.LocalStorage.arcitisa_history_position
+        let! historyPosition =
+            openDatabase IndexedDB.arcitisa_history_table IndexedDB.LocalStorage.arcitisa_history_position
 
         do!
             IndexedDB.updateItem
