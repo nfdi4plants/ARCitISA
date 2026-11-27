@@ -16,24 +16,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Planned as 4.0.0. Close all ARCitISA windows, including older versions, before you install it.
-
-### ✨ Added
-
-- A Windows setup wizard: install for you or for everyone on the computer, choose the install folder, and add a desktop shortcut if you want one. ARCitISA has a real uninstaller in Settings > Apps, which asks whether to delete your settings as well. (#1463, by @Freymaurer)
-- The Windows setup finds ARCitISA 3.x, asks, and removes it. Your settings and signed-in accounts are kept. (by @Freymaurer)
+Planned as 4.0.0. Upgrading from 3.x: see [Upgrading from ARCitISA 3.x to 4.0](docs/migrations/v4.md).
 
 ### 🔄 Changed
 
-- The installers are made with electron-builder and have new names: `ARCitISA-Setup-<version>-x64.exe`, `ARCitISA-<version>-<arch>.dmg`, `ARCitISA-<version>-x86_64.AppImage`, `arcitisa-<version>-1.aarch64.rpm` on arm64 and `arcitisa-<version>-1-x64.pkg.tar.zst`. The deb, the rpm on x64 and the zip files keep their names. (by @Freymaurer)
-- The settings folder is now called `ARCitISA` (`%AppData%\ARCitISA`, `~/.config/ARCitISA`, `~/Library/Application Support/ARCitISA`). The first start moves the `Swate` folder of 3.x there. (by @Freymaurer)
-- On macOS, ARCitISA has a new app identifier (`org.nfdi4plants.app-arc-management-core`). macOS may ask again for permissions you gave to 3.x. (by @Freymaurer)
-- Names from the time ARCitISA was called Swate are gone. This resets once: the theme, the term search settings and other preferences kept in the browser storage, the table history and search configuration of the web and Excel versions, and in some cases the selected account. Cells copied between 3.x and 4.0 paste as plain text. (by @Freymaurer)
-- The Excel add-in manifest opens ARCitISA with `is_arcitisahost`. Add-ins installed from an older manifest keep working. (by @Freymaurer)
-
-### 🔥 Removed
-
-- The Squirrel-based Windows installer and its `.nupkg` file. (by @Freymaurer)
+- New installers for all platforms, made with electron-builder (#1463, by @Freymaurer):
+    - Windows: a setup wizard replaces the Squirrel installer. Install for you or for everyone on the computer, choose the install folder, and add a desktop shortcut if you want one. The uninstaller in Settings > Apps asks whether to delete your settings as well. There is no `.nupkg` file any more.
+    - The Windows setup removes ARCitISA 3.x after asking.
+    - Linux: the deb and rpm packages replace the `swate` package of older versions.
+    - macOS: the app has the new identifier `org.nfdi4plants.app-arc-management-core`.
+    - New file names: `ARCitISA-Setup-<version>-x64.exe`, `ARCitISA-<version>-<arch>.dmg`, `ARCitISA-<version>-x86_64.AppImage`, `arcitisa-<version>-1.aarch64.rpm` on arm64 and `arcitisa-<version>-1-x64.pkg.tar.zst`. The deb, the rpm on x64 and the zip files keep their names.
+- The settings folder is now called `ARCitISA`. The first start moves the `Swate` folder of 3.x there. (by @Freymaurer)
+- Names from the time ARCitISA was called Swate are gone from the browser storage, the clipboard format, temporary files and the Excel add-in manifest. Some preferences reset once, see the upgrade guide. (by @Freymaurer)
 
 ## 3.4.0-rc.2 - 2026-11-24
 
